@@ -1,0 +1,456 @@
+/*
+ * Токены ContentOps (DESIGN.md §7). Единственный источник цвета, радиусов, теней и шрифтов.
+ * Компоненты берут значения только через утилиты Tailwind, собранные из этих токенов;
+ * сырые цвета и размеры шрифта в компонентах не пишутся.
+ *
+ * Ступени шрифта (§7.2) лежат на привычных именах Tailwind, чтобы слияние классов
+ * (`cn`) понимало их как размер шрифта:
+ *   text-2xs 11,5/14 600 — только подписи на обложках
+ *   text-xs  12/16      — метки, время в ячейке недели, состояния полей
+ *   text-sm  13/18      — крошки, вторые строки, мета, чипы, счётчики
+ *   text-base 14/20     — основной текст, строки, кнопки
+ *   text-md  15/20 600  — только слово логотипа и «Загрузить» (§2.1, §2.2)
+ *   text-lg  16/22 600  — названия папок, заголовки групп и панели
+ *   text-xl  20/28 600  — заголовок экрана (шрифт `font-heading`)
+ * Радиусы (§7.4): sm 6 · md 8 · lg 10 · xl 12 · 2xl 14 · 3xl 16.
+ * Тени (§7.5): xs — «Загрузить»; md — меню, всплывашки, выпадающий поиск, лоток;
+ * lg — перетаскиваемая плитка; xl — окно. Остальное плоское.
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Шрифты: только кириллица и латиница, только woff2, веса из §7.2. */
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/golos-text/files/golos-text-cyrillic-400-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/golos-text/files/golos-text-latin-400-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/golos-text/files/golos-text-cyrillic-500-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/golos-text/files/golos-text-latin-500-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/golos-text/files/golos-text-cyrillic-600-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Golos Text";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/golos-text/files/golos-text-latin-600-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/jetbrains-mono/files/jetbrains-mono-cyrillic-400-normal.woff2")
+    format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@theme inline {
+  --font-*: initial;
+  --font-sans: "Golos Text", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-heading: var(--heading-font);
+
+  --text-*: initial;
+  --text-2xs: 0.71875rem;
+  --text-2xs--line-height: 0.875rem;
+  --text-2xs--font-weight: 600;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.25rem;
+  --text-md: 0.9375rem;
+  --text-md--line-height: 1.25rem;
+  --text-md--font-weight: 600;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.375rem;
+  --text-lg--font-weight: 600;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-xl--font-weight: var(--heading-weight);
+
+  --radius-*: initial;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-3xl: 16px;
+
+  --shadow-*: initial;
+  --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.1), 0 1px 3px rgb(16 24 40 / 0.08);
+  --shadow-md: 0 8px 24px rgb(16 24 40 / 0.12), 0 2px 6px rgb(16 24 40 / 0.08);
+  --shadow-lg: 0 12px 28px rgb(16 24 40 / 0.22);
+  --shadow-xl: 0 24px 48px rgb(16 24 40 / 0.18);
+
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+  --color-*: initial;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-tint: var(--primary-tint);
+  --color-primary-ink: var(--primary-ink);
+  --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-bg: var(--destructive-bg);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-attention: var(--attention);
+  --color-attention-ink: var(--attention-ink);
+  --color-attention-bg: var(--attention-bg);
+  --color-border: var(--border);
+  --color-line-strong: var(--line-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-folder: var(--folder);
+  --color-folder-tab: var(--folder-tab);
+  --color-bar: var(--bar);
+  --color-viewer: var(--viewer);
+  --color-scrim: var(--scrim);
+  --color-scrim-foreground: var(--scrim-foreground);
+  --color-overlay: var(--overlay);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* §7.1. Светлая тема; других нет. */
+:root {
+  --sidebar: #edeff2;
+  --sidebar-foreground: #1f2329;
+  --sidebar-primary: #2b5bdf;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ffffff;
+  --sidebar-accent-foreground: #1f2329;
+  --sidebar-border: #e6e8ec;
+  --sidebar-ring: #2b5bdf;
+
+  --background: #ffffff;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --foreground: #1f2329;
+  --card-foreground: #1f2329;
+  --popover-foreground: #1f2329;
+  --muted-foreground: #5b6270;
+  --ink-3: #646b77;
+  --muted: #eef0f3;
+  --accent: #f4f5f7;
+  --accent-foreground: #1f2329;
+  --secondary: #eceef1;
+  --secondary-hover: #e3e6ea;
+  --secondary-foreground: #1f2329;
+  --border: #e6e8ec;
+  --line-strong: #d5dae1;
+  --input: #848b96;
+  --folder: #dce2ec;
+  --folder-tab: #ccd4e1;
+  --primary: #2b5bdf;
+  --primary-hover: #224bc0;
+  --primary-foreground: #ffffff;
+  --ring: #2b5bdf;
+  --primary-tint: #edf2fe;
+  --primary-ink: #1f48b8;
+  --attention: #b86e00;
+  --attention-ink: #9a5a00;
+  --attention-bg: #fff4e0;
+  --destructive: #c23b2e;
+  --destructive-bg: #fdecea;
+  --destructive-foreground: #ffffff;
+  --bar: #2c3038;
+  --viewer: #000000;
+  --scrim: rgb(0 0 0 / 0.6);
+  --scrim-foreground: #ffffff;
+  --overlay: rgb(16 24 40 / 0.32);
+
+  --radius: 10px;
+  --heading-font: "Golos Text", system-ui, sans-serif;
+  --heading-weight: 600;
+
+  /* §7.9. Семейства синтетических обложек: светлый и тёмный концы градиента из DESIGN;
+     глубина, свет, цвет предметов и соседний тон (alt, для разнообразия внутри семейства)
+     подобраны к ним. */
+  --cover-bedroom-light: #f2d4c4;
+  --cover-bedroom-dark: #b9776a;
+  --cover-bedroom-deep: #5e3431;
+  --cover-bedroom-glow: #ffe6c7;
+  --cover-bedroom-alt: #9c5a3c;
+  --cover-bedroom-ink: #fff4ea;
+  --cover-lace-light: #e9b7c0;
+  --cover-lace-dark: #8e4a5e;
+  --cover-lace-deep: #3f1a29;
+  --cover-lace-glow: #ffd9e0;
+  --cover-lace-alt: #6e3a72;
+  --cover-lace-ink: #fbe3e6;
+  --cover-party-light: #f6d6da;
+  --cover-party-dark: #b85a6b;
+  --cover-party-deep: #57213a;
+  --cover-party-glow: #fff0f3;
+  --cover-party-alt: #d9694f;
+  --cover-party-ink: #ffd36e;
+  --cover-evening-light: #d9a5b3;
+  --cover-evening-dark: #3b2e5a;
+  --cover-evening-deep: #1a1330;
+  --cover-evening-glow: #ffd7a8;
+  --cover-evening-alt: #2d4f73;
+  --cover-evening-ink: #f7e3c4;
+  --cover-bath-light: #cfe3e8;
+  --cover-bath-dark: #6e9fb0;
+  --cover-bath-deep: #24505e;
+  --cover-bath-glow: #f4fdff;
+  --cover-bath-alt: #4f9c8f;
+  --cover-bath-ink: #ffffff;
+  --cover-kitchen-light: #f3e2c2;
+  --cover-kitchen-dark: #c98f5a;
+  --cover-kitchen-deep: #6b4124;
+  --cover-kitchen-glow: #fff7e6;
+  --cover-kitchen-alt: #b3553a;
+  --cover-kitchen-ink: #fffdf8;
+  --cover-street-light: #d8e5c6;
+  --cover-street-dark: #7a9a6a;
+  --cover-street-deep: #33492f;
+  --cover-street-glow: #fff3cf;
+  --cover-street-alt: #c49a3e;
+  --cover-street-ink: #e2574a;
+  --cover-office-light: #e6e6ea;
+  --cover-office-dark: #8e93a3;
+  --cover-office-deep: #3d4252;
+  --cover-office-glow: #fbfcff;
+  --cover-office-alt: #566890;
+  --cover-office-ink: #c9ced9;
+}
+
+/* §7.1. Тёмное поддерево: полоса выделения, просмотр и их меню. */
+.dark {
+  --background: #2c3038;
+  --card: #2c3038;
+  --popover: #383d46;
+  --foreground: #ffffff;
+  --card-foreground: #ffffff;
+  --popover-foreground: #ffffff;
+  --muted-foreground: #c3c8d1;
+  --ink-3: #aeb4bf;
+  --muted: rgb(255 255 255 / 0.1);
+  --accent: rgb(255 255 255 / 0.12);
+  --accent-foreground: #ffffff;
+  --secondary: rgb(255 255 255 / 0.14);
+  --secondary-hover: rgb(255 255 255 / 0.22);
+  --secondary-foreground: #ffffff;
+  --border: rgb(255 255 255 / 0.14);
+  --line-strong: rgb(255 255 255 / 0.3);
+  --input: rgb(255 255 255 / 0.56);
+  --primary: #ffffff;
+  --primary-hover: #e3e6ea;
+  --primary-foreground: #1f2329;
+  --ring: #ffffff;
+  --primary-tint: rgb(255 255 255 / 0.14);
+  --primary-ink: #ffffff;
+  --attention: #f0a53a;
+  --attention-ink: #f5b95e;
+  --attention-bg: rgb(240 165 58 / 0.16);
+  --destructive: #ff8577;
+  --destructive-bg: rgb(255 133 119 / 0.16);
+  --overlay: rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+/* §7.10. Запасной вид «Фокус»: меняются только токены. Literata в сборку не входит,
+   заголовок экрана берёт засечный шрифт системы. */
+[data-skin="focus"] {
+  --sidebar: #f4f3ed;
+  --primary: #b4532f;
+  --primary-hover: #9c4526;
+  --ring: #b4532f;
+  --sidebar-primary: #b4532f;
+  --sidebar-ring: #b4532f;
+  --primary-tint: #f8eae2;
+  --primary-ink: #8e3d1d;
+  --heading-font: "Literata", Georgia, "Times New Roman", serif;
+  --heading-weight: 500;
+}
+[data-skin="focus"] .dark {
+  --primary: #ffffff;
+  --primary-hover: #e3e6ea;
+  --ring: #ffffff;
+  --primary-ink: #ffffff;
+}
+
+/* Сопоставление семейства обложки с общими переменными мотивов. */
+[data-cover-family="bedroom"] {
+  --c-light: var(--cover-bedroom-light);
+  --c-dark: var(--cover-bedroom-dark);
+  --c-deep: var(--cover-bedroom-deep);
+  --c-glow: var(--cover-bedroom-glow);
+  --c-ink: var(--cover-bedroom-ink);
+  --c-alt: var(--cover-bedroom-alt);
+}
+[data-cover-family="lace"] {
+  --c-light: var(--cover-lace-light);
+  --c-dark: var(--cover-lace-dark);
+  --c-deep: var(--cover-lace-deep);
+  --c-glow: var(--cover-lace-glow);
+  --c-ink: var(--cover-lace-ink);
+  --c-alt: var(--cover-lace-alt);
+}
+[data-cover-family="party"] {
+  --c-light: var(--cover-party-light);
+  --c-dark: var(--cover-party-dark);
+  --c-deep: var(--cover-party-deep);
+  --c-glow: var(--cover-party-glow);
+  --c-ink: var(--cover-party-ink);
+  --c-alt: var(--cover-party-alt);
+}
+[data-cover-family="evening"] {
+  --c-light: var(--cover-evening-light);
+  --c-dark: var(--cover-evening-dark);
+  --c-deep: var(--cover-evening-deep);
+  --c-glow: var(--cover-evening-glow);
+  --c-ink: var(--cover-evening-ink);
+  --c-alt: var(--cover-evening-alt);
+}
+[data-cover-family="bath"] {
+  --c-light: var(--cover-bath-light);
+  --c-dark: var(--cover-bath-dark);
+  --c-deep: var(--cover-bath-deep);
+  --c-glow: var(--cover-bath-glow);
+  --c-ink: var(--cover-bath-ink);
+  --c-alt: var(--cover-bath-alt);
+}
+[data-cover-family="kitchen"] {
+  --c-light: var(--cover-kitchen-light);
+  --c-dark: var(--cover-kitchen-dark);
+  --c-deep: var(--cover-kitchen-deep);
+  --c-glow: var(--cover-kitchen-glow);
+  --c-ink: var(--cover-kitchen-ink);
+  --c-alt: var(--cover-kitchen-alt);
+}
+[data-cover-family="street"] {
+  --c-light: var(--cover-street-light);
+  --c-dark: var(--cover-street-dark);
+  --c-deep: var(--cover-street-deep);
+  --c-glow: var(--cover-street-glow);
+  --c-ink: var(--cover-street-ink);
+  --c-alt: var(--cover-street-alt);
+}
+[data-cover-family="office"] {
+  --c-light: var(--cover-office-light);
+  --c-dark: var(--cover-office-dark);
+  --c-deep: var(--cover-office-deep);
+  --c-glow: var(--cover-office-glow);
+  --c-ink: var(--cover-office-ink);
+  --c-alt: var(--cover-office-alt);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  /* Размер шрифта ставится на body, а не на html: корневой размер остаётся 16 px, и
+     отступы и высоты в rem совпадают с px из DESIGN §7.3. */
+  html {
+    @apply font-sans text-foreground antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-base;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  /* §7.8. Кольцо 2 px с зазором 2 px; на тёмном поддереве кольцо белое через --ring. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  /* §7.7. Значки lucide: линия 1,75. */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+  ::selection {
+    background: var(--primary-tint);
+  }
+}
+
+/* §7.8. Без движения по просьбе системы. Правило вне слоёв, поэтому сильнее утилит. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
+  }
+}

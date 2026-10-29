@@ -1,0 +1,17 @@
+{
+  "name": "@contentops/web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@contentops/ui": "workspace:*",
+    "@contentops/contracts": "workspace:*"
+  }
+}

@@ -1,0 +1,60 @@
+import { type Disk, formatBytes, type SystemState } from '@contentops/contracts'
+import { Progress } from '@contentops/ui/components/progress'
+import { SettingsRow, SettingsSection } from '@contentops/ui/components/settings-section'
+import { cn } from '@contentops/ui/lib/utils'
+import { useClock } from '@/data/api-session'
+import { backupWords } from './backup-words'
+
+interface SpaceSectionProps {
+  disks: readonly Disk[]
+  backup: SystemState['backup']
+}
+
+/** Полоса диска: синяя, янтарная ниже порога предупреждения, красная ниже остановки забора. */
+function toneOf(disk: Disk): string {
+  if (disk.free_bytes <= disk.stop_below_bytes) {
+    return '[&>[data-slot=progress-indicator]]:bg-destructive'
+  }
+  if (disk.free_bytes <= disk.warn_below_bytes) {
+    return '[&>[data-slot=progress-indicator]]:bg-attention'
+  }
+  return ''
+}
+
+function DiskBar({ disk }: { disk: Disk }) {
+  const used = 1 - disk.free_bytes / disk.total_bytes
+  return (
+    <span className="flex w-72 flex-col gap-1.5">
+      <span className="text-right text-sm tabular-nums">
+        свободно {formatBytes(disk.free_bytes)} из {formatBytes(disk.total_bytes)}
+      </span>
+      <Progress
+        aria-label={`Занято на ${disk.name}`}
+        value={used * 100}
+        className={cn('h-1.5', toneOf(disk))}
+      />
+    </span>
+  )
+}
+
+/** Место C: и E: с порогами, бэкап — отдельной строкой (§4.19). */
+export function SpaceSection({ disks, backup }: SpaceSectionProps) {
+  const now = useClock().now()
+  const words = backupWords(backup, now)
+  return (
+    <SettingsSection title="Место и бэкап">
+      {disks.map((disk) => (
+        <SettingsRow
+          key={disk.name}
+          label={disk.name}
+          detail={`предупреждение ${formatBytes(disk.warn_below_bytes)} · остановка забора ${formatBytes(disk.stop_below_bytes)}`}
+        >
+          <DiskBar disk={disk} />
+        </SettingsRow>
+      ))}
+      <SettingsRow label="Бэкап" detail={words.detail}>
+        <span className="text-muted-foreground">{words.value}</span>
+      </SettingsRow>
+    </SettingsSection>
+  )
+}

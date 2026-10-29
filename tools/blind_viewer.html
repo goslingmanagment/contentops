@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Слепой просмотр</title>
+<style>
+  :root { color-scheme: dark; --bg:#1c1c1e; --panel:#2a2a2d; --fg:#e8e8e8; --mut:#9a9a9a; --acc:#4f8cff; --ok:#3ccf6e; --warn:#ffb648; --bad:#ff5c5c; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font: 15px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button { font: inherit; color: inherit; background: var(--panel); border: 1px solid #444; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color:#777; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--acc); border-color: var(--acc); color:#fff; }
+  input, textarea { font: inherit; color: inherit; background:#1a1a1a; border:1px solid #444; border-radius:8px; padding:8px 10px; width:100%; }
+  textarea { resize: vertical; min-height: 64px; }
+  .muted { color: var(--mut); }
+  kbd { background:#3a3a3d; border-radius:4px; padding:1px 6px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  #intro, #done { max-width: 640px; margin: 6vh auto; padding: 0 20px; }
+  #intro h1, #done h1 { font-size: 22px; margin: 0 0 12px; }
+  #intro ol { padding-left: 20px; }
+  #intro li { margin: 6px 0; }
+  .check { padding: 8px 12px; border-radius: 8px; background: var(--panel); margin: 6px 0; }
+  .check.bad { border-left: 3px solid var(--bad); } .check.warn { border-left: 3px solid var(--warn); } .check.ok { border-left: 3px solid var(--ok); }
+  .row { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; margin: 10px 0; }
+
+  #trial { display:flex; height:100vh; height:100dvh; }
+  #stage { flex:1; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; background:#101010; }
+  #wrap { position:relative; }
+  #wrap video { position:absolute; inset:0; width:100%; height:100%; display:block; background:#000; }
+  #wrap video.hidden { opacity:0; pointer-events:none; }
+  #label { position:absolute; top:10px; left:10px; padding:4px 10px; border-radius:6px; background:rgba(0,0,0,.6); font-weight:700; letter-spacing:.06em; font-size:14px; pointer-events:none; }
+  #hud { position:absolute; bottom:10px; left:10px; right:10px; display:flex; justify-content:space-between; font-size:12px; color:#bbb; pointer-events:none; text-shadow:0 1px 2px #000; }
+  #loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; background:rgba(16,16,16,.92); min-width:300px; min-height:120px; white-space:nowrap; }
+  #bar { width: 260px; height: 6px; background:#333; border-radius:3px; overflow:hidden; } #bar i { display:block; height:100%; width:0; background:var(--acc); }
+  #panel { width: 300px; padding: 14px; background: var(--panel); display:flex; flex-direction:column; gap: 10px; overflow-y:auto; }
+  #panel h2 { font-size: 15px; margin:0; }
+  .sides { display:flex; gap:6px; } .sides button { flex:1; padding:10px 6px; font-weight:600; } .sides button.on { background:#3d3d42; border-color:#888; }
+  .rates { display:flex; flex-direction:column; gap:6px; }
+  .rates button { text-align:left; padding:9px 10px; } .rates button.on { border-color: var(--acc); background:#26324d; }
+  .rates button b { display:inline-block; width:18px; color: var(--mut); }
+  .keys { font-size:12px; color:var(--mut); line-height:1.7; }
+  #status { font-size:12px; color:var(--mut); }
+  .gate { font-size: 13px; color: var(--warn); }
+  @media (max-width: 900px) { #trial { flex-direction:column; } #panel { width:auto; max-height: 45vh; } }
+</style>
+</head>
+<body>
+
+<section id="intro">
+  <h1>Слепой просмотр сжатия видео</h1>
+  <p>Это проверка: заметна ли разница между оригиналом и сжатой копией. В каждой пробе один и тот же короткий фрагмент в двух версиях: <b>ОРИГИНАЛ</b> и <b>ВАРИАНТ</b>. Вы переключаетесь между ними, смотрите в движении и по кадрам, потом отвечаете, насколько разница мешает. Правильных ответов нет — в части проб версии одинаковы, в части разница грубая.</p>
+  <ol>
+    <li>Ноутбук или компьютер, нормальная яркость, масштаб браузера 100 %, лучше на весь экран (<kbd>F</kbd>).</li>
+    <li>Переключение: <kbd>пробел</kbd> или клик по видео. Пауза <kbd>K</kbd>, кадр назад/вперёд <kbd>,</kbd> <kbd>.</kbd>.</li>
+    <li>Оценка: клавиши <kbd>1</kbd>–<kbd>4</kbd>, дальше — <kbd>Enter</kbd>. Если что-то заметили — напишите, что именно и где.</li>
+    <li>Проб <span id="ntrials">…</span>, каждая ~30 секунд. Прерваться можно, прогресс сохраняется в этом браузере.</li>
+  </ol>
+  <div id="checks"></div>
+  <div class="row"><label style="flex:1">Как вас записать<br><input id="name" placeholder="Имя или ник" autocomplete="off"></label></div>
+  <div class="row"><button id="start" class="primary" disabled>Начать</button><button id="resume" hidden>Продолжить</button><span id="introNote" class="muted"></span></div>
+</section>
+
+<section id="trial" hidden>
+  <div id="stage">
+    <div id="wrap">
+      <video id="vref" muted playsinline preload="auto" disablepictureinpicture></video>
+      <video id="vtest" muted playsinline preload="auto" disablepictureinpicture class="hidden"></video>
+      <div id="label">ОРИГИНАЛ</div>
+      <div id="hud"><span id="hudL"></span><span id="hudR"></span></div>
+      <div id="loading"><div>Загрузка пары…</div><div id="bar"><i></i></div><div id="loadNote" class="muted" style="font-size:12px"></div></div>
+    </div>
+  </div>
+  <aside id="panel">
+    <h2>Проба <span id="pos"></span></h2>
+    <div class="sides"><button id="bRef">Оригинал</button><button id="bTest">Вариант</button></div>
+    <div class="row" style="margin:0"><button id="bPause">Пауза</button><button id="bPrev">‹ кадр</button><button id="bNext">кадр ›</button><button id="bFull">Экран</button></div>
+    <div class="gate" id="gate">Переключите хотя бы дважды и посмотрите фрагмент целиком.</div>
+    <div>Разница между оригиналом и вариантом:</div>
+    <div class="rates">
+      <button data-r="1"><b>1</b>Разницы не вижу</button>
+      <button data-r="2"><b>2</b>Вижу, но не мешает</button>
+      <button data-r="3"><b>3</b>Слегка мешает</button>
+      <button data-r="4"><b>4</b>Мешает</button>
+    </div>
+    <textarea id="comment" placeholder="Что именно и где: например, кожа стала пятнами, пропала фактура ткани, полосы в тенях"></textarea>
+    <button id="bNextTrial" class="primary" disabled>Дальше (Enter)</button>
+    <div class="keys">пробел / клик — переключить · K — пауза · , . — кадр · F — экран · 1–4 — оценка</div>
+    <div id="status"></div>
+  </aside>
+</section>
+
+<section id="done" hidden>
+  <h1>Готово, спасибо!</h1>
+  <p id="doneText"></p>
+  <div class="row"><button id="bCopy">Скопировать ответы</button><span id="copyNote" class="muted"></span></div>
+</section>
+
+<script>
+(async function () {
+  const $ = (s) => document.querySelector(s);
+  const BASE = location.origin + location.pathname.replace(/[^/]*$/, "");   // без логина/пароля из адреса: fetch такие URL не принимает
+  const U = (rel) => BASE + rel;
+  const RESULTS = "r/";                       // PUT сюда: r/<session>.json (nginx dav или blind_serve.py)
+  const LABELS = { 1: "Разницы не вижу", 2: "Вижу, но не мешает", 3: "Слегка мешает", 4: "Мешает" };
+  let M;
+  try { M = await (await fetch(U("manifest.json"), { cache: "no-store" })).json(); }
+  catch (e) { $("#checks").innerHTML = '<div class="check bad">Не удалось загрузить manifest.json</div>'; return; }
+  const KEY = "blind:" + M.generated;
+  $("#ntrials").textContent = M.trials.length;
+
+  // ---------- сеанс ----------
+  const loadS = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
+  const saveS = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+  let S = loadS();
+  const rng = (seed) => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const shuffle = (a, r) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const device = () => ({
+    ua: navigator.userAgent, platform: navigator.platform, cores: navigator.hardwareConcurrency || null,
+    screen: [screen.width, screen.height], dpr: window.devicePixelRatio, viewport: [innerWidth, innerHeight],
+    colorDepth: screen.colorDepth, hdr: matchMedia("(dynamic-range: high)").matches, touch: matchMedia("(pointer: coarse)").matches,
+    h264: document.createElement("video").canPlayType('video/mp4; codecs="avc1.640033"'),
+  });
+
+  // ---------- проверки на старте ----------
+  const d = device();
+  const checks = [];
+  if (!d.h264) checks.push(["bad", "Браузер не подтверждает воспроизведение H.264 — попробуйте Chrome или Safari."]);
+  if (d.touch || innerWidth < 900) checks.push(["warn", "Похоже на телефон или планшет. Нужен ноутбук или компьютер: видео показывается пиксель в пиксель."]);
+  if (Math.abs(d.dpr - Math.round(d.dpr)) > 0.02) checks.push(["warn", `Масштаб браузера, похоже, не 100 % (DPR ${d.dpr.toFixed(2)}). Сбросьте: Cmd+0 / Ctrl+0.`]);
+  if (!checks.length) checks.push(["ok", `Браузер подходит. Экран ${d.screen[0]}×${d.screen[1]}, плотность ${d.dpr}×.`]);
+  $("#checks").innerHTML = checks.map(([c, t]) => `<div class="check ${c}">${t}</div>`).join("");
+  $("#start").disabled = !d.h264;
+  if (S && !S.finished && S.responses.length < S.order.length) {
+    $("#resume").hidden = false; $("#name").value = S.name;
+    $("#introNote").textContent = `Есть незаконченный сеанс: ${S.responses.length} из ${S.order.length}.`;
+  }
+  const q = new URLSearchParams(location.search); if (q.get("n")) $("#name").value = q.get("n");
+
+  $("#start").onclick = () => {
+    const name = $("#name").value.trim(); if (!name) { $("#name").focus(); return; }
+    const id = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    let seed = 0; for (const ch of id) seed = (seed * 31 + ch.charCodeAt(0)) | 0;
+    S = { v: 1, session: id, name, manifest: M.generated, device: d, order: shuffle(M.trials.map(t => t.id), rng(seed)),
+          started: new Date().toISOString(), finished: null, responses: [] };
+    saveS(); begin();
+  };
+  $("#resume").onclick = () => { S.device_resumed = device(); begin(); };
+
+  // ---------- проба ----------
+  const T = Object.fromEntries(M.trials.map(t => [t.id, t]));
+  const vr = $("#vref"), vt = $("#vtest");
+  const blobs = new Map();                    // url -> Promise<objectURL>
+  const progress = new Map();                 // url -> {got,total,last,ctrl,done}; виден и для фоновой подкачки
+  const fetchBlob = (url) => {
+    if (blobs.has(url)) return blobs.get(url);
+    const st = { got: 0, total: 0, last: performance.now(), ctrl: null, done: false }; progress.set(url, st);
+    const p = (async () => {
+      const chunks = [];
+      for (let attempt = 0; ; attempt++) {
+        st.ctrl = new AbortController();
+        try {
+          const hdr = st.got ? { Range: `bytes=${st.got}-` } : {};       // докачка с места обрыва
+          const res = await fetch(U(url), { cache: "no-store", headers: hdr, signal: st.ctrl.signal });
+          if (!res.ok) throw new Error(url + " " + res.status);
+          if (st.got && res.status !== 206) { chunks.length = 0; st.got = 0; }   // сервер без Range отдал файл целиком — начинаем заново
+          if (!st.got) st.total = +res.headers.get("content-length") || 0;
+          const reader = res.body.getReader();
+          for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); st.got += value.length; st.last = performance.now(); }
+          if (st.total && st.got < st.total) throw new Error("обрыв");
+          st.done = true;
+          return URL.createObjectURL(new Blob(chunks, { type: "video/mp4" }));
+        } catch (e) {
+          if (attempt >= 6) throw e;
+          await new Promise(r => setTimeout(r, 1500)); st.last = performance.now();
+        }
+      }
+    })();
+    p.catch(() => { blobs.delete(url); progress.delete(url); });
+    blobs.set(url, p); return p;
+  };
+  // сторож: поток молчит 25 с — рвём и докачиваем по Range
+  setInterval(() => { const now = performance.now(); for (const st of progress.values()) if (!st.done && st.ctrl && now - st.last > 25000) { st.last = now; st.ctrl.abort(); } }, 2000);
+  const dropBlobs = (keep) => { for (const [u, p] of blobs) if (!keep.has(u)) { p.then(URL.revokeObjectURL).catch(() => {}); blobs.delete(u); } };
+
+  let cur = null, side = "ref", toggles = 0, steps = 0, pauses = 0, t0 = 0, loops = 0, rating = 0, fps = 30, running = false, userPaused = false;
+  const vis = () => side === "ref" ? vr : vt, hid = () => side === "ref" ? vt : vr;
+  const setSide = (s, count = true) => {
+    if (s === side) return; side = s; if (count) toggles++;
+    vr.classList.toggle("hidden", s !== "ref"); vt.classList.toggle("hidden", s !== "test");
+    $("#label").textContent = s === "ref" ? "ОРИГИНАЛ" : "ВАРИАНТ";
+    $("#bRef").classList.toggle("on", s === "ref"); $("#bTest").classList.toggle("on", s === "test");
+    if (vis().paused) hid().currentTime = vis().currentTime;   // на паузе — точная досинхронизация; в движении её держит подстройка скорости
+    gate();
+  };
+  const layout = () => {
+    if (!cur) return;
+    const st = $("#stage").getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const w1 = cur.w / dpr, h1 = cur.h / dpr;             // размер 1:1 в CSS-пикселях
+    const k = Math.min(1, st.width / w1, st.height / h1);
+    $("#wrap").style.width = (w1 * k) + "px"; $("#wrap").style.height = (h1 * k) + "px";
+    cur._scale = k;
+    $("#hudR").textContent = k >= 0.999 ? "масштаб 1:1" : `масштаб ${k.toFixed(2)} — нажмите F`;
+  };
+  addEventListener("resize", layout);
+  const gate = () => {
+    const ok = toggles >= 2 && loops >= 1;
+    $("#gate").hidden = ok;
+    document.querySelectorAll(".rates button").forEach(b => b.disabled = !ok);
+    $("#bNextTrial").disabled = !(ok && rating);
+  };
+  const playBoth = async () => { userPaused = false; try { await Promise.all([vr.play(), vt.play()]); } catch (e) {} };
+  const pauseBoth = () => { userPaused = true; vr.pause(); vt.pause(); hid().currentTime = vis().currentTime; };
+  // браузер сам ставит видео без звука на паузу в скрытой вкладке — при возврате продолжаем
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") return; layout(); if (running && !userPaused && vis().paused) playBoth(); });
+  setInterval(() => { if (running && !userPaused && vis().paused && vt.paused && document.visibilityState === "visible" && !vis().ended) playBoth(); }, 1000);
+  const restart = () => { vr.currentTime = 0; vt.currentTime = 0; loops++; gate(); playBoth(); };
+  let restarting = false;
+  const onEnded = () => { if (restarting) return; restarting = true; restart(); setTimeout(() => restarting = false, 200); };
+  vr.addEventListener("ended", onEnded); vt.addEventListener("ended", onEnded);
+  // мягкая досинхронизация без перемоток: скрытому видео чуть меняем скорость
+  setInterval(() => {
+    if (!running || vis().paused) return;
+    const dlt = vis().currentTime - hid().currentTime;
+    hid().playbackRate = dlt > 0.006 ? 1.06 : dlt < -0.006 ? 0.94 : 1;
+    $("#hudL").textContent = `${vis().currentTime.toFixed(2)} с · переключений ${toggles}`;
+  }, 100);
+  const step = (dir) => {
+    if (!vis().paused) { pauseBoth(); pauses++; }
+    const t = Math.max(0, Math.min(vis().duration - 1 / fps / 2, vis().currentTime + dir / fps));
+    vr.currentTime = t; vt.currentTime = t; steps++;
+    $("#hudL").textContent = `кадр ${Math.round(t * fps) + 1} из ${cur.frames} · пауза`;
+  };
+  const togglePause = () => { if (vis().paused) playBoth(); else { pauseBoth(); pauses++; $("#hudL").textContent = `кадр ${Math.round(vis().currentTime * fps) + 1} из ${cur.frames} · пауза`; } };
+
+  async function showTrial(i) {
+    running = false;
+    const id = S.order[i]; cur = T[id]; fps = cur.fps || 30;
+    toggles = 0; steps = 0; pauses = 0; loops = 0; rating = 0; $("#comment").value = ""; $("#hudL").textContent = "";
+    document.querySelectorAll(".rates button").forEach(b => b.classList.remove("on"));
+    $("#pos").textContent = `${i + 1} из ${S.order.length}`;
+    layout();
+    $("#loading").hidden = false; $("#bar i").style.width = "0"; $("#loadNote").textContent = "";
+    const next = S.order[i + 1] ? T[S.order[i + 1]] : null, next2 = S.order[i + 2] ? T[S.order[i + 2]] : null;
+    dropBlobs(new Set([cur.ref, cur.test, next && next.ref, next && next.test, next2 && next2.ref, next2 && next2.test].filter(Boolean)));
+    const tl = performance.now(); let got0 = -1;
+    const tick = setInterval(() => {
+      const a = [cur.ref, cur.test].map(u => progress.get(u)).filter(Boolean);
+      const got = a.reduce((s, x) => s + x.got, 0), tot = a.reduce((s, x) => s + x.total, 0);
+      if (got0 < 0) got0 = got;
+      const sp = (got - got0) / Math.max(0.5, (performance.now() - tl) / 1000);
+      $("#bar i").style.width = tot ? (100 * got / tot) + "%" : "0";
+      $("#loadNote").textContent = tot ? `${(got / 1e6).toFixed(0)} из ${(tot / 1e6).toFixed(0)} МБ · ${(sp / 1e6).toFixed(1)} МБ/с${sp < 1.5e6 ? " — медленно; если включён VPN, выключите его для этого сайта" : ""}` : "соединение…";
+    }, 250);
+    let urls;
+    try { urls = await Promise.all([fetchBlob(cur.ref), fetchBlob(cur.test)]); }
+    catch (e) { clearInterval(tick); $("#loadNote").textContent = "Ошибка загрузки: " + e.message + " — обновите страницу"; return; }
+    clearInterval(tick);
+    vr.src = urls[0]; vt.src = urls[1];
+    await Promise.all([vr, vt].map(v => new Promise(r => v.readyState >= 2 ? r() : v.addEventListener("loadeddata", r, { once: true }))));
+    layout(); setSide("ref", false); $("#loading").hidden = true;
+    t0 = performance.now(); running = true; restart(); loops = 0; gate();
+    // подкачка в фоне по одному файлу, чтобы не делить канал: следующая пара, потом ещё одна
+    [next && next.ref, next && next.test, next2 && next2.ref, next2 && next2.test].filter(Boolean)
+      .reduce((chain, u) => chain.then(() => fetchBlob(u)).catch(() => {}), Promise.resolve());
+  }
+
+  const pq = (v) => { const q = v.getVideoPlaybackQuality && v.getVideoPlaybackQuality(); return q ? [q.droppedVideoFrames, q.totalVideoFrames] : null; };
+  async function send() {
+    $("#status").textContent = "отправка…";
+    try {
+      const r = await fetch(U(RESULTS + S.session + ".json"), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(S) });
+      S.sent = r.ok ? new Date().toISOString() : null; $("#status").textContent = r.ok ? "ответы сохранены на сервере" : `сервер ответил ${r.status} — ответы остались в браузере`;
+    } catch (e) { S.sent = null; $("#status").textContent = "нет связи с сервером — ответы остались в браузере"; }
+    saveS();
+  }
+  async function nextTrial() {
+    if ($("#bNextTrial").disabled) return;
+    const i = S.responses.length;
+    S.responses.push({ trial: S.order[i], rating, label: LABELS[rating], comment: $("#comment").value.trim(),
+      toggles, loops, pauses, steps, seconds: Math.round((performance.now() - t0) / 100) / 10, scale: cur._scale,
+      fullscreen: !!document.fullscreenElement, dpr: window.devicePixelRatio, dropped: { ref: pq(vr), test: pq(vt) }, at: new Date().toISOString() });
+    pauseBoth(); saveS(); send();
+    if (i + 1 < S.order.length) showTrial(i + 1); else finish();
+  }
+  function finish() {
+    S.finished = new Date().toISOString(); saveS(); send();
+    $("#trial").hidden = true; $("#done").hidden = false;
+    if (document.fullscreenElement) document.exitFullscreen();
+    $("#doneText").textContent = `${S.name}, ${S.responses.length} проб записаны. Если сервер был недоступен, скопируйте ответы и отправьте их сообщением.`;
+  }
+  $("#bCopy").onclick = async () => { try { await navigator.clipboard.writeText(JSON.stringify(S)); $("#copyNote").textContent = "скопировано"; } catch (e) { $("#copyNote").textContent = "не вышло — откройте консоль: localStorage"; } };
+
+  function begin() {
+    $("#intro").hidden = true; $("#trial").hidden = false;
+    $("#bRef").onclick = () => setSide("ref"); $("#bTest").onclick = () => setSide("test");
+    $("#wrap").onclick = () => setSide(side === "ref" ? "test" : "ref");
+    $("#bPause").onclick = togglePause; $("#bPrev").onclick = () => step(-1); $("#bNext").onclick = () => step(1);
+    $("#bFull").onclick = () => document.fullscreenElement ? document.exitFullscreen() : $("#trial").requestFullscreen().catch(() => {});
+    document.querySelectorAll(".rates button").forEach(b => b.onclick = () => { rating = +b.dataset.r; document.querySelectorAll(".rates button").forEach(x => x.classList.toggle("on", x === b)); gate(); if (rating >= 2) $("#comment").focus(); else b.blur(); });
+    $("#bNextTrial").onclick = nextTrial;
+    document.querySelectorAll("#panel button:not(.rates button)").forEach(b => b.addEventListener("click", () => b.blur()));  // чтобы пробел/Enter не «нажимали» кнопку повторно
+    addEventListener("keydown", (e) => {
+      if (e.target === $("#comment")) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) nextTrial(); return; }
+      if (e.target.tagName === "INPUT") return;
+      const k = e.key, c = e.code || "";          // e.code не зависит от раскладки
+      if (k === " " || c === "Space") { e.preventDefault(); setSide(side === "ref" ? "test" : "ref"); }
+      else if (c === "KeyK" || c === "KeyP" || k === "k" || k === "K") togglePause();
+      else if (c === "Comma" || k === ",") step(-1); else if (c === "Period" || k === ".") step(1);
+      else if (c === "KeyF" || k === "f" || k === "F") $("#bFull").click();
+      else if (/^Digit[1-4]$/.test(c) || "1234".includes(k) && k) { const b = document.querySelector(`.rates button[data-r="${c.startsWith("Digit") ? c[5] : k}"]`); if (b && !b.disabled) b.click(); }
+      else if (k === "Enter") nextTrial();
+      else if (k === "ArrowLeft") setSide("ref"); else if (k === "ArrowRight") setSide("test");
+    });
+    showTrial(S.responses.length);
+  }
+})();
+</script>
+</body>
+</html>

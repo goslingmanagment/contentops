@@ -1,0 +1,40 @@
+{
+ "seg_s": 5,
+ "anchor_cfg": "crf28-qm-t1",
+ "delivery": {"preset": "slow", "x264_params": "psy=0", "crf": 8, "probe_crfs": [8, 10, 12], "max_delta": 0.3},
+ "probe_scenes": ["hel09", "hel23"],
+ "scenes": {
+  "hel09": {}, "hel04": {}, "hel19": {}, "hel23": {}, "hel20": {}, "hel18": {},
+  "hel17": {}, "hel02": {}, "hel08": {}, "hel28": {}, "hel27": {}, "hel22": {}
+ },
+ "trials": [
+  {"scene": "hel09", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel04", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel19", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel23", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel20", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel18", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel17", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel02", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel08", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel28", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel27", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel22", "test": "crf28-qm-t1", "kind": "test"},
+  {"scene": "hel09", "test": "crf26-qm-t1", "kind": "test"},
+  {"scene": "hel04", "test": "crf26-qm-t1", "kind": "test"},
+  {"scene": "hel19", "test": "crf26-qm-t1", "kind": "test"},
+  {"scene": "hel23", "test": "crf26-qm-t1", "kind": "test"},
+  {"scene": "hel20", "test": "crf26-qm-t1", "kind": "test"},
+  {"scene": "hel18", "test": "crf26-qm-t1", "kind": "test"},
+  {"scene": "hel09", "test": "orig", "kind": "neg"},
+  {"scene": "hel23", "test": "orig", "kind": "neg"},
+  {"scene": "hel17", "test": "orig", "kind": "neg"},
+  {"scene": "hel28", "test": "orig", "kind": "neg"},
+  {"scene": "hel04", "test": "crf40-t1", "kind": "pos"},
+  {"scene": "hel20", "test": "crf40-t1", "kind": "pos"},
+  {"scene": "hel22", "test": "crf40-t1", "kind": "pos"},
+  {"scene": "hel09", "test": "crf28-qm-t1", "kind": "repeat"},
+  {"scene": "hel19", "test": "crf28-qm-t1", "kind": "repeat"},
+  {"scene": "hel08", "test": "crf28-qm-t1", "kind": "repeat"}
+ ]
+}

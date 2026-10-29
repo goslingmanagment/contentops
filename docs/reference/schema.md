@@ -1,0 +1,1502 @@
+# Схема данных ядра
+
+Сведено 08.09.2026 на коммите `1955e08` по SPEC §4 «Таблицы ядра». Основание:
+четыре независимых проекта того же дня — три варианта (каталог, конвейер и Hub,
+скептик) и проект кодекса (`~/Documents/Codex/2026-09-08/contentops-schema/`).
+Правило сведения: модель версий, составов и истории — из проекта кодекса; каждая
+таблица сверх ядра держится на сценарии из PRD или SPEC; глубина протоколов хранения
+— уровень пилота на одну модель, не объектного хранилища.
+
+Это задание на миграции по этапам PLAN; при расхождении с SPEC §4
+побеждает SPEC. Уточнено 11.09.2026 по итогам конкурентного планирования (два
+независимых планировщика, четыре раунда сверки, решения владельца 11.09): схема §9. При
+расхождении схема §9 сильнее схемы §1–§7; после этапа 1 колонки живут в миграциях и золотом
+`schema.sql`, этот файл ужимается до принципов, транзакций, сценариев и решений. SQL не выполнялся; проверки конкурентности, падений и
+восстановления — PLAN этапы 1–2. Имена таблиц и колонок — латиницей, множественное
+число, snake_case; всё остальное по-русски. Ссылка «§N» без приписки ведёт в SPEC,
+«схема §N» — в раздел этого файла.
+
+## 1. Принципы
+
+1. **Ключи и модель.** Внутренний ключ `id uuid DEFAULT uuidv7()`. У доменных таблиц
+   `PRIMARY KEY (model_id, id)`, все доменные связи — составные
+   `FOREIGN KEY (model_id, x_id)`. Это защита от смешивания данных двух моделей, не
+   право доступа: кто что читает — решают код и отрицательные тесты (SPEC §11.1).
+   Без `model_id` живут только таблицы, которые не содержат контента модели:
+   модели и люди, словарь известных тегов, байты и их технические описания,
+   производные, версии конвейера, бэкап и сверка хранилища.
+2. **Номер выдаёт таблица-счётчик** в той же транзакции, что и создание объекта;
+   отклонённый черновик номер не тратит, удалённый объект оставляет tombstone.
+   Легаси: сначала проход по метаданным замороженного снимка, резерв старых номеров и
+   счётчик выше фактического максимума, потом байты (SPEC §6.4).
+3. **Логический файл и его версия — разные строки.** `assets` — стабильная единица
+   («мастер PPV-073», «кадр ed07»), `asset_versions` — неизменяемая редакция с
+   хэшем мастера. Правка даёт новую версию, старые строки не меняются. Участие файла
+   в объекте — `item_memberships`: роль, номер, порядок, отбор, назначение. Владелец
+   у файла один, остальные объекты (подборки `PRM`) держат ссылки.
+4. **Состав действия неизменяем.** Строка плана, выдача, передача подрядчику и сдача
+   кастома ссылаются на закрытый состав конкретных версий (`asset_manifests`).
+   Решение владельца 08.09.2026: подготовленный план держит выбранную версию, пока
+   человек явно её не заменит; живая подборка `PRM` следует текущей версии, а
+   подготовленная и переданная выгрузка закреплены.
+5. **Факты дописываются, состояния вычисляются.** Улики размещений, наблюдения Hub,
+   квитанции выдач, журнал действий только вставляются. Исправление — новая строка со
+   ссылкой на прежнюю; у прежней не больше одного преемника.
+6. **Байты вне модели, доступ через версию.** Ссылкой на блоб считаются: хэш мастера
+   любой версии (включая старые), хэши нерешённого черновика, выход незавершённой
+   работы. Производные ссылкой не являются. Карантин — только при нуле ссылок, 30
+   дней, чистка после повторной проверки.
+7. **Разметка — типизированные поля со своим статусом у каждого.** Предложения ИИ
+   лежат отдельно и применяются только к неподтверждённому полю с проверкой версии
+   поля; «подтвердить всю разметку» подтверждает ровно те версии полей, которые видел
+   человек.
+8. **Зеркало Hub** — типизированные текущие строки плюс журнал наблюдений по
+   порядковому номеру; уникальности по хэшу состояния нет, чтобы A→B→A давало три
+   наблюдения.
+9. **Фон живёт в доменной таблице** `work_operations`: аренда, поколение аренды,
+   попытка, checkpoint, отпечаток входа. Исполнитель сам забирает созревшие строки
+   (`FOR UPDATE SKIP LOCKED`), отдельной очереди нет (pg-boss снят 30.09.2026).
+10. **Пороги §13 — строки настроек**, а не константы в коде.
+11. **Время** — `timestamptz` в UTC; слот плана — `date` и `time`; длительности —
+    `bigint` миллисекунд; SHA-256 — `bytea` из 32 байт, hex только на границе API и в
+    именах файлов.
+12. **Списки значений** — везде `text` + CHECK, enum Postgres не используются
+    (11.09): значение enum нельзя убрать и нельзя использовать в той транзакции, где
+    оно добавлено; один список в коде, тест сверяет с ним каждый CHECK.
+
+## 2. Состав — 69 таблиц (30.09.2026)
+
+| Область | Таблицы |
+|---|---|
+| Модель и доступ | `models`, `accounts`, `surfaces`, `promo_channels`, `principals`, `principal_grants`, `sessions`, `api_tokens`, `id_counters`, `policy_settings`, `pipeline_versions` |
+| Каталог | `content_items`, `assets`, `asset_versions`, `item_memberships`, `asset_manifests`, `asset_manifest_entries`, `aliases`, `provenance`, `tags`, `item_tags`, `annotation_fields`, `annotation_runs`, `annotation_suggestions`, `chronology_entries`, `platform_texts` |
+| Байты и производные | `blobs`, `blob_probes`, `blob_phashes`, `master_checks`, `storage_operations`, `rendition_generations`, `rendition_artifacts` |
+| Источники, приёмка, фон | `sources`, `source_objects`, `source_paths`, `source_revisions`, `inbox_groups`, `inbox_drafts`, `inbox_draft_candidates`, `web_uploads`, `work_operations`, `legacy_claims`, `legacy_number_claims`, `review_cases` |
+| План и выдача | `ppv_releases`, `posting_plan_rows`, `download_receipts`, `download_receipt_entries` |
+| Размещения и Hub | `placements`, `placement_assets`, `placement_evidence`, `hub_sync_state`, `hub_observations`, `hub_posts`, `hub_post_attachments`, `hub_raw_media`, `hub_vault_albums`, `hub_vault_media` |
+| Заказы кастомов | `custom_orders`, `custom_order_messages`, `custom_order_deliveries`, `custom_order_revisions` |
+| Промо | `contractors`, `contractor_profiles`, `promo_deliveries` |
+| Служебные | `idempotency_keys`, `action_log`, `backup_checkpoints` |
+
+Чего нет намеренно: `tasks` и `week_templates` (решение 05.09: задачи — выборка строк
+плана, норма недели — JSON на странице), матрицы прав (роль плюс список моделей),
+хранимого статуса размещения (§5), таблицы состава промо-подборки
+(это членство файла в объекте `PRM`), таблиц удержания файлов на время выдачи и
+файловых замков (мастер с живой версией не удаляется никогда, производные
+пересобираемы), редакций строки плана (изменения — в журнале, выданные имена — в
+квитанции). Убрано 11.09.2026 (схема §9.1): `rendition_requests`, `promo_packages`,
+`hub_sync_runs`, `backup_runs`, `storage_findings`, `hub_coverage`, `placement_checks`.
+
+## 3. Таблицы
+
+Изменения 11.09.2026 по таблицам — в схеме §9.2; там, где схема §9 говорит иначе, она сильнее.
+Колонки 13 таблиц `0001_foundation` (схема §9.5) и состояния `storage_operations` сведены
+со схемой §9 30.09.2026.
+
+Сквозные соглашения: `created_at timestamptz NOT NULL DEFAULT now()`;
+`created_by` → `principals` там, где действие инициировал человек или агент;
+`row_version bigint` у всего, что правит человек на экране (запрос несёт ожидаемую
+версию, потерянное обновление даёт конфликт); FK `ON DELETE RESTRICT`.
+
+### 3.1. Модель и доступ
+
+**`models`** — корень изоляции и рядов ID (§4, §11.1). `id`, `code` (`lora`;
+UNIQUE; в URL), `title`, `timezone` (`Europe/Moscow`), `created_at`, `archived_at`.
+Счётчика изменений каталога нет: индекс — view `catalog_index`, браузер обновляет
+снимок модели целиком по ETag (§12.0).
+
+**`accounts`** — страница модели (§4). `id`, `model_id`, `code` (`lora-1`, `lora-of`;
+UNIQUE глобально — код попадает в имена файлов), `platform` (`fansly | onlyfans`),
+`title`, `hub_page_ref` (UNIQUE; по нему приходят строки Hub), `week_norm jsonb`
+(норма недели, §4; проверяется по `schema_version`), `default_assignee_id`,
+`default_uniq_level`, `archived_at`, `row_version`. UNIQUE `(model_id, code)`.
+Политики второго человека нет: объект с `has_second_person` на OnlyFans не ставится (§7).
+
+**`surfaces`** — место публикации вместе с аккаунтом или внешний канал (§4, §7).
+`id`, `model_id`, `account_id?`, `promo_channel_id?`, `kind`
+(`wall | fyp | story | vault | mass_dm | external`), `auto_match boolean`.
+CHECK ровно одно из `account_id` / `promo_channel_id`;
+CHECK `auto_match = false OR kind IN ('wall','fyp','vault')` — исключение сториз и
+рассылки из автосверки (решение 06.09) держится схемой;
+UNIQUE NULLS NOT DISTINCT `(account_id, promo_channel_id, kind)`; UNIQUE
+`(model_id, account_id, id)` — цель FK `(model_id, account_id, surface_id)` у строк
+плана и размещений: поверхность всегда своей страницы.
+
+**`promo_channels`** — папки каналов раздела «Промо» (§7.1). `id`, `model_id`, `code`,
+`title`, `archived_at`. UNIQUE `(model_id, code)`.
+
+**`principals`** — люди и агенты (§11.1). `id`, `kind` (`human | agent`), `login`
+(UNIQUE), `display_name`, `role` (`owner | manager | reader`), `password_hash`
+(argon2; CHECK только у людей), `ui_skin` (`blue | focus`, по умолчанию `blue`; вид
+интерфейса, DESIGN §7.10), `disabled_at`, `created_at`.
+
+**`principal_grants`** — область прав (§11.1): права на модель, прав на страницу нет.
+`id`, `principal_id`, `model_id`, `granted_at`, `granted_by`, `revoked_at`.
+Частичный UNIQUE `(principal_id, model_id) WHERE revoked_at IS NULL` — один живой
+грант. Историческая выдача остаётся строкой.
+
+**`sessions`** — парольные сессии людей, 30 дней (§12.0): `id`, `principal_id`,
+`token_hash` (UNIQUE), `created_at`, `expires_at`, `last_seen_at`, `revoked_at`,
+`replaced_by_id`. **`api_tokens`** — токены агентов: `id`, `principal_id`, `name`,
+`token_hash` (UNIQUE), `token_prefix`, `created_at`, `expires_at`, `revoked_at`,
+`last_used_at`.
+
+**`id_counters`** — живой счётчик (§4.1, §6.4). PK `(model_id, type)`,
+`next_number integer CHECK (>= 1)` (начальный задаёт bootstrap),
+`legacy_reserved_at timestamptz?`, `legacy_reserved_work_id?` (работа `import_parse`,
+поставившая отметку), `updated_at`. Выдача:
+`UPDATE … SET next_number = next_number + 1 … RETURNING next_number - 1` в
+транзакции принятия. Легаси: `reserve(model, type, n)` поднимает счётчик до
+`GREATEST(next_number, n + 1)`; сам номер занимает строка `content_items`.
+`legacy_reserved_at` ставит работа `import_parse` после полного прохода по читаемым
+источникам (этап 3, §6.4) или bootstrap для типа без легаси; пока он пуст у типа, у
+которого по конфигурации есть легаси, приёмка номер не выдаёт.
+
+**`policy_settings`** — пороги §13 и выключатели SPEC §8. `id`, `model_id?` (NULL —
+глобальная строка: выключатели и пороги защиты входа SPEC §11.1; общий запрет
+сильнее разрешения по модели), `account_id?`, `item_type?`, `key`, `value jsonb?`,
+`updated_at`, `updated_by`. UNIQUE NULLS NOT DISTINCT `(model_id, account_id,
+item_type, key)`; CHECK: строка без модели не несёт `account_id`. Приоритет:
+модель+аккаунт+тип → модель+аккаунт → модель+тип → модель → глобально; SQL NULL —
+не задано, то есть выключено; JSON `null` отклоняется; валидатор на каждый ключ;
+сидов нет. Ключи: `too_early_days`, `phash_suggest_threshold`, `intake_auto_accept`,
+`hub_candidate_tolerance`, `hub_exact_duration_ms`, `hub_wait_window`,
+`hub_not_out_window`, `hub_vault_recheck` (SPEC §7), `annotation.*` (SPEC §8.3),
+`import_batch_scope` (схема §9.7).
+Порог меняется строкой, не миграцией; решения хранят снимок разрешённых значений и
+версий, прошлые значения — в журнале.
+
+**`pipeline_versions`** — что означает строка `pipeline_version`. `version` (PK),
+`ffmpeg`, `svtav1`, `libvips`, `sharp`, `phash_algo`, `master_recipe jsonb`
+(CRF 24, preset 6, tune 1, qm, GOP — §9.2), `rendition_recipes jsonb` (§9.3),
+`recipe_digest` (хэш канонического JSON рецептов), `activated_at`,
+`is_current` (частичный UNIQUE — ровно одна). Смена профиля мастера или производной —
+новая строка и новый `pipeline_version`.
+
+### 3.2. Каталог
+
+**`content_items`** — объект каталога (§4, §4.1).
+
+| Колонка | Тип | Смысл |
+|---|---|---|
+| `id`, `model_id` | uuid | PK `(model_id, id)` |
+| `type` | enum | `PPV SET SXT CUS FYP LIFE RAW PRM` |
+| `number` | integer | публичный номер; форма с паддингом вычисляется |
+| `title` | text? | русское название (naming §4); статус — в `annotation_fields` |
+| `title_en` | text? | необязательное короткое английское название, 2–5 слов, словарь как в хэштегах vault (naming §4); отдельный статус — в `annotation_fields` |
+| `description` | text? | описание |
+| `ppv_kind` | text? | `bundle \| dm`; CHECK только у PPV |
+| `raw_purpose` | text? | назначение пачки RAW: `fyp \| ppv \| mass_dm \| unknown` |
+| `shot_on` | date? | день съёмки (EXIF или подтверждённый) |
+| `cover_membership_id` | uuid? | обложка карточки; FK отложенный |
+| `has_second_person` | boolean | флаг «лицо / второй человек» (§4, §7) |
+| `second_person_verified_at/by` | ? | отметка верификации; где ей место — §13 |
+| `name_in_media` | text? | `yes \| no \| unknown` — «имя есть / нет» у CUS без заказа; у CUS с заказом значение берётся из `custom_orders.name_in_media` |
+| `created_from_group_id` | uuid? | группа приёмки, из которой создан |
+| `created_from_draft_id` | uuid? | черновик, если файл один |
+| `origin` | text | `intake \| import \| manual` |
+| `merged_into_item_id` | uuid? | при слиянии — выживший объект |
+| `deleted_at/by`, `delete_reason` | ? | tombstone |
+| `tags_cache` | text[] | кэш из `item_tags` (триггер) для компактного индекса |
+| `markup_state` | text | кэш: `draft \| partial \| confirmed` |
+| `search_tsv` | tsvector STORED | название и описание, русский и английский |
+| `row_version`, `created_at/by`, `updated_at` | | |
+
+Slug в `content_items` не хранится: при скачивании вычисляется из заполненного
+`title_en`, иначе — фиксированным транслитом `title` (naming §4).
+
+Ключи: UNIQUE `(model_id, type, number)` — действует и на tombstone;
+UNIQUE `(model_id, created_from_group_id)` — одна группа даёт не больше одного
+объекта (две команды по половинам папки не создадут две карточки);
+CHECK `(type = 'PPV') = (ppv_kind IS NOT NULL)`;
+CHECK `merged_into_item_id IS NULL OR deleted_at IS NOT NULL`;
+составной FK на `merged_into_item_id` — слияние только внутри модели.
+Индексы: `(model_id, type, number)`; `(model_id, updated_at DESC)`; частичный
+`(model_id, type) WHERE deleted_at IS NULL`; GIN `search_tsv`; GIN `tags_cache`;
+`(model_id, shot_on)`.
+
+Смена типа после выдачи номера — не UPDATE: правильная переклассификация создаёт
+новый объект и перенаправление, прежний ID остаётся алиасом.
+
+**`assets`** — логический файл (§4). `id`, `model_id`, `created_in_item_id`
+(неизменяемый; объект, в котором файл появился), `media_kind` (`video | image`),
+`current_version_id`, `variant_kind` (`none | uniq`), `variant_no?`, `uniq_level?`
+(`soft | trim | mirror`), `retired_at`, `created_at/by`.
+FK `(model_id, id, current_version_id)` → `asset_versions (model_id, asset_id, id)`
+DEFERRABLE; CHECK `(variant_kind = 'uniq') = (variant_no IS NOT NULL AND uniq_level IS NOT NULL)`;
+частичный UNIQUE `(model_id, created_in_item_id, variant_no) WHERE variant_kind = 'uniq'` —
+`FYP-0012/u2`. Уникальная версия FYP — отдельный ассет с происхождением от мастера;
+её переделка — следующая версия этого ассета (`u2_v2`). Самостоятельный новый монтаж
+— новый объект.
+
+**`asset_versions`** — неизменяемая редакция (§3, §4). `id`, `model_id`, `asset_id`,
+`version_no` (с 1), `master_sha256` → `blobs`, `source_sha256?`, `source_revision_id?`,
+`work_id?` (какая работа создала), `duration_ms`, `width`, `height` (фактические,
+§9.3), `created_from_draft_id?`, `created_at/by`, `retired_at`.
+UNIQUE `(model_id, asset_id, version_no)`; UNIQUE `(model_id, asset_id, id)`;
+индекс `(master_sha256)` — «какие версии держат этот блоб».
+Уникальности по `(asset_id, master_sha256)` нет: повторное принятие прежних байт —
+законная новая редакция. Строки не обновляются и не удаляются.
+
+**`item_memberships`** — участие файла в объекте (§4, §7.1).
+
+| Колонка | Смысл |
+|---|---|
+| `id`, `model_id`, `item_id`, `asset_id` | связь; `item_id` и `asset_id` неизменяемы |
+| `kind` | `owned \| reference`; ссылка — подборка `PRM` |
+| `role` | enum `master teaser pic raw ed clip thumb cap` (naming §3) |
+| `ordinal` | номер порядковой роли `pic07`; CHECK `(role IN pic,raw,ed,clip) = (ordinal IS NOT NULL)` |
+| `handle` | GENERATED: `role` + `ordinal` с паддингом (`ed07`); для `uniq` — `u2` |
+| `display_position` | порядок показа; NULL у снятого |
+| `selected` | отобран (кадры сета, §4) |
+| `life_use` | `feed \| chats \| both` — только LIFE (§4) |
+| `pinned_version_id` | только для `reference`; NULL — следовать текущей версии |
+| `added_at/by`, `removed_at`, `row_version` | |
+
+Ключи: UNIQUE NULLS NOT DISTINCT `(model_id, item_id, role, ordinal)` — навсегда,
+включая снятые: под-хендл `SET-069/ed07` никогда не достаётся другому файлу
+(повторное добавление того же файла восстанавливает прежнюю строку);
+UNIQUE `(model_id, item_id, asset_id)`; частичный UNIQUE `(model_id, asset_id)
+WHERE kind = 'owned' AND removed_at IS NULL` — владелец один;
+UNIQUE `(model_id, item_id, display_position) DEFERRABLE` — перестановка одной
+транзакцией; FK `(model_id, asset_id, pinned_version_id)` → `asset_versions`.
+Индексы: `(model_id, item_id, removed_at, display_position)`;
+`(model_id, asset_id, removed_at)` — «где ещё этот кадр».
+Отбор и порядок принадлежат членству: перестановка в подборке не трогает сет.
+
+**`asset_manifests`** и **`asset_manifest_entries`** — закрытый состав версий (§4, §7,
+§7.1, §8.2). Заголовок: `id`, `model_id`, `state` (`building | sealed`), `purpose`
+(`plan | download | delivery | submission`), `origin_item_id?`,
+`created_at/by`, `sealed_at`. UNIQUE `(model_id, id, state)` — потребители ссылаются
+на `(model_id, manifest_id, 'sealed')`. Строки: `id`, `model_id`, `manifest_id`,
+`position`, `item_id`, `membership_id?`, `asset_id`, `asset_version_id`,
+`handle_snapshot`, `selected_snapshot?`, `life_use_snapshot?`.
+UNIQUE `(model_id, manifest_id, position)`; FK `(model_id, asset_id, asset_version_id)`
+→ `asset_versions (model_id, asset_id, id)`; FK на членство. Триггер: вставка и
+изменение строк — только пока заголовок `building`, под блокировкой заголовка;
+закрытие берёт ту же блокировку. Обычный состав собирается и закрывается одной
+короткой транзакцией без медиа-операций. Правка закрытого состава — новый состав.
+
+**`aliases`** — историческая ссылка (§4, §6.3, naming §9). `id`, `model_id`, `kind`
+(`legacy_path | legacy_name | legacy_id | sub_handle | merged_id | vault_album |
+tg_card | resource_id | registry_row`), `visibility` (`public | raw_path`), `value_raw`,
+`value_norm` (STORED: `lower(normalize(value_raw, NFC))`), `item_id?`, `asset_id?`,
+`source_object_id?`, `note`, `created_at/by`. CHECK ровно одна цель из `item_id` /
+`asset_id`.
+Уникальности по значению нет: старый `PPV-032` относился к трём папкам; повтор
+импорта не плодит строки благодаря UNIQUE NULLS NOT DISTINCT
+`(model_id, kind, value_norm, item_id, asset_id)`.
+Индексы: `(model_id, visibility, value_norm)`; GIN `pg_trgm (value_norm)`.
+Видимость: `public` — разобранный ID или под-хендл, виден вместе с карточкой;
+`raw_path` — исходный путь и имя файла, видны `owner` и `manager` с правом на модель,
+`reader` — нет (старые имена кастомов содержат имена покупателей, §11.1).
+Поиск, подсказки и сниппеты фильтруют алиасы по этим классам.
+
+**`provenance`** — происхождение (§2.1 п. 5, §4). `id`, `model_id`, `relation`
+(`montage_from | uniq_from | teaser_from | frame_from | processed_from |
+ppv_from_custom | remaster_from | split_from | merged_from | reencoded_from`),
+`child_item_id?`, `child_version_id?`, `parent_item_id?`, `parent_version_id?`,
+`params jsonb` (уровень и номер уникальной версии, диапазоны нарезки), `basis`,
+`work_id?`, `voided_by_id?`, `created_at/by`. CHECK ровно один ребёнок и ровно один
+родитель; UNIQUE NULLS NOT DISTINCT по пяти полям связи; составные FK на все концы.
+Объектные связи (`PPV ← CUS`) и связи версий (`ed07 v1 ← raw07 v1`) в одной
+таблице с типизированными концами. Цикл проверяется в коде под блокировкой объектов.
+Индексы в обе стороны; частичный по `relation = 'ppv_from_custom'` для плашки
+«готов для PPV».
+
+**`tags`** и **`item_tags`** (§8.3, naming §4). Словарь: `id`, `model_id?` (NULL —
+общий известный тег), `slug`, `label_ru`, `tag_group?` (`action | attribute | mood`),
+`merged_into_tag_id?`, `created_at/by`. UNIQUE NULLS NOT DISTINCT `(model_id, slug)`.
+Свободный тег живёт в своей модели (подсказки одной модели не раскрывают текст
+другой); группу ему можно проставить позже. Связь: `model_id`, `item_id`, `tag_id`,
+`source` (`ai | human | import`), `group_at_import?`, `added_at/by`;
+PK `(model_id, item_id, tag_id)`; индекс `(model_id, tag_id)` для сочетаний.
+
+**`annotation_fields`** — статус каждого поля разметки (§5, §8.3).
+PK `(model_id, target_kind, target_id, field)`; `target_kind` —
+`item | version | group | draft`; `field` — `title | title_en | description | tags |
+chronology | purpose | second_person | platform_text`; `value_version bigint`
+(растёт при каждой записи значения), `confirmed_value_version?`, `confirmed_at/by`,
+`suggested_by_run_id?`, `updated_at/by`. Статус вычисляется:
+`confirmed` ⇔ `confirmed_value_version = value_version`. Ручная правка поля —
+значение + `value_version + 1` + подтверждение одним действием только в этом поле.
+«Подтвердить всю разметку» получает с экрана список `(field, value_version)` и
+подтверждает ровно их; появившееся после нажатия значение остаётся черновиком.
+Статусы группы и черновика при принятии переносятся на объект и версию (UPDATE цели),
+чтобы название сета, набранное до сжатия сорока фото, не потеряло подтверждения.
+
+**`annotation_runs`** — прогон разметки (§8.3, §12.0). `id`, `model_id`,
+`target_kind`, `target_id`, `input_kind` (`source | version`), `input_sha256`,
+`provider`, `model_name`, `prompt_version`, `params jsonb`, `config_digest`,
+`frames_count`, `work_id`, `state`, `cost_usd`, `tokens jsonb`, `raw_response jsonb`,
+`refusal_reason`, `error`, `started_at`, `finished_at`.
+UNIQUE `(model_id, target_kind, target_id, input_sha256, config_digest)`.
+До готовности мастера вход — проверенный source; после принятия результат
+привязывается к версии, а прогон не переписывается так, будто ИИ видел мастер.
+
+**`annotation_suggestions`** — предложение по полю: `id`, `model_id`, `run_id`,
+`field`, `value jsonb`, `applied_at?`, `applied_value_version?`, `rejected_at?`.
+UNIQUE `(model_id, run_id, field)`. Применение — `UPDATE annotation_fields … WHERE
+confirmed_value_version IS DISTINCT FROM value_version` (поле ещё черновик):
+запоздалый ответ ИИ физически не может затереть подтверждённое.
+
+**`chronology_entries`** — хронология по минутам (§8.3, PRD §5). `id`, `model_id`,
+`item_id`, `asset_version_id`, `at_ms`, `end_ms?`, `text`, `source`, `run_id?`,
+`frame_artifact_id?` (кадр — кандидат в тизер), `tsv STORED`.
+UNIQUE `(model_id, asset_version_id, at_ms)`; индексы `(model_id, item_id, at_ms)`,
+GIN `tsv`. Статус хронологии — строка `annotation_fields` с `target_kind = 'version'`:
+после перемонтажа подтверждённая хронология v1 остаётся при v1 и показывается как
+«подтверждено для прежней версии», v2 размечается заново черновиком. Поиск отвечает
+версией и минутой.
+
+**`platform_texts`** — продающие тексты и `platform_title` (PRD §5, naming §4). `id`,
+`model_id`, `item_id`, `platform` (`generic | fansly | onlyfans`), `account_id?`,
+`locale`, `variant_no`, `title`, `body`, `value_version`, `confirmed_value_version?`,
+`confirmed_at/by`, `source`, `run_id?`. UNIQUE NULLS NOT DISTINCT
+`(model_id, item_id, platform, account_id, locale, variant_no)`. Два английских
+варианта PPV — строки `generic/en/1` и `generic/en/2`; вариант для аккаунта — своя
+строка с происхождением от общей. В имена файлов и vault-альбомы не попадает.
+
+### 3.3. Байты и производные
+
+**`blobs`** — неизменяемые байты (§2.1 п. 4, §9.1). `sha256 bytea` PK
+(CHECK `octet_length = 32`), `byte_size`, `mime`, `ext` (нижний регистр), `media_kind`,
+`storage_key` (UNIQUE; `blobs/sha256/ab/cd/<hex>.<ext>`), `state`
+(`present | quarantined | purged | missing | corrupt`), `state_generation`,
+`registered_at`, `registered_from_draft_id?`, `quarantined_at`, `purge_after`,
+`purged_at`, `verified_at`, `backed_up_at`.
+CHECK `(state = 'quarantined') = (quarantined_at IS NOT NULL)`; строка никогда не
+удаляется — иначе `verify-blobs` не отличит «удалили осознанно» от «потеряли байты».
+Индексы: `(purge_after) WHERE state = 'quarantined'`;
+`(registered_at) WHERE state = 'present' AND backed_up_at IS NULL` — очередь бэкапа.
+Счётчик ссылок не хранится: «нуль ссылок» — одна SQL-функция `blob_is_referenced`
+по списку из принципа 6, и тест, который сверяет этот список с каталогом FK.
+
+**`blob_probes`** — ffprobe и EXIF по ключу `(sha256, pipeline_version, kind)`
+(§12.0): `duration_ms`, `width`, `height`, `rotation`, `fps_num`, `fps_den`,
+`video_codec`, `pix_fmt`, `bit_rate`, `is_hdr`, `audio_tracks jsonb`,
+`shot_at timestamptz?`, `shot_at_local timestamp?`, `shot_tz?` (EXIF без зоны не
+превращается в выдуманный UTC), `camera jsonb`, `raw jsonb`, `computed_at`.
+Индексы `(duration_ms, width, height)` — кандидаты по данным Hub (§7); `(shot_at)`.
+
+**`blob_phashes`** — перцептивный хэш фото (§6.2, §12.0). PK `(sha256, algorithm,
+algo_version, normalization)`, `phash bit(64)`, `computed_at`. Подсказка «похоже на
+фото № 7 из сета 69» ищется по версиям текущей модели полным проходом с
+`bit_count(phash # :probe)`; порог — `policy_settings`. Ничего не объединяет.
+
+**`master_checks`** — как и чем получен мастер (§9.2). `id`, `source_sha256`,
+`master_sha256`, `pipeline_version`, `recipe_digest`, `decision`
+(`copy | encode`), `encoder_args_hash`, `frames_in`, `frames_out`, `pts_mismatches`,
+`audio_ok`, `dropped_tracks jsonb` (`apple_apac`), `metadata_ok`, `size_ratio`,
+`verdict` (`ok | rejected_larger | rejected_frames | rejected_audio | rejected_error`),
+`report jsonb`, `encode_ms`, `checked_at`.
+UNIQUE `(source_sha256, master_sha256, recipe_digest)`; индекс `(master_sha256)`.
+К принятию допускается только версия с `verdict = 'ok'`.
+
+**`storage_operations`** — намерение изменить расположение байтов, чтобы падение
+между файловой операцией и записью в БД было обнаружимо. `id`, `kind`
+(`put | quarantine | restore | purge`), `blob_sha256`, `from_key`, `to_key`,
+`state` (`intent | started | fs_done | committed | failed | cancelled`; отменить
+можно только `intent`, SPEC §4.2), `owner`, `started_at`,
+`finished_at`, `error`. Частичный UNIQUE активной операции по `blob_sha256`.
+Порядок `put`: временный файл на том же томе → проверка и хэш → `fsync` файла →
+`rename` без замены → `fsync` каталогов → `blobs.state = 'present'` в БД. Карантин:
+`intent` в БД → `started` в БД → перенос → `fs_done` → `quarantined` в БД. Файловых
+замков на SHA нет:
+байты переносит один процесс, а мастер с живой версией не переносится вообще.
+
+**`rendition_requests`** — логический запрос производной (§9.1, §9.3). `id`,
+`master_sha256`, `pipeline_version`, `kind` (`preview | poster | thumb320 |
+thumb640 | preview2048 | frames | platform | promo | compat`), `profile_key`
+(`-` или профиль подрядчика с версией), `meta_stripped`, `active_generation_id?`,
+`created_at`. UNIQUE `(master_sha256, pipeline_version, kind, profile_key,
+meta_stripped)` — готовая копия отдаётся из кэша, повторно не кодируется; режим
+очистки входит в ключ (§9.3).
+
+**`rendition_generations`** — физическая сборка. `id`, `request_id?`,
+`generation_no?`, `input_kind` (`source | master`), `input_sha256`, `recipe_digest`,
+`state` (`building | ready | failed | evicted`), `work_id?`, `created_at`, `ready_at`,
+`bound_at`. UNIQUE `(request_id, generation_no)`. Первое поколение превью, миниатюр и
+кадров строится из source при приёмке, когда хэша мастера ещё нет: `request_id` пуст,
+адрес — по `id` поколения. После проверки мастера поколение один раз привязывается к
+запросу (`bound_at`), адрес не меняется. Пересборка из мастера — новое поколение;
+`active_generation_id` переключается, старое поколение не подменяется другими
+байтами под прежним адресом.
+
+**`rendition_artifacts`** — файл внутри поколения. `id`, `generation_id`, `name`
+(из манифеста производных §9.3: `preview.mp4`, `thumb-640.webp`, `frames/0042.webp`),
+`output_sha256`, `byte_size`, `mime`, `width`, `height`, `duration_ms`, `frame_ms?`,
+`storage_key` (UNIQUE; `derived/gen/<generation_id>/<name>`), `state`
+(`ready | evicted | missing`), `created_at`, `last_used_at`.
+UNIQUE `(generation_id, name)`; UNIQUE `(id, output_sha256)` — для квитанций выдачи.
+Адрес наружу `/api/v1/<model>/g/<generation_id>/<name>` проверяет права по версии или
+черновику, к которым относится поколение, и лишь потом `X-Accel-Redirect`.
+Удаление файла меняет `state`, описание остаётся: квитанция выдачи всегда знает, что
+именно уходило.
+
+### 3.4. Источники, приёмка, фон
+
+**`sources`** — откуда приходят байты и метаданные (§4, §6.1, §6.3). `id`,
+`model_id`, `kind` (`yandex_disk | web_upload | legacy_copy`), `label`, `root_path?`
+(`LEGACY_SOURCE_ROOT`), `credentials_ref` (имя переменной окружения; сам токен в БД
+не хранится), `read_only`, `enabled`. UNIQUE `(model_id, label)`;
+CHECK `kind <> 'yandex_disk' OR read_only` — инвариант §2.1 п. 6 в схеме.
+
+**`source_objects`** — внешний ресурс (§4, §6.1). `id`, `model_id`, `source_id`,
+`resource_id?` (Я.Диск), `upload_id?` (веб), `current_path`, `current_name`, `is_dir`,
+`parent_id?`, `archive_parent_id?`, `archive_entry_no?` (член распакованного архива:
+`(архив, номер входа)`, а не только имя — одинаковые имена внутри ZIP различимы),
+`current_revision_id?`, `first_seen_at`, `last_seen_at`, `gone_since?`.
+Частичные UNIQUE `(model_id, source_id, resource_id)` и
+`(model_id, archive_parent_id, archive_entry_no)`; путь не уникален — на старом пути
+может появиться новый ресурс. Индексы `(model_id, last_seen_at)`, GIN `pg_trgm` по
+`current_path` (поиск по старому пути, §11.2).
+
+**`source_paths`** — история путей и имён (§6.1: rename/move). `id`, `model_id`,
+`source_object_id`, `path_raw`, `path_nfc`, `name`, `first_seen_at`, `last_seen_at`.
+UNIQUE `(model_id, source_object_id, path_nfc)`. Переименование даёт новую строку и
+алиас у привязанного ассета, не новый черновик.
+
+**`source_revisions`** — наблюдённое состояние байтов (§6.1 «новое и
+изменившееся»). `id`, `model_id`, `source_object_id`, `sequence_no`, `md5?`,
+`byte_size`, `remote_modified_at?`, `detected_at`, `scan_work_id?`, `source_sha256?`,
+`verified_at?` (MD5 сошёлся, SHA-256 посчитан), `verified_route`
+(`download | local_copy | upload`), `previous_id?`.
+UNIQUE `(model_id, source_object_id, sequence_no)`; UNIQUE `(model_id,
+source_object_id, id)`; уникальности по MD5 или SHA нет: A→B→A — три ревизии.
+Индекс `(model_id, source_sha256)` — точные дубли (§6.2). Скачивание относится к
+конкретной ревизии с ожидаемыми MD5 и размером: если файл изменился во время
+скачивания, байты не приписываются старой ревизии, создаётся следующая.
+Повтор неизменившегося состояния только обновляет `last_seen_at` у объекта.
+Локальная копия легаси — способ чтения той же ревизии Я.Диска, не второй источник.
+
+**`inbox_groups`** — папка или кластер как единица принятия (§4, §6.1, §6.3). `id`,
+`model_id`, `source_id`, `group_key` (`folder:<resource_id папки>`, не путь; `exif-day:2026-08-07`,
+`upload-window:…`), `grouping` (`folder | exif_day | upload_cluster | single`),
+`folder_object_id?`, `evidence jsonb`, `discovered_at`, `created_item_id?`,
+`closed_at`, `row_version`. UNIQUE `(model_id, source_id, group_key)`;
+UNIQUE `(model_id, created_item_id)`. Группа — предложение с уликами, до принятия её
+можно разделить или объединить вручную. Разметка полей будущего объекта ведётся на
+группе (`annotation_fields`, `target_kind = 'group'`) и переносится на объект; значения —
+колонки группы, как в образце 1б: `proposed_type`, `proposed_title`, `proposed_title_en?`,
+`proposed_description`, `proposed_tags jsonb`, `proposed_ppv_kind`, `proposed_purpose`,
+`has_second_person`, `custom_order_id?`. Одиночный файл — группа из одного черновика
+(`single`), поэтому `inbox_drafts.group_id` обязателен. ИИ предлагает оба названия
+вместе; человек или агент утверждает каждое поле. `proposed_title_en` при принятии
+переносится в `content_items.title_en`; отсутствие английского названия приёмку
+не блокирует.
+
+**`inbox_drafts`** — черновик приёмки с момента обнаружения (§5, §6.1).
+
+| Колонка | Смысл |
+|---|---|
+| `id`, `model_id`, `group_id` | одиночный файл — группа из одного черновика |
+| `source_revision_id?` / `web_upload_id?` / `from_version_id?` | ровно одно; UNIQUE по первым двум — одна ревизия = один черновик; `from_version_id` (составной FK на принятую версию) — «PPV из кастома как есть», «мастер PPV» и «исходник фупа» из сырья (SPEC §6.1): мастер и отметка проверки берутся из неё, повтор держит Idempotency-Key |
+| `origin` | `disk_scan \| web_upload \| legacy_import \| archive \| derived` |
+| `state` | `discovered \| processing \| ready \| resolved` (предварительно, §13) |
+| `outcome?` | `new_item \| append \| alias \| rejected`; CHECK `(state = 'resolved') = (outcome IS NOT NULL)` |
+| `priority` | новое и мелкое вперёд, старый корпус фоном (§12.0) |
+| `discovered_at`, `ready_at`, `decided_at/by` | |
+| `md5`, `byte_size`, `path`, `preview_url_at` | копия для экрана «Приехало» до скачивания |
+| `source_sha256?`, `master_sha256?`, `master_verified_at?` | шаги 1 и 3 фона |
+| `master_is_source` | без перекодирования (§9.2) |
+| `proposed_role`, `proposed_ordinal` | предложение шага 4 для файла; поля будущего объекта — на группе |
+| `target_item_id?`, `target_asset_id?` | для «дополнение»: объект и, если это новая версия, файл |
+| `duplicate_of_version_id?` | для «дубль-алиас» |
+| `blocked_reason?` | `ambiguous_order \| video_in_set \| id_collision \| cross_model_dup \| master_failed \| needs_type` |
+| `applied_item_id?`, `applied_version_id?` | результат принятия |
+| `reject_reason`, `error`, `row_version`, `search_tsv STORED` | |
+
+CHECK `outcome NOT IN ('new_item','append') OR master_verified_at IS NOT NULL` —
+«принять можно только с проверенным мастером» (§6.1); для дубля и отказа мастер не
+нужен. Индексы: `(model_id, state, priority DESC, discovered_at)`; частичный
+`(model_id, blocked_reason) WHERE blocked_reason IS NOT NULL`; `(master_sha256)`,
+`(source_sha256)`; GIN `search_tsv` — черновик сразу в поиске (PRD §5).
+Черновик не удаляется: объект и версия ссылаются на него. Ошибка фона и отказ
+человека — разные поля.
+
+**`inbox_draft_candidates`** — кандидаты-связи с уликами (§6.1, §6.2, §8.2). `id`,
+`model_id`, `draft_id`, `kind` (`order | existing_item | exact_duplicate |
+similar_photo | legacy_id | source_parent | content_type`), `order_id?`, `item_id?`,
+`version_id?`, `score`, `signals jsonb` (reply, имя, раздел, `resource_id`,
+длительность, окно), `evidence_refs jsonb` (`tg:…`, путь), `conflicts_with uuid[]`,
+`chosen`, `chosen_at/by`, `dismissed_at`.
+UNIQUE NULLS NOT DISTINCT `(model_id, draft_id, kind, order_id, item_id, version_id)`;
+частичный UNIQUE `(model_id, draft_id, kind) WHERE chosen`. Совпадение только по
+длительности и дате автоматически не выбирается (§8.2).
+
+**`web_uploads`** — веб-загрузка (§6.1). `id`, `model_id`, `upload_id`,
+`principal_id`, `client_filename`, `declared_kind` (`fyp_edit | teaser |
+processed_frames | master_version | other`), `target_item_id?`, `plan_row_id?`
+(задача; исходники берутся из её `input_manifest_id`), `size_expected`,
+`bytes_received`, `sha256?`, `state` (`receiving | received | verified |
+registered | failed | abandoned`), `tmp_key`, `draft_id?`, `error`, `created_at`,
+`completed_at`. UNIQUE `(model_id, upload_id)`; частичный индекс незавершённых.
+Загруженный файл сначала переносится в `blobs/` и ставится в очередь бэкапа
+(§12.3), потом идёт обычной приёмкой.
+
+**`work_operations`** — фоновая работа в доменной таблице (§5, §12.0).
+
+| Колонка | Смысл |
+|---|---|
+| `id`, `model_id?` | модель пуста у общесистемных (`verify_blobs`, `backup`) |
+| `kind` | `scan \| fetch \| hash \| probe \| derive \| phash \| annotate \| encode_master \| verify_master \| register \| propose \| render \| uniq_render \| export \| hub_sync \| import_parse \| verify_blobs \| backup` |
+| `work_key` | естественный ключ: `fetch:<revision>`, `master:<source_sha>:<recipe>`, `uniq:<parent_version>:<level>:<n>`, `export:<receipt>` |
+| `draft_id?`, `source_revision_id?`, `asset_version_id?`, `manifest_id?`, `receipt_id?`, `generation_id?`, `account_id?` | типизированные цели |
+| `dataset?`, `scope?`, `window_from?`, `window_to?` | входы опроса Hub и бэкапа; неизменны, окно входит в `work_key` — новый прогон или интервал даёт новую строку |
+| `pipeline_version`, `recipe_digest?` | |
+| `state` | `pending \| running \| retry_wait \| succeeded \| failed \| cancelled` |
+| `paused_reason?` | `switch_off:<ключ>` — работа выключенной области (SPEC §8) отпущена до включения (схема §9.2) |
+| `priority`, `attempt_no`, `next_attempt_at` | политика повторов в домене; 429 Я.Диска — backoff |
+| `lease_owner`, `lease_until`, `fence_generation`, `heartbeat_at` | аренда; истекла — работу можно взять снова; завершить результат может только держатель текущего поколения |
+| `input_sha256`, `output_sha256`, `output_ref` | отпечатки входа и выхода |
+| `progress_num`, `progress_den`, `progress_note`, `checkpoint jsonb` | «докачка 3,2 ГБ из 5,8», смещение, номер прохода |
+| `failure_kind`, `error_code`, `error_text` | |
+| `report jsonb?` | итог прогона: отчёт `verify_blobs` (вместо `storage_findings`), итог опроса Hub и бэкапа; после успеха неизменен |
+| `stream_key?` | поток периодической работы (`hub:<account>:<dataset>`, `scan:<source>`, `backup`); у потока не больше одной незавершённой строки |
+| `created_at`, `started_at`, `finished_at` | |
+
+UNIQUE `(model_id, kind, work_key)` NULLS NOT DISTINCT — повторная постановка не
+создаёт вторую работу; частичный UNIQUE `(model_id, kind, stream_key)` NULLS NOT
+DISTINCT `WHERE stream_key IS NOT NULL AND state IN ('pending','running','retry_wait')`; захват —
+короткой транзакцией с `FOR UPDATE SKIP LOCKED` по видам своей роли, предикат
+`paused_reason IS NULL AND state IN ('pending','retry_wait') AND next_attempt_at <= now()` или
+`state = 'running' AND lease_until < now()`; поколение аренды проверяется на каждом
+чекпойнте, продлении и завершении, потерявший аренду останавливает свой процесс;
+успех неизменен. CHECK: строка без модели не несёт модельных целей; `model_id`
+пустым бывает только здесь, в `idempotency_keys`, `action_log`, у глобальных строк
+`policy_settings` и у общих тегов — список держит структурный тест. Частичные индексы
+`(next_attempt_at, priority) WHERE state IN ('pending','retry_wait')`,
+`(lease_until) WHERE state = 'running'`, `(draft_id)`. Готовый шаг с тем же
+`input_sha256` выходит сразу. Долгий FFmpeg или HTTP не выполняется внутри
+транзакции БД. Строка работы вставляется в той же транзакции, что и доменная запись;
+отдельного уведомления нет.
+
+**`legacy_claims`** — разобранные сведения старых имён (§6.3). `id`, `model_id`,
+`source_object_id`, `source_revision_id?`, `parser_version`, `claim_key`,
+`raw_fragment` (`used3_04.08.26`, `[Set-002]`, `X.X.X`), `claim_kind` (`number |
+used | posted | date | role | registry_row | duration | unknown`), `payload jsonb`,
+`parse_work_id`, `resolution` (`pending | resolved | ignored`), `resolved_item_id?`,
+`resolved_version_id?`, `resolved_alias_id?`, `resolved_evidence_id?`,
+`resolved_order_id?`, `resolved_at/by`.
+UNIQUE `(model_id, source_object_id, parser_version, claim_key)`; CHECK при
+`resolved` ровно одна цель. `pending` — «неразобранные сведения остаются в очереди
+со ссылкой на источник»; полезное материализуется в своих таблицах (поле объекта,
+размещение с уликой `import`, связь с заказом), payload их не заменяет.
+
+**`legacy_number_claims`** — заявки старых номеров (§6.4). `id`, `model_id`, `type`,
+`claimed_number`, `source_object_id`, `registry_claim_id?`, `decision` (`keep |
+renumber | typo | unclear`), `assigned_number?`, `target_item_id?`, `decided_at/by`.
+Индекс `(model_id, type, claimed_number)`; уникальности по номеру нет — `PPV-032`
+заявлен тремя папками. Порядок: до первого принятия по типу выполняется проход по
+метаданным снимка, все заявки записываются, счётчик поднимается выше максимума;
+только потом байты. Иначе коллизия `032` получит `073` раньше папки `[PPV-073]`.
+
+**`review_cases`** — спорное, чьё решение надо записать (§6.3, §4,
+`resolve_review_case` §12.0). `id`, `model_id`, `kind` (`cross_model_duplicate |
+legacy_unparsed | merge_split`), `state` (`open | resolved | dismissed`),
+`dedup_key`, `draft_id?`, `item_id?`, `version_id?`,
+`source_object_id?`, `blob_sha256?`, `counterpart_model_id?` (виден только тому, у
+кого права на обе модели), `details jsonb`, `resolution jsonb`, `resolved_at/by`.
+UNIQUE `(model_id, kind, dedup_key)`. Сюда не кладётся вычисляемое из улик (два
+кандидата, «пропущена», «слишком рано», конфликт размещения) — только то, что нельзя
+пересчитать. Не дублируется и записанное на своём месте: спор о номере —
+`legacy_number_claims.decision`, выбор заказа — `blocked_reason` и кандидаты
+черновика (30.09.2026).
+
+**Слияние и разделение пачек RAW** (§6.3, §4.1) — одна команда без своих таблиц:
+членства, алиасы и tombstone — одной транзакцией с одним `request_id`; «что было до»
+собирается из журнала по `request_id` (30.09.2026). Слияние: младший номер
+остаётся, у прежних членств `removed_at`, в выжившем создаются новые с новыми
+номерами, старые под-хендлы сохраняются алиасами `sub_handle`, проигравший — tombstone
+и алиас `merged_id`. Разделение: одна часть остаётся под исходным номером, остальным
+— новые номера той же транзакцией. Ни одна версия при этом не создаётся и не меняется.
+
+### 3.5. План и выдача
+
+**`ppv_releases`** — выпуск PPV (§4, §7). `id`, `model_id`, `account_id`, `item_id`,
+`release_date` (по `Europe/Moscow`; по ней считается норма недели — предварительная
+заливка в vault в воскресенье не создаёт второго выпуска), `created_at/by`,
+`cancelled_at/by`. UNIQUE `(model_id, id, account_id, item_id)`; CHECK тип объекта
+PPV (триггер).
+
+**`posting_plan_rows`** — строка плана (§4, §7).
+
+| Колонка | Смысл |
+|---|---|
+| `id`, `model_id` | |
+| `item_id?` | пусто, пока строка ждёт монтаж |
+| `account_id`, `surface_id` | куда |
+| `slot_date`, `slot_time?`, `slot_at STORED` | плановая дата в имени скачивания — ISO (naming §6) |
+| `assignee_id?` | исполнитель; пусто — текущий `default_assignee_id` страницы, заполняется только при выборе другого человека («Передать другому») |
+| `release_id?`, `release_surface_kind?` | выпуск PPV; UNIQUE `(release_id, release_surface_kind)` частичный — по строке на поверхность |
+| `manifest_id?` | закрытый состав выбранных версий (принцип 4) |
+| `marked_manifest_id?` | какой состав был отмечен |
+| `expected_type?`, `input_manifest_id?` | строка ждёт монтаж: ожидаемый тип и состав исходников (RAW не публикуется) |
+| `marked_by`, `marked_at` | отметка КМ (§5) |
+| `mark_kind?` | `posted \| scheduled` — «выложено» / «в планировщике» (SPEC §5, 28.09.2026) |
+| `stated_occurred_at?` | фактическая дата, указанная КМ для сториз и рассылки (§7) |
+| `cancelled_at/by`, `cancel_reason` | |
+| `note`, `row_version`, `created_at/by` | |
+
+CHECK `marked_at IS NULL OR cancelled_at IS NULL`; CHECK `release_id IS NULL OR
+item_id IS NOT NULL`; FK на состав только закрытый. Уникальности по слоту нет: два
+поста в один слот представимы и показываются как конфликт. Индексы:
+`(model_id, assignee_id, slot_date)` — задачи на день; `(model_id, account_id,
+slot_at)` — норма и дыры; `(model_id, item_id, slot_at DESC)` — «слишком рано»;
+частичный `(model_id, slot_at) WHERE marked_at IS NULL AND cancelled_at IS NULL` —
+«пропущена» вычисляется.
+Правило версий: замена состава — новый `manifest_id`; если после отметки состав
+заменили, `marked_manifest_id <> manifest_id`, и экран показывает «отметка относится
+к прежнему составу». Появление новой версии файла ничего в строке не меняет, рядом
+показывается «есть новая версия».
+Возврат монтажа: загрузка КМ привязана к строке (`web_uploads.plan_row_id`); приёмка
+создаёт новый FYP с происхождением от версий из `input_manifest_id`, затем ставит
+его в `item_id` и `manifest_id` этой же строки с проверкой `row_version`. Если строку
+уже изменили или отменили, FYP остаётся в каталоге, подстановка — явное действие.
+
+**`download_receipts`** — квитанция выдачи (§7, §9.3, naming §6). `id`, `model_id`,
+`principal_id`, `kind` (`master | platform | edit | promo`),
+`manifest_id?` (закрытый состав) или `asset_version_id?` (одиночное скачивание),
+`plan_row_id?`, `account_code_snapshot?`, `slot_date_snapshot?`, `profile_key`,
+`meta_stripped`, `zip_key?`, `issued_at`, `delivery_id?`; состояния нет: квитанция
+вставляется целиком и не меняется (схема §9.2). Индекс `(model_id, issued_at DESC)`.
+Квитанция держит исходную строку плана и суффикс имени: перенос слота потом не
+переименовывает прошлую выдачу. Заголовки HTTP не доказывают, что файл докачан.
+
+**`download_receipt_entries`** — что именно уходило. `id`, `model_id`, `receipt_id`,
+`position`, `asset_version_id`, `rendition_artifact_id?` (ровно одно из: артефакт
+производной либо `issued_master = true` для мастера без изменений), `file_name`,
+`file_name_norm STORED`, `output_sha256`, `byte_size`, `duration_ms`, `width`,
+`height`. UNIQUE `(model_id, receipt_id, position)`; FK `(rendition_artifact_id,
+output_sha256)` → `rendition_artifacts (id, output_sha256)`. Индексы
+`(model_id, file_name_norm)`, `(model_id, asset_version_id, issued_at)`.
+Это основание «точной» улики §7: Hub сравнивается с параметрами выданной копии
+(очистка метаданных меняет байты даже у «скачать мастер»), а не всегда с мастером.
+
+### 3.6. Размещения и Hub
+
+**`placements`** — использование на аккаунте и поверхности (§4, §7). `id`,
+`model_id`, `account_id?` (пусто только у внешнего канала), `surface_id`,
+`occurrence_kind` (`post | vault_member | manual`), `external_post_ref?`,
+`external_album_ref?`, `external_member_ref?`, `manual_key?`, `item_id?` (у
+найденной публикации появляется позже), `plan_row_id?`, `planned_at?`,
+`occurred_at?`, `occurred_source?` (`hub | km | import`), `caption?` (подпись с
+платформы), `views?`, `stats_at?` (только Fansly, суточный топ Hub; лайков нет), `out_of_catalog`, `origin` (`plan |
+hub | manual | import`), `row_version`, `created_at/by`.
+Частичные UNIQUE `(model_id, surface_id, external_post_ref)` и
+`(model_id, surface_id, external_album_ref, external_member_ref)` — повторный опрос
+и привязка к плану не создают второе размещение, а пост, найденный после отметки КМ,
+ручного подтверждения или заявки, дописывает внешние ID в прежнее (§7); CHECK
+`NOT out_of_catalog OR item_id IS NULL`; CHECK `planned_at IS NOT NULL OR occurred_at IS NOT NULL`.
+Единица: для стены и FYP — пост (один пост на стене и в ленте — два размещения с
+общим `external_post_ref`); для vault — запись альбома с названием (системные All,
+Posts, Messages без названия размещений не дают, SPEC §7; одна строка плана может
+закрываться несколькими записями); сториз и рассылка — ручная отметка. Пустое
+размещение «под план» не создаётся: пока нет наблюдения или отметки, есть только
+строка плана. Индексы: `(model_id, item_id, occurred_at DESC)`, `(model_id,
+account_id, surface_id, occurred_at DESC)`, частичный по `item_id IS NULL AND NOT
+out_of_catalog` — очередь «пост без плана — привяжите».
+
+**`placement_assets`** — состав размещения по версиям (§4 «пост из нескольких
+кадров»). `model_id`, `placement_id`, `asset_version_id`, `position`,
+`match_strength` (`none | candidate | exact`), `matched_media_ref?`,
+`receipt_entry_id?` (какой выданный файл совпал), `bound_at/by`.
+PK `(model_id, placement_id, asset_version_id)`; UNIQUE `(model_id, placement_id,
+position)`. Совпадение одного файла из двенадцати — частичный результат: уровень
+размещения считается по всем строкам, а не по одной.
+
+**`placement_evidence`** — улики, только вставка (§4, §5, §7). `id`, `model_id`,
+`placement_id`, `source` (`hub | manual | import`), `kind` (`observed |
+manual_confirm | manual_reject | legacy_claim | outside_catalog | retract`),
+`strength` (`claim | candidate | exact`), `hub_observation_id?`, `external_ref?`,
+`matched_version_id?`, `legacy_claim_id?`, `payload jsonb`, `event_at?`,
+`recorded_at`, `recorded_by?`, `corrects_id?`, `dedup_key`.
+UNIQUE `(model_id, placement_id, source, dedup_key)` — то же наблюдение второй раз
+строки не даёт, изменённое (другая подпись) — даёт; UNIQUE `(corrects_id)` — у
+исправления один преемник; CHECK `source = 'import' → strength = 'claim'`,
+`source = 'manual' → strength = 'exact'`, `source = 'hub' → hub_observation_id
+IS NOT NULL`. Уникальности по `external_ref` внутри размещения нет: два кандидата
+обязаны ужиться (§7 «флаг, не догадка»). Роль приложения: `INSERT, SELECT`.
+
+**`placement_checks`** — снимок вычисления «ждём / не вышло / не удалось проверить»
+(§7). `id`, `model_id`, `plan_row_id`, `placement_id?`, `checked_at`,
+`policy_version`, `window_from`, `window_to`, `verdict` (`pending | candidate |
+exact | manual | cannot_verify | not_found`), `reason`, `coverage_ids uuid[]`,
+`evidence_ids uuid[]`. Только вставка. `not_found` допустим лишь после окна, у
+неотменённой строки на автосверяемой поверхности, при `hub_coverage.proven_complete_at`
+на нужный период с допуском и без нерешённых кандидатов; иначе `cannot_verify` с
+причиной. Позднее наблюдение даёт новую строку, старая остаётся знанием на тот момент.
+
+**`hub_sync_state`** — граница опроса (§8.1). PK `(model_id, account_id, dataset,
+scope)`; `watermark_at` (прошлый успех минус перекрытие, SPEC §8.1), `last_success_at`,
+`next_full_at`, `consecutive_failures`, `available`, `unavailable_reason`,
+`last_error`. Точечного опроса альбома нет (решение владельца 30.09.2026). Опросы одного потока сериализуются арендой в `work_operations`.
+
+**`hub_sync_runs`** — попытки опроса: `id`, `model_id`, `account_id`, `dataset`,
+`scope`, `kind` (`hourly | full`), `window_from`, `window_to`,
+`started_at`, `finished_at`, `pages`, `rows`, `changed`, `status`, `warnings jsonb`
+(`delivery_not_exhausted`, `mutable_sort_key`), `error`. Граница продвигается только
+после сохранения всех страниц окна.
+
+**`hub_observations`** — журнал наблюдений (§5, §8.1). `id`, `model_id`,
+`account_id`, `dataset`, `external_key`, `sequence_no`, `row_updated_at?`,
+`semantic_hash` (по закреплённым полям набора, SPEC §8.1, кроме служебных времён Hub —
+`firstObservedAt`, `lastObservedAt`, `rowUpdatedAt` — и сведений об обходе альбома, они
+в `hub_vault_albums`), `payload jsonb`, `observed_at`, `run_id`,
+`previous_id?`. UNIQUE `(model_id, account_id, dataset, external_key, sequence_no)`.
+Уникальности по хэшу нет: A→B→A — три строки, повтор A — только `last_seen_at`
+у типизированной строки. Улики ссылаются на наблюдение, а не на изменяемую
+текущую строку.
+
+**`hub_posts`** — текущая строка поста: `id`, `model_id`, `account_id`, `post_ref`,
+`current_observation_id`, `published_at`, `caption`, `attachment_count`, `is_fyp`,
+`wall_refs jsonb`, `first_observed_at`, `last_observed_at`, `last_seen_at`,
+`matched_placement_id?`. UNIQUE `(model_id, account_id, post_ref)`;
+индексы `(account_id, published_at DESC)`, `(account_id, attachment_count,
+published_at)`, частичный `WHERE matched_placement_id IS NULL` — неразобранные
+кандидаты запрещают «не вышло». Пустой `wall_refs` не читается как «не на стене»:
+поверхность размещения ставится только по доказанному признаку, иначе пост остаётся
+в очереди разбора.
+
+**`hub_post_attachments`**: `id`, `model_id`, `post_id`, `position`, `content_type`,
+`offer_ref?`, `bundle_ref?`, `media_ref?`, `is_preview`, `link_state` (`resolved |
+file_metadata_missing | attachment_ref_missing`). UNIQUE `(model_id, post_id, position)`.
+
+**`hub_raw_media`** — файл платформы: `id`, `model_id`, `account_id`, `media_ref`,
+`current_observation_id`, `filename`, `filename_norm STORED`, `mime`, `duration_ms`,
+`orig_width`, `orig_height`, `out_width`, `out_height`, `fps`, `origin`.
+UNIQUE `(model_id, account_id, media_ref)`; индексы `(model_id, filename_norm)` —
+имя скачивания ContentOps как точная улика; `(account_id, duration_ms, orig_width,
+orig_height)` — кандидат по длительности и размерам.
+
+**`hub_vault_albums`**: `id`, `model_id`, `account_id`, `album_ref`, `title`,
+`vault_kind`, `member_count`, `last_full_walk_at`, `walk_state`,
+`current_observation_id`. UNIQUE `(model_id, account_id, album_ref)`; индекс по
+`lower(title)` — альбом `PPV-073 Йога, анал, гольфы` ведёт к объекту (naming §7).
+
+**`hub_vault_media`**: `id`, `model_id`, `account_id`, `album_id`, `member_ref`,
+`media_ref?`, `custom_filename`, `membership_at`, `first_observed_at`,
+`last_observed_at`, `missing_since?`, `current_observation_id`.
+UNIQUE `(model_id, account_id, album_id, member_ref)`; `missing_since` только после
+доказанного полного обхода; «был когда-то» и «есть сейчас» — разные факты.
+
+**`hub_coverage`** — право на отрицательный вывод (§7, §8.1). `id`, `model_id`,
+`account_id`, `dataset`, `scope`, `state` (`in_progress | provider_exhausted |
+budget_deferred | error`), `expected_count`, `observed_count`, `stop_reason`,
+`blockers text[]` (`vault_inventory_unproven`, `gaps_present`), `window_from`,
+`window_to`, `proven_complete_at?`, `updated_at`. UNIQUE `(model_id, account_id,
+dataset, scope)`. Конец пагинации и HTTP 200 полноту не доказывают.
+
+### 3.7. Заказы кастомов
+
+**`custom_orders`** (§8.2). `id`, `model_id`, `account_id?`, `tg_chat`, `tg_topic?`,
+`tg_message_id`, `card_author`, `card_at`, `buyer_name?` (видимое поле по правам,
+§11.1; в файлы и публикации не попадает), `brief`, `ordered_duration_raw` («8-10
+минут», «10 минут - 20 фото»), `duration_min_s?`, `duration_max_s?`,
+`photo_count?`, `due_at?`, `status` (`open | delivered | closed`), `name_in_media`
+(`yes | no | unknown`; у кастома видно то же значение), `closed_at/by`,
+`row_version`, `created_at/by`, `updated_at`.
+UNIQUE NULLS NOT DISTINCT `(model_id, tg_chat, tg_topic, tg_message_id)`;
+CHECK `(status = 'closed') = (closed_at IS NOT NULL)`. Индексы `(model_id, status,
+due_at)`, `(model_id, lower(buyer_name))`, GIN `pg_trgm (brief)`.
+Закрыть можно только при сдаче и без открытых правок — проверка в команде закрытия.
+
+**`custom_order_messages`** — значимые сообщения и перепосты (§8.2). `id`,
+`model_id`, `order_id`, `tg_ref`, `kind` (`card | repost | delivery | revision |
+confirmation | note`), `message_at`, `author`, `excerpt`, `recorded_at/by`.
+UNIQUE `(model_id, order_id, tg_ref, kind)`. Перепост карточки — строка `repost`
+после доказанного соответствия, а не второй заказ. Полной копии переписки нет.
+
+**`custom_order_deliveries`** — сдача (§8.2). `id`, `model_id`, `order_id`,
+`item_id` (CUS), `manifest_id` (закрытый состав версий), `draft_id?`,
+`delivered_at`, `basis jsonb` (какие признаки сработали), `evidence_refs jsonb`
+(`tg:…`, путь, `resource_id`), `linked_at/by`, `confirmed_by?`, `retracted_at?`,
+`retract_reason?`. UNIQUE `(model_id, order_id, manifest_id)`; индекс
+`(model_id, item_id)`. Один заказ — несколько сдач; ошибочная привязка отзывается
+новой записью, не правкой.
+
+**`custom_order_revisions`** — правка (§5, §8.2). `id`, `model_id`, `order_id`,
+`requirement`, `request_tg_ref`, `request_ordinal` (одно сообщение может нести
+несколько требований), `requested_at`, `done`, `done_basis?`, `fixed_delivery_id?`,
+`done_at/by`, `reopened_at?`. UNIQUE `(model_id, order_id, request_tg_ref,
+request_ordinal)`; CHECK `done = (done_at IS NOT NULL)`; CHECK `NOT done OR
+done_basis IS NOT NULL` — привязка новой версии сама по себе правку не закрывает.
+«Сдано, требуется правка» — запрос: есть сдача и есть `done = false`.
+
+### 3.8. Промо
+
+**`contractors`** — получатель без входа (§7.1). `id`, `model_id`, `name`, `contact`,
+`channel_id?`, `current_profile_id?`, `archived_at`. UNIQUE `(model_id, name)`.
+
+**`contractor_profiles`** — неизменяемые версии настроек (§7.1). `id`, `model_id`,
+`contractor_id`, `version_no`, `kind` (`compact | master`), `params jsonb`,
+`meta_stripped`, `created_at/by`. UNIQUE `(model_id, contractor_id, version_no)`.
+
+**`promo_packages`** — расширение объекта `PRM` (§4, §7.1). PK `(model_id, item_id)`,
+`channel_id`, `default_contractor_id?`, `created_at`. Состав и порядок — членства
+`item_memberships` (`reference` для чужих файлов, `owned` для снятых специально);
+повторное добавление восстанавливает прежнее членство. Живое членство без
+`pinned_version_id` следует текущей версии (решение 08.09).
+
+**`promo_deliveries`** — передача (§4, §7.1). `id`, `model_id`, `package_item_id`,
+`channel_id`, `contractor_id`, `profile_id?`, `manifest_id` (закрытый состав версий
+на момент подготовки), `receipt_id?` (готовая выгрузка: ZIP, `manifest.csv`, сводка —
+имена и размеры в `download_receipt_entries`), `state` (`preparing | prepared |
+sent`), `prepared_at/by`, `sent_at/by`, `recipient_note`, `summary jsonb`,
+`origin` (`product | import`), `corrects_id?`, `row_version`.
+Прошлый пак из `9. SMM` (SPEC §6.3) — `origin = 'import'`, `state = 'sent'` без
+`prepared_at/by`, `sent_at/by` и профиля; состав — по папке, дата папки — в `summary`;
+то и другое — утверждение, не подтверждённая отправка.
+CHECK `CASE origin WHEN 'import' THEN state = 'sent' AND sent_at IS NULL AND sent_by IS
+NULL ELSE profile_id IS NOT NULL AND (state = 'sent') = (sent_at IS NOT NULL AND
+sent_by IS NOT NULL) END`;
+UNIQUE `(corrects_id)`. Изменение выбора до «Передано» — новая подготовка (новый
+состав и квитанция); после — новая передача. Повтор отметки идемпотентен
+(`UPDATE … WHERE state = 'prepared'`). Передача не создаёт `placements` (§7).
+
+### 3.9. Служебные
+
+**`idempotency_keys`** — повторяемые команды агентов и людей (SPEC §11.2).
+`id`, `model_id?`, `principal_id`, `operation`, `key`, `request_digest`, `state`,
+`response jsonb` (секреты — токен, временный пароль, `Set-Cookie` — не пишутся), `created_at`,
+`committed_at`. UNIQUE `(principal_id, operation,
+key)`; тот же ключ с другим запросом — конфликт. Доменная запись, ответ, журнал и
+постановка работ фиксируются одной транзакцией.
+
+**`action_log`** — кто, что, с чем, куда и когда (§4, §11.1).
+`id bigint IDENTITY` (PK), `at`, `model_id?`, `actor_type` (`human | agent | system`),
+`actor_id?`, `actor_label`, `action` (`draft.accept`, `placement.confirm`,
+`promo.delivery.sent`, `blob.quarantine`, `order.revision.done`), `entry_kind`
+(`action | change`), `item_id?`, `request_id?`,
+`work_id?`, `subject_kind`, `subject_id?`, `subject_label` (`PPV-073`,
+`PPV-073/teaser` — читается после удаления), `before jsonb?`, `after jsonb?`,
+`result` (`ok | denied | error`), `payload_version`. Без партиций; BRIN по `at`;
+индексы `(model_id, subject_kind, subject_id, at DESC)` — по объекту,
+`(model_id, at DESC)` — по времени, `(actor_id, at DESC)`; частичный
+`(model_id, item_id, at DESC) WHERE entry_kind = 'action'` — «История». Пишут триггер
+`log_row_change()` и код типизированных событий; UPDATE и DELETE запрещены.
+Секреты и сырые заголовки не пишутся; фон пишет итог шага, не каждый кадр.
+
+**`backup_runs`** — попытки бэкапа (§12.3). `id`, `kind` (`db_only | critical |
+full | restore_test`), `repository` (`external`; `E` и `mac` пилота сняты,
+бэкапа на пилоте нет — SPEC §12.3), `started_at`, `ended_at`,
+`state` (`running | succeeded | failed | abandoned`), `snapshot_ref`, `error`,
+`diagnostics jsonb`. Успешный прогон сам по себе не точка восстановления.
+
+**`backup_checkpoints`** — точка восстановления (§12.3). `id`, `run_id`,
+`db_snapshot_at`, `dump_key`, `dump_sha256`, `required_manifest_key` (список нужных
+SHA-256 мастеров и загрузок, снятый из того же снимка PostgreSQL, что и дамп, через
+`pg_export_snapshot`), `required_count`, `missing_count`, `state` (`db_only |
+complete | expired`), `repository`, `finalized_at`, `last_restore_test_at`.
+`complete` — только когда каждый нужный хэш есть в снимке хранилища; дневной дамп при
+ночных блобах — `db_only`. Экран состояния показывает последнюю полную точку отдельно
+от последнего дампа.
+
+**`storage_findings`** — результаты `verify-blobs` и сверки после падений (§9.1,
+§11.2). `id`, `work_id`, `kind` (`hash_mismatch | size_mismatch | missing_file |
+orphan_file | orphan_row | stale_intent | corrupt`), `blob_sha256?`, `artifact_id?`,
+`storage_key`, `expected`, `actual`, `referenced_by jsonb`, `found_at`,
+`resolved_at/by`, `note`. Чистка — вручную по отчёту (§9.1); отчёт хранится, потому
+что должен быть воспроизводим.
+
+## 4. Enum и ограничения
+
+Настоящие enum (множество закрыто решениями владельца): `content_type`
+(`PPV SET SXT CUS FYP LIFE RAW PRM`), `asset_role` (`master teaser pic raw ed clip
+thumb cap`), `media_kind`, `platform` (`fansly onlyfans`), `surface_kind`,
+`tag_group`, `annotation_field`, `provenance_relation`, `uniq_level`,
+`principal_kind`, `principal_role`, `actor_type`, `rendition_kind`.
+
+`text` + CHECK (в §13 или в §5 названо предварительным): состояние и исход
+черновика, сила и вид улики, статус заказа, состояние блоба, состояние работы,
+вид случая разбора, вердикт проверки.
+
+Смысловые ограничения, которые обязаны попасть в миграцию, а не остаться
+договорённостью:
+
+| Правило | Где |
+|---|---|
+| Номер не переиспользуется, tombstone занимает его | UNIQUE `(model_id, type, number)` в `content_items` |
+| Одна группа приёмки — не больше одного созданного объекта | UNIQUE `(model_id, created_from_group_id)` |
+| Одна ревизия источника — один черновик | UNIQUE `inbox_drafts.source_revision_id` |
+| Принять можно только с проверенным мастером | CHECK на `outcome` и `master_verified_at` |
+| Под-хендл никогда не достаётся другому файлу | UNIQUE `(model_id, item_id, role, ordinal)` включая снятые членства |
+| У файла один владелец | частичный UNIQUE `(model_id, asset_id) WHERE kind = 'owned' AND removed_at IS NULL` |
+| Состав после закрытия не меняется | триггер на `asset_manifest_entries` под блокировкой заголовка; FK потребителей на `(model_id, id, 'sealed')` |
+| Сториз и рассылка вне автосверки | CHECK `auto_match` в `surfaces` |
+| Одна публикация — одно размещение | частичные UNIQUE по внешним ID в `placements` |
+| Повтор наблюдения не даёт улики; у исправления один преемник | UNIQUE `(placement_id, source, dedup_key)`, UNIQUE `(corrects_id)` |
+| Заявка легаси всегда `claim`, ручное всегда `exact` | CHECK в `placement_evidence` |
+| Правка не закрывается одной привязкой версии | CHECK `NOT done OR done_basis IS NOT NULL` |
+| Передача отмечена только с датой и автором (кроме прошлых паков из импорта) | CHECK в `promo_deliveries` |
+| Смешать модели нельзя | составные FK `(model_id, …)` во всех доменных связях; структурный тест по `pg_constraint` |
+
+Переходы §5, которые остаются в коде, а не в constraint: цепочка черновика
+(предварительна), снятие подтверждения поля (SPEC не запрещает), «нельзя закрыть
+заказ с открытой правкой» (межстрочное, проверяется командой закрытия), цикл в
+происхождении (проверка под блокировкой объектов).
+
+## 5. Ключевые транзакции
+
+**Принятие группы.** Медиа готовится вне транзакции (мастер проверен, байты в
+`blobs/`). Транзакция: ключ идемпотентности → блокировка группы, черновиков, целевого
+объекта и строки счётчика в одном порядке → проверка `row_version` и того, что все
+выбранные файлы готовы или подтверждены дублями (частичная готовность — отказ,
+а не тихое выпадение файла) → номер только для нового объекта → `content_items`,
+`assets`, `asset_versions`, `item_memberships`, `aliases`, `provenance`, перенос
+`annotation_fields` с группы и черновиков на объект и версии (статусы сохраняются),
+`custom_order_deliveries` при выбранном заказе, `legacy_claims.resolution` →
+`inbox_drafts.state = 'resolved'`, `outcome`, `applied_*` → `action_log` →
+постановка работ → commit. Повтор с тем же ключом возвращает прежний результат;
+сбой до commit номер не расходует. Новый файл, приехавший в ту же папку позже, —
+отдельный черновик с предложением дополнить тот же объект.
+
+**Карантин и чистка.** Кандидат — блоб с `blob_is_referenced(sha256) = false`
+(нет версий, живых черновиков и незавершённых работ). `storage_operations.intent`
+в БД → перенос под замком строки блоба → `quarantined`, `purge_after = now() + 30
+дней`. Через срок — повторная проверка ссылок, `purging` → удаление → `purged`;
+строка `blobs` остаётся. Возврат из карантина — обратная операция под тем же
+замком. Производные не считаются ссылкой и удаляются вместе с мастером.
+
+**Точка восстановления.** Барьер против карантина и чистки на время снимка →
+`REPEATABLE READ`, `pg_export_snapshot()` → из одного снимка: `pg_dump
+--snapshot` и список нужных SHA-256 (мастера всех версий, зарегистрированные
+загрузки, нерешённые черновики) → снимок хранилища недостающих блобов →
+сверка каждого нужного хэша с содержимым снимка → `checkpoint.json` в репозиторий
+бэкапа → `backup_checkpoints.state = 'complete'` → снятие барьера. Дневные дампы
+между ночными снимками блобов — `db_only`. Восстановление: дамп → нужные блобы по
+списку → сверка хэшей и замыкания ссылок → сверка незавершённых `storage_operations`
+и работ → воркеры → пересборка производных.
+
+## 6. Сценарии строками
+
+**PPV-066 «Йога и анал» из кастома.** `source_objects` ×3 (папка, `.mov`, `lv_0_*.mp4`),
+`source_revisions` ×2, `inbox_groups` ×1, `inbox_drafts` ×2, `blobs` ×3,
+`master_checks` ×1, `legacy_number_claims` (`PPV`, 66, `keep`),
+`content_items` (`PPV`, 66, `dm`), `assets` ×3 с `asset_versions` v1,
+`item_memberships` `master`, `teaser`, `pic01`, `aliases` (путь папки и файла —
+`raw_path`; `PPV-066` — `public`; `resource_id`), `provenance`
+`ppv_from_custom ← CUS-181` (общий блоб), `item_tags` из реестра с
+`group_at_import`, `annotation_fields` (`title` подтверждено, остальное черновик),
+`rendition_generations` ×1 (из source, привязано после мастера) с артефактами
+превью, миниатюр и кадров; размещений нет — `X.X.X` значит «не выпущен».
+
+**Сет на трёх страницах.** `SET-069`: 34 `raw` + 12 `ed`, у каждого `ed` —
+`provenance processed_from raw`. Один `asset_manifests` из 12 версий;
+три `posting_plan_rows` (`lora-1/2/3`, `wall`) с тем же `manifest_id`;
+три `download_receipts` с разными суффиксами аккаунта и даты; три `placements`
+`post` с `placement_assets` ×12 на те же версии. Новых блобов и производных нет.
+
+**FYP с уникальными версиями.** Веб-загрузка → `web_uploads` → черновик → `FYP-0412`,
+`assets` мастер v1; система создаёт два `assets` с `variant_kind = 'uniq'`
+(`u1 soft`, `u2 mirror`), у каждого своя версия и `provenance uniq_from`.
+Три строки плана с составами из трёх разных версий. Пересдача `u2` — `u2 v2`,
+`FYP-0412_slug_master_u2_v2.mp4` в имени (naming §5).
+
+**Новая версия после плана.** `PPV-073` в плане на `lora-1` с составом
+`{master v1, pic01 v1}`; КМ скачал и отметил. Приехала правка мастера →
+`asset_versions` v2, `assets.current_version_id = v2`. Строка плана не меняется,
+`marked_manifest_id = manifest_id`, экран показывает «есть новая версия».
+Замена — новый состав с v2 и сброс сравнения отметки. Живая подборка `PRM-012`,
+где мастер лежит ссылкой без `pinned_version_id`, теперь показывает v2; переданная
+вчера выгрузка держит v1 через свой состав и квитанцию.
+
+**Пост в Hub без плана.** Часовой опрос: `hub_observations` (пост, `sequence_no = 1`),
+`hub_posts`, вложения, `hub_raw_media`. Строки плана нет → `placements`
+(`post`, `item_id` пуст) + `placement_evidence` (`hub`, `observed`, `candidate`).
+КМ привязывает `SET-069`: `item_id`, `placement_assets` ×12, вторая улика
+`manual_confirm exact`. Повторный опрос той же строки: `semantic_hash` тот же —
+наблюдения нет, улики нет; изменилась подпись — `sequence_no = 2` и новая улика с
+другим `dedup_key`, старая остаётся.
+
+**Кастом с правкой.** Карточка → `custom_orders`; файл `3. Customs/13:03 <фан>.mov`
+→ черновик с двумя кандидатами (`order`, `signals` reply и длительность против
+`duration_window` у второго, `conflicts_with`) → принятие `CUS-186` со сдачей
+(`custom_order_deliveries`, состав `{master v1}`) → `custom_orders.status =
+'delivered'` → правка (`custom_order_revisions`, `done = false`) → «Сдано, требуется
+правка» → вторая версия → вторая сдача с составом `{master v2}` → агент отмечает
+`done` с `done_basis` и `fixed_delivery_id` → закрытие. Алиас `13:03 <фан>.mov` —
+`raw_path`, `reader` его не видит.
+
+**Отклонённый черновик.** `outcome = 'rejected'`; блоб уходит в карантин только если
+`blob_is_referenced` ложно (на него не ссылаются версии, другие живые черновики и
+работы); хэши, проверки и записи прогонов остаются. Следующий скан ту же ревизию
+не поднимает: черновик занимает `source_revision_id`.
+
+**Коллизия PPV-032 при импорте.** Проход по метаданным снимка: три
+`legacy_number_claims` на 032, счётчик поднят выше 072 (`[PPV-073]` на диске тоже
+записан). Принятие: `milk` — `keep` 032; `halloween` и `brown_set` — `renumber`,
+номера с живого счётчика уже после всех резервов. У всех трёх `aliases`
+`legacy_id = 'PPV-032'` (`public`) — поиск «ппв 32» находит три карточки.
+
+## 7. Развилки владельца, оставленные в SPEC §13
+
+Схема выбирает значение по умолчанию и отмечает, что владелец не решал:
+
+| Вопрос | По умолчанию в схеме |
+|---|---|
+| Менеджер с правом на одну страницу и общий каталог модели | читает общий каталог, меняет план и отметки своих страниц; приёмка, правка каталога и промо — право на модель |
+| Хранение старых версий мастеров | хранятся все принятые версии; чистка принятых — отдельная политика, до неё места они занимают |
+| Подтверждённая хронология после перемонтажа | остаётся при прежней версии с отметкой «для прежней версии», новая версия размечается черновиком |
+| Задача «залить в vault» при уже лежащем файле | задача выполнена присутствием нужных версий в альбоме; требование именно новой заливки — отдельный признак строки |
+| Человек и заказы через API | §8.2 как процесс и набор кнопок; скрытого запрета по типу принципала нет |
+| Смена типа объекта после номера | новый объект и алиас, прямого UPDATE нет |
+| Разделение пачки RAW | исходный номер остаётся у одной части, остальным — новые |
+
+Решены 08.09.2026 и записаны в SPEC: подготовленный план держит выбранную версию
+до явной замены; живая подборка `PRM` следует текущей версии, подготовленная и
+переданная выгрузка закреплены.
+
+Решены 11.09.2026. Владелец: прав на страницу нет (первая развилка снята, колонка
+`principal_grants.account_id` убрана); все принятые версии хранятся, чистка — отдельная
+политика после обкатки; люди правят заказы теми же командами, что агент. По поручению
+владельца приняты умолчания схемы: подтверждённая хронология остаётся за прежней
+версией, новая размечается черновиком; «залить в vault» выполнено наличием нужных
+версий в альбоме, отдельная заливка — флаг `requires_new_upload` у строки плана;
+смена типа — новый объект, алиас и перенаправление, прямого UPDATE нет; при
+разделении пачки RAW номер оставляет часть, которую выбрал КМ (по умолчанию самая
+большая), остальные получают новые номера, старые под-хендлы остаются алиасами.
+
+## 8. Что изменено в норме вместе со схемой
+
+SPEC §4 — сущности Asset, AssetVersion, ItemMembership, AssetManifest и абзац
+«Таблицы ядра»; §6.4 — проход по метаданным до байтов; §7 и §7.1 — правило версий
+в плане и подборке; §9.1 — производные по поколениям; §12.3 — точки «только БД» и
+полные; §13 — сужен пункт о схеме, добавлены развилки. naming §3 и §5 — уникальная
+версия `uN` перед `vN`.
+
+11.09.2026: SPEC §4.2 (71 таблица, правила владения, закрытие составов и квитанций,
+шаги файловых операций, `text` + CHECK), §4 и §7 (флаг «второй человек в кадре», запрет
+OnlyFans без отметок верификации), §5 и §8.2 (заказ сдан при всех частях; люди правят
+заказы), §11.1 (права на модель, не на страницу), §12.0 (миграции по этапам, без enum),
+§13 (сняты пункты о втором лице, формате журнала и развилках схемы); PRD §5; PLAN
+этапы 1–2. Остаётся в §13: числовые пороги, провайдер разметки, передача PII внешнему
+LLM.
+
+## 9. Изменения 11.09.2026
+
+Итог конкурентного планирования (два независимых планировщика, четыре раунда
+анонимной сверки, все спорные пункты закрыты обоюдным «да»; решения владельца 11.09).
+Уровень колонок и ограничений; при расхождении со схемой §1–§7 сильнее этот раздел.
+
+### 9.1. Убранные таблицы (78 → 71)
+
+| Таблица | Куда ушло | Условие |
+|---|---|---|
+| `rendition_requests` | Ключ производной (`master_sha256?`, `pipeline_version`, `kind`, `profile_key`, `meta_stripped`) и `is_active` — на `rendition_generations`; частичный UNIQUE по ключу `WHERE is_active` | Первое поколение строится из исходника с пустым `master_sha256` и привязывается один раз после проверки мастера (UPDATE `master_sha256`, `is_active`, `bound_at`); адрес поколения не меняется; переключение активного поколения сериализовано по ключу |
+| `promo_packages` | `content_items.promo_channel_id?`, `default_contractor_id?` | CHECK `(type = 'PRM') = (promo_channel_id IS NOT NULL)`; FK в пределах модели; сдача промо ссылается на карточку типа `PRM` через копию типа (схема §9.2) |
+| `hub_sync_runs`, `backup_runs` | Строки `work_operations` видов `hub_sync` и `backup` | Типизированные `account_id`, `dataset`, `scope`, `window_from/to`; входы неизменны; `work_key` включает окно (иначе второй часовой опрос упрётся в UNIQUE `(model_id, kind, work_key)`); новый прогон — новая строка; результат неизменен; `backup_checkpoints.run_id` и `hub_observations.run_id` ссылаются на работу и попытку |
+| `storage_findings` | Неизменный отчёт JSON на строке работы `verify_blobs` | Находка считается закрытой, когда следующий отчёт её не содержит (SPEC §9.1 «чистится вручную по отчёту»); отдельная таблица — только если появится рабочий процесс по находкам |
+| `hub_coverage` | Колонки `hub_sync_state`: `expected_count`, `observed_count`, `stop_reason`, `blockers`, `proven_complete_at` | Отметка успешного опроса не означает покрытия; история изменений — в журнале (схема §9.3) |
+| `placement_checks` | Не хранится: вердикт «ждём / не вышло / не удалось проверить» считается из улик, наблюдений, покрытия и настроек; прошлые входы восстановимы из журнала изменений `hub_sync_state` и `policy_settings` | Если на этапе 4 понадобится стабильная сводка спорных случаев — новая таблица-журнал вердиктов, без переделки ядра |
+
+Оставлены, хотя обсуждались: `source_paths` (история путей до приёмки — не каталог),
+`sessions` и `api_tokens` (разные контракты безопасности). Новых таблиц нет.
+
+### 9.2. Изменения по таблицам
+
+- **`models`**: убран `catalog_revision` (горячая строка). Индекс каталога — view
+  `catalog_index` над `content_items`, `item_tags`, `annotation_fields`; браузер
+  обновляет снимок модели целиком (ETag) в фоне, как разрешает SPEC §12.0. Инкремент по
+  счётчику небезопасен: номер выдаётся при старте транзакции, не при коммите, и
+  браузер может навсегда пропустить позднее закоммиченное изменение.
+- **`content_items`**: убраны `tags_cache`, `markup_state`,
+  `second_person_verified_at/by`; `has_second_person boolean NOT NULL DEFAULT false`
+  (предлагаемое значение — на `inbox_groups`), с ним объект на OnlyFans не ставится
+  (команда плана, замена состава и вставка готового монтажа отклоняют; поздняя галочка
+  отменяет невыполненные задания на OnlyFans, история остаётся); добавлены
+  `promo_channel_id?`, `default_contractor_id?` (схема §9.1); UNIQUE `(model_id, id, type)`
+  как цель для копии типа; `type`, `number`, `model_id` неизменны триггером.
+- **Копия типа**: дочерние таблицы (`item_memberships`, `ppv_releases`,
+  `custom_order_deliveries`, `promo_deliveries`, `placements` — `item_type?` в паре с
+  `item_id?`) несут `item_type` с FK `(model_id, item_id, item_type)` и CHECK
+  допустимых пар «тип — роль» из naming §3. Без триггеров.
+- **Владение сквозь связи**: `item_memberships UNIQUE (model_id, item_id, id)` и
+  отложенный FK обложки `(model_id, id, cover_membership_id)`; `surfaces UNIQUE
+  (model_id, account_id, id)` и FK `(model_id, account_id, surface_id)` у строк плана и
+  размещений; каждая ссылка на версию несёт `asset_id` и FK `(model_id, asset_id,
+  version_id)` (членства, строки состава, `placement_assets`, квитанции);
+  `custom_order_deliveries UNIQUE (model_id, order_id, id)` и FK `(model_id, order_id,
+  delivery_id)` из `custom_order_revisions.fixed_delivery_id` и из
+  `custom_order_deliveries.retracts_id`; профили подрядчика FK `(model_id,
+  contractor_id, id)`; `corrects_id` улики — составной FK на то же размещение, один
+  преемник.
+- **`assets` / `item_memberships`**: `variant_no int NOT NULL DEFAULT 0` на обеих
+  таблицах (0 — базовый файл; `assets CHECK ((variant_kind = 'uniq') = (variant_no >
+  0))`, naming §5 требует `_uN` при N ≥ 1); `assets UNIQUE (model_id, id, variant_no)`,
+  членство копирует номер с FK `(model_id, asset_id, variant_no)` — NOT NULL с обеих
+  сторон, иначе Postgres пропускает проверку при NULL; вычисляемого `handle` нет, хендл
+  считается в view и коде; UNIQUE `(model_id, item_id, role, ordinal, variant_no)` NULLS
+  NOT DISTINCT по `ordinal`, так `master`, `u1`, `u2` живут рядом; снятые хендлы не
+  переиспользуются; `created_in_item_id`, `item_id`, `asset_id`, `kind` членства
+  неизменны.
+- **`asset_versions`**: убран `retired_at` (владелец хранит все версии); строка
+  неизменна; `master_sha256` — FK на `blobs`.
+- **`asset_manifests`**: состояния нет — состав вставляется закрытым одной транзакцией;
+  заголовок несёт `entry_count int NOT NULL CHECK (> 0)`, неизменен; позиции строк
+  `1..entry_count`, UNIQUE `(model_id, manifest_id, position)`; отложенный триггер на
+  коммите сверяет число строк с `entry_count`, поэтому поздняя вставка валит
+  транзакцию; UPDATE и DELETE заголовка и строк запрещены триггером и REVOKE; потребители
+  ссылаются на `(model_id, id)`. FK на константу `'sealed'` невозможен и не нужен.
+  Проверки `xmin` нет: ломается под savepoint и ничего не добавляет.
+- **`annotation_fields`**: вместо `target_kind/target_id` четыре ссылки `item_id?`,
+  `version_id?`, `group_id?`, `draft_id?` с составными FK и CHECK «ровно одна»; UNIQUE
+  NULLS NOT DISTINCT `(model_id, item_id, version_id, group_id, draft_id, field)`;
+  предложение ИИ применяется только при совпадении ожидаемой версии поля и
+  неподтверждённом поле; `platform_texts` держат свои `value_version` /
+  `confirmed_value_version`, `platform_text` из `annotation_fields.field` убран.
+- **`tags` / `item_tags`**: обычный FK `item_tags.tag_id → tags (id)` и триггер
+  «тег общий (`model_id IS NULL`) или своей модели»; область тега неизменна. Составной
+  FK на общие теги не работает: ссылающиеся колонки NOT NULL, проверка идёт и падает.
+- **`posting_plan_rows`**: `slot_tz text NOT NULL` копируется из `models.timezone`,
+  `slot_at timestamptz NOT NULL` пишет команда, триггер сверяет `slot_at = (slot_date +
+  coalesce(slot_time,'00:00')) AT TIME ZONE slot_tz`; вычисляемой колонки нет
+  (`timezone(text, timestamp)` не IMMUTABLE, пояс лежит в другой таблице); флаг
+  `requires_new_upload boolean NOT NULL DEFAULT false`. То же для
+  `ppv_releases.release_date`.
+- **`download_receipts` / `download_receipt_entries`**: квитанция вставляется целиком,
+  когда известны байты, имена и хэши; источник — `manifest_id` (карточка и план дают
+  закрытый состав); строки несут `asset_version_id` плюс неизменный хэш исходника.
+  Скачивание исходника и превью с черновика (SPEC §6.1) квитанции не пишет: ID у
+  черновика нет, точной улики оно не даст; кто, что и когда скачал — в журнале
+  (30.09.2026). Закрытие как у составов
+  (`entry_count`, позиции, отложенная сверка, запрет UPDATE/DELETE); исправление —
+  новая связанная квитанция; индекс `(model_id, asset_version_id, receipt_id)` (в схеме §3.5
+  индекс ссылался на `issued_at` другой таблицы); выданный хэш хранится, даже если
+  производная позже удалена; завершение и обрыв передачи — запись журнала.
+- **`master_checks`**: `decision` CHECK `copy | encode | skipped_hdr | skipped_av1 |
+  skipped_lowrate | skipped_audio`; `verdict` — все исходы `tools/compress-library.sh`: `ok`,
+  `unreadable`, `bigger_than_source`, `timing_drift`, `timing_uncomparable`,
+  `audio_mismatch`, `audio_offset`, `audio_tracks_lost`, `encode_failed`,
+  `frame_mismatch`, `source_decode_errors`, `source_truncated` и три пропуска;
+  `enc_ms`, `verify_ms`, `src_frames`, `dst_frames`, `crf`, `report jsonb`; у
+  проваленной проверки может не быть хэша мастера; версию принимает только `ok`;
+  результат на каждую попытку: UNIQUE `(source_sha256, recipe_digest, work_id,
+  attempt)` (прежний ключ сталкивался на повторном `ok`). Мастера, сжатые на winpc при
+  замерах, в продукт не переносятся — всё пережимается.
+- **`blobs`**: убраны `registered_from_draft_id`, `state_generation`; строка не
+  удаляется никогда; состояние `purging` живёт в `storage_operations`, не в
+  `blobs.state`. Ссылки-удержания — настоящие FK на `blobs (sha256)`:
+  `asset_versions.master_sha256`, `inbox_drafts.master_sha256`,
+  `inbox_drafts.source_blob_sha256?`, `web_uploads.sha256`,
+  `work_operations.output_sha256`; колонки-отпечатки (`source_revisions.source_sha256`,
+  `asset_versions.source_sha256`, `master_checks.*`) FK не являются и ничего не держат.
+- **`source_revisions`**: наблюдённые идентификатор и метаданные неизменны, но
+  `source_sha256`, `verified_at`, `verified_route` заполняются один раз (NULL → значение)
+  после скачивания и проверки; триггер разрешает только этот переход.
+- **`inbox_drafts`**: `rejected_at`, `reopened_at?`, `reopen_count`; переход `resolved →
+  ready` только при `outcome = 'rejected'` и `now() < rejected_at + 30 дней` — окно от
+  даты отказа, а не от карантина: байты могут держаться другой ссылкой и в карантин не
+  попасть; принятые, дополнившие объект и дубли-алиасы заново не открываются.
+- **`principal_grants`**: убран `account_id`; UNIQUE один живой грант на
+  `(principal_id, model_id)`. Убраны `accounts.second_person_policy` и вид ревью
+  `verification_required`.
+- **`policy_settings`**: `model_id?` (NULL — глобальная строка: выключатели SPEC §8
+  и, с 30.09.2026, пороги защиты входа SPEC §11.1; общий запрет сильнее разрешения по
+  модели; изменение 13.09.2026, прежде глобальных строк не было), вторая модель
+  получает модельные строки из bootstrap,
+  `account_id?`, `item_type?`, `value jsonb?`, UNIQUE NULLS NOT DISTINCT
+  `(model_id, account_id, item_type, key)`; приоритет модель+аккаунт+тип
+  → модель+аккаунт → модель+тип → модель → глобально (так берутся пороги); выключатель
+  включён, только если хотя бы на одном уровне от глобального до его области стоит
+  «включено» и ни на одном — «выключено»; SQL NULL = не задано = выключено, JSON `null`
+  отклоняется; валидатор на ключ; сидов нет; решения хранят снимок разрешённых
+  значений и версий.
+- **`id_counters`**: `legacy_reserved_at timestamptz?` — ставит проход по метаданным
+  снимка на этапе 3 (SPEC §6.4) или bootstrap для модели и типа без легаси; пока пусто
+  для типа, у которого по конфигурации есть легаси, приёмка номер не выдаёт (иначе PPV
+  на этапе 2 получил бы `PPV-001` заново). Начальный `next_number` задаёт bootstrap.
+- **`work_operations`**: `paused_reason text?` (`switch_off:<ключ>`) — исполнитель, взяв
+  работу выключенной области (SPEC §8), ставит причину и отпускает работу; включение
+  снимает причину у работ своего ключа и ставит `next_attempt_at = now()`; захват —
+  `paused_reason IS NULL AND state IN ('pending','retry_wait') AND next_attempt_at <=
+  now()` или `state = 'running' AND lease_until < now()`; прежний
+  `state <> 'succeeded'` захватывал отменённые и проваленные; поколение аренды
+  проверяется на каждом чекпойнте, продлении и завершении; потерявший аренду
+  останавливает свой процесс; успех неизменен; выборка — `FOR UPDATE SKIP LOCKED` по
+  видам своей роли; периодическая работа — новая строка на интервал (интервал в
+  `work_key`, поток в `stream_key`); восстановление после падения — тот же захват по
+  истёкшей аренде (продление аренды, выборка и периодика — 30.09.2026, pg-boss снят).
+  `model_id` пустым бывает только здесь, в `idempotency_keys`, `action_log`, у глобальных
+  строк `policy_settings` и у общих тегов; CHECK: строка без модели не несёт модельных
+  целей; PK `id` и UNIQUE `(model_id, id)`: ссылки модельных таблиц на работу составные
+  `(model_id, work_id)`, работа без модели в них не попадает; структурный тест держит
+  этот список исключений и это правило.
+- **`custom_orders` / `custom_order_deliveries`**: `expects_video boolean NOT NULL`,
+  `expects_photos boolean NOT NULL`, `photo_count?`, CHECK `(expects_video OR
+  expects_photos)`; `video_completed_at/by?`, `photos_completed_at/by?` ставит команда
+  агента (фото — число разных логических файлов по действующим сдачам ≥ `photo_count`,
+  если задано; несколько роликов — одна часть «видео», отмечается, когда пришли все);
+  `deliveries.part` CHECK `video | photos`; отзыв сдачи — новая строка с `retracts_id`
+  (составной FK на тот же заказ), `manifest_id NULL`, UNIQUE `(retracts_id)`; UNIQUE
+  `(model_id, order_id, manifest_id)` становится частичным `WHERE manifest_id IS NOT
+  NULL`; `delivered` ⇔ все ожидаемые части сданы и не отозваны; `closed` требует
+  `delivered` и отсутствия открытых правок; все изменения заказа сериализуются на строке
+  заказа. Таблицы частей нет (заказы из нескольких видео редки — решение владельца
+  11.09).
+- **`placements` / `placement_evidence`**: время события может быть неизвестно, если
+  есть улика (`event_precision`) — заявки легаси без даты; CHECK на тройку `(source,
+  kind, strength)`: `manual_confirm → exact`, `import → claim`, `hub →
+  hub_observation_id NOT NULL`, а у отрицающих видов `manual_reject | retract |
+  outside_catalog` `strength IS NULL` — отказ ничего не утверждает и не должен
+  считаться слабой положительной заявкой (прежний CHECK делал ручную улику точной
+  всегда).
+- **`hub_posts`**: убран `matched_placement_id` — один пост бывает двумя размещениями
+  (стена и FYP с общим `external_post_ref`, схема §3.6); связь выводится из размещений по
+  `external_post_ref` и поверхности, очередь неразобранных — `NOT EXISTS`.
+- **`action_log`**: `id bigint IDENTITY`, `at`, `model_id?`, `actor_type (human | agent
+  | system)`, `actor_id?`, `actor_label`, `action`, `entry_kind (action | change)`,
+  `item_id?`, `request_id?`, `work_id?`,
+  `subject_kind`, `subject_id?`, `subject_label`, `before jsonb?`, `after jsonb?`,
+  `result (ok | denied | error)`, `payload_version`. Без партиций; BRIN по `at`; индексы
+  `(model_id, subject_kind, subject_id, at DESC)`, `(model_id, at DESC)`, `(actor_id, at
+  DESC)`. Механика — схема §9.3.
+- **`sessions`, `api_tokens`**: без изменений, отдельно.
+
+### 9.3. Транзакции и протоколы
+
+- **Принятие группы** — как в схеме §5, плюс: замки на строки байтов берутся в порядке
+  возрастания SHA-256 (иначе два принятия с общими байтами взаимно блокируются);
+  проверка `legacy_reserved_at` до выдачи номера; сдача части заказа — не сдача
+  заказа.
+- **Журнал**: триггер `log_row_change()` на каждой изменяемой доменной таблице; INSERT и
+  DELETE пишут строку целиком, UPDATE — только отличающиеся ключи (`before` — старые
+  значения, `after` — новые, ключ строки всегда); `SET LOCAL app.actor_type / actor_id /
+  actor_label / action / request_id` обязательны — без них триггер отклоняет запись.
+  Триггера нет на `work_operations`, текущих строках Hub, `principals`, токенах (их
+  журналы — наблюдения и типизированные события). Типизированные события пишет код:
+  исходы попыток работ (попытка, поколение, исход, время), смысл вставленных фактов,
+  администрирование людей и токенов без секретов, отказ и ошибка — отдельной записью
+  после отката. Полнота гарантируется каталогом БД (тест: у каждой изменяемой таблицы
+  есть триггер), смысл — именем действия из сессии. Команда пишет на каждый затронутый
+  объект одну строку `action` — строку ленты и «Истории» (действие, автор, `item_id`,
+  параметры фразы в `after`); строки триггера — `change` с тем же `request_id` и
+  `item_id` из `SET LOCAL app.item_id` (ставится перед изменениями каждого объекта), они
+  дают раскрытие «было → стало». Лента и «История» читают только строки `action`;
+  индекс «Истории» — частичный `(model_id, item_id, at DESC) WHERE entry_kind = 'action'`.
+  UPDATE только технических отметок (`last_seen_at`, `last_used_at`) в журнал не пишется.
+- **Операции с файлами** (карантин, возврат, чистка, регистрация): (1) транзакция А —
+  замок на строку байтов, свежая проверка нуля ссылок, вставка намерения, коммит; (2)
+  сериализованный писатель хранилища коммитит отметку `started` в своей короткой
+  транзакции **до** любого действия с файлом, выполняет идемпотентный шаг и проверяет
+  результат; (3) транзакция Б — замок, запись исхода, смена `blobs.state` и зависимых
+  состояний черновика или версии, журнал, коммит. Падение между (2) и (3) оставляет
+  намерение, которое рестарт сверяет с диском до любых конфликтующих изменений. Чистка
+  повторяет проверку ссылок в (1) и в (3). Одно живое намерение на блоб (частичный
+  UNIQUE).
+- **Создание ссылки на байты**: замок на строку байтов, затем проверка состояния **и
+  живых намерений**: `present` без намерения — вперёд; `quarantined` — сначала
+  намерение на возврат и протокол выше; намерение в `intent` (на диске ничего не было)
+  — отменяется, ссылка идёт дальше; намерение в `started` или `fs_done`, либо
+  неизвестно, жив ли писатель, — ссылка отпускает замок, ждёт итоговую транзакцию или
+  запускает сверку этого намерения с диском, затем снова берёт замок и перепроверяет.
+  На устаревшем `present` не продолжает никогда. Одних FK мало: после переноса файла в
+  карантин строка байтов остаётся, и ссылка на неё прошла бы проверку FK без файла в
+  хранилище. `purged`, `missing`, `corrupt` — ссылка не создаётся, пока `put` не положит
+  те же байты заново (битый файл перед этим убирается) и не вернёт строку в `present`;
+  дубль при приёмке, совпавший с таким блобом, так его и чинит.
+- **Возврат отклонённого черновика**: замок на черновик и байты, окно 30 дней от
+  `rejected_at`; если байты на месте — без возврата из карантина, иначе — по протоколу;
+  итоговая транзакция переводит черновик в `ready`, снимает исход, пишет обе записи
+  журнала; исходный отказ остаётся в истории.
+- **Точка восстановления**: барьер против карантина и чистки на все пути удаления;
+  запись о завершении делается после снятия дампа и в него не попадает; внешний
+  манифест с хэшем дампа, списком нужных хэшей, версией схемы и рецепта; восстановление
+  сверяет дамп и замыкание ссылок и записывает восстановленную точку.
+
+### 9.4. Неизменяемость и проверки
+
+- `forbid_change(cols)`: `model_id`, `type`, `number`, `created_in_item_id`,
+  `item_id` / `asset_id` / `kind` членства, заголовок состава и квитанции.
+  `forbid_update_delete()` + `REVOKE UPDATE, DELETE` у прикладной роли на
+  `asset_versions`, `asset_manifests`, `asset_manifest_entries`, `download_receipts`,
+  `download_receipt_entries`, `placement_evidence`, `hub_observations`, `action_log`.
+  Тест перечисляет все охраны.
+- Приёмочные тесты (Testcontainers, PostgreSQL 18, прикладная роль): чистое применение
+  и повтор без изменений; два раннера одновременно; обрыв между DDL и записью версии;
+  несовпадение контрольной суммы останавливает запуск; золотой `schema.sql`; равенство с
+  Drizzle и со списками значений в коде; структурный тест `model_id`; сгенерированные
+  отрицательные тесты на каждый составной FK (`23503`) и ручные внутри модели (чужая
+  поверхность, чужая версия, чужая обложка, чужая сдача, чужой профиль, исправление на
+  чужом размещении, общий тег работает, чужой частный тег нет, работа без модели с
+  модельной целью); негативы по каждому ограничению схемы §4 с поправками (повтор номера,
+  второй объект из группы, второй черновик на ревизию, приёмка без `ok`, повтор хендла
+  при живых `master` + `u1` + `u2`, два владельца, вставка и правка состава и
+  квитанции после создания, правка или отзыв на чужую сдачу, два отзыва одной сдачи,
+  смена типа и номера, UPDATE любой неизменяемой таблицы, неизвестное значение CHECK);
+  контракт байтов — `blob_is_referenced` против `pg_constraint`, все переплетения
+  карантина и ссылки (ожидание, перепроверка состояния и намерений, возврат; встреча с
+  `intent` — отмена; со `started` или `fs_done` — ожидание или сверка; писатель убит
+  после переноса до `fs_done` при живом `web` — ссылка ждёт или сверяет, никогда не
+  продолжает), повторная проверка перед чисткой, возврат черновика внутри окна и после,
+  с байтами в карантине и с байтами, удержанными другой ссылкой, скачивание с черновика
+  Я.Диска и с веб-загрузки до объекта; транзакция приёмки под гонкой (один ключ
+  идемпотентности — один объект и номер, разные ключи — отказ по группе, откат не
+  тратит номер, без `legacy_reserved_at` номер не выдаётся); журнал (триггер на каждой
+  таблице, запись без контекста отклоняется, у UPDATE только изменённые ключи,
+  проваленная транзакция не оставляет успешной записи, секреты не попадают ни в журнал, ни в
+  `idempotency_keys`); захват
+  работ и истёкшие поколения, вставка работы в одной транзакции с доменной записью,
+  восстановление по истёкшей аренде; части заказа (только видео при заказе видео+фото — не сдан, 1 из 20
+  фото — не сдан, сериализация сдачи, отзыва, правки и закрытия); запрет OnlyFans при
+  создании плана, замене состава и вставке монтажа, гонка галочки и плана; Hub A→B→A —
+  три наблюдения, стена + FYP одного поста — два размещения, `manual_reject` никогда не
+  `exact`; обрывы файловых операций до и после физического шага; bootstrap дважды;
+  восстановление из точки «только БД» и полной.
+
+### 9.5. Этапы и файлы миграций
+
+Правило: таблица появляется с этапом PLAN, чей код её впервые пишет. Каждый
+закоммиченный префикс валиден и держит все связи, которые его код может использовать;
+поздние файлы добавляют колонки и FK в ядро (nullable, без перезаписи данных).
+
+| Этап | Файлы | Таблицы |
+|---|---|---|
+| 1 | `0001_foundation` | `models`, `accounts`, `surfaces`, `promo_channels`, `principals`, `principal_grants`, `sessions`, `api_tokens`, `id_counters`, `policy_settings`, `work_operations`, `idempotency_keys`, `action_log` (13) + `schema_migrations`, роли `contentops_migrate` / `contentops_app` / `read_only`, функции, `pg_trgm` |
+| 2 (2а: `0002`, `0003`; 2в: `0004`) | `0002_bytes_sources`, `0003_catalog`, `0004_orders` (`blobs` раньше `asset_versions`) | `pipeline_versions`, `content_items`, `assets`, `asset_versions`, `item_memberships`, `asset_manifests`, `asset_manifest_entries`, `aliases`, `provenance`, `tags`, `item_tags`, `annotation_fields`, `chronology_entries`, `platform_texts`, `blobs`, `blob_probes`, `blob_phashes`, `master_checks`, `storage_operations`, `rendition_generations`, `rendition_artifacts`, `sources`, `source_objects`, `source_paths`, `source_revisions`, `inbox_groups`, `inbox_drafts`, `inbox_draft_candidates`, `web_uploads`, `review_cases`, `download_receipts`, `download_receipt_entries`, `custom_orders`, `custom_order_messages`, `custom_order_deliveries`, `custom_order_revisions` (36; заказы здесь, потому что приёмка привязывает CUS к заказу) |
+| 3 | `0005_legacy_placements` | `legacy_claims`, `legacy_number_claims`, `placements`, `placement_assets`, `placement_evidence` (5) |
+| 4 (4а) | `0006_plan_promo` | `ppv_releases`, `posting_plan_rows`, `contractors`, `contractor_profiles`, `promo_deliveries` (5) |
+| 5 | `0007_hub` | `hub_sync_state`, `hub_observations`, `hub_posts`, `hub_post_attachments`, `hub_raw_media`, `hub_vault_albums`, `hub_vault_media` (7); FK `placement_evidence.hub_observation_id` |
+| 9б (бэкап только на сервере, решение 12.09.2026) | `0008_backup` | `backup_checkpoints` (1) |
+| 8 (8а) | `0009_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
+
+Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего
+69 таблиц: 13 + 36 + 5 + 5 + 7 + 1 + 2. На этапе 2 `annotation_fields`,
+`chronology_entries` и `platform_texts` обслуживают импорт и ручной ввод; сведения
+об источнике и авторе, версии и подтверждения сохраняются сразу.
+`annotation_fields.suggested_by_run_id`, `chronology_entries.run_id` и
+`platform_texts.run_id` вместе с FK добавляет только `0009_annotation`; ранние
+миграции и прикладной код не ссылаются на отсутствующие таблицы ИИ. Поздняя миграция
+оставляет эти ссылки пустыми у прежних записей, не меняет значения, версии,
+подтверждения и происхождение и проверяется на заполненном каталоге этапа 7.
+
+Этап 1 также ставит весь тестовый каркас (схема §9.4) и команду `bootstrap` (модель,
+аккаунты, поверхности, счётчики, первый владелец — из конфигурации, идемпотентно; без
+сидов порогов; словарь тегов грузит импортёр этапа 3). Раннер: advisory lock на
+отдельном соединении, `schema_migrations (version, name, checksum, applied_at,
+applied_by)`, файл = одна транзакция вместе с записью версии, несовпадение суммы
+останавливает запуск; до заморозки `migrate --reset` пересоздаёт заведомо одноразовую
+базу (только тестовые стенды; на базе после `schema-freeze` команда отказывает);
+заморозка — тег `schema-freeze` в первый день этапа 3
+(решение владельца 30.09.2026): с него база на winpc настоящая;
+после — только новые файлы вперёд, откат = исправляющая миграция; восстановление из
+точки — только на сервере (на winpc бэкапа нет, SPEC §12.3). Место: этот репо, `packages/db/migrations`, `packages/db/src/values.ts`
+(все списки значений), зеркало Drizzle, золотой `schema.sql`.
+
+### 9.6. Дополнение по сверке с Hub (блокер 4, 11.09.2026)
+
+Итог второй арены того же дня (та же пара планировщиков, четыре раунда, оба «да»).
+Норма — SPEC §7 «Правила сопоставления» и §8.1; здесь — уровень колонок.
+
+- **`hub_post_attachments`**: ключ `(model_id, post_id, attachment_index, member_index,
+  role)` UNIQUE NULLS NOT DISTINCT (пачки разворачиваются в участников, у превью своя
+  роль; прежний ключ по позиции их не вмещал) плюс стабильный ключ строки Hub; `role`
+  (`main | offer_preview | bundle_preview`); `link_state` — семь живых значений Hub
+  (`resolved | attachment_ref_missing | media_ref_missing | bundle_members_missing |
+  preview_unresolved | file_metadata_missing | non_media_attachment`) в `values.ts`;
+  колонки совпадения (пересобираемая проекция): `matched_asset_id?`,
+  `matched_version_id?` с составным FK `(model_id, matched_asset_id,
+  matched_version_id) → asset_versions (model_id, asset_id, id)`, `receipt_entry_id?`
+  с FK `(model_id, receipt_entry_id) → download_receipt_entries` и составным FK
+  `(model_id, matched_version_id, receipt_entry_id) → download_receipt_entries
+  (model_id, asset_version_id, id)`, `match_strength text` CHECK по списку
+  `placement_assets.match_strength`, `matched_at?`. Точное совпадение файла без
+  установленной поверхности живёт здесь; размещение создаётся, когда поверхность
+  установлена (флаги после V3, отметка КМ на строке плана, очередь).
+- **`placements`**: `surface_source text` (`hub | km_mark | km | plan`) — откуда
+  поверхность; строки с неподтверждённой поверхностью не участвуют в расчёте норм по
+  поверхностям.
+- **`placement_evidence`**: ключи дедупликации `exact:<media_ref>:<observation_id>`,
+  `cand:<plan_row_id>:<manifest_id>:<observation_id>` и `cand:hist:<asset_id>:<observation_id>`
+  (история без плана, SPEC §7, 30.09.2026); полезная нагрузка кандидата —
+  строка плана (у истории её нет), состав, сигналы (`dt_minutes`, `count_match`, `metadata_hits`,
+  `name_only_hits`, `caption_id_hit`, `fyp_flags`, `wall_refs`); у ручного
+  подтверждения `payload.basis` (`inspected_pair | execution_report`).
+- **`hub_sync_state`**: `available`, `unavailable_reason` — из capabilities и
+  `sync_streams.syncStatus`; `consecutive_failures` — из `sync_streams`; `last_error` —
+  своя ошибка опроса (текста ошибки в `sync_streams` нет);
+  для датасета постов `window_from/to`, `expected_count`, `observed_count`,
+  `stop_reason`, `proven_complete_at` остаются NULL, пока в `capture_coverage` Hub нет
+  плана для постов (E7); когда появится — заполняются только при `status =
+  provider_exhausted` с `proof`, крайние даты без доказательства интервал не задают;
+  привязка к попытке работы `hub_sync`. Отрицательный вывод по постам требует
+  последнего успешного планового опроса не старше двух интервалов.
+- **`posting_plan_rows.requires_new_upload`**: `false` выполнено точным членством с
+  действующим присутствием (член, отсутствовавший при более позднем обходе, не
+  выполняет до нового наблюдения); `true` — только новым файлом
+  (`hub_raw_media.created_at_platform` позже `created_at` строки) или подтверждением
+  КМ; новое членство старого файла и неизвестное время — подсказки.
+- **`policy_settings`** ключи: `hub_candidate_tolerance`, `hub_exact_duration_ms`,
+  `hub_wait_window`, `hub_not_out_window`, `hub_vault_recheck`; значения при запуске —
+  SPEC §7.
+- **Альбомы vault**: объектный альбом — `aliases` вида `vault_album` по названию
+  (`ID_LOOSE`), корзины (`FYP YYYY-MM`, `Lifestyle`, PPV) — настройка аккаунта; колонки
+  `label_manual` нет.
+
+### 9.7. Дополнение по импорту легаси (блокер 5, 11.09.2026)
+
+Третья арена того же дня, оба «да». Норма — SPEC §6.3–6.4; здесь — колонки.
+
+- `source_revisions.remote_sha256?` — хэш от API Я.Диска: группировка дублей до
+  скачивания и цель проверки локальной копии; `source_sha256` остаётся локально
+  посчитанным.
+- `sources.kind` + `legacy_metadata` — закреплённый экспорт реестра PPV как источник со
+  стабильными ключами строк, чтобы заявки без файла имели `source_object_id`; сам
+  экспорт с именами фанов — в пакете снимка вне git, в репозиторий только
+  обезличенные фикстуры.
+- `inbox_drafts.origin` + `legacy_import`; `inbox_drafts.blocked_reason` +
+  `source_unavailable` и `deferred` («отложено до 9а»: ревизия снимка вне списка партии
+  PLAN этапа 7; список путей — ключ модели `import_batch_scope` в `policy_settings`;
+  байты не скачиваются, на 9а список снимается); `source_objects.gone_since`.
+- `legacy_claims.claim_key` — естественный ключ из наблюдённой идентичности входа и
+  позиции фрагмента (переименование даёт новую заявку, повтор — нет);
+  `payload.account_rule` — версия правила соответствия аккаунтам;
+  `legacy_number_claims` — естественный ключ на исходную заявку.
+- Дети архивов — `(model_id, archive_revision_id, archive_entry_no)` с FK на ревизию
+  родителя; порядковый номер записи, одинаковые имена различимы; контейнер архива
+  блобом не становится.
+- Работа `import_parse`: входы — хэш снимка и версия правил; `work_key =
+  import:parse:<снимок>:<версия правил>`; `id_counters.legacy_reserved_at` ставится
+  только после полного прохода по читаемым источникам и ссылается на эту работу.
+- Резерв счётчиков: `next_number = GREATEST(текущий, max(заявленных) + 1)` по каждому
+  типу, 1 — только стартовый пол; выданные номера и tombstone не пересматриваются.
+
+### 9.8. Дополнение по облачной разметке (блокер 7, 11–12.09.2026)
+
+Четвёртая тема аренды того же дня; норма — SPEC §8.3 и §12.0.
+Подключение, замеры и таблицы запусков и предложений перенесены на этап 8 PLAN
+решением владельца 12.09.2026; ранние поля и миграции — схема §9.5.
+
+- **`annotation_runs`**: `stage` (`observe | aggregate | texts`), `state` (`queued |
+  running | succeeded | partial | refused | failed | cancelled | blocked`),
+  `parent_run_id?`, `route_position`, `consent_setting_id?`, `billing_scope`,
+  `frame_manifest_digest`, `withheld_count`, `probe`, резерв и фактическая стоимость,
+  ID запроса поставщика, отметка отправки, флаг «исход неизвестен». UNIQUE по цели,
+  `input_sha256` (байты медиа — происхождение) и `config_digest`, куда входят стадия,
+  очищенные входы стадии и версии зависимых запусков (наблюдения, заметки КМ),
+  поставщик и модель, промпт и схема, манифест кадров и окна: изменённые заметки или
+  окно — новый запуск, старые предложения и отказы не переиспользуются. `raw_response`
+  — очищенный диагностический конверт, не эхо входа.
+- **`annotation_suggestions`, `annotation_fields`, `chronology_entries`,
+  `platform_texts`** — без изменений: применение только к неподтверждённому полю с
+  проверкой версии; два ряда текстов `en/1`, `en/2` со своими версиями; хронология
+  только с реальными минутами.
+- **`work_operations`** вид `annotate`: чекпойнты по окнам, отказ завершает работу,
+  а не крутится в `retry_wait`.
+- **`policy_settings`** ключи: `annotation.enabled`, `annotation.route.<тип>.<стадия>`,
+  `annotation.external.<поставщик>` (согласие: кто, когда, типы, стадии, кадры, режим
+  приватности), бюджеты, лимиты, параллельность, размыкатель; новые маршруты выключены.
+- Кадры — из прохода декодирования приёмки под `derived/gen/<generation_id>/frames/`,
+  не вытесняются; до этапа 8 создаются без вызовов моделей и работ `annotate`;
+  новых таблиц нет.
+
+### 9.9. Кто что решил
+
+Владелец (11.09): одна галочка второго человека и запрет OnlyFans; журнал подробно;
+права на модель; пороги — настройки, выключено по умолчанию; все версии хранятся; люди
+правят заказы; заказ сдан при всех частях; технические умолчания приняты; остатки
+(части заказа флагами, снятие `placement_checks`, ужатие этого файла после этапа 1,
+формулировка «второй человек в кадре») поручены оркестратору. Планировщики сошлись
+сами по ядру, шести удалениям, границам этапов и всем исправлениям схемы §9.2–§9.4 после
+четырёх раундов; спорных пунктов не осталось.

@@ -1,0 +1,12 @@
+@import "@contentops/ui/globals.css";
+@source "../../../packages/ui/src";
+
+/* Фоновое обновление: бегущая полоска 2 px под шапкой поля (DESIGN §3.10). */
+@keyframes refresh-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}

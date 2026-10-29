@@ -1,0 +1,1445 @@
+{
+  "schemaVersion": 1,
+  "researchDate": "2026-09-03",
+  "pageLabel": "lora-1",
+  "nativeAccountRef": "737077689877278720",
+  "hubRevision": "e99dda97a8659111fda7fa474c1a2bb087727de2",
+  "hubContract": {
+    "contractHash": "708e3923f1411da77a62cd9932f20b65995268ac0e1d40423217ef120473db5f",
+    "planeMode": "full",
+    "searchBackend": "fts",
+    "hydrationMode": "dispatch",
+    "observationsEnabled": false,
+    "fanslyReplayMode": "off",
+    "archiveGeneration": 0
+  },
+  "scope": "Read-only API and Firefox response inspection; offline parser and candidate probes; no upload or deletion test.",
+  "vault": {
+    "method": "candidate census; uniqueness within inspected corpus only",
+    "toleranceSeconds": 0.12,
+    "diskAsOf": "2026-09-02 12:40",
+    "diskFiles": 10970,
+    "censusRows": 3853,
+    "measuredDiskVideos": 2955,
+    "nativePageSizes": [
+      50,
+      50,
+      13
+    ],
+    "nativeMembers": 113,
+    "nativeRawMedia": 113,
+    "hubRows": 113,
+    "rawIdSymmetricDifference": [],
+    "memberIdSymmetricDifference": [],
+    "hubBlockers": [
+      "delivery_not_exhausted"
+    ],
+    "rawFilenameContainsQuestionMark": 98,
+    "nativeCustomFilenamePresent": 113,
+    "counts": {
+      "nameCandidates": {
+        "one": 75,
+        "none": 27,
+        "several": 11
+      },
+      "technicalCandidates": {
+        "none": 11,
+        "one": 84,
+        "several": 18
+      },
+      "combinedPathCandidates": {
+        "none": 33,
+        "one": 75,
+        "several": 5
+      },
+      "combinedContentCandidates": {
+        "none": 33,
+        "one": 80
+      },
+      "titleCandidates": {
+        "none": 110,
+        "several": 3
+      }
+    },
+    "rows": [
+      {
+        "mediaRef": "951280757433712640",
+        "nameCandidates": 1,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "949794259240763394",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "949092332848824320",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "947528086138667009",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "947623836940005376",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "947644177649254400",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "945809023637143552",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "945806107559882752",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "945787645307404288",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "942918728826241024",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "941492211692892160",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "939319020966920192",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "939287275680849920",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "938552098914578432",
+        "nameCandidates": 0,
+        "technicalCandidates": 3,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "936945603915563009",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "936943423812812800",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "936932927420252160",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "867506954631655424",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "901668863874183168",
+        "nameCandidates": 0,
+        "technicalCandidates": 3,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "930964528718422018",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "925518022322438144",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "924475421888626688",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "923015568515149824",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "915402994663571456",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "802666410110107648",
+        "nameCandidates": 2,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 2,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "912458075745562628",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "910676104627367936",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "910296673220046848",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "907404362010083328",
+        "nameCandidates": 0,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "905244328299872256",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "902292708402413568",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "902290395679965184",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "900887611382460416",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "897289567592259585",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "897208504018812928",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "896891320637865984",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "895132207918624768",
+        "nameCandidates": 2,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 2,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "894715079067451393",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "742959879769042944",
+        "nameCandidates": 0,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "737510153212932097",
+        "nameCandidates": 5,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 5
+      },
+      {
+        "mediaRef": "742269534043381760",
+        "nameCandidates": 3,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 3
+      },
+      {
+        "mediaRef": "743280654241767424",
+        "nameCandidates": 2,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 2
+      },
+      {
+        "mediaRef": "742870600355164160",
+        "nameCandidates": 0,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "890693617734135809",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "890691912917331968",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "889713899362869248",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "889712955480883200",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "857955520349224960",
+        "nameCandidates": 2,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 2,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "886748803279896577",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "886272746185568256",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "882104000613216256",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "881312842962190337",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "880955926788460544",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "880246552587681793",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "880228059087650818",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "878396034592559104",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "878086318482014208",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "870458573132414976",
+        "nameCandidates": 2,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 2,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "870451096345133056",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "868309006379139072",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "865728505319538688",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "860656471115841537",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "859239843803181056",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "856656069517127680",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "854520495268184065",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "854125961761800192",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "854124286376439809",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "852324821072101377",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "851551853148647424",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "849021644147011584",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "753133629453905920",
+        "nameCandidates": 0,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "843234418419056640",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "842887424454438912",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "842473499602731008",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "839153165180891136",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "837826263107256320",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "837811550365433856",
+        "nameCandidates": 1,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "837492071328653312",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "836651538880413696",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "836284779988013057",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "835278426695823360",
+        "nameCandidates": 0,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "834479818442547200",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "827196624852762624",
+        "nameCandidates": 2,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "826221525592981504",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "814862050051244032",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "823362373879345152",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "818223815552163840",
+        "nameCandidates": 0,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "820504452636098561",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "819285528359743488",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "818975675410034689",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "818886104466866176",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "818205561492369408",
+        "nameCandidates": 2,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "818128970145873920",
+        "nameCandidates": 2,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "816423106447962113",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "816083943903215616",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "813924154326663168",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "769365639419670528",
+        "nameCandidates": 0,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "810958965914492928",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "811058275528220672",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "780506224864010241",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "803834105455210496",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "803831842858876928",
+        "nameCandidates": 2,
+        "technicalCandidates": 2,
+        "combinedPathCandidates": 2,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "794366851537707009",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "790689508315115520",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "798614187633815552",
+        "nameCandidates": 0,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "783058924885520385",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "776842806051217408",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "778010477937569792",
+        "nameCandidates": 1,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 1,
+        "combinedContentCandidates": 1,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "777928973890891776",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "757046606393520128",
+        "nameCandidates": 0,
+        "technicalCandidates": 0,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "762084461234892801",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "763044636611588096",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      },
+      {
+        "mediaRef": "766347860059893760",
+        "nameCandidates": 0,
+        "technicalCandidates": 1,
+        "combinedPathCandidates": 0,
+        "combinedContentCandidates": 0,
+        "titleCandidates": 0
+      }
+    ],
+    "inputs": [
+      {
+        "file": "firefox-vault-ppv-page1.json",
+        "sha256": "2f2f8e49e5217c736a1b596a3edbf8a6ebbb458ef29afe8f497413951063fca4"
+      },
+      {
+        "file": "firefox-vault-ppv-page2.json",
+        "sha256": "b2b91d11bbf3c9a8c81d0bdb2fa225d792cb0af564d36733958192baef14ab15"
+      },
+      {
+        "file": "firefox-vault-ppv-page3.json",
+        "sha256": "814b02fbf0034920b91401c52c2b2827f24c19deb81c462fe7d82ea4843693a8"
+      },
+      {
+        "file": "lora1-vault-ppv.json",
+        "sha256": "2906c41c670b0b9b5df3fea70c065c707c1ff0f8422c1d3e48d2d9ece3d2f4a0"
+      },
+      {
+        "file": "ydisk-files.json",
+        "sha256": "e7fe0f31783853afabfe70e377a4afd807662089860cf290869b0ea9573cb30d"
+      },
+      {
+        "file": "winpc-census2-original.tsv",
+        "sha256": "8fed600b619404864f1ad19697272cff3057c6c14b88d28a2b9266e7d05e580c"
+      }
+    ],
+    "diskTimezone": "Europe/Moscow"
+  },
+  "nativeEndOfAlbum": {
+    "requestPath": "/api/v1/media/vaultnew",
+    "albumId": "766719929742274567",
+    "before": "766720204964114432",
+    "after": "0",
+    "status": 200,
+    "responseBytes": 69,
+    "albumMediaCount": 0,
+    "mediaCount": 0,
+    "evidence": "Firefox Network Response accessibility tree; no raw JSON export for this final empty page"
+  },
+  "postExample": {
+    "postRef": "951216338532048896",
+    "publishedAt": "2026-09-01T17:00:07+00:00",
+    "fypFlags": 0,
+    "wallIds": [],
+    "attachments": [
+      {
+        "postId": "951216338532048896",
+        "pos": 0,
+        "contentType": 1,
+        "contentId": "948616303139115008"
+      }
+    ],
+    "mediaOfferRef": "948616303139115008",
+    "mediaRef": "948616152072863744",
+    "previewRef": null,
+    "rawMediaType": 1,
+    "rawMimeType": "image/jpeg",
+    "rawFilenameShape": "UUID.jpeg",
+    "vaultMemberships": [
+      {
+        "platform": "fansly",
+        "vaultKind": "creator",
+        "albumRef": "737394414200037376",
+        "mediaRef": "948616152072863744",
+        "mediaOfferRef": null,
+        "memberRef": "948616304951058432",
+        "mediaType": 1,
+        "bundleRef": null,
+        "createdAtPlatform": "2026-08-25T12:48:31.000Z",
+        "missingSince": null,
+        "firstObservedAt": "2026-09-02T00:08:06.582Z",
+        "lastObservedAt": "2026-09-02T00:08:06.582Z"
+      },
+      {
+        "platform": "fansly",
+        "vaultKind": "creator",
+        "albumRef": "737394414128734208",
+        "mediaRef": "948616152072863744",
+        "mediaOfferRef": null,
+        "memberRef": "948616304951046144",
+        "mediaType": 1,
+        "bundleRef": null,
+        "createdAtPlatform": "2026-08-25T12:48:31.000Z",
+        "missingSince": null,
+        "firstObservedAt": "2026-08-30T09:43:44.744Z",
+        "lastObservedAt": "2026-08-30T09:43:44.744Z"
+      }
+    ],
+    "limits": "One photo post. Surface-bit meaning, bundles, edits, deletions and reused previews were not validated end to end."
+  },
+  "vaultParserProbe": {
+    "parseable": true,
+    "inputMemberRows": 50,
+    "inputRawMediaRows": 50,
+    "eventsByType": {
+      "vault.album_membership_observed": 50
+    },
+    "eventDataKeys": [
+      "vaultKind",
+      "albumRef",
+      "mediaOfferRef",
+      "memberRef",
+      "mediaOfferType",
+      "bundleRef",
+      "mediaRef",
+      "mediaType",
+      "previewRef",
+      "createdAtPlatform",
+      "contentHash"
+    ],
+    "offlineReaddSameDedupKey": true,
+    "offlineReaddDifferentContentHash": true
+  },
+  "postParserProbe": {
+    "parseable": true,
+    "eventTypes": [
+      "post.observed"
+    ],
+    "attachmentRefs": [
+      [
+        {
+          "pos": 0,
+          "contentType": 1,
+          "contentId": "948616303139115008"
+        }
+      ]
+    ],
+    "mediaEventsFromPostCanonicalizer": 0,
+    "mediaHelperCalledSeparatelyProduces": 1,
+    "note": "Calling the media helper directly is an offline probe, not the current posts dispatcher behavior."
+  },
+  "captureCoverageSample": [
+    {
+      "platform": "fansly",
+      "plane": "media_stats",
+      "scopeRef": "1",
+      "status": "budget_deferred",
+      "acquisitionMode": "retroactive",
+      "proof": "none",
+      "oldestCapturedAt": null,
+      "newestCapturedAt": "2026-09-03T01:21:51.249Z",
+      "expectedCount": 2922,
+      "observedUniqueCount": 378,
+      "reasonCode": "saturating_by_design",
+      "nextProbeAt": null,
+      "updatedAt": "2026-09-03T01:21:51.274Z"
+    },
+    {
+      "platform": "fansly",
+      "plane": "catalog_vault_media",
+      "scopeRef": "737661308169625600",
+      "status": "in_progress",
+      "acquisitionMode": "retroactive",
+      "proof": "none",
+      "oldestCapturedAt": null,
+      "newestCapturedAt": "2026-09-03T00:23:13.238Z",
+      "expectedCount": 3294,
+      "observedUniqueCount": null,
+      "reasonCode": "walking",
+      "nextProbeAt": null,
+      "updatedAt": "2026-09-03T00:23:21.200Z"
+    },
+    {
+      "platform": "fansly",
+      "plane": "catalog_vault_media",
+      "scopeRef": "737394414128734208",
+      "status": "in_progress",
+      "acquisitionMode": "retroactive",
+      "proof": "none",
+      "oldestCapturedAt": null,
+      "newestCapturedAt": "2026-09-03T00:23:13.238Z",
+      "expectedCount": 4846,
+      "observedUniqueCount": null,
+      "reasonCode": "walking",
+      "nextProbeAt": null,
+      "updatedAt": "2026-09-03T00:23:18.232Z"
+    },
+    {
+      "platform": "fansly",
+      "plane": "catalog_vault_media",
+      "scopeRef": "737394414200037376",
+      "status": "in_progress",
+      "acquisitionMode": "retroactive",
+      "proof": "none",
+      "oldestCapturedAt": null,
+      "newestCapturedAt": "2026-09-03T00:23:13.238Z",
+      "expectedCount": 7800,
+      "observedUniqueCount": null,
+      "reasonCode": "walking",
+      "nextProbeAt": null,
+      "updatedAt": "2026-09-03T00:23:15.729Z"
+    },
+    {
+      "platform": "fansly",
+      "plane": "catalog_vault_media",
+      "scopeRef": "766719929742274567",
+      "status": "provider_exhausted",
+      "acquisitionMode": "retroactive",
+      "proof": "empty_window",
+      "oldestCapturedAt": null,
+      "newestCapturedAt": "2026-09-02T00:08:49.944Z",
+      "expectedCount": 113,
+      "observedUniqueCount": null,
+      "reasonCode": "walk_exhausted",
+      "nextProbeAt": null,
+      "updatedAt": "2026-09-02T00:08:52.236Z"
+    }
+  ],
+  "lagSample": {
+    "pageLabel": "lora-1",
+    "publishedFrom": "2026-08-27T00:00:00Z",
+    "requestedTo": "2026-09-03T01:59:00Z",
+    "observedRows": 11,
+    "medianSeconds": 9604.402,
+    "p90NearestRankSeconds": 38655.095,
+    "maxSeconds": 69096.095,
+    "rows": [
+      {
+        "postRef": "951627099217612800",
+        "publishedAt": "2026-09-02T20:12:20.000Z",
+        "firstObservedAt": "2026-09-03T01:40:15.098Z",
+        "lagSeconds": 19675.098
+      },
+      {
+        "postRef": "951587073754677248",
+        "publishedAt": "2026-09-02T17:33:17.000Z",
+        "firstObservedAt": "2026-09-02T19:40:12.822Z",
+        "lagSeconds": 7615.822
+      },
+      {
+        "postRef": "951216338532048896",
+        "publishedAt": "2026-09-01T17:00:07.000Z",
+        "firstObservedAt": "2026-09-01T19:40:07.143Z",
+        "lagSeconds": 9600.143
+      },
+      {
+        "postRef": "951165498823823360",
+        "publishedAt": "2026-09-01T13:38:06.000Z",
+        "firstObservedAt": "2026-09-01T14:19:46.557Z",
+        "lagSeconds": 2500.557
+      },
+      {
+        "postRef": "950854027216711681",
+        "publishedAt": "2026-08-31T17:00:25.000Z",
+        "firstObservedAt": "2026-08-31T19:40:29.402Z",
+        "lagSeconds": 9604.402
+      },
+      {
+        "postRef": "950536918980915200",
+        "publishedAt": "2026-08-30T20:00:21.000Z",
+        "firstObservedAt": "2026-08-30T20:17:27.543Z",
+        "lagSeconds": 1026.543
+      },
+      {
+        "postRef": "950491562679214080",
+        "publishedAt": "2026-08-30T17:00:07.000Z",
+        "firstObservedAt": "2026-08-30T20:17:27.543Z",
+        "lagSeconds": 11840.543
+      },
+      {
+        "postRef": "950218731949137920",
+        "publishedAt": "2026-08-29T22:55:59.000Z",
+        "firstObservedAt": "2026-08-30T09:40:14.095Z",
+        "lagSeconds": 38655.095
+      },
+      {
+        "postRef": "950091054772666368",
+        "publishedAt": "2026-08-29T14:28:38.000Z",
+        "firstObservedAt": "2026-08-30T09:40:14.095Z",
+        "lagSeconds": 69096.095
+      },
+      {
+        "postRef": "949432211302535169",
+        "publishedAt": "2026-08-27T18:50:38.000Z",
+        "firstObservedAt": "2026-08-27T19:40:28.715Z",
+        "lagSeconds": 2990.715
+      },
+      {
+        "postRef": "949404438139772930",
+        "publishedAt": "2026-08-27T17:00:16.000Z",
+        "firstObservedAt": "2026-08-27T19:40:28.715Z",
+        "lagSeconds": 9612.715
+      }
+    ],
+    "limits": "Observed archive rows only. This measures publication to first Hub observation, not an SLA or recall of uncaptured posts."
+  },
+  "accessLimits": [
+    "Owner UI API was inspected in code; Chrome had no signed-in Hub session.",
+    "Direct production SQL read was unavailable because role read_only did not exist; no alternate database role was used."
+  ],
+  "excluded": [
+    "Request headers and credentials",
+    "Signed CDN locations and variants",
+    "Post captions",
+    "Native editable media titles",
+    "Source filenames and full Disk paths",
+    "Media bytes"
+  ],
+  "captureTrimProbe": {
+    "inputMemberRows": 50,
+    "inputRawMediaRows": 50,
+    "captureTrimReturnsSameObject": true,
+    "captureTrimPreservesJSON": true,
+    "rawFilenamePreserved": true,
+    "customFilenamePreserved": true
+  },
+  "nativeVaultFieldPresence": {
+    "duration": 113,
+    "originalWidth": 113,
+    "originalHeight": 113,
+    "frameRate": 113,
+    "renditionSizeDiffersFromOriginal": 113,
+    "mimeCounts": {
+      "video/mp4": 113
+    },
+    "customFilenameContainsUnicode": 56
+  },
+  "apiDatasetCapabilities": [
+    {
+      "dataset": "posts",
+      "availability": "available",
+      "platforms": [
+        "fansly",
+        "onlyfans"
+      ],
+      "moneyBearing": false,
+      "requiredCapabilities": [
+        "read:datasets",
+        "read:messages"
+      ],
+      "captureState": "unknown",
+      "fields": [
+        {
+          "field": "platform",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "postRef",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "postText",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "publishedAt",
+          "type": "timestamp",
+          "filterable": true,
+          "sortable": true
+        },
+        {
+          "field": "firstObservedAt",
+          "type": "timestamp",
+          "filterable": true,
+          "sortable": true
+        },
+        {
+          "field": "lastObservedAt",
+          "type": "timestamp",
+          "filterable": true,
+          "sortable": true
+        },
+        {
+          "field": "attachmentCount",
+          "type": "int",
+          "filterable": true,
+          "sortable": true
+        }
+      ],
+      "defaultSort": "publishedAt"
+    },
+    {
+      "dataset": "vault_media",
+      "availability": "available",
+      "platforms": [
+        "fansly"
+      ],
+      "moneyBearing": false,
+      "requiredCapabilities": [
+        "read:datasets"
+      ],
+      "captureState": "unknown",
+      "fields": [
+        {
+          "field": "platform",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "vaultKind",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "albumRef",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "mediaRef",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "mediaOfferRef",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "memberRef",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "mediaType",
+          "type": "int",
+          "filterable": true,
+          "sortable": true
+        },
+        {
+          "field": "bundleRef",
+          "type": "string",
+          "filterable": true,
+          "sortable": false
+        },
+        {
+          "field": "createdAtPlatform",
+          "type": "timestamp",
+          "filterable": true,
+          "sortable": true
+        },
+        {
+          "field": "missingSince",
+          "type": "timestamp",
+          "filterable": true,
+          "sortable": true
+        },
+        {
+          "field": "firstObservedAt",
+          "type": "timestamp",
+          "filterable": true,
+          "sortable": true
+        },
+        {
+          "field": "lastObservedAt",
+          "type": "timestamp",
+          "filterable": true,
+          "sortable": true
+        }
+      ],
+      "defaultSort": "firstObservedAt"
+    },
+    {
+      "dataset": "stories",
+      "availability": "planned",
+      "platforms": [],
+      "moneyBearing": false,
+      "requiredCapabilities": [],
+      "captureState": "captured_unparsed",
+      "fields": [],
+      "defaultSort": null
+    }
+  ]
+}
