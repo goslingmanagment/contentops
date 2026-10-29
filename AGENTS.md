@@ -12,10 +12,9 @@ Agency Hub (`README.md`, `PRD.md`).
   устроено; §13 — открытые вопросы), `PLAN.md` (этапы 1–10), справочники
   `docs/reference/{naming,legacy-and-import,infrastructure,compression,schema,hub-media-discovery}.md`
   (у последнего папка улик `hub-media-discovery/`; `annotation.md` появится на этапе 8а),
-  итоги слепого просмотра `docs/blind-2026-09-06.json.gz`, `tools/`, `design/` (образец
-  интерфейса 1б: `DESIGN.md` и прототип на стеке SPEC, принят 28.09.2026; первый PR 1а
-  переносит прототип в корень, образец сохраняет тег `design-1b`) и код
-  продукта в корне: `apps/`, `packages/`, `ops/`, `Dockerfile`, `docker-compose.yml`,
+  итоги слепого просмотра `docs/blind-2026-09-06.json.gz`, `tools/`, `design/DESIGN.md`
+  (образец интерфейса 1б, принят 28.09.2026; прототип перенесён в корень в 1а, исходный
+  образец — тег `design-1b`) и код продукта в корне: `apps/`, `packages/`, `ops/`, `Dockerfile`, `docker-compose.yml`,
   `.env.example`, `.github/` (CI), файлы pnpm workspace (решение владельца 30.09.2026).
   Новых каталогов под процесс (`plans/`, `evidence/`, `decisions/`, брифы, обзоры) не
   заводить; черновики и пробы — в scratchpad, не в репо.
@@ -32,9 +31,8 @@ Agency Hub (`README.md`, `PRD.md`).
   импорт, ручные поля и общий API.
 - Хостинг решён: всё локально, внешнее — только бэкап
   (`docs/reference/infrastructure.md` §1). Провайдеров не предлагать.
-- **Код:** сейчас код — прототип в `design/` (`pnpm install --frozen-lockfile`,
-  Docker не нужен); после переноса workspace в корень на этапе 1а — в корне, тестам
-  с базой нужен запущенный Docker (Testcontainers). На winpc разработка — только в WSL
+- **Код:** pnpm workspace в корне (`apps/`, `packages/`; `pnpm install
+  --frozen-lockfile`); тестам с базой нужен запущенный Docker (Testcontainers). На winpc разработка — только в WSL
   (потолок 2 GB: T3 и лёгкие агенты); сборки и тесты — на Mac и в CI. Локально — только
   тайпчек, линт и тесты затронутого пакета (`pnpm --filter <пакет> typecheck`, `… test`,
   `pnpm biome check <пути>`). CI — GitHub Actions на GitHub-hosted `ubuntu-24.04` с
