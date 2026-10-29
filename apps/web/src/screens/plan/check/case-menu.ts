@@ -1,12 +1,9 @@
 import type { Account, CheckCase } from '@contentops/contracts'
 import type { ItemMenuModel } from '@contentops/ui/components/item-menu'
 import { isOpenCase } from '@/data/check'
-import { isVaultCase } from './case-kinds'
 
 interface CaseMenuHandlers {
   onReview: () => void
-  /** `null` — Hub страницы выключен или не настроен. */
-  onCheckUpload: (() => void) | null
   onOutside: () => void
 }
 
@@ -15,8 +12,7 @@ function openPost(url: string) {
 }
 
 /**
- * Меню случая (DESIGN §3.6): «Разобрать · Пост на платформе ↗ · Проверить заливку · — ·
- * Не наше». Одна модель для «⋯» в панели и правого клика по строке. Неприменимых пунктов
+ * Меню случая (DESIGN §3.6): «Разобрать · Пост на платформе ↗ · — · Не наше». Одна модель для «⋯» в панели и правого клика по строке. Неприменимых пунктов
  * нет; у «только чтение» — только ссылка на пост.
  */
 export function caseMenu(
@@ -33,9 +29,6 @@ export function caseMenu(
       ...(open ? [{ id: 'review', label: 'Разобрать', onSelect: handlers.onReview }] : []),
       ...(post
         ? [{ id: 'post', label: `Пост на ${platform} ↗`, onSelect: () => openPost(post.url) }]
-        : []),
-      ...(open && isVaultCase(entry) && handlers.onCheckUpload
-        ? [{ id: 'check-upload', label: 'Проверить заливку', onSelect: handlers.onCheckUpload }]
         : []),
     ],
     dangerActions:

@@ -42,7 +42,7 @@ function pageText(hint: TileHint, summary: PageSummaryEntry | undefined, onTile:
 
 function viewsText(summary: PageSummaryEntry | undefined): string {
   const views = summary?.views
-  return views === null || views === undefined ? 'нет просмотров' : formatNumber(views)
+  return views === null || views === undefined ? 'нет данных' : formatNumber(views)
 }
 
 /** «в плане» и «в планировщике»; «пропущено» — уже «нет». */
@@ -91,7 +91,7 @@ export function tileHintTitle(
   if (hint.kind === 'views') {
     const views = summary?.views
     return views === null || views === undefined
-      ? `Нет просмотров на ${label}`
+      ? `Просмотры на ${label}: нет данных`
       : `${formatNumber(views)} ${plural(views, ['просмотр', 'просмотра', 'просмотров'])} на ${label}`
   }
   const text = pageText(hint, summary, false)

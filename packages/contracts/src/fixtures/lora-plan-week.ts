@@ -71,7 +71,7 @@ function monday(context: WeekContext): BuiltRow[] {
           { ours_s: 8, theirs_s: 8 },
         ),
       ],
-      stats: { views: 1_860, likes: 112, on: '2026-09-22' },
+      stats: { views: 1_860, on: '2026-09-22' },
     }),
     row({
       date,
@@ -241,7 +241,7 @@ function tuesday(context: WeekContext): BuiltRow[] {
           { ours_s: 9, theirs_s: 9 },
         ),
       ],
-      stats: { views: 940, likes: 61, on: '2026-09-22' },
+      stats: { views: 940, on: '2026-09-22' },
     }),
     row({
       date,

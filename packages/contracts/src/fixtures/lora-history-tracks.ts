@@ -54,7 +54,7 @@ export function buildDetailedHistory(
         ),
       ],
       caption: 'Birthday gift 🎂 full video in DM',
-      stats: { views: 1_240, likes: 86, on: '2026-09-22' },
+      stats: { views: 1_240, on: '2026-09-22' },
     }),
     track({
       item_id: 'PPV-073',
@@ -112,14 +112,14 @@ export function buildDetailedHistory(
           { ours_s: 9, theirs_s: 9 },
         ),
       ],
-      stats: { views: 3_410, likes: 204, on: '2026-09-22' },
+      stats: { views: 3_410, on: '2026-09-22' },
     }),
     track({
       item_id: 'FYP-0412',
       account: 'lora-1',
       surface: 'fyp',
       evidence: [evidence.hubExact(at('2025-11-16', '03:02'), 'file')],
-      stats: { views: 12_480, likes: 910, on: '2026-09-22' },
+      stats: { views: 12_480, on: '2026-09-22' },
     }),
     track({
       item_id: 'FYP-0799',

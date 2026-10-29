@@ -21,7 +21,7 @@ interface WhyPopoverProps {
   tone?: StatusKind
   /** Факты строками: «В плане на 20:00 · поставила Диана 19.09». */
   facts: readonly string[]
-  /** Одна кнопка по случаю: «Сверить», «Проверить заливку». */
+  /** Одна кнопка по случаю, например «Сверить». */
   action?: WhyAction
   align?: 'start' | 'center' | 'end'
   open?: boolean

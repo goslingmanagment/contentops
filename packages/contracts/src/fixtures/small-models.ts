@@ -95,7 +95,7 @@ export function smallModelTracks(model: Model, entries: readonly CatalogEntry[])
             account: account.code,
             surface: 'fyp',
             evidence: [evidence.hubExact(mskInstant(entry.arrived_on, '03:02'), 'file')],
-            stats: { views: 90 + index * 23, likes: 6 + index, on: '2026-09-22' },
+            stats: { views: 90 + index * 23, on: '2026-09-22' },
           }),
         ),
     )

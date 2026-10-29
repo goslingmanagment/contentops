@@ -1,12 +1,12 @@
-import type { AccountCode, CheckCase, Model } from '@contentops/contracts'
-import { useCallback, useMemo } from 'react'
+import type { CheckCase, Model } from '@contentops/contracts'
+import { useMemo } from 'react'
 import { z } from 'zod'
 import { useClock } from '@/data/api-session'
 import { isOpenCase, useCheckQueueList, useUnverifiedRows } from '@/data/check'
 import { useIntegrations } from '@/data/integrations'
 import { useHistoryState } from '@/lib/use-history-state'
 import { type CaseFilter, filterCases, groupByPage, weekOptions } from './case-groups'
-import { hubCanCheck, hubUpdatedAt, placeHubLines } from './hub-lines'
+import { hubUpdatedAt, placeHubLines } from './hub-lines'
 import { buildQueue } from './queue-items'
 
 const UnverifiedStateSchema = z.object({
@@ -59,10 +59,6 @@ export function useCheckQueue(model: Model, { page, week }: CaseFilter) {
     }
   }, [integrations, list.data, model, now, page, rows, unverifiedState, week])
 
-  const canCheckUpload = useCallback(
-    (account: AccountCode) => hubCanCheck(integrations, model, account),
-    [integrations, model],
-  )
   const toggleUnverified = () =>
     setUnverifiedState((current) => ({ ...current, open: !current.open }))
   const toggleReason = (reason: string) =>
@@ -77,8 +73,6 @@ export function useCheckQueue(model: Model, { page, week }: CaseFilter) {
     list,
     ...derived,
     hubUpdatedAt: hubUpdatedAt(integrations, model),
-    /** «Проверить заливку» только там, где Hub включён и настроен. */
-    canCheckUpload,
     toggleUnverified,
     toggleReason,
   }

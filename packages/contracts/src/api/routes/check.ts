@@ -10,7 +10,6 @@ import {
   CheckListSchema,
   ResolvedCaseSchema,
   UnverifiedRowSchema,
-  UploadCheckResultSchema,
 } from '../../domain/check'
 import { pageSchema } from '../../domain/pagination'
 import { CaseResolutionSchema } from '../responses'
@@ -71,11 +70,6 @@ export const checkRoutes = {
     method: 'POST',
     path: '/api/v1/{model}/reconcile/{case}:undo',
     response: CaseResolutionSchema,
-  }),
-  checkUpload: defineRoute({
-    method: 'POST',
-    path: '/api/v1/{model}/reconcile/{case}:check-upload',
-    response: UploadCheckResultSchema,
   }),
   confirmUnambiguous: defineRoute({
     method: 'POST',

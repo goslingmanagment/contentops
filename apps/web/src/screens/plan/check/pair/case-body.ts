@@ -1,4 +1,4 @@
-import type { Account, CatalogEntry, CheckCase, UploadCheckResult } from '@contentops/contracts'
+import type { Account, CatalogEntry, CheckCase } from '@contentops/contracts'
 import type { Decision, PendingAction } from '../use-case-decisions'
 
 /** Что получает тело панели пары любого вида случая (DESIGN §4.15). */
@@ -11,10 +11,6 @@ export interface CaseBodyProps {
   canDecide: boolean
   pending: PendingAction | null
   onDecide: (decision: Decision) => void
-  /** Ответ на «Проверить заливку», если уже спрашивали. */
-  uploadCheck: UploadCheckResult | undefined
-  /** `null` — Hub этой страницы выключен или не настроен: проверять некому. */
-  onCheckUpload: (() => void) | null
   /** «Залить заново»: окно «В план» для этого объекта. */
   onReupload: () => void
   /** Панель открыта с «Привязать…»: поиск по каталогу сразу в фокусе. */

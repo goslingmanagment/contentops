@@ -36,9 +36,9 @@ describe('места по типу и платформе (DESIGN §4.13)', () =>
   })
 
   it('у нескольких объектов — только общие места, в порядке окна', () => {
-    expect(commonSurfaces(['ppv', 'set'])).toEqual(['wall', 'story'])
+    expect(commonSurfaces(['ppv', 'set'])).toEqual(['wall'])
     expect(commonSurfaces(['ppv', 'fyp'])).toEqual([])
-    expect(commonSurfaces(['life', 'life'])).toEqual(['wall', 'vault', 'story'])
+    expect(commonSurfaces(['life', 'life'])).toEqual(['wall', 'vault'])
   })
 
   it('место по умолчанию: бандл — стена, сет — стена, фуп — фуп', () => {

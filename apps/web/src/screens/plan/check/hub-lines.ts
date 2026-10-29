@@ -83,21 +83,3 @@ export function hubUpdatedAt(
     .sort()
   return times.at(-1) ?? null
 }
-
-/**
- * Можно ли просить Hub проверить заливку на странице (DESIGN §4.15): у выключенного или
- * не настроенного Hub кнопки нет; недоступный ставит просьбу в очередь.
- */
-export function hubCanCheck(
-  integrations: readonly IntegrationView[] | undefined,
-  model: Model,
-  account: AccountCode,
-): boolean {
-  const hub = integrations?.find(
-    (integration) =>
-      integration.kind === 'hub' &&
-      integration.model === model.code &&
-      integration.account === account,
-  )
-  return hub === undefined || (hub.state !== 'off' && hub.state !== 'unset')
-}

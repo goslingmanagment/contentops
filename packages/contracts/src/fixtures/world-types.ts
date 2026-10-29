@@ -46,7 +46,6 @@ export interface ItemRecord {
 
 export interface TrackStats {
   views: number
-  likes: number
   on: LocalDate
 }
 

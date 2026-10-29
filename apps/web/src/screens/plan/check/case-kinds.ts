@@ -5,14 +5,7 @@ import type { CheckCase, CheckCaseKind, Platform } from '@contentops/contracts'
  * и клавиши `1` `2` `3`. Одна таблица по виду случая вместо развилок по экрану.
  */
 
-export type CaseAction =
-  | 'confirm'
-  | 'reject'
-  | 'review'
-  | 'bind'
-  | 'outside'
-  | 'check-upload'
-  | 'reject-all'
+export type CaseAction = 'confirm' | 'reject' | 'review' | 'bind' | 'outside' | 'reject-all'
 
 /** Подписи кнопок строки и меню (DESIGN §4.15). */
 export const ACTION_LABEL: Record<CaseAction, string> = {
@@ -21,7 +14,6 @@ export const ACTION_LABEL: Record<CaseAction, string> = {
   review: 'Разобрать',
   bind: 'Привязать…',
   outside: 'Не наше',
-  'check-upload': 'Проверить заливку',
   'reject-all': 'Ни один',
 }
 
@@ -40,8 +32,9 @@ const RULES: Record<CheckCaseKind, KindRules> = {
   variants: { primary: null, refusal: 'reject-all' },
   surface: { primary: null, refusal: null },
   unplanned: { primary: 'bind', refusal: 'outside' },
-  vault_missing: { primary: 'check-upload', refusal: null },
-  vault_stale: { primary: 'check-upload', refusal: null },
+  // vault: «Залить заново» — окно «В план» в панели, клавиши `1` у него нет.
+  vault_missing: { primary: null, refusal: null },
+  vault_stale: { primary: null, refusal: null },
 }
 
 /** Одна пара «наше — пост»: «Это оно» и «Не то» прямо в строке. */
@@ -76,8 +69,4 @@ export function keyAction(entry: CheckCase, key: DecisionKey): CaseAction | null
   }
   const rules = RULES[entry.kind]
   return key === 3 ? rules.refusal : (rules.primary ?? 'review')
-}
-
-export function isVaultCase(entry: CheckCase): boolean {
-  return entry.surface === 'vault'
 }

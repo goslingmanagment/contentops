@@ -28,8 +28,6 @@ export interface MockState {
   mutation_times: number[]
   rate_limit: { requests: number; window_ms: number }
   latency: { min_ms: number; max_ms: number } | false
-  /** «Проверить заливку» used today; Hub allows 60 a day. */
-  upload_checks_today: number
   request_counter: number
   /** After «Выйти везде» or with `?demo=signed-out`: everything but sign-in answers 401. */
   signed_out: boolean
@@ -61,7 +59,6 @@ export function createMockState(options: MockOptions): MockState {
     mutation_times: [],
     rate_limit: options.rate_limit ?? { requests: 30, window_ms: 10_000 },
     latency: options.latency ?? { min_ms: 80, max_ms: 300 },
-    upload_checks_today: 12,
     request_counter: 0,
     signed_out: options.demo === 'signed-out',
     samples: new Map(),

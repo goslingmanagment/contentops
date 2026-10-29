@@ -4,9 +4,7 @@ import { modelSwitchHref } from './model-switch-path'
 describe('смена модели', () => {
   it('раздел и вид переносятся на ту же страницу другой модели', () => {
     expect(modelSwitchHref('/lora/plan/2026-09-22', {}, 'lily')).toBe('/lily/plan/2026-09-22')
-    expect(modelSwitchHref('/lora/plan/w/2026-W39', { variant: 'pages' }, 'lily')).toBe(
-      '/lily/plan/w/2026-W39?variant=pages',
-    )
+    expect(modelSwitchHref('/lora/plan/w/2026-W39', {}, 'lily')).toBe('/lily/plan/w/2026-W39')
     expect(modelSwitchHref('/lora/inbox/done', {}, 'ari')).toBe('/ari/inbox/done')
     expect(modelSwitchHref('/lora/library/customs', { view: 'orders' }, 'ari')).toBe(
       '/ari/library/customs?view=orders',

@@ -48,7 +48,6 @@ function surfacesOf(context: FactsContext, itemId: ItemId, account: string): Sur
         album: track.album,
         caption: track.caption,
         views: track.stats?.views ?? null,
-        likes: track.stats?.likes ?? null,
         stats_on: track.stats?.on ?? null,
       },
     })
@@ -67,7 +66,6 @@ function surfacesOf(context: FactsContext, itemId: ItemId, account: string): Sur
         album: row.album,
         caption: null,
         views: null,
-        likes: null,
         stats_on: null,
       },
     })
@@ -83,11 +81,7 @@ function actionFor(
   surfaces: readonly SurfaceFacts[],
 ): PlacementAction | null {
   const turn = surfaces.find((surface) => surface.verdict.sign === 'turn')
-  if (turn) {
-    return turn.verdict.level === 'vault_missing' || turn.verdict.level === 'vault_stale'
-      ? 'Проверить заливку'
-      : 'Сверить'
-  }
+  if (turn) return 'Сверить'
   if (surfaces.some((surface) => isPlacedLevel(surface.verdict.level))) return null
   // Уже в плане на этой странице: второй «Залить сейчас» поставил бы вторую строку.
   if (surfaces.some((surface) => isInPlanLevel(surface.verdict.level))) return null
@@ -122,7 +116,7 @@ function bestStats(placements: readonly SurfacePlacement[]): PageStats | null {
   for (const placement of placements) {
     if (placement.views === null || placement.stats_on === null) continue
     if (best && best.views >= placement.views) continue
-    best = { views: placement.views, likes: placement.likes ?? 0, on: placement.stats_on }
+    best = { views: placement.views, on: placement.stats_on }
   }
   return best
 }

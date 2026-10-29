@@ -11,8 +11,6 @@ interface SelectedCasePanelProps {
   ours: CatalogEntry | undefined
   today: LocalDate
   canDecide: boolean
-  /** Hub страницы может проверить заливку: у выключенного и не настроенного — нет. */
-  canCheckUpload: boolean
   decisions: CaseDecisions
   focusSearch: boolean
   menu: ItemMenuModel
@@ -29,7 +27,6 @@ export function SelectedCasePanel({
   account,
   decisions,
   canDecide,
-  canCheckUpload,
   ...props
 }: SelectedCasePanelProps) {
   const planDialog = usePlanDialog()
@@ -45,8 +42,6 @@ export function SelectedCasePanel({
       canDecide={canDecide && isOpenCase(entry)}
       pending={decisions.pending?.caseId === entry.id ? decisions.pending.action : null}
       onDecide={decisions.decide}
-      uploadCheck={decisions.uploadChecks.get(entry.id)}
-      onCheckUpload={canCheckUpload ? () => decisions.checkUpload(entry.id) : null}
       onReupload={() =>
         itemId
           ? planDialog.openPlanDialog([itemId], {

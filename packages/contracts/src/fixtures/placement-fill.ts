@@ -117,7 +117,6 @@ function placeHistory(
     surface === 'fyp' && account.platform === 'fansly'
       ? {
           views: 150 + ((daysAfterArrival * 97 + entry.id.length * 13) % 2_900),
-          likes: 10 + daysAfterArrival * 3,
           on: '2026-09-22',
         }
       : null
