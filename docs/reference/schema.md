@@ -94,7 +94,9 @@
 
 Изменения 11.09.2026 по таблицам — в схеме §9.2; там, где схема §9 говорит иначе, она сильнее.
 Колонки 13 таблиц `0001_foundation` (схема §9.5) и состояния `storage_operations` сведены
-со схемой §9 30.09.2026.
+со схемой §9 30.09.2026. С 30.10.2026 колонки, ключи и ограничения этих 13 таблиц задают
+`packages/db/migrations/0001_foundation.sql` и золотой `packages/db/schema.sql`; описание
+ниже — смысл и решения.
 
 Сквозные соглашения: `created_at timestamptz NOT NULL DEFAULT now()`;
 `created_by` → `principals` там, где действие инициировал человек или агент;
@@ -132,8 +134,8 @@ UNIQUE `(account_id, kind)`; UNIQUE
 `title`, `archived_at`, `row_version`. UNIQUE `(model_id, code)`.
 
 **`principals`** — люди и агенты (§11.1). `id`, `kind` (`human | agent`), `login`
-(UNIQUE), `display_name`, `gender` (`f | m`; форма глагола в ленте: «отметила»), `role`
-(`owner | manager | reader`), `password_hash`
+(UNIQUE), `display_name`, `gender` (`f | m`; форма глагола в ленте: «отметила»; у агента
+может быть пусто), `role` (`owner | manager | reader`), `password_hash`
 (argon2; CHECK только у людей), `ui_skin` (`blue | focus`, по умолчанию `blue`; вид
 интерфейса, DESIGN §7.10), `disabled_at`, `created_at`, `row_version`.
 
@@ -559,14 +561,14 @@ registered | failed | abandoned`), `tmp_key`, `draft_id?`, `error`, `created_at`
 | `work_key` | естественный ключ: `fetch:<revision>`, `master:<source_sha>:<recipe>`, `uniq:<parent_version>:<level>:<n>`, `export:<receipt>` |
 | `draft_id?`, `source_revision_id?`, `asset_version_id?`, `manifest_id?`, `receipt_id?`, `generation_id?`, `account_id?` | типизированные цели |
 | `dataset?`, `scope?`, `window_from?`, `window_to?` | входы опроса Hub и бэкапа; неизменны, окно входит в `work_key` — новый прогон или интервал даёт новую строку |
-| `pipeline_version`, `recipe_digest?` | |
+| `pipeline_version?`, `recipe_digest?` | у опроса Hub, скана и бэкапа версии конвейера нет |
 | `state` | `pending \| running \| retry_wait \| succeeded \| failed \| cancelled` |
 | `paused_reason?` | `switch_off:<ключ>` — работа выключенной области (SPEC §8) отпущена до включения (схема §9.2) |
 | `priority`, `attempt_no`, `next_attempt_at` | политика повторов в домене; 429 Я.Диска — backoff |
 | `lease_owner`, `lease_until`, `fence_generation`, `heartbeat_at` | аренда; истекла — работу можно взять снова; завершить результат может только держатель текущего поколения |
 | `input_sha256`, `output_sha256`, `output_ref` | отпечатки входа и выхода |
 | `progress_num`, `progress_den`, `progress_note`, `checkpoint jsonb` | «докачка 3,2 ГБ из 5,8», смещение, номер прохода |
-| `failure_kind`, `error_code`, `error_text` | |
+| `failure_kind` (`transient \| permanent`, предварительно), `error_code`, `error_text` | `transient` — повтор с паузой, `permanent` — сразу `failed` |
 | `report jsonb?` | итог прогона: отчёт `verify_blobs` (вместо `storage_findings`), итог опроса Hub и бэкапа; после успеха неизменен |
 | `stream_key?` | поток периодической работы (`hub:<account>:<dataset>`, `scan:<source>`, `backup`); у потока не больше одной незавершённой строки |
 | `created_at`, `started_at`, `finished_at` | |
@@ -869,9 +871,11 @@ UNIQUE `(corrects_id)`. Изменение выбора до «Передано�
 ### 3.9. Служебные
 
 **`idempotency_keys`** — повторяемые команды агентов и людей (SPEC §11.2).
-`id`, `model_id?`, `principal_id`, `operation`, `key`, `request_digest`, `state`,
-`response jsonb` (секреты — токен, временный пароль, `Set-Cookie` — не пишутся), `created_at`,
-`committed_at`. UNIQUE `(principal_id, operation,
+`id`, `model_id?`, `principal_id`, `operation`, `key`, `request_digest` (SHA-256), `state`
+(`committed | no_replay` — ответ с секретом не сохранён, повтор отвечает 409; предварительно),
+`response jsonb` (секреты — токен, временный пароль, `Set-Cookie` — не пишутся: CHECK
+`jsonb_has_secret()` отклоняет документ с такими ключами на любой глубине, он же стоит на
+`action_log.before/after`), `created_at`, `committed_at`. UNIQUE `(principal_id, operation,
 key)`; тот же ключ с другим запросом — конфликт. Доменная запись, ответ, журнал и
 постановка работ фиксируются одной транзакцией.
 
@@ -1286,7 +1290,8 @@ LLM.
   `item_id` из `SET LOCAL app.item_id` (ставится перед изменениями каждого объекта), они
   дают раскрытие «было → стало». Лента и «История» читают только строки `action`;
   индекс «Истории» — частичный `(model_id, item_id, at DESC) WHERE entry_kind = 'action'`.
-  UPDATE только технических отметок (`last_seen_at`, `last_used_at`) в журнал не пишется.
+  UPDATE только технических отметок (`last_seen_at`, `last_used_at`, `updated_at`,
+  `row_version`) в журнал не пишется.
 - **Операции с файлами** (запись и удаление байтов): (1) транзакция А —
   замок на строку байтов, свежая проверка нуля ссылок, вставка намерения, коммит; (2)
   сериализованный писатель хранилища коммитит отметку `started` в своей короткой
