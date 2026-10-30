@@ -8,6 +8,16 @@ import { useToday } from '@/data/api-session'
  */
 export function OrderCloseNote({ order }: { order: Order }) {
   const today = useToday()
+  if (order.cancelled) {
+    return (
+      <InfoSection title="Заказ снят">
+        <p className="text-muted-foreground">
+          {formatDate(mskDate(order.cancelled.at), today)} · {order.cancelled.by.name}
+          {order.cancelled.reason ? ` · ${order.cancelled.reason}` : ''}
+        </p>
+      </InfoSection>
+    )
+  }
   if (order.closed_at) {
     return (
       <InfoSection title="Закрыть заказ">

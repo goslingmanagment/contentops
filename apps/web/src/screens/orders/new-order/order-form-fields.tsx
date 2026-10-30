@@ -18,7 +18,7 @@ import {
 import { Textarea } from '@contentops/ui/components/textarea'
 import { type ReactNode, useId } from 'react'
 import { Controller, type UseFormReturn, useWatch } from 'react-hook-form'
-import { countOrZero, textOrNull } from '../form-values'
+import { countOrZero, textOrNull, trimmed } from '../form-values'
 
 interface RowProps {
   label: string
@@ -69,7 +69,6 @@ interface OrderFormFieldsProps {
 export function OrderFormFields({ form, accounts }: OrderFormFieldsProps) {
   const { register, control, formState } = form
   const ids = {
-    title: useId(),
     buyer: useId(),
     brief: useId(),
     duration: useId(),
@@ -80,13 +79,6 @@ export function OrderFormFields({ form, accounts }: OrderFormFieldsProps) {
   const durationRaw = useWatch({ control, name: 'duration_raw' })
   return (
     <div className="flex flex-col gap-3">
-      <Row label="Название" htmlFor={ids.title} error={formState.errors.title?.message}>
-        <Input
-          id={ids.title}
-          aria-invalid={formState.errors.title ? true : undefined}
-          {...register('title')}
-        />
-      </Row>
       <Row label="Покупатель" htmlFor={ids.buyer}>
         <Input id={ids.buyer} {...register('buyer', { setValueAs: textOrNull })} />
       </Row>
@@ -95,7 +87,7 @@ export function OrderFormFields({ form, accounts }: OrderFormFieldsProps) {
           control={control}
           name="account"
           render={({ field }) => (
-            <Select value={field.value} onValueChange={field.onChange}>
+            <Select value={field.value ?? undefined} onValueChange={field.onChange}>
               <SelectTrigger aria-label="Страница" className="w-48">
                 <SelectValue />
               </SelectTrigger>
@@ -110,12 +102,13 @@ export function OrderFormFields({ form, accounts }: OrderFormFieldsProps) {
           )}
         />
       </Row>
-      <Row label="ТЗ" htmlFor={ids.brief}>
+      <Row label="ТЗ" htmlFor={ids.brief} error={formState.errors.brief?.message}>
         <Textarea
           id={ids.brief}
           rows={2}
           className="min-h-16"
-          {...register('brief', { setValueAs: textOrNull })}
+          aria-invalid={formState.errors.brief ? true : undefined}
+          {...register('brief', { setValueAs: trimmed })}
         />
       </Row>
       <Row label="Ждём">

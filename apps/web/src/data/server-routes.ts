@@ -98,6 +98,8 @@ export const SERVER_ROUTES: ServerRoutes = {
   media: 'all',
   objectBatch: 'all',
   markup: 'all',
+  // Заказы кастомов (4б).
+  orders: 'all',
   inbox: [
     'list',
     'get',

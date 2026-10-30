@@ -21,6 +21,10 @@ export const ERROR_CODES = [
   'accept_blocked',
   'order_closed',
   'order_not_complete',
+  /** «Новый заказ» on a card that already has an order: `details.order` is its address. */
+  'order_exists',
+  /** An agent changes a field a person edited last (SPEC §8.2): `details.fields`. */
+  'edited_by_person',
   'row_marked',
   'row_not_marked',
   'row_cancelled',
@@ -54,6 +58,8 @@ export const HTTP_STATUS_BY_CODE: Record<ErrorCode, number> = {
   accept_blocked: 422,
   order_closed: 422,
   order_not_complete: 422,
+  order_exists: 422,
+  edited_by_person: 422,
   row_marked: 422,
   row_not_marked: 422,
   row_cancelled: 422,

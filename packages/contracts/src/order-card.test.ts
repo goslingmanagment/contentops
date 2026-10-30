@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Account, Platform } from './domain/model'
-import { parseOrderCard } from './order-card'
+import { orderTitleOf, parseOrderCard } from './order-card'
 
 /** «Новый заказ» (DESIGN §4.16): what the card text turns into. */
 
@@ -48,12 +48,19 @@ describe('parseOrderCard', () => {
       '📌 Кастом «в белом халате»\n👤 фан №2201\n📄 медленно у окна\n⏱ 8-10 минут\n🖼 15 фото\n📅 до 30.09',
     )
     expect(fields).toMatchObject({
-      title: 'в белом халате',
       buyer: 'фан №2201',
-      brief: 'медленно у окна',
+      brief: '«в белом халате» медленно у окна',
       duration_raw: '8-10 минут',
       wants_photos: 15,
       deadline: '2026-09-30',
     })
+    expect(orderTitleOf(fields.brief ?? '')).toBe('в белом халате')
+  })
+
+  it('names the order by the brief', () => {
+    expect(orderTitleOf('в чёрном спорт\nбез музыки')).toBe('в чёрном спорт')
+    const long = orderTitleOf(`${'очень длинное ТЗ '.repeat(8)}конец`)
+    expect(long.length).toBeLessThanOrEqual(61)
+    expect(long.endsWith('…')).toBe(true)
   })
 })

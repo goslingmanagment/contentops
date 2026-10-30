@@ -155,11 +155,15 @@ export interface CoverageRecord {
   visible_from: LocalDate | null
 }
 
+/**
+ * An order of the prototype's world. The fixtures predate the server's fields (part marks,
+ * retractions, source dates); `views/orders.ts` fills them when the order is shown.
+ */
 export interface OrderRecord {
   id: string
   title: string
   buyer: string | null
-  account: AccountCode
+  account: AccountCode | null
   card: { url: string; author: string; posted_at: Instant; text: string | null }
   brief: string | null
   duration: { raw: string; min_s: number | null; max_s: number | null }
@@ -167,11 +171,17 @@ export interface OrderRecord {
   wants_photos: number
   deadline: LocalDate | null
   fan_name: 'yes' | 'no' | 'unknown'
-  parts: OrderPart[]
-  deliveries: OrderDelivery[]
-  revisions: OrderRevision[]
-  messages: OrderMessage[]
+  parts: (Omit<OrderPart, 'complete' | 'completed_by'> & Partial<OrderPart>)[]
+  deliveries: (Omit<OrderDelivery, 'part' | 'evidence' | 'delivered_at' | 'files' | 'retracted'> &
+    Partial<OrderDelivery>)[]
+  revisions: (Omit<OrderRevision, 'done'> & {
+    done:
+      | (Omit<NonNullable<OrderRevision['done']>, 'delivery_id'> & { delivery_id?: string | null })
+      | null
+  })[]
+  messages: (Pick<OrderMessage, 'at' | 'kind' | 'excerpt'> & Partial<OrderMessage>)[]
   closed_at: Instant | null
+  cancelled?: { at: Instant; reason: string } | null
   version: number
 }
 

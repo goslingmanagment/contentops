@@ -40,14 +40,20 @@ export function orderedWhat(order: Pick<Order, 'duration' | 'wants_video' | 'wan
   const parts: string[] = []
   if (order.wants_video && order.duration.raw) parts.push(withDash(order.duration.raw))
   else if (order.wants_video) parts.push('видео')
-  if (order.wants_photos > 0) parts.push(`${formatNumber(order.wants_photos)} фото`)
+  // «10 минут - 20 фото» уже называет фото: второй раз их не пишем.
+  const photosNamed = order.wants_video && /фото/iu.test(order.duration.raw)
+  if (order.wants_photos > 0 && !photosNamed) parts.push(`${formatNumber(order.wants_photos)} фото`)
   return parts.join(' и ')
 }
 
 /** Серая строка под названием: «фан №1482 · Fansly 1 · заказано 12–15 минут». */
 export function orderMeta(order: Order, accounts: readonly Account[]): string {
   const what = orderedWhat(order)
-  return [order.buyer, accountLabel(accounts, order.account), what ? `заказано ${what}` : null]
+  return [
+    order.buyer,
+    order.account ? accountLabel(accounts, order.account) : null,
+    what ? `заказано ${what}` : null,
+  ]
     .filter((part) => part !== null)
     .join(' · ')
 }
@@ -74,9 +80,9 @@ export function placeholderCaption(order: Order): string {
   return parsedDuration(order.duration) ?? 'видео'
 }
 
-/** Часть сдана: видео — если есть, фото — если набралось заказанное. */
+/** Часть сдана целиком: отметку ставит сервер или тот, кто ведёт заказ (SPEC §8.2). */
 export function isPartDone(part: OrderPart): boolean {
-  return part.kind === 'video' ? part.delivered > 0 : part.delivered >= (part.required ?? 0)
+  return part.complete
 }
 
 /** «15:37 · сдано 18.09» или «0 из 20». */
@@ -102,6 +108,7 @@ function partLine(part: OrderPart, today: LocalDate): string {
 
 /** Срок словами: «Срок до 29.09», «Срок 20.09 прошёл», «Закрыт 22.09». */
 function termLine(order: Order, today: LocalDate): string {
+  if (order.cancelled) return `Снят ${formatDate(mskDate(order.cancelled.at), today)}`
   if (order.closed_at) return `Закрыт ${formatDate(mskDate(order.closed_at), today)}`
   if (!order.deadline) return 'Срок не указан'
   return order.state === 'overdue'

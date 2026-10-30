@@ -155,3 +155,71 @@ describe('contentops against the server', () => {
     expect(stale.err).toMatch(/^idempotency-key: .*\nversion_mismatch: /)
   })
 })
+
+describe('contentops for the routine customs-daily (SPEC §8.2)', () => {
+  const card = 'https://t.me/c/2627984998/12/31337'
+  const fields = {
+    message_url: card,
+    card_author: 'Чаттер',
+    card_at: '2026-10-29T10:00:00Z',
+    buyer: 'фан №4471',
+    account: 'lora-1',
+    brief: 'в чёрном спорт',
+    duration_raw: '10 минут',
+    wants_video: true,
+    wants_photos: 0,
+    deadline: null,
+    fan_name: 'unknown',
+    card_text: null,
+  }
+
+  it('finds no order, creates it, finds it by the link; a second create is exit 1', async () => {
+    const missing = await contentops(
+      secret,
+      'orders',
+      'find',
+      '--model',
+      'lora',
+      '--tg',
+      card,
+      '--json',
+    )
+    expect(missing.code).toBe(1)
+    expect(JSON.parse(missing.out)).toMatchObject({ code: 'not_found' })
+    const create = [
+      'orders',
+      'create',
+      '--model',
+      'lora',
+      '--body',
+      JSON.stringify(fields),
+      '--json',
+    ]
+    const created = await contentops(secret, ...create)
+    expect(created.code).toBe(0)
+    const order = JSON.parse(created.out)
+    expect(order).toMatchObject({
+      id: 'tg-2627984998-12-31337',
+      state: 'waiting',
+      created_by: { type: 'agent' },
+    })
+    const found = await contentops(
+      secret,
+      'orders',
+      'find',
+      '--model',
+      'lora',
+      '--tg',
+      card,
+      '--json',
+    )
+    expect(found.code).toBe(0)
+    expect(JSON.parse(found.out).id).toBe(order.id)
+    const again = await contentops(secret, ...create)
+    expect(again.code).toBe(1)
+    expect(JSON.parse(again.out)).toMatchObject({
+      code: 'order_exists',
+      details: { order: order.id },
+    })
+  })
+})

@@ -50,6 +50,11 @@ export interface FixtureFile {
   lifeUse?: 'feed' | 'chats' | 'both' | null
   /** Chronology of the current version (a master), by seconds. */
   chronology?: readonly { atS: number; text: string }[]
+  /**
+   * When the file appeared in the source (`remote_created_at` of a disk revision): every
+   * version gets a source revision of the model's fixture disk. No source when omitted.
+   */
+  arrivedAt?: string
 }
 
 export type FixtureField =
@@ -131,6 +136,27 @@ async function channelId(tx: Tx, modelId: string, code: string): Promise<string>
   return rows[0]?.id ?? ''
 }
 
+/** A revision of a file on the model's fixture disk that appeared at `at`. */
+async function sourceRevision(tx: Tx, modelId: string, at: string, bytes: number) {
+  await tx.execute(sql`
+    INSERT INTO sources (model_id, kind, label, root_path, credentials_ref)
+    VALUES (${modelId}::uuid, 'yandex_disk', 'fixtures', '/', 'FIXTURES_DISK')
+    ON CONFLICT (model_id, label) DO NOTHING`)
+  const objectId = randomUUID()
+  const revisionId = randomUUID()
+  await tx.execute(sql`
+    INSERT INTO source_objects (model_id, id, source_id, resource_id, current_path, current_name)
+    SELECT ${modelId}::uuid, ${objectId}::uuid, id, ${objectId}, ${`/fixtures/${objectId}`},
+           ${objectId}
+      FROM sources WHERE model_id = ${modelId}::uuid AND label = 'fixtures'`)
+  await tx.execute(sql`
+    INSERT INTO source_revisions (model_id, id, source_object_id, sequence_no, byte_size,
+                                  remote_created_at, detected_at)
+    VALUES (${modelId}::uuid, ${revisionId}::uuid, ${objectId}::uuid, 1, ${bytes},
+            ${at}::timestamptz, now())`)
+  return revisionId
+}
+
 async function insertBlob(tx: Tx, file: FixtureFile, sha256: Buffer, bytes: number) {
   const video = (file.media ?? (VIDEO_ROLES.has(file.role) ? 'video' : 'image')) === 'video'
   const hex = sha256.toString('hex')
@@ -179,12 +205,15 @@ async function insertFile(
   for (const [index, versionId] of versionIds.entries()) {
     const sha256 = file.sha256?.[index] ?? randomBytes(32)
     await insertBlob(tx, file, sha256, shape.bytes)
+    const revision = file.arrivedAt
+      ? await sourceRevision(tx, modelId, file.arrivedAt, shape.bytes)
+      : null
     await tx.execute(sql`
       INSERT INTO asset_versions (model_id, id, asset_id, version_no, master_sha256, duration_ms,
-                                  width, height)
+                                  width, height, source_revision_id)
       VALUES (${modelId}::uuid, ${versionId}::uuid, ${assetId}::uuid, ${index + 1}, ${sha256},
               ${shape.durationS === null ? null : shape.durationS * 1000},
-              ${shape.width}, ${shape.height})`)
+              ${shape.width}, ${shape.height}, ${revision}::uuid)`)
   }
   const membershipId = randomUUID()
   await tx.execute(sql`
