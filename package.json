@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "pnpm --filter @contentops/web dev",
     "dev:server": "node apps/server/scripts/dev-stack.mjs",
+    "perf:stack": "node tools/perf/stack.mjs",
+    "perf": "node tools/perf/measure.mjs",
     "contentops": "node packages/cli/bin/contentops.mjs",
     "build": "pnpm --filter @contentops/web build",
     "typecheck": "pnpm -r --parallel typecheck",
@@ -45,6 +47,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "playwright-core": "1.64.1",
     "shadcn": "4.21.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",

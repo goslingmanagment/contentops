@@ -27,7 +27,12 @@ export interface PoolOptions {
   onIdleError?: (error: Error) => void
 }
 
-/** node-postgres pool; every session works in UTC (SPEC §12.1). */
+/**
+ * node-postgres pool; every session works in UTC (SPEC §12.1) and without JIT: the plans of
+ * the catalog index cross `jit_above_cost`, and LLVM compilation took 580 of the 760 ms of
+ * `/index` on the full-volume catalog — without it the query takes 200 ms
+ * (docs/reference/infrastructure.md §5).
+ */
 export function createPool(url: string, options: PoolOptions = {}): pg.Pool {
   const pool = new pg.Pool({
     connectionString: url,
@@ -35,7 +40,7 @@ export function createPool(url: string, options: PoolOptions = {}): pg.Pool {
     application_name: options.applicationName ?? 'contentops',
     idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
     connectionTimeoutMillis: options.connectionTimeoutMillis ?? 10_000,
-    options: '-c TimeZone=UTC',
+    options: '-c TimeZone=UTC -c jit=off',
   })
   pool.on('error', options.onIdleError ?? (() => {}))
   return pool
