@@ -58,7 +58,7 @@ const DEMO_CHANGES: Partial<Record<DemoMode, (world: World) => void>> = {
     setIntegrations(world, loraHub, {
       state: 'off',
       since: '2026-09-21T09:00:00Z',
-      switches: { receive: false, auto_match: false },
+      switches: { receive: false, auto_match: false, publish: false },
     }),
   'hub-unset': (world) =>
     setIntegrations(world, loraHub, {
@@ -102,7 +102,7 @@ const DEMO_CHANGES: Partial<Record<DemoMode, (world: World) => void>> = {
     setIntegrations(world, loraHub, {
       state: 'off',
       since: '2026-09-21T09:00:00Z',
-      switches: { receive: false, auto_match: false },
+      switches: { receive: false, auto_match: false, publish: false },
     })
     setIntegrations(world, (integration) => integration.kind === 'ydisk', {
       state: 'off',

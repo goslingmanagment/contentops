@@ -4133,7 +4133,8 @@
         "enum": [
           "unreachable",
           "format_changed",
-          "token_rejected"
+          "token_rejected",
+          "stale"
         ]
       },
       "IntegrationIcon": {
@@ -4225,6 +4226,9 @@
           "auto_match": {
             "type": "boolean"
           },
+          "publish": {
+            "type": "boolean"
+          },
           "scan": {
             "type": "boolean"
           },
@@ -4241,6 +4245,9 @@
             "type": "boolean"
           },
           "auto_match": {
+            "type": "boolean"
+          },
+          "publish": {
             "type": "boolean"
           },
           "scan": {

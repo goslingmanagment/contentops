@@ -11,6 +11,7 @@ import {
 import type { Logger } from 'pino'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
+import { envHubClient, hubStreams, hubSyncHandler } from './hub/sync'
 import { draftZipExport } from './intake/draft-files'
 import { fetchHandler } from './intake/fetch'
 import { intakeMediaHandlers } from './intake/media'
@@ -178,6 +179,11 @@ async function waitForStorage(config: Config, logger: Logger): Promise<void> {
   }
 }
 
+/** The hourly Hub poll of the pages (SPEC §8.1), role `worker`; nothing without the key. */
+function hubHandlers(config: Config): Partial<Record<values.WorkKind, WorkHandler>> {
+  return { hub_sync: hubSyncHandler({ client: envHubClient(config) }) }
+}
+
 /** Discovery and fetch from the cloud folders of the models (SPEC §6.1), role `worker`. */
 function intakeHandlers(
   config: Config,
@@ -236,6 +242,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     ...(role === 'worker' ? intakeHandlers(config, store, mediaHandlers(role, env).export) : {}),
     // The legacy pass of stage 3 and its dry run (SPEC §6.3).
     ...(role === 'worker' ? { import_parse: importParseHandler() } : {}),
+    ...(role === 'worker' ? hubHandlers(config) : {}),
   }
   const runner = new WorkRunner({
     db,
@@ -261,14 +268,18 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     stopStaging()
     stopCollector()
   }
-  // Periodic works (Hub polls, source scans) are scheduled only by `worker`; their streams
-  // come with their stages. A source's streams exist while its token is in the environment.
+  // Periodic works (Hub polls, source scans) are scheduled only by `worker`. A source's
+  // streams exist while its token is in the environment, Hub's while its key is there.
   const startedAt = new Date()
+  const hubConfigured = config.HUB_API_KEY !== undefined && config.HUB_BASE_URL !== undefined
   const scheduler =
     role === 'worker'
       ? new WorkScheduler({
           db,
-          streams: () => scanStreams(db, process.env, startedAt),
+          streams: async () => [
+            ...(await scanStreams(db, process.env, startedAt)),
+            ...(await hubStreams(db, { configured: hubConfigured, since: startedAt })),
+          ],
           pollMs: 10_000,
           log,
         })

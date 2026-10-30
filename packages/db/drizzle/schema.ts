@@ -697,6 +697,28 @@ export const itemTags = pgTable("item_tags", {
 	check("item_tags_group_at_import_check", sql`group_at_import = ANY (ARRAY['action'::text, 'attribute'::text, 'mood'::text])`),
 ]);
 
+export const hubVaultAlbums = pgTable("hub_vault_albums", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	accountId: uuid("account_id").notNull(),
+	albumRef: text("album_ref").notNull(),
+	title: text(),
+	lastFullWalkAt: timestamp("last_full_walk_at", { withTimezone: true, mode: 'string' }),
+	fullWalkRef: text("full_walk_ref"),
+	memberCount: integer("member_count"),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("hub_vault_albums_title").using("btree", sql`model_id`, sql`lower(title)`),
+	foreignKey({
+			columns: [table.modelId, table.accountId],
+			foreignColumns: [accounts.id, accounts.modelId],
+			name: "hub_vault_albums_model_id_account_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "hub_vault_albums_pkey"}),
+	unique("hub_vault_albums_ref").on(table.accountId, table.albumRef, table.modelId),
+	unique("hub_vault_albums_model_id_account_id_id_key").on(table.accountId, table.id, table.modelId),
+]);
+
 export const sources = pgTable("sources", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -1244,6 +1266,48 @@ export const downloadReceipts = pgTable("download_receipts", {
 	check("download_receipts_entry_count_check", sql`entry_count > 0`),
 ]);
 
+export const hubObservations = pgTable("hub_observations", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	accountId: uuid("account_id").notNull(),
+	dataset: text().notNull(),
+	externalKey: text("external_key").notNull(),
+	sequenceNo: integer("sequence_no").notNull(),
+	rowUpdatedAt: timestamp("row_updated_at", { withTimezone: true, mode: 'string' }),
+	semanticHash: bytea("semantic_hash").notNull(),
+	payload: jsonb().notNull(),
+	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	runId: uuid("run_id").notNull(),
+	runAttempt: integer("run_attempt").notNull(),
+	previousId: uuid("previous_id"),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.modelId, table.accountId],
+			foreignColumns: [accounts.id, accounts.modelId],
+			name: "hub_observations_model_id_account_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.runId],
+			foreignColumns: [workOperations.id, workOperations.modelId],
+			name: "hub_observations_model_id_run_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.previousId],
+			foreignColumns: [table.id, table.modelId],
+			name: "hub_observations_model_id_previous_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "hub_observations_pkey"}),
+	unique("hub_observations_sequence").on(table.accountId, table.dataset, table.externalKey, table.modelId, table.sequenceNo),
+	check("hub_observations_dataset_check", sql`dataset = ANY (ARRAY['posts'::text, 'post_attachments'::text, 'raw_media'::text, 'vault_media'::text, 'creator_stats_media_daily'::text, 'creator_stats_media_likes'::text])`),
+	check("hub_observations_external_key_filled", sql`external_key <> ''::text`),
+	check("hub_observations_sequence_no_check", sql`sequence_no >= 1`),
+	check("hub_observations_semantic_hash_sha256", sql`octet_length(semantic_hash) = 32`),
+	check("hub_observations_payload_object", sql`jsonb_typeof(payload) = 'object'::text`),
+	check("hub_observations_run_attempt_check", sql`run_attempt >= 1`),
+	check("hub_observations_previous", sql`(sequence_no = 1) = (previous_id IS NULL)`),
+	check("hub_observations_not_self", sql`previous_id <> id`),
+]);
+
 export const accounts = pgTable("accounts", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -1382,6 +1446,40 @@ export const sourceObjects = pgTable("source_objects", {
 	unique("source_objects_model_id_archive_revision_id_archive_entry_n_key").on(table.archiveEntryNo, table.archiveRevisionId, table.modelId),
 	check("source_objects_archive_entry_no_check", sql`archive_entry_no >= 0`),
 	check("source_objects_archive_member", sql`(archive_revision_id IS NULL) = (archive_entry_no IS NULL)`),
+]);
+
+export const hubPosts = pgTable("hub_posts", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	accountId: uuid("account_id").notNull(),
+	postRef: text("post_ref").notNull(),
+	currentObservationId: uuid("current_observation_id").notNull(),
+	publishedAt: timestamp("published_at", { withTimezone: true, mode: 'string' }),
+	caption: text(),
+	attachmentCount: integer("attachment_count"),
+	fypFlags: integer("fyp_flags"),
+	wallRefs: jsonb("wall_refs").default([]).notNull(),
+	firstObservedAt: timestamp("first_observed_at", { withTimezone: true, mode: 'string' }),
+	lastObservedAt: timestamp("last_observed_at", { withTimezone: true, mode: 'string' }),
+	rowUpdatedAt: timestamp("row_updated_at", { withTimezone: true, mode: 'string' }),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("hub_posts_files").using("btree", table.accountId.asc().nullsLast().op("int4_ops"), table.attachmentCount.asc().nullsLast().op("uuid_ops"), table.publishedAt.asc().nullsLast().op("int4_ops")),
+	index("hub_posts_published").using("btree", table.accountId.asc().nullsLast().op("timestamptz_ops"), table.publishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.modelId, table.accountId],
+			foreignColumns: [accounts.id, accounts.modelId],
+			name: "hub_posts_model_id_account_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.currentObservationId],
+			foreignColumns: [hubObservations.id, hubObservations.modelId],
+			name: "hub_posts_model_id_current_observation_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "hub_posts_pkey"}),
+	unique("hub_posts_ref").on(table.accountId, table.modelId, table.postRef),
+	check("hub_posts_wall_refs_array", sql`jsonb_typeof(wall_refs) = 'array'::text`),
 ]);
 
 export const webUploads = pgTable("web_uploads", {
@@ -1862,6 +1960,11 @@ export const placementEvidence = pgTable("placement_evidence", {
 			foreignColumns: [legacyClaims.id, legacyClaims.modelId],
 			name: "placement_evidence_model_id_legacy_claim_id_fkey"
 		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.hubObservationId],
+			foreignColumns: [hubObservations.id, hubObservations.modelId],
+			name: "placement_evidence_model_id_hub_observation_id_fkey"
+		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "placement_evidence_pkey"}),
 	unique("placement_evidence_corrects_once").on(table.correctsId),
 	unique("placement_evidence_model_id_placement_id_id_key").on(table.id, table.modelId, table.placementId),
@@ -1911,6 +2014,44 @@ export const blobProbes = pgTable("blob_probes", {
 	primaryKey({ columns: [table.kind, table.recipeDigest, table.sha256], name: "blob_probes_pkey"}),
 	check("blob_probes_sha256_check", sql`octet_length(sha256) = 32`),
 	check("blob_probes_kind_check", sql`kind = ANY (ARRAY['ffprobe'::text, 'exif'::text])`),
+]);
+
+export const hubRawMedia = pgTable("hub_raw_media", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	accountId: uuid("account_id").notNull(),
+	mediaRef: text("media_ref").notNull(),
+	currentObservationId: uuid("current_observation_id").notNull(),
+	filename: text(),
+	filenameNorm: text("filename_norm").generatedAlwaysAs(sql`lower(regexp_replace(filename, '\.[^./]*$'::text, ''::text))`),
+	mime: text(),
+	mediaType: integer("media_type"),
+	durationMs: integer("duration_ms"),
+	outWidth: integer("out_width"),
+	outHeight: integer("out_height"),
+	origWidth: integer("orig_width"),
+	origHeight: integer("orig_height"),
+	fpsMilli: integer("fps_milli"),
+	createdAtPlatform: timestamp("created_at_platform", { withTimezone: true, mode: 'string' }),
+	origin: text(),
+	firstObservedAt: timestamp("first_observed_at", { withTimezone: true, mode: 'string' }),
+	rowUpdatedAt: timestamp("row_updated_at", { withTimezone: true, mode: 'string' }),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("hub_raw_media_name").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.filenameNorm.asc().nullsLast().op("uuid_ops")),
+	index("hub_raw_media_shape").using("btree", table.accountId.asc().nullsLast().op("int4_ops"), table.durationMs.asc().nullsLast().op("int4_ops"), table.origWidth.asc().nullsLast().op("int4_ops"), table.origHeight.asc().nullsLast().op("int4_ops")),
+	foreignKey({
+			columns: [table.modelId, table.accountId],
+			foreignColumns: [accounts.id, accounts.modelId],
+			name: "hub_raw_media_model_id_account_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.currentObservationId],
+			foreignColumns: [hubObservations.id, hubObservations.modelId],
+			name: "hub_raw_media_model_id_current_observation_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "hub_raw_media_pkey"}),
+	unique("hub_raw_media_ref").on(table.accountId, table.mediaRef, table.modelId),
 ]);
 
 export const inboxGroups = pgTable("inbox_groups", {
@@ -2206,6 +2347,90 @@ END)`),
 	check("legacy_claims_not_self", sql`superseded_by_id <> id`),
 ]);
 
+export const hubVaultMedia = pgTable("hub_vault_media", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	accountId: uuid("account_id").notNull(),
+	albumId: uuid("album_id").notNull(),
+	memberRef: text("member_ref").notNull(),
+	currentObservationId: uuid("current_observation_id").notNull(),
+	mediaRef: text("media_ref"),
+	mediaOfferRef: text("media_offer_ref"),
+	customFilename: text("custom_filename"),
+	filename: text(),
+	mime: text(),
+	mediaType: integer("media_type"),
+	durationMs: integer("duration_ms"),
+	origWidth: integer("orig_width"),
+	origHeight: integer("orig_height"),
+	createdAtPlatform: timestamp("created_at_platform", { withTimezone: true, mode: 'string' }),
+	membershipAt: timestamp("membership_at", { withTimezone: true, mode: 'string' }),
+	missingSince: timestamp("missing_since", { withTimezone: true, mode: 'string' }),
+	firstObservedAt: timestamp("first_observed_at", { withTimezone: true, mode: 'string' }),
+	lastObservedAt: timestamp("last_observed_at", { withTimezone: true, mode: 'string' }),
+	rowUpdatedAt: timestamp("row_updated_at", { withTimezone: true, mode: 'string' }),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("hub_vault_media_media").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.mediaRef.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.modelId, table.accountId, table.albumId],
+			foreignColumns: [hubVaultAlbums.accountId, hubVaultAlbums.id, hubVaultAlbums.modelId],
+			name: "hub_vault_media_model_id_account_id_album_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.currentObservationId],
+			foreignColumns: [hubObservations.id, hubObservations.modelId],
+			name: "hub_vault_media_model_id_current_observation_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "hub_vault_media_pkey"}),
+	unique("hub_vault_media_member").on(table.accountId, table.albumId, table.memberRef, table.modelId),
+]);
+
+export const hubSyncState = pgTable("hub_sync_state", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	accountId: uuid("account_id").notNull(),
+	dataset: text().notNull(),
+	scope: text().default('page').notNull(),
+	watermarkAt: timestamp("watermark_at", { withTimezone: true, mode: 'string' }),
+	lastSuccessAt: timestamp("last_success_at", { withTimezone: true, mode: 'string' }),
+	lastDailyAt: timestamp("last_daily_at", { withTimezone: true, mode: 'string' }),
+	nextFullAt: timestamp("next_full_at", { withTimezone: true, mode: 'string' }),
+	rebuiltAt: timestamp("rebuilt_at", { withTimezone: true, mode: 'string' }),
+	hubSucceededAt: timestamp("hub_succeeded_at", { withTimezone: true, mode: 'string' }),
+	consecutiveFailures: integer("consecutive_failures").default(0).notNull(),
+	available: boolean().default(true).notNull(),
+	unavailableReason: text("unavailable_reason"),
+	lastError: text("last_error"),
+	lastWorkId: uuid("last_work_id"),
+	windowFrom: timestamp("window_from", { withTimezone: true, mode: 'string' }),
+	windowTo: timestamp("window_to", { withTimezone: true, mode: 'string' }),
+	expectedCount: integer("expected_count"),
+	observedCount: integer("observed_count"),
+	stopReason: text("stop_reason"),
+	blockers: text().array(),
+	provenCompleteAt: timestamp("proven_complete_at", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.modelId, table.accountId],
+			foreignColumns: [accounts.id, accounts.modelId],
+			name: "hub_sync_state_model_id_account_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.lastWorkId],
+			foreignColumns: [workOperations.id, workOperations.modelId],
+			name: "hub_sync_state_model_id_last_work_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.accountId, table.dataset, table.modelId, table.scope], name: "hub_sync_state_pkey"}),
+	unique("hub_sync_state_model_id_id_key").on(table.id, table.modelId),
+	check("hub_sync_state_dataset_check", sql`dataset = ANY (ARRAY['posts'::text, 'raw_media'::text, 'vault_media'::text, 'creator_stats'::text])`),
+	check("hub_sync_state_consecutive_failures_check", sql`consecutive_failures >= 0`),
+	check("hub_sync_state_available", sql`available OR (unavailable_reason IS NOT NULL)`),
+]);
+
 export const contentItems = pgTable("content_items", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -2368,6 +2593,68 @@ export const placements = pgTable("placements", {
 	check("placements_out_of_catalog", sql`(NOT out_of_catalog) OR (item_id IS NULL)`),
 	check("placements_time", sql`(planned_at IS NOT NULL) OR (occurred_at IS NOT NULL) OR (event_precision = 'unknown'::text)`),
 	check("placements_occurred_source", sql`(occurred_at IS NULL) OR (occurred_source IS NOT NULL)`),
+]);
+
+export const hubPostAttachments = pgTable("hub_post_attachments", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	postId: uuid("post_id").notNull(),
+	hubKey: text("hub_key").notNull(),
+	currentObservationId: uuid("current_observation_id").notNull(),
+	attachmentIndex: integer("attachment_index"),
+	memberIndex: integer("member_index"),
+	position: integer(),
+	role: text().notNull(),
+	contentType: integer("content_type"),
+	contentRef: text("content_ref"),
+	bundleRef: text("bundle_ref"),
+	mediaOfferRef: text("media_offer_ref"),
+	previewRef: text("preview_ref"),
+	mediaRef: text("media_ref"),
+	linkState: text("link_state").notNull(),
+	filename: text(),
+	mime: text(),
+	durationMs: integer("duration_ms"),
+	origWidth: integer("orig_width"),
+	origHeight: integer("orig_height"),
+	matchedAssetId: uuid("matched_asset_id"),
+	matchedVersionId: uuid("matched_version_id"),
+	receiptEntryId: uuid("receipt_entry_id"),
+	matchStrength: text("match_strength").default('none').notNull(),
+	matchedAt: timestamp("matched_at", { withTimezone: true, mode: 'string' }),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("hub_post_attachments_media").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.mediaRef.asc().nullsLast().op("uuid_ops")),
+	index("hub_post_attachments_offer").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.mediaOfferRef.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.modelId, table.postId],
+			foreignColumns: [hubPosts.id, hubPosts.modelId],
+			name: "hub_post_attachments_model_id_post_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.currentObservationId],
+			foreignColumns: [hubObservations.id, hubObservations.modelId],
+			name: "hub_post_attachments_model_id_current_observation_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.matchedAssetId, table.matchedVersionId],
+			foreignColumns: [assetVersions.assetId, assetVersions.id, assetVersions.modelId],
+			name: "hub_post_attachments_model_id_matched_asset_id_matched_ver_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.matchedVersionId, table.receiptEntryId],
+			foreignColumns: [downloadReceiptEntries.assetVersionId, downloadReceiptEntries.id, downloadReceiptEntries.modelId],
+			name: "hub_post_attachments_model_id_matched_version_id_receipt_e_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "hub_post_attachments_pkey"}),
+	unique("hub_post_attachments_slot").on(table.attachmentIndex, table.memberIndex, table.modelId, table.postId, table.role),
+	unique("hub_post_attachments_key").on(table.hubKey, table.modelId, table.postId),
+	check("hub_post_attachments_role_check", sql`role = ANY (ARRAY['main'::text, 'offer_preview'::text, 'bundle_preview'::text])`),
+	check("hub_post_attachments_link_state_check", sql`link_state = ANY (ARRAY['resolved'::text, 'attachment_ref_missing'::text, 'media_ref_missing'::text, 'bundle_members_missing'::text, 'preview_unresolved'::text, 'file_metadata_missing'::text, 'non_media_attachment'::text])`),
+	check("hub_post_attachments_match_strength_check", sql`match_strength = ANY (ARRAY['none'::text, 'candidate'::text, 'exact'::text])`),
+	check("hub_post_attachments_matched_version", sql`(matched_asset_id IS NULL) = (matched_version_id IS NULL)`),
+	check("hub_post_attachments_receipt_version", sql`(receipt_entry_id IS NULL) OR (matched_version_id IS NOT NULL)`),
+	check("hub_post_attachments_matched", sql`((match_strength = 'none'::text) = (matched_version_id IS NULL)) AND ((matched_at IS NULL) = (matched_version_id IS NULL))`),
 ]);
 
 export const customOrders = pgTable("custom_orders", {

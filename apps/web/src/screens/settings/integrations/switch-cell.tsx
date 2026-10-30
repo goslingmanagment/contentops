@@ -19,6 +19,7 @@ interface SwitchCellProps {
 const POSITION_WORD: Record<SwitchKey, { on: string; off: string }> = {
   receive: { on: 'получает', off: 'не получает' },
   auto_match: { on: 'автосверка', off: 'без автосверки' },
+  publish: { on: 'публикует', off: 'без публикации' },
   scan: { on: 'сканирует', off: 'не сканирует' },
   enabled: { on: 'работают', off: 'выключены' },
 }

@@ -17,7 +17,10 @@ interface HubSectionProps {
   switches: Switches
 }
 
-/** Agency Hub по страницам: у каждой модели своя группа, у страницы два выключателя. */
+/**
+ * Agency Hub по страницам: у каждой модели своя группа, у страницы три выключателя —
+ * получение данных, автосверка и публикация (DESIGN §4.19).
+ */
 export function HubSection({ integrations, models, switches }: HubSectionProps) {
   const hub = integrations.filter((integration) => integration.kind === 'hub')
   return models.map((model) => {
@@ -34,7 +37,7 @@ export function HubSection({ integrations, models, switches }: HubSectionProps) 
         title={`Agency Hub · ${model.name}`}
         aside={
           pages.some(({ integration }) => integration.state !== 'unset') ? (
-            <SwitchHeaders labels={['Получать данные', 'Автосверка']} />
+            <SwitchHeaders labels={['Получать данные', 'Автосверка', 'Публикация']} />
           ) : null
         }
       >
@@ -102,6 +105,13 @@ function HubPageRow({ account, model, integration, switches }: HubPageRowProps) 
             switches={switches}
             readOnly={!owner}
             disabled={integration.switches.receive === false}
+          />
+          <SwitchCell
+            integration={integration}
+            switchKey="publish"
+            label={`Публикация через Hub · ${account.label} · ${model.name}`}
+            switches={switches}
+            readOnly={!owner}
           />
         </>
       )}

@@ -822,57 +822,84 @@ UNIQUE `(model_id, placement_id, source, dedup_key)` — то же наблюд�
 IS NOT NULL`. Уникальности по `external_ref` внутри размещения нет: два кандидата
 обязаны ужиться (§7 «флаг, не догадка»). Роль приложения: `INSERT, SELECT`.
 
-**`hub_sync_state`** — граница опроса (§8.1). PK `(model_id, account_id, dataset,
-scope)`; `watermark_at` (прошлый успех минус перекрытие, SPEC §8.1), `last_success_at`
-(опрос ContentOps), `hub_succeeded_at?` (последний успех потока самого Hub,
-`sync_streams.succeededAt`: в строке — «Hub · посты на 18:32», с 5б — и у статусов
-публикаций; 30.10.2026), `next_full_at`, `consecutive_failures`, `available`,
-`unavailable_reason`, `last_error`; колонки покрытия — схема §9.1, §9.6. Граница
-продвигается только после сохранения всех страниц окна. Точечного опроса альбома нет (решение владельца 30.09.2026). Опросы одного потока сериализуются арендой в `work_operations`.
+**`hub_sync_state`** — граница опроса (§8.1), строка на страницу и поток опроса
+(`posts` — посты с вложениями, `capture_coverage` и `sync_streams`; `raw_media`;
+`vault_media`; `creator_stats` — просмотры и лайки Fansly). PK `(model_id, account_id,
+dataset, scope)`, `scope` = `page`; `id` — субъект журнала; `watermark_at` (прошлый успех
+минус 3 ч, SPEC §8.1), `last_success_at` (начало прошлого успешного опроса ContentOps —
+база следующего чтения), `last_daily_at` (прошлый суточный или полный опрос),
+`next_full_at` (месяц после прошлой полной перечитки), `rebuilt_at?` (Hub отверг курсор
+как выданный до rebuild — полная перечитка до следующей полной), `hub_succeeded_at?`
+(последний успех потока самого Hub, `sync_streams.succeededAt` потока `posts`; у Fansly
+строк `sync_streams` нет — Hub отдаёт агенту только потоки OnlyFans, поэтому берётся
+последнее `lastObservedAt` постов страницы; в строке — «Hub · посты на 18:32», у vault —
+последний полный обход альбома; с 5б — и у статусов публикаций; 30.10.2026),
+`consecutive_failures` (из `sync_streams`), `available`, `unavailable_reason`,
+`last_error`, `last_work_id`, `blockers?` (`conclusion.blockers` прошлого чтения); колонки
+покрытия — схема §9.1, §9.6. Полная перечитка — при первом опросе, через месяц, после
+неудачной работы потока, после rebuild и после разрыва длиннее суток. Граница
+продвигается только после сохранения всех страниц окна — в транзакции завершения работы.
+Точечного опроса альбома нет (решение владельца 30.09.2026). Опросы одного потока
+сериализуются арендой в `work_operations`; у работ Hub свой слот исполнителя — медленный
+или недоступный Hub не держит забор и выдачу.
 
 **`hub_observations`** — журнал наблюдений (§5, §8.1). `id`, `model_id`,
-`account_id`, `dataset`, `external_key`, `sequence_no`, `row_updated_at?`,
-`semantic_hash` (по закреплённым полям набора, SPEC §8.1, кроме служебных времён Hub —
-`firstObservedAt`, `lastObservedAt`, `rowUpdatedAt` — и сведений об обходе альбома, они
-в `hub_vault_albums`), `payload jsonb`, `observed_at`, `run_id`,
+`account_id`, `dataset` (`posts`, `post_attachments`, `raw_media`, `vault_media`,
+`creator_stats_media_daily`, `creator_stats_media_likes`), `external_key` (стабильный ключ
+строки Hub), `sequence_no`, `row_updated_at?`, `semantic_hash` (SHA-256 закреплённых полей
+набора, SPEC §8.1, кроме служебных времён Hub — `firstObservedAt`, `lastObservedAt`,
+`rowUpdatedAt`, `capturedAt` — и сведений об обходе альбома, они в `hub_vault_albums`),
+`payload jsonb` (строка как её отдал Hub), `observed_at`, `run_id`, `run_attempt`,
 `previous_id?`. UNIQUE `(model_id, account_id, dataset, external_key, sequence_no)`.
 Уникальности по хэшу нет: A→B→A — три строки, повтор A — только `last_seen_at`
 у типизированной строки. Улики ссылаются на наблюдение, а не на изменяемую
-текущую строку.
+текущую строку. Показатели Fansly по файлу и дню типизированной строки не имеют: текущее
+значение — последнее наблюдение ключа; к размещению они приходят через
+`hub_post_attachments.media_offer_ref`.
 
 **`hub_posts`** — текущая строка поста: `id`, `model_id`, `account_id`, `post_ref`,
-`current_observation_id`, `published_at`, `caption`, `attachment_count`, `is_fyp`,
-`wall_refs jsonb`, `first_observed_at`, `last_observed_at`, `last_seen_at`,
-`matched_placement_id?`. UNIQUE `(model_id, account_id, post_ref)`;
-индексы `(account_id, published_at DESC)`, `(account_id, attachment_count,
-published_at)`, частичный `WHERE matched_placement_id IS NULL` — неразобранные
-кандидаты запрещают «не вышло». Пустой `wall_refs` не читается как «не на стене»:
-поверхность размещения ставится только по доказанному признаку, иначе пост остаётся
-в очереди разбора.
+`current_observation_id`, `published_at`, `caption`, `attachment_count`, `fyp_flags`
+(`fypFlags` Hub как есть: 4 — не в ленте, SPEC §7), `wall_refs jsonb`, `first_observed_at`,
+`last_observed_at`, `row_updated_at` (времена Hub), `last_seen_at`. UNIQUE `(model_id,
+account_id, post_ref)`; индексы `(account_id, published_at DESC)`, `(account_id,
+attachment_count, published_at)`. Связь с размещениями — по
+`placements.external_post_ref` (схема §9.2). Пустой `wall_refs` не читается как «не на
+стене»: поверхность размещения ставится только по доказанному признаку, иначе пост
+остаётся в очереди разбора.
 
-**`hub_post_attachments`**: `id`, `model_id`, `post_id`, `position`, `content_type`,
-`offer_ref?`, `bundle_ref?`, `media_ref?`, `is_preview`, `link_state` (семь значений
-Hub, схема §9.6). Ключ — схема §9.6.
+**`hub_post_attachments`**: `id`, `model_id`, `post_id`, `hub_key` (ключ строки Hub),
+`current_observation_id`, `attachment_index`, `member_index`, `position`, `role`,
+`content_type`, `content_ref` (offer или пачка поста), `bundle_ref`, `media_offer_ref`,
+`preview_ref`, `media_ref`, `link_state` (семь значений Hub), `filename`, `mime`,
+`duration_ms`, `orig_width`, `orig_height`, колонки совпадения и `last_seen_at`. Ключ и
+колонки совпадения — схема §9.6. Набор затронутого поста заменяется целиком, в том числе
+пустым; строка с тем же ключом и местом сохраняет совпадение, пока не изменилась.
 
 **`hub_raw_media`** — файл платформы: `id`, `model_id`, `account_id`, `media_ref`,
-`current_observation_id`, `filename`, `filename_norm STORED`, `mime`, `duration_ms`,
-`orig_width`, `orig_height`, `out_width`, `out_height`, `fps`, `origin`.
-UNIQUE `(model_id, account_id, media_ref)`; индексы `(model_id, filename_norm)` —
-имя скачивания ContentOps как точная улика; `(account_id, duration_ms, orig_width,
-orig_height)` — кандидат по длительности и размерам.
+`current_observation_id`, `filename`, `filename_norm STORED` (имя без расширения в нижнем
+регистре), `mime`, `media_type`, `duration_ms`, `orig_width`, `orig_height`, `out_width`,
+`out_height`, `fps_milli`, `created_at_platform`, `origin`, `first_observed_at`,
+`row_updated_at`, `last_seen_at`. UNIQUE `(model_id, account_id, media_ref)`; индексы
+`(model_id, filename_norm)` — имя скачивания ContentOps как точная улика; `(account_id,
+duration_ms, orig_width, orig_height)` — кандидат по длительности и размерам.
 
 **`hub_vault_albums`**: `id`, `model_id`, `account_id`, `album_ref`, `title`,
-`vault_kind`, `member_count`, `last_full_walk_at`, `walk_state`,
-`current_observation_id`. UNIQUE `(model_id, account_id, album_ref)`; индекс по
-`lower(title)` — альбом `PPV-073 Йога, анал, гольфы` ведёт к объекту (naming §7).
+`last_full_walk_at`, `full_walk_ref`, `member_count` (число членов по полному обходу),
+`last_seen_at`. Только vault создателя: пользовательский vault (лайки и покупки, чужие
+файлы) не читается. Своих строк у альбома в Hub нет — сведения приходят со строками
+`vault_media`; «ни разу не обойдён» — пустой `last_full_walk_at`. UNIQUE `(model_id,
+account_id, album_ref)`; индекс по `lower(title)` — альбом `PPV-073 Йога, анал, гольфы`
+ведёт к объекту (naming §7).
 
 **`hub_vault_media`**: `id`, `model_id`, `account_id`, `album_id`, `member_ref`,
-`media_ref?`, `custom_filename`, `membership_at`, `first_observed_at`,
-`last_observed_at`, `missing_since?`, `current_observation_id`.
-UNIQUE `(model_id, account_id, album_id, member_ref)`; `missing_since` только после
-доказанного полного обхода; «был когда-то» и «есть сейчас» — разные факты. В vault
-считается то, что лежит сейчас: файл с `missing_since` размещение не держит, объект
-возвращается в «Ещё не залито» (30.10.2026).
+`current_observation_id`, `media_ref?`, `media_offer_ref?`, `custom_filename`, `filename`,
+`mime`, `media_type`, `duration_ms`, `orig_width`, `orig_height`, `created_at_platform`,
+`membership_at` (время события строки Hub — первое появление в альбоме),
+`missing_since?`, `first_observed_at`, `last_observed_at`, `row_updated_at`,
+`last_seen_at`. UNIQUE `(model_id, account_id, album_id, member_ref)`; `missing_since`
+только после доказанного полного обхода; «был когда-то» и «есть сейчас» — разные факты.
+В vault считается то, что лежит сейчас: файл с `missing_since` размещение не держит,
+объект возвращается в «Ещё не залито» (30.10.2026).
 
 ### 3.7. Заказы кастомов
 
@@ -1668,9 +1695,9 @@ Testcontainers одноразовые, стенд — `docker compose down -v`; 
   колонки совпадения (пересобираемая проекция): `matched_asset_id?`,
   `matched_version_id?` с составным FK `(model_id, matched_asset_id,
   matched_version_id) → asset_versions (model_id, asset_id, id)`, `receipt_entry_id?`
-  с FK `(model_id, receipt_entry_id) → download_receipt_entries` и составным FK
-  `(model_id, matched_version_id, receipt_entry_id) → download_receipt_entries
-  (model_id, asset_version_id, id)`, `match_strength text` CHECK по списку
+  с составным FK `(model_id, matched_version_id, receipt_entry_id) →
+  download_receipt_entries (model_id, asset_version_id, id)` и CHECK «квитанция только с
+  версией» (вместе они заменяют простой FK `receipt_entry_id`; 30.10.2026), `match_strength text` CHECK по списку
   `placement_assets.match_strength`, `matched_at?`. Точное совпадение файла без
   установленной поверхности живёт здесь; размещение создаётся, когда поверхность
   установлена (по Hub — SPEC §7 «Поверхность», отметка КМ на строке плана, очередь).

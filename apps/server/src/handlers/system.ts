@@ -5,6 +5,7 @@ import { requireActor } from '../commands'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { hubLatency } from '../hub/views'
 import { evaluateRow, loadState } from '../plan/state'
 import { todayRows } from '../plan/views'
 import type { Services } from '../services'
@@ -72,14 +73,18 @@ async function queueViews(db: Db): Promise<Queue[]> {
 }
 
 async function systemState(db: Db, space: SpaceOptions): Promise<SystemState> {
-  const [queues, report] = await Promise.all([queueViews(db), readHostSpace(space.file)])
+  const [queues, report, latency] = await Promise.all([
+    queueViews(db),
+    readHostSpace(space.file),
+    hubLatency(db),
+  ])
   return {
     queues,
     disks: diskViews(report, space, new Date()),
     // No backup on the pilot (SPEC §12.3, decision 12.09.2026).
     backup: { text: 'Бэкапа нет (пилот)', last_full_at: null, last_dump_at: null },
-    // Hub is read from stage 5; storage checks, AI and duplicates come with their stages.
-    hub_latency: null,
+    // Storage checks, AI and duplicates come with their stages.
+    hub_latency: latency,
     storage_findings: [],
     ai_spend: null,
     cross_model_duplicates: null,

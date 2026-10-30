@@ -26,11 +26,16 @@ export const INTEGRATION_NAME: Record<IntegrationKind, string> = {
 export const IntegrationStateSchema = z.enum(['working', 'off', 'unset', 'down', 'catching_up'])
 export type IntegrationState = z.infer<typeof IntegrationStateSchema>
 
-/** `token_rejected` — 401/403: «токен не принят с 13:40», no retries until it changes (SPEC §8). */
+/**
+ * `token_rejected` — 401/403: «токен не принят с 13:40», no retries until it changes (SPEC §8);
+ * `stale` — Hub answers, but its own data is older than a day: «Hub не обновлял посты … с …»
+ * (SPEC §7).
+ */
 export const IntegrationDownReasonSchema = z.enum([
   'unreachable',
   'format_changed',
   'token_rejected',
+  'stale',
 ])
 export type IntegrationDownReason = z.infer<typeof IntegrationDownReasonSchema>
 
@@ -39,6 +44,8 @@ export const IntegrationSwitchesSchema = z.object({
   receive: z.boolean().optional(),
   /** Hub: «Автосверка». */
   auto_match: z.boolean().optional(),
+  /** Hub: «Публикация» (подэтап 5б). */
+  publish: z.boolean().optional(),
   /** Я.Диск, Dropbox: «Скан по источнику». */
   scan: z.boolean().optional(),
   /** Агенты: работают все токены или никто. */
@@ -54,6 +61,7 @@ export const IntegrationSchema = z.object({
   /** Set for Hub, which is switched per page. */
   account: AccountCodeSchema.nullable(),
   state: IntegrationStateSchema,
+  /** Hub: its own freshness of the posts («посты на 18:32»), not the poll of ContentOps. */
   last_ok_at: InstantSchema.nullable(),
   /** Since when it is off or down. */
   since: InstantSchema.nullable(),
