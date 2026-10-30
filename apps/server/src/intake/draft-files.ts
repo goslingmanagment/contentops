@@ -196,7 +196,8 @@ export async function draftSource(
          AND dataset = 'drafts' AND scope = ${groupId} AND state = 'succeeded'`)
     const report = rows[0]?.report
     const info = report?.key ? await store.stat(report.key) : null
-    if (!report?.key || !info) throw new ApiProblem('not_found', 'Архив удалён через сутки — скачайте заново')
+    if (!report?.key || !info)
+      throw new ApiProblem('not_found', 'Архив удалён через сутки — скачайте заново')
     return new FileAnswer({
       accel: store.url(report.key),
       path: store.path(report.key),

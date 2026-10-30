@@ -12,9 +12,9 @@ import { tempStore } from '../media/testing'
 import { buildServer } from '../server'
 import { call, newKey, signIn } from '../testing/server'
 import { acceptGroup } from './accept'
+import { draftZipExport } from './draft-files'
 import { fetchHandler } from './fetch'
 import { scanHandler } from './scan'
-import { draftZipExport } from './draft-files'
 import { sweepStaging } from './staging'
 import { drain, type IntakeHarness, intakeHarness, LORA_ROOT, runWork, setSwitch } from './testing'
 
@@ -441,7 +441,10 @@ describe('«Скачать исходник» (SPEC §6.1, schema §9.2)', () =>
     await scan()
     const { group_id } = await groupOfPath(path)
     const early = await download(group_id)
-    expect(early.json()).toMatchObject({ code: 'accept_blocked', details: { reason: 'not_fetched' } })
+    expect(early.json()).toMatchObject({
+      code: 'accept_blocked',
+      details: { reason: 'not_fetched' },
+    })
     await fetchAll()
     const answer = await download(group_id)
     expect(answer.statusCode).toBe(200)
@@ -454,7 +457,9 @@ describe('«Скачать исходник» (SPEC §6.1, schema §9.2)', () =>
       SELECT count(*)::int AS n FROM action_log
        WHERE action = 'inbox.download' AND subject_id = ${group_id}::uuid AND entry_kind = 'action'`)
     expect(rows[0]?.n).toBe(2 - 1)
-    const { rows: receipts } = await h.db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM download_receipts`)
+    const { rows: receipts } = await h.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM download_receipts`,
+    )
     expect(receipts[0]?.n).toBe(0)
   })
 
@@ -491,9 +496,11 @@ describe('◆ decisions without their case', () => {
     expect((await decide({ decision: 'number_taken', keep: true })).json().details).toMatchObject({
       reason: 'no_dispute',
     })
-    expect((await decide({ decision: 'split_archive', split: true })).json().details).toMatchObject({
-      reason: 'no_archive',
-    })
+    expect((await decide({ decision: 'split_archive', split: true })).json().details).toMatchObject(
+      {
+        reason: 'no_archive',
+      },
+    )
     expect(
       (await decide({ decision: 'substitute_montage', substitute: true })).json().details,
     ).toMatchObject({ reason: 'no_plan_row' })
