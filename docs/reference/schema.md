@@ -1180,7 +1180,10 @@ LLM.
   `unreadable`, `bigger_than_source`, `timing_drift`, `timing_uncomparable`,
   `audio_mismatch`, `audio_offset`, `audio_tracks_lost`, `encode_failed`,
   `frame_mismatch`, `result_decode_errors`, `publish_failed`, `source_decode_errors`,
-  `source_truncated`; `enc_ms`, `verify_ms`, `src_frames`, `dst_frames`, `crf`,
+  `source_truncated` и `metadata_mismatch` (метаданные или размер с учётом поворота у
+  результата не те, что у источника: SPEC §9.2 требует их сверки, у скрипта такого исхода
+  нет; 30.10.2026); `decision` пуст только при `unreadable` — исходник не открылся, правило
+  не применить; `enc_ms`, `verify_ms`, `src_frames`, `dst_frames`, `crf`,
   `report jsonb`; у проваленной проверки может не быть хэша мастера;
   результат на каждую попытку: UNIQUE `(source_sha256, recipe_digest, work_id,
   attempt)` (прежний ключ сталкивался на повторном `ok`). Принятие (30.10.2026): `encode`

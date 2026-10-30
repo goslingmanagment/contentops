@@ -25,3 +25,22 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+
+  # Media tests need the pinned FFmpeg/SVT-AV1 and libvips with HEIC, so they run inside the
+  # product image (Dockerfile target `media-test`); `pnpm check` above runs only the pure ones.
+  media:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: media-test
+          load: true
+          tags: contentops-media-test:ci
+          cache-from: type=gha,scope=media-test
+          cache-to: type=gha,scope=media-test,mode=max
+      - name: Media tests in the product image
+        run: docker run --rm contentops-media-test:ci
