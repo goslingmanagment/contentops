@@ -1,5 +1,6 @@
 import {
   AddAccountCommandSchema,
+  AddAgentCommandSchema,
   AddAiServiceCommandSchema,
   AddModelCommandSchema,
   AddPersonCommandSchema,
@@ -8,6 +9,7 @@ import {
   MergeTagCommandSchema,
   PauseQueueCommandSchema,
   SignInCommandSchema,
+  UpdateAgentCommandSchema,
   UpdateAiBudgetCommandSchema,
   UpdateAiServiceCommandSchema,
   UpdateContractorCommandSchema,
@@ -22,6 +24,7 @@ import {
   SessionSchema,
   SignInResultSchema,
 } from '../../domain/admin'
+import { AgentSchema } from '../../domain/agents'
 import { TagSchema } from '../../domain/markup'
 import { ModelSchema } from '../../domain/model'
 import { pageSchema } from '../../domain/pagination'
@@ -58,6 +61,22 @@ export const settingsRoutes = {
     method: 'POST',
     path: '/api/v1/admin/people/{person}:revoke-access',
     response: OkSchema,
+  }),
+  /** «Добавить агента» (DESIGN §4.19); the token is issued separately, «Выдать токен». */
+  addAgent: defineRoute({
+    method: 'POST',
+    path: '/api/v1/admin/agents',
+    body: AddAgentCommandSchema,
+    response: AgentSchema,
+    success: 201,
+  }),
+  /** Name, role and models of an agent; its tokens follow at once. */
+  updateAgent: defineRoute({
+    method: 'PATCH',
+    path: '/api/v1/admin/agents/{agent}',
+    body: UpdateAgentCommandSchema,
+    response: AgentSchema,
+    versioned: true,
   }),
   /**
    * Names of the people with rights on the model, for anyone who may see it: «обычно

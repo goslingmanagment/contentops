@@ -89,6 +89,7 @@ export function buildAgents(): Agent[] {
           revoked_at: null,
         },
       ],
+      version: 1,
     },
     {
       id: AGENT.orders,
@@ -105,6 +106,7 @@ export function buildAgents(): Agent[] {
           revoked_at: null,
         },
       ],
+      version: 1,
     },
     {
       id: AGENT.import,
@@ -121,6 +123,7 @@ export function buildAgents(): Agent[] {
           revoked_at: null,
         },
       ],
+      version: 1,
     },
   ]
 }

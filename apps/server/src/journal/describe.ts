@@ -47,6 +47,8 @@ const WORDING: Record<string, Wording> = {
     noun: 'отзыв сессий',
   },
   'settings.revokeAccess': { verb: 'отозвал', rest: 'доступ: {subject}', noun: 'отзыв доступа' },
+  'settings.addAgent': { verb: 'добавил', rest: 'агента «{subject}»', noun: 'добавление агента' },
+  'settings.updateAgent': { verb: 'изменил', rest: 'агента «{subject}»', noun: 'изменение агента' },
   'admin.issueToken': { verb: 'выдал', rest: 'токен агенту «{subject}»', noun: 'выдача токена' },
   'admin.revokeToken': {
     verb: 'отозвал',

@@ -32,6 +32,8 @@ export const SERVER_ROUTES: ServerRoutes = {
   settings: [
     'addPerson',
     'updatePerson',
+    'addAgent',
+    'updateAgent',
     'revokePersonSessions',
     'revokeAccess',
     'modelPeople',

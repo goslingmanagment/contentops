@@ -1,16 +1,20 @@
 import { newIdempotencyKey } from '@contentops/contracts/api/idempotency-key'
 import type { IntegrationView } from '@contentops/contracts/api/responses'
 import { adminRoutes } from '@contentops/contracts/api/routes/admin'
+import { settingsRoutes } from '@contentops/contracts/api/routes/settings'
 import { addMinutes } from '@contentops/contracts/clock'
 import type { Agent } from '@contentops/contracts/domain/agents'
 import type { Integration, IntegrationSwitches } from '@contentops/contracts/domain/integrations'
+import { ROLE_LABEL } from '@contentops/contracts/domain/people'
 import { pastVerb } from '@contentops/contracts/format'
-import { notFound } from '../domain-error'
+import { DomainError, notFound } from '../domain-error'
 import type { World } from '../fixtures/world-types'
 import { type BoundRoute, bind } from '../handler'
 import { counters, integrationLineOf } from '../views/counters'
 import { wholeList } from '../views/paginate'
+import { logSettingsChange } from './settings/settings-log'
 import { systemStateView } from './settings/system'
+import { checkVersion } from './settings/versions'
 
 /** Session, counters and settings (DESIGN §4.19). */
 
@@ -72,6 +76,15 @@ function agentOf(world: World, id: string): Agent {
   return agent
 }
 
+/** Known model codes only, like the server: an unknown one is a 400. */
+function agentModels(world: World, codes: readonly string[]): string[] {
+  const missing = codes.filter((code) => !world.models.has(code))
+  if (missing.length > 0) {
+    throw new DomainError('invalid_request', 'Такой модели нет', { models: missing })
+  }
+  return [...world.models.keys()].filter((code) => codes.includes(code))
+}
+
 export function adminHandlers(): BoundRoute[] {
   return [
     bind(adminRoutes.me, 'read', ({ state }) => ({
@@ -91,6 +104,43 @@ export function adminHandlers(): BoundRoute[] {
     ),
     bind(adminRoutes.people, 'owner', ({ state }) => wholeList(state.world.people)),
     bind(adminRoutes.agents, 'owner', ({ state }) => wholeList(state.world.agents)),
+    bind(settingsRoutes.addAgent, 'owner', ({ state, body, log }) => {
+      const agent: Agent = {
+        id: `a-${newIdempotencyKey().slice(0, 8)}`,
+        name: body.name,
+        role: body.role,
+        models: agentModels(state.world, body.models),
+        tokens: [],
+        version: 1,
+      }
+      state.world.agents.push(agent)
+      logSettingsChange(log, agent.models, {
+        action: 'agent.add',
+        phrase: `${state.principal.name} ${pastVerb('добавил', state.principal.gender)} агента «${agent.name}» · ${ROLE_LABEL[agent.role]}`,
+      })
+      return agent
+    }),
+    bind(settingsRoutes.updateAgent, 'owner', ({ state, params, body, if_match, log }) => {
+      const agent = agentOf(state.world, params.agent)
+      checkVersion(state, if_match, agent, {
+        field: `агента ${agent.name}`,
+        rival: (record) => {
+          record.role = record.role === 'reader' ? 'manager' : 'reader'
+        },
+        valueOf: (record) => ({ name: record.name, role: record.role, models: record.models }),
+      })
+      const models = body.models ? agentModels(state.world, body.models) : agent.models
+      const before = { ...agent }
+      agent.name = body.name ?? agent.name
+      agent.role = body.role ?? agent.role
+      agent.models = models
+      agent.version += 1
+      logSettingsChange(log, [...new Set([...before.models, ...agent.models])], {
+        action: 'agent.update',
+        phrase: `${state.principal.name} ${pastVerb('изменил', state.principal.gender)} агента «${agent.name}»`,
+      })
+      return agent
+    }),
     bind(adminRoutes.issueToken, 'owner', ({ state, params, body, log }) => {
       const agent = agentOf(state.world, params.agent)
       const secret = `co_${newIdempotencyKey().replaceAll('-', '')}`

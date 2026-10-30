@@ -290,6 +290,29 @@
           "hub_page"
         ]
       },
+      "AddAgentCommandInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "$ref": "#/components/schemas/AgentRoleInput"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelCodeInput"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "models"
+        ]
+      },
       "AddAiServiceCommandInput": {
         "type": "object",
         "properties": {
@@ -439,6 +462,9 @@
             "items": {
               "$ref": "#/components/schemas/AgentToken"
             }
+          },
+          "version": {
+            "$ref": "#/components/schemas/RecordVersion"
           }
         },
         "required": [
@@ -446,9 +472,17 @@
           "name",
           "role",
           "models",
-          "tokens"
+          "tokens",
+          "version"
         ],
         "additionalProperties": false
+      },
+      "AgentRoleInput": {
+        "type": "string",
+        "enum": [
+          "manager",
+          "reader"
+        ]
       },
       "AgentToken": {
         "type": "object",
@@ -9796,6 +9830,24 @@
         ],
         "additionalProperties": false
       },
+      "UpdateAgentCommandInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "$ref": "#/components/schemas/AgentRoleInput"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelCodeInput"
+            }
+          }
+        }
+      },
       "UpdateAiBudgetCommandInput": {
         "type": "object",
         "properties": {
@@ -10827,6 +10879,44 @@
                     "next_cursor"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "settings.addAgent",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAgentCommandInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
                 }
               }
             }
@@ -17706,6 +17796,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/agents/{agent}": {
+      "patch": {
+        "operationId": "settings.updateAgent",
+        "tags": [
+          "settings"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "agent",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
                 }
               }
             }

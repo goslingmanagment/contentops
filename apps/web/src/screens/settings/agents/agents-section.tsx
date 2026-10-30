@@ -1,31 +1,27 @@
-import type { Agent, AgentToken } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import {
   SettingsSection,
   SettingsSectionSkeleton,
 } from '@contentops/ui/components/settings-section'
 import { ErrorLine } from '@contentops/ui/components/state-lines'
-import { KeyRoundIcon } from 'lucide-react'
+import { BotIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useModels } from '@/data/session'
 import { useAgents } from '@/data/settings'
 import { SettingsPage } from '../settings-layout'
+import { AddAgentDialog } from './add-agent-dialog'
+import { AgentRow } from './agent-row'
 import { IssueTokenDialog } from './issue-token-dialog'
-import { TokenRow } from './token-row'
-
-/** Действующие токены агента; без них — одна строка «нет токена». */
-function rowsOf(agent: Agent): (AgentToken | null)[] {
-  const live = agent.tokens.filter((token) => token.revoked_at === null)
-  return live.length > 0 ? live : [null]
-}
 
 /**
- * «Агенты и токены» (DESIGN §4.19): агент, модели, выдан, срок, последнее использование,
- * «Отозвать». «Выдать токен» показывает токен один раз.
+ * «Агенты и токены» (DESIGN §4.19): агент, роль, модели, выдан, срок, последнее
+ * использование, «Отозвать». «Добавить агента» — имя, роль, модели; «Выдать токен»
+ * показывает токен один раз.
  */
 export function AgentsSection() {
   const agents = useAgents()
   const models = useModels()
+  const [adding, setAdding] = useState(false)
   const [issuing, setIssuing] = useState<string | null>(null)
 
   return (
@@ -33,9 +29,9 @@ export function AgentsSection() {
       title="Агенты и токены"
       refreshing={agents.isFetching && !agents.isPending}
       actions={
-        <Button onClick={() => setIssuing(agents.data?.[0]?.id ?? '')} disabled={!agents.data}>
-          <KeyRoundIcon />
-          Выдать токен
+        <Button onClick={() => setAdding(true)}>
+          <BotIcon />
+          Добавить агента
         </Button>
       }
     >
@@ -43,21 +39,23 @@ export function AgentsSection() {
         <ErrorLine layout="center" message="Не загрузилось" onRetry={() => void agents.refetch()} />
       ) : null}
       {agents.isPending ? <SettingsSectionSkeleton rows={3} /> : null}
-      {agents.data ? (
+      {agents.data && models.data ? (
         <SettingsSection>
-          {agents.data.flatMap((agent) =>
-            rowsOf(agent).map((token) => (
-              <TokenRow
-                key={`${agent.id}:${token?.id ?? 'none'}`}
+          {agents.data.length === 0 ? (
+            <p className="py-4 text-muted-foreground">Агентов нет</p>
+          ) : (
+            agents.data.map((agent) => (
+              <AgentRow
+                key={agent.id}
                 agent={agent}
-                token={token}
-                models={models.data ?? []}
+                models={models.data}
                 onIssue={() => setIssuing(agent.id)}
               />
-            )),
+            ))
           )}
         </SettingsSection>
       ) : null}
+      <AddAgentDialog open={adding} onOpenChange={setAdding} models={models.data ?? []} />
       <IssueTokenDialog
         agents={agents.data ?? []}
         agentId={issuing}

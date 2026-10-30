@@ -10,7 +10,7 @@ import type { HandlerRegistry } from '../handlers'
 import { changesOf } from '../journal/describe'
 import type { Services } from '../services'
 import { listPeople, personById } from './people-view'
-import { modelNames, modelsByCodes, withFieldErrors } from './shared'
+import { modelNames, modelsByCodes, setGrants, withFieldErrors } from './shared'
 
 /** «Люди и доступ» (DESIGN §4.19): роль, модели галочками, сессии, история выдачи прав. */
 
@@ -43,21 +43,6 @@ async function lockPerson(tx: Tx, id: string): Promise<RightsRow> {
   const row = rows[0]
   if (!row) throw new ApiProblem('not_found', 'Такого человека нет')
   return row
-}
-
-/** Live grants become exactly `codes`: removed ones are revoked, new ones granted. */
-async function setGrants(tx: Tx, principalId: string, codes: readonly string[], by: string) {
-  const wanted = await modelsByCodes(tx, codes)
-  await tx.execute(sql`
-    UPDATE principal_grants SET revoked_at = now()
-     WHERE principal_id = ${principalId}::uuid AND revoked_at IS NULL
-       AND NOT (model_id = ANY(${sql.param(wanted.map((model) => model.id))}::uuid[]))`)
-  for (const model of wanted) {
-    await tx.execute(sql`
-      INSERT INTO principal_grants (model_id, principal_id, granted_by)
-      VALUES (${model.id}::uuid, ${principalId}::uuid, ${by}::uuid)
-      ON CONFLICT (principal_id, model_id) WHERE revoked_at IS NULL DO NOTHING`)
-  }
 }
 
 export function peopleHandlers({ db, command }: Services): HandlerRegistry {

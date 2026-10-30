@@ -1,19 +1,26 @@
+import { randomUUID } from 'node:crypto'
 import type { Agent, AgentToken } from '@contentops/contracts/domain/agents'
-import { logAction, type Queryable } from '@contentops/db'
+import { ROLE_LABEL } from '@contentops/contracts/domain/people'
+import { logAction, type Queryable, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { newSecret, sha256, TOKEN_PREFIX, TOKEN_PREFIX_LENGTH } from '../auth/secrets'
-import { instant, instantOrNull, isUuid } from '../commands'
+import { checkVersion, instant, instantOrNull, isUuid } from '../commands'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import type { Services } from '../services'
+import { modelNames, modelsByCodes, setGrants } from './shared'
 
-/** «Агенты и токены» (DESIGN §4.19): токен показывается один раз, хранится его хэш. */
+/**
+ * «Агенты и токены» (DESIGN §4.19): агент — принципал с ролью и моделями, как человек
+ * (SPEC §11.1); токен показывается один раз, хранится его хэш.
+ */
 
 interface AgentRow extends Record<string, unknown> {
   id: string
   name: string
   role: Agent['role']
   models: string[]
+  version: number | string
 }
 
 interface TokenRow extends Record<string, unknown> {
@@ -39,7 +46,7 @@ function tokenOf(row: TokenRow): AgentToken {
 
 async function agents(q: Queryable, id?: string): Promise<Agent[]> {
   const { rows } = await q.execute<AgentRow>(sql`
-    SELECT p.id, p.display_name AS name, p.role,
+    SELECT p.id, p.display_name AS name, p.role, p.row_version AS version,
            CASE WHEN p.role = 'owner'
              THEN coalesce((SELECT array_agg(m.code ORDER BY m.id) FROM models m
                              WHERE m.archived_at IS NULL), '{}')
@@ -63,6 +70,7 @@ async function agents(q: Queryable, id?: string): Promise<Agent[]> {
     role: row.role,
     models: row.models,
     tokens: tokens.filter((token) => token.principal_id === row.id).map(tokenOf),
+    version: Number(row.version),
   }))
 }
 
@@ -70,6 +78,29 @@ async function agentById(q: Queryable, id: string): Promise<Agent> {
   const [agent] = isUuid(id) ? await agents(q, id) : []
   if (!agent) throw new ApiProblem('not_found', 'Такого агента нет')
   return agent
+}
+
+/** The agent row under a lock: changes of one agent go one after another. */
+async function lockAgent(
+  tx: Tx,
+  id: string,
+): Promise<{ id: string; name: string; version: number }> {
+  if (!isUuid(id)) throw new ApiProblem('not_found', 'Такого агента нет')
+  const { rows } = await tx.execute<{ id: string; name: string; version: number | string }>(sql`
+    SELECT id, display_name AS name, row_version AS version FROM principals
+     WHERE id = ${id}::uuid AND kind = 'agent' AND disabled_at IS NULL FOR UPDATE`)
+  const row = rows[0]
+  if (!row) throw new ApiProblem('not_found', 'Такого агента нет')
+  return { id: row.id, name: row.name, version: Number(row.version) }
+}
+
+/** What the journal shows of an agent: «было → стало» by these fields. */
+async function snapshotOf(q: Queryable, agent: Agent): Promise<Record<string, string>> {
+  return {
+    Имя: agent.name,
+    Роль: ROLE_LABEL[agent.role],
+    Модели: await modelNames(q, agent.models),
+  }
 }
 
 export function agentHandlers({ db, command }: Services): HandlerRegistry {
@@ -133,6 +164,67 @@ export function agentHandlers({ db, command }: Services): HandlerRegistry {
             })
           }
           return agentById(tx, agent.id)
+        }),
+    },
+    settings: {
+      addAgent: ({ body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const models = await modelsByCodes(tx, body.models)
+          // Agents do not sign in: the login only keeps the column unique.
+          const { rows } = await tx.execute<{ id: string }>(sql`
+            INSERT INTO principals (kind, login, display_name, role)
+            VALUES ('agent', ${`agent-${randomUUID()}`}, ${body.name}, ${body.role})
+            RETURNING id`)
+          const id = rows[0]?.id
+          if (!id) throw new Error('agent insert returned nothing')
+          await setGrants(
+            tx,
+            id,
+            models.map((model) => model.code),
+            actor.id,
+          )
+          const agent = await agentById(tx, id)
+          await logAction(tx, {
+            modelId: null,
+            subjectKind: 'principals',
+            subjectId: id,
+            subjectLabel: agent.name,
+            after: await snapshotOf(tx, agent),
+          })
+          return agent
+        }),
+
+      updateAgent: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const row = await lockAgent(tx, params.agent)
+          const before = await agentById(tx, row.id)
+          await checkVersion(
+            tx,
+            ctx,
+            {
+              version: row.version,
+              subjectKind: 'principals',
+              subjectId: row.id,
+              field: `агента ${row.name}`,
+            },
+            () => ({ name: before.name, role: before.role, models: before.models }),
+          )
+          if (body.models) await setGrants(tx, row.id, body.models, actor.id)
+          await tx.execute(sql`
+            UPDATE principals
+               SET display_name = ${body.name ?? before.name}, role = ${body.role ?? before.role},
+                   row_version = row_version + 1
+             WHERE id = ${row.id}::uuid`)
+          const after = await agentById(tx, row.id)
+          await logAction(tx, {
+            modelId: null,
+            subjectKind: 'principals',
+            subjectId: row.id,
+            subjectLabel: after.name,
+            before: await snapshotOf(tx, before),
+            after: await snapshotOf(tx, after),
+          })
+          return after
         }),
     },
   }
