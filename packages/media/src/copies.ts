@@ -41,6 +41,10 @@ export interface PlatformProfile {
   bufsizeKbps: number
   keyintSeconds: number
   audioKbps: number
+  /** Ceiling of the file, decimal MB: Hub takes a publication file up to 500 MB. */
+  maxFileMb: number
+  /** Share of `maxFileMb` kept for the container, AAC and VBV overshoot, %. */
+  sizeMarginPct: number
 }
 
 /**
@@ -50,6 +54,8 @@ export interface PlatformProfile {
  * without upscaling (the top rung a phone shows of a vertical video), source fps up to 60,
  * H.264 High CRF 20 capped at 8 Mbit/s — «сотни мегабайт, не гигабайты» at PPV lengths,
  * where a 4K copy of the same quality is gigabytes. OnlyFans sizes are not in Hub yet.
+ * The file stays within 480 MB (compression.md §10.10, 30.10.2026): past ≈ 7.6 min the
+ * bitrate ceiling follows the duration (`platformRateKbps`).
  */
 export const DEFAULT_PLATFORM_PROFILE: PlatformProfile = {
   id: 'fansly-2026-10-30',
@@ -63,6 +69,8 @@ export const DEFAULT_PLATFORM_PROFILE: PlatformProfile = {
   bufsizeKbps: 16000,
   keyintSeconds: 2,
   audioKbps: 192,
+  maxFileMb: 480,
+  sizeMarginPct: 3,
 }
 
 export interface CopyOptions {
@@ -100,7 +108,29 @@ export function platformFps(probe: VideoProbe, maxFps: number): number {
   return fps > maxFps + 0.5 ? maxFps : Math.round(fps * 1000) / 1000
 }
 
-function h264Args(profile: PlatformProfile, fps: number): string[] {
+/**
+ * The video bitrate ceiling of one clip, kbit/s, and its VBV buffer: the profile's own ceiling,
+ * or lower when video at it plus the AAC track would not fit `maxFileMb` less the margin.
+ * A 13-min PPV (780 s) gets ≈ 4.6 Mbit/s, the longest (1,283 s) ≈ 2.7. Unknown duration —
+ * the profile's ceiling.
+ */
+export function platformRateKbps(
+  profile: PlatformProfile,
+  durationMs: number,
+): { maxrateKbps: number; bufsizeKbps: number } {
+  const seconds = durationMs / 1000
+  if (!(seconds > 0)) return { maxrateKbps: profile.maxrateKbps, bufsizeKbps: profile.bufsizeKbps }
+  const budgetKbit = profile.maxFileMb * 8000 * (1 - profile.sizeMarginPct / 100)
+  const fit = Math.floor(budgetKbit / seconds - profile.audioKbps)
+  const maxrateKbps = Math.max(1, Math.min(profile.maxrateKbps, fit))
+  return {
+    maxrateKbps,
+    bufsizeKbps: Math.round((maxrateKbps * profile.bufsizeKbps) / profile.maxrateKbps),
+  }
+}
+
+function h264Args(profile: PlatformProfile, fps: number, durationMs: number): string[] {
+  const rate = platformRateKbps(profile, durationMs)
   return [
     '-c:v',
     profile.codec,
@@ -111,9 +141,9 @@ function h264Args(profile: PlatformProfile, fps: number): string[] {
     '-crf',
     String(profile.crf),
     '-maxrate',
-    `${profile.maxrateKbps}k`,
+    `${rate.maxrateKbps}k`,
     '-bufsize',
-    `${profile.bufsizeKbps}k`,
+    `${rate.bufsizeKbps}k`,
     '-g',
     String(Math.round(fps * profile.keyintSeconds)),
     '-pix_fmt',
@@ -254,7 +284,7 @@ export async function buildPlatformCopy(
       '0:v:0',
       '-filter:v',
       vf,
-      ...h264Args(profile, fps),
+      ...h264Args(profile, fps, probe.durationMs),
       ...audioArgs(probe, profile.audioKbps),
       ...metadataArgs(metaStripped),
       '-f',
@@ -364,7 +394,7 @@ export async function buildUniqVersion(
       '0:v:0',
       '-filter:v',
       f.video,
-      ...h264Args(profile, fps),
+      ...h264Args(profile, fps, outSec * 1000),
       ...audioArgs(probe, profile.audioKbps, f.audio),
       '-t',
       outSec.toFixed(3),

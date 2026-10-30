@@ -30,6 +30,7 @@ import { createMediaEnv } from './media/pipeline'
 import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
 import { BlobStore } from './media/storage'
 import { reconcileStorage } from './media/storage-ops'
+import { enqueueOpenRowCopies } from './plan/composition'
 import { buildServer } from './server'
 import { createWorkGate } from './work-gate'
 
@@ -260,6 +261,11 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
   // The tool versions and recipes of this image; a new pipeline version becomes current.
   const env = await createMediaEnv({ db, store, lp: config.SVTAV1_LP, owner, log })
   logger.info({ pipeline_version: env.pipelineVersion, tools: env.versions }, 'media pipeline')
+  if (role === 'worker') {
+    // A new platform recipe: the open plan rows get their copies built ahead again (SPEC §9.3).
+    const rows = await enqueueOpenRowCopies(db)
+    logger.info({ rows }, 'plan copies checked')
+  }
   const handlers: Partial<Record<values.WorkKind, WorkHandler>> = {
     ...mediaHandlers(role, env),
     // Discovery from the cloud folders of the models (SPEC §6.1).
