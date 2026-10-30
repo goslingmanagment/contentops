@@ -10,7 +10,11 @@ import {
   UpdateDraftCommandSchema,
   UpdateDraftFilesCommandSchema,
 } from '../../commands/inbox'
-import { ResolveDisputeCommandSchema, SaveLabelsCommandSchema } from '../../commands/settings'
+import {
+  ResolveDisputeCommandSchema,
+  SaveLabelsCommandSchema,
+  UpdateLegacyInputsCommandSchema,
+} from '../../commands/settings'
 import { CreateUploadCommandSchema } from '../../commands/uploads'
 import {
   AcceptManyResultSchema,
@@ -19,8 +23,8 @@ import {
   InboxListSchema,
   UploadResultSchema,
 } from '../../domain/inbox'
-import { LegacyReviewSchema } from '../../domain/legacy'
-import { DownloadAnswerSchema } from '../../domain/operations'
+import { LegacyInputsSchema, LegacyReviewSchema } from '../../domain/legacy'
+import { DownloadAnswerSchema, OperationAcceptedSchema } from '../../domain/operations'
 import { BatchResultSchema } from '../../domain/pagination'
 import { defineRoute } from '../route'
 import { FileBodySchema } from './media'
@@ -142,6 +146,11 @@ export const inboxRoutes = {
   }),
 }
 
+export const LegacyRunQuerySchema = z.object({
+  /** Work id of a finished snapshot `scan:freeze:<date>`; the latest one when left out. */
+  snapshot: z.string().optional(),
+})
+
 export const legacyRoutes = {
   get: defineRoute({ method: 'GET', path: '/api/v1/{model}/legacy', response: LegacyReviewSchema }),
   saveLabels: defineRoute({
@@ -155,5 +164,32 @@ export const legacyRoutes = {
     path: '/api/v1/{model}/legacy/disputes/{dispute}:resolve',
     body: ResolveDisputeCommandSchema,
     response: LegacyReviewSchema,
+  }),
+  /**
+   * The metadata pass of stage 3 over a frozen snapshot (SPEC §6.3, work `import_parse`): claims,
+   * number claims, review cases, then the reserve of numbers. The latest snapshot of the model
+   * unless `snapshot` names one; a repeat with the same rules finds the same work.
+   */
+  parse: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/legacy:parse',
+    query: LegacyRunQuerySchema,
+    response: OperationAcceptedSchema,
+    success: 202,
+  }),
+  /** The dry run `import plan` (PLAN этап 3): the same parse, only the report in the operation. */
+  plan: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/legacy:plan',
+    query: LegacyRunQuerySchema,
+    response: OperationAcceptedSchema,
+    success: 202,
+  }),
+  /** The PPV registry export and the vault album titles the import reads (schema §9.7). */
+  inputs: defineRoute({
+    method: 'PUT',
+    path: '/api/v1/{model}/legacy/inputs',
+    body: UpdateLegacyInputsCommandSchema,
+    response: LegacyInputsSchema,
   }),
 }

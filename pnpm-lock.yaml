@@ -212,6 +212,9 @@ importers:
       '@contentops/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@contentops/legacy':
+        specifier: workspace:*
+        version: link:../../packages/legacy
       '@contentops/media':
         specifier: workspace:*
         version: link:../../packages/media

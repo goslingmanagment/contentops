@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Parser of the old Yandex Disk names, the PPV registry and the import dry-run report (SPEC §6.3–6.4); pure, no database.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./fixture": "./src/fixture.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

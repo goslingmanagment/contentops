@@ -17,6 +17,8 @@ export const OperationKindSchema = z.enum([
   'source_zip',
   'montage_upload',
   'verify_blobs',
+  'legacy_parse',
+  'legacy_plan',
 ])
 export type OperationKind = z.infer<typeof OperationKindSchema>
 
@@ -33,6 +35,8 @@ export const OPERATION_LABEL: Record<OperationKind, string> = {
   source_zip: 'Исходники собираются',
   montage_upload: 'Монтаж для PPV загружается',
   verify_blobs: 'Проверка хранилища',
+  legacy_parse: 'Разбор старых имён по снимку',
+  legacy_plan: 'Сухой прогон импорта',
 }
 
 export const OperationSchema = z.object({
@@ -54,7 +58,10 @@ export const OperationSchema = z.object({
     })
     .nullable(),
   error: ApiErrorBodySchema.nullable(),
-  /** Report of a service run (`verify-blobs`): hashes, missing files, blobs without references. */
+  /**
+   * Report of a service run: `verify-blobs` — hashes, missing files, blobs without references;
+   * the legacy pass and its dry run — numbers, collisions, labels, unparsed names (SPEC §6.3).
+   */
   report: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 export type Operation = z.infer<typeof OperationSchema>

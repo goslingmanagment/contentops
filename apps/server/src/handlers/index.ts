@@ -7,6 +7,7 @@ import { catalogEditHandlers } from './catalog-edits'
 import { inboxHandlers } from './inbox'
 import { integrationHandlers } from './integrations'
 import { journalHandlers } from './journal'
+import { legacyHandlers } from './legacy'
 import { mediaRouteHandlers } from './media'
 import { modelHandlers } from './models'
 import { normHandlers } from './norm'
@@ -54,6 +55,7 @@ export function createHandlers(services: Services): HandlerRegistry {
     tagHandlers(services),
     mediaRouteHandlers(services),
     inboxHandlers(services),
+    legacyHandlers(services),
     promoHandlers(services),
     orderHandlers(services),
   )

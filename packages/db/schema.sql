@@ -1576,7 +1576,7 @@ CREATE TABLE public.legacy_claims (
     resolved_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     row_version bigint DEFAULT 1 NOT NULL,
-    CONSTRAINT legacy_claims_claim_kind_check CHECK ((claim_kind = ANY (ARRAY['number'::text, 'used'::text, 'posted'::text, 'date'::text, 'role'::text, 'registry_row'::text, 'duration'::text, 'unknown'::text]))),
+    CONSTRAINT legacy_claims_claim_kind_check CHECK ((claim_kind = ANY (ARRAY['number'::text, 'used'::text, 'posted'::text, 'date'::text, 'role'::text, 'registry_row'::text, 'duration'::text, 'title'::text, 'tag'::text, 'origin'::text, 'unknown'::text]))),
     CONSTRAINT legacy_claims_not_self CHECK ((superseded_by_id <> id)),
     CONSTRAINT legacy_claims_resolution_check CHECK ((resolution = ANY (ARRAY['pending'::text, 'resolved'::text, 'ignored'::text]))),
     CONSTRAINT legacy_claims_resolved CHECK (
@@ -2011,7 +2011,7 @@ CREATE TABLE public.review_cases (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     row_version bigint DEFAULT 1 NOT NULL,
     CONSTRAINT review_cases_blob_sha256_check CHECK ((octet_length(blob_sha256) = 32)),
-    CONSTRAINT review_cases_kind_check CHECK ((kind = ANY (ARRAY['cross_model_duplicate'::text, 'legacy_unparsed'::text, 'merge_split'::text, 'unreadable_input'::text]))),
+    CONSTRAINT review_cases_kind_check CHECK ((kind = ANY (ARRAY['cross_model_duplicate'::text, 'legacy_unparsed'::text, 'merge_split'::text, 'unreadable_input'::text, 'smm_folder'::text, 'number_hole'::text]))),
     CONSTRAINT review_cases_resolved CHECK (((state = 'open'::text) = (resolved_at IS NULL))),
     CONSTRAINT review_cases_state_check CHECK ((state = ANY (ARRAY['open'::text, 'resolved'::text, 'dismissed'::text])))
 );

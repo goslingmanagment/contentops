@@ -183,7 +183,9 @@ item_type, key)`; CHECK: строка без модели не несёт `accou
 `hub_candidate_tolerance`, `hub_exact_duration_ms`, `hub_wait_window`,
 `hub_not_out_window`, `hub_vault_recheck` (SPEC §7), `hub_ad_markers` (признаки рекламы
 чужой страницы) и `vault_bins` (корзины vault: `FYP YYYY-MM`, `Lifestyle`, PPV) — у
-страницы (SPEC §7), `import_batch_scope` (схема §9.7).
+страницы (SPEC §7), `import_batch_scope` (схема §9.7); входы импорта легаси у модели —
+`legacy.registry` (выгрузка реестра PPV текстом) и `legacy.vault_albums` (названия альбомов
+vault, прочитанные агентом в Hub, — улики SXT-010/011), этап 3, 30.10.2026.
 Порог меняется строкой, не миграцией; решения хранят снимок разрешённых значений и
 версий, прошлые значения — в журнале.
 
@@ -664,8 +666,12 @@ UNIQUE `(model_id, source_object_id, parser_version, claim_key)`; CHECK при
 размещение с уликой `import`, связь с заказом), payload их не заменяет.
 
 **`legacy_number_claims`** — заявки старых номеров (§6.4). `id`, `model_id`, `type`,
-`claimed_number`, `source_object_id`, `registry_claim_id?`, `decision` (`keep |
+`claimed_number`, `source_object_id`, `claim_id` (заявка имени или строка реестра, из
+которой номер), `registry_claim_id?`, `decision` (`keep |
 renumber | typo | unclear`), `assigned_number?`, `target_item_id?`, `decided_at/by`.
+Решение по SPEC §6.4 ставит проход (`decided_by` пуст — «по правилам»); человек
+подтверждает или меняет его в «Разборе старого», и его решение переходит на заявку новой
+версии правил.
 Индекс `(model_id, type, claimed_number)`; уникальности по номеру нет — `PPV-032`
 заявлен тремя папками. Порядок: до первого принятия по типу выполняется проход по
 метаданным снимка, все заявки записываются, счётчик поднимается выше максимума;
@@ -673,8 +679,12 @@ renumber | typo | unclear`), `assigned_number?`, `target_item_id?`, `decided_at/
 
 **`review_cases`** — спорное, чьё решение надо записать (§6.3, §4,
 `resolve_review_case` §12.0). `id`, `model_id`, `kind` (`cross_model_duplicate |
-legacy_unparsed | merge_split | unreadable_input` — нечитаемый архив или каталог снимка:
-неполный вход, ворота не держит, §6.3), `state` (`open | resolved | dismissed`),
+legacy_unparsed | merge_split | unreadable_input | smm_folder | number_hole`;
+`unreadable_input` — нечитаемый архив или каталог снимка:
+неполный вход, ворота не держит, §6.3; `smm_folder` — папка SMM, которую человек или агент
+отмечает паком подрядчику или съёмкой вендора; `number_hole` — номер без источника,
+SXT-010/011 по SPEC §6.4; `merge_split` из прохода — одиночки и пары в корне раздела),
+`state` (`open | resolved | dismissed`),
 `dedup_key`, `draft_id?`, `item_id?`, `version_id?`,
 `source_object_id?`, `blob_sha256?`, `counterpart_model_id?` (виден только тому, у
 кого права на обе модели), `details jsonb`, `resolution jsonb`, `resolved_at/by`.
@@ -1726,9 +1736,19 @@ Testcontainers одноразовые, стенд — `docker compose down -v`; 
 - Дети архивов — `(model_id, archive_revision_id, archive_entry_no)` с FK на ревизию
   родителя; порядковый номер записи, одинаковые имена различимы; контейнер архива
   блобом не становится.
-- Работа `import_parse`: входы — хэш снимка и версия правил; `work_key =
-  import:parse:<снимок>:<версия правил>`; `id_counters.legacy_reserved_at` ставится
+- Работа `import_parse`: входы — снимок и версия правил; `work_key =
+  import:parse:<снимок>:<версия правил>`, `dataset = parse`, `scope` — работа снимка;
+  `id_counters.legacy_reserved_at` ставится
   только после полного прохода по читаемым источникам и ссылается на эту работу.
+  Сухой прогон — та же работа с `dataset = plan` и `work_key =
+  import:plan:<снимок>:<версия правил>:<запрос>`: пишет только отчёт в `report`
+  (`apps/server/src/legacy/parse.ts`, этап 3, 30.10.2026).
+- Реестр PPV и альбомы vault — объекты источника `legacy_metadata` «Легаси: реестр и
+  альбомы»: строка реестра — объект с `resource_id` = ключ строки (`registry:<хэш папки>`),
+  альбом — `vault:<хэш>`; объекты и заявки по ним пишет проход, сама выгрузка лежит в
+  `policy_settings` (`legacy.registry`), кто и когда её дал — в журнале.
+- Папка внутри ZIP без собственной записи оглавления держит свои заявки на объекте архива:
+  ключ заявки несёт имя папки, поэтому не совпадает с заявками имени архива.
 - Резерв счётчиков: `next_number = GREATEST(текущий, max(заявленных) + 1)` по каждому
   типу, 1 — только стартовый пол; выданные номера и tombstone не пересматриваются.
 

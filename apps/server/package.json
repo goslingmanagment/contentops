@@ -15,6 +15,7 @@
   "dependencies": {
     "@contentops/contracts": "workspace:*",
     "@contentops/db": "workspace:*",
+    "@contentops/legacy": "workspace:*",
     "@contentops/media": "workspace:*",
     "@contentops/sources": "workspace:*",
     "@fastify/proxy-addr": "^5.1.2",
