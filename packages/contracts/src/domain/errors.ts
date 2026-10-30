@@ -15,6 +15,8 @@ export const ERROR_CODES = [
   'precondition_required',
   'rate_limited',
   'internal',
+  /** The route is in the table, the server has no handler for it yet. */
+  'not_implemented',
   'unavailable',
   'accept_blocked',
   'order_closed',
@@ -43,6 +45,7 @@ export const HTTP_STATUS_BY_CODE: Record<ErrorCode, number> = {
   precondition_required: 428,
   rate_limited: 429,
   internal: 500,
+  not_implemented: 501,
   unavailable: 503,
   accept_blocked: 422,
   order_closed: 422,

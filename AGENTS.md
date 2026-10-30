@@ -46,7 +46,10 @@ Agency Hub (`README.md`, `PRD.md`).
 - **Как увидеть:** `pnpm dev` → `localhost:5173/lora/library`, роль —
   `?as=km|owner|reader`. В разработке на запросы отвечает заглушка `packages/mock-api`,
   кроме путей из `apps/web/src/data/server-routes.ts` — они идут на сервер (`/api` →
-  `127.0.0.1:$SERVER_PORT`, по умолчанию 3000); в сборке продукта заглушки нет.
+  `127.0.0.1:$SERVER_PORT`, по умолчанию 3000); в сборке продукта заглушки нет. Сервер —
+  `pnpm --filter @contentops/server dev` (окружение — `apps/server/src/config.ts`) →
+  `localhost:3000/healthz`; после правки таблицы маршрутов —
+  `pnpm --filter @contentops/server openapi`, иначе CI красный.
 - **Выкатка:** до этапа 3 — нет; с этапа 3 — в ВМ из тега.
 - **Опасно:** копия Я.Диска на winpc (и через `/mnt/c` из WSL) — ничего не удалять, не
   переносить и не переименовывать: уедет в облако при следующем запуске клиента; в
