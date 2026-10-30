@@ -19,6 +19,11 @@ Re-running replaces the tasks and keeps the share. Run elevated on winpc, e.g. f
   scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/
   ssh winpc 'pwsh -NoProfile -File C:\vm\contentops\ops\register-tasks.ps1 -Enable'
 
+Sets the critical-error pause of the VM: a full C: or E: pauses it, and the pause does not
+expire for a week (Hyper-V default: off after 30 min, which the watchdog would start again -
+a loop of hard power-offs of the only database). If Hyper-V refuses it on a running VM, the
+script says so: set it with the VM off.
+
 Ends with a read-only report of the host settings SPEC 12.2 relies on.
 ASCII only.
 #>
@@ -90,7 +95,18 @@ foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space', 'ContentOps-CopyLis
 }
 "{0}: {1} -> {2}" -f $shareName, (Get-SmbShare -Name $shareName).Path, $shareUser
 
-# Host settings SPEC 12.2 relies on (report only, nothing is changed here).
+# Full host disk: pause, not off after 30 min (SPEC 12.2); minutes.
+$criticalPauseMin = 7 * 24 * 60
+$vm = Get-VM -Name $vmName
+if ("$($vm.AutomaticCriticalErrorAction)" -ne 'Pause' -or $vm.AutomaticCriticalErrorActionTimeout -ne $criticalPauseMin) {
+  try {
+    Set-VM -Name $vmName -AutomaticCriticalErrorAction Pause -AutomaticCriticalErrorActionTimeout $criticalPauseMin
+  } catch {
+    "FIX critical-error pause not set with the VM $($vm.State): $($_.Exception.Message)"
+  }
+}
+
+# Host settings SPEC 12.2 relies on (report only, nothing else is changed here).
 $vm = Get-VM -Name $vmName
 $power = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power'
 $checks = @(
@@ -98,6 +114,8 @@ $checks = @(
   @('VM on host shutdown', $vm.AutomaticStopAction, 'ShutDown'),
   @('VM automatic checkpoints', $vm.AutomaticCheckpointsEnabled, $false),
   @('VM dynamic memory', $vm.DynamicMemoryEnabled, $false),
+  @('VM on critical error (full disk)', $vm.AutomaticCriticalErrorAction, 'Pause'),
+  @('VM critical pause, min', $vm.AutomaticCriticalErrorActionTimeout, $criticalPauseMin),
   @('Fast Startup (HiberbootEnabled)', $power.HiberbootEnabled, 0)
 )
 foreach ($c in $checks) {

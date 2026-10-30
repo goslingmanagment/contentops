@@ -10,6 +10,10 @@ registered by register-tasks.ps1.
 - After 3 failures in a row: VM Running -> graceful guest shutdown (forced off after
   3 min), then start; VM Off -> start. Other states (Paused, Saved, *Critical, e.g. host
   disk full) are only logged. At most one restart per hour.
+- While C: or E: has less than 50 GB free (or is missing), the VM is neither started nor
+  restarted, and the reason goes to the log. A full disk pauses the VM (critical error;
+  the pause does not expire for a week, register-tasks.ps1); starting it again would loop the
+  only database through hard power-offs. Free the space, then Resume-VM contentops.
 - Log: C:\vm\contentops\logs\watchdog.log (rotated at 1 MB); counter and last restart:
   watchdog-state.json next to it.
 
@@ -21,6 +25,8 @@ param(
   [int]$FailuresBeforeRestart = 3,
   [int]$MinMinutesBetweenRestarts = 60,
   [int]$ShutdownTimeoutSec = 180,
+  [string[]]$GuardDrives = @('C', 'E'),
+  [int]$MinFreeGB = 50,
   [string]$LogDir = 'C:\vm\contentops\logs'
 )
 $ErrorActionPreference = 'Stop'
@@ -69,6 +75,18 @@ function Test-HostTailnet {
   }
 }
 
+# Drives below the floor, as 'C: 42.1 GB free'; decimal GB, as the app counts them.
+function Get-LowDrives {
+  $low = @()
+  foreach ($letter in $GuardDrives) {
+    $drive = New-Object System.IO.DriveInfo $letter
+    if (-not $drive.IsReady) { $low += "$($letter): missing"; continue }
+    $free = $drive.AvailableFreeSpace / 1e9
+    if ($free -lt $MinFreeGB) { $low += ('{0}: {1:N1} GB free' -f $letter, $free) }
+  }
+  return $low
+}
+
 function Restart-ContentOpsVm($Vm) {
   if ($Vm.State -eq 'Running') {
     Write-Log 'restart: shutting the guest down'
@@ -111,6 +129,12 @@ try {
 
   if ($vm.State -ne 'Running' -and $vm.State -ne 'Off') {
     Write-Log "restart skipped: VM state $($vm.State) is left as is"
+    Save-State $state
+    return
+  }
+  $low = @(Get-LowDrives)
+  if ($low.Count -gt 0) {
+    Write-Log "restart skipped: $($low -join ', ') (below $MinFreeGB GB); VM $($vm.State) is left as is"
     Save-State $state
     return
   }
