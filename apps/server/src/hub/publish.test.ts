@@ -29,6 +29,7 @@ import {
   setHubPage,
   setReceive,
   syncOnce,
+  workOutcome,
 } from './testing'
 
 /**
@@ -537,6 +538,61 @@ describe('checks and «Отправить»', () => {
       body: { date: day(6), time: '19:00', account: 'lora-1' },
     })
     expect(moved.statusCode).toBe(422)
+  })
+})
+
+describe('«Подготовить 12» and «Отправить 12»', () => {
+  async function batch(verb: 'prepare' | 'send', body: unknown, as = diana.session) {
+    return call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/plan/rows:${verb}`,
+      as,
+      key: newKey(),
+      body,
+    })
+  }
+
+  it('each row on its own: a row Hub does not publish stays with its code, the rest go', async () => {
+    const wall = await put({ item_id: 'SET-074', date: day(14), time: '19:00' })
+    const paid = await put(
+      { item_id: 'PPV-076', date: day(14), time: '20:00' },
+      { price_mills: 9_000 },
+    )
+    const dm = await put({ item_id: 'PPV-076', surface: 'dm', date: day(14), time: '21:00' })
+    const prepared = await batch('prepare', { row_ids: [wall.id, paid.id, dm.id, wall.id] })
+    expect(prepared.statusCode, prepared.body).toBe(202)
+    expect(prepared.json().results).toEqual([
+      { id: wall.id, ok: true, code: null },
+      { id: paid.id, ok: true, code: null },
+      { id: dm.id, ok: false, code: 'publication_refused' },
+    ])
+    // One runner takes both works of the batch, one after the other.
+    for (const row of [wall, paid]) {
+      const done = await workOutcome(db, await lastWork(row.id))
+      const outcome = done.state === 'succeeded' ? done : await runRow(row.id)
+      expect(outcome.state, outcome.error_text ?? '').toBe('succeeded')
+    }
+    const ready = await rowOf(wall.id)
+    const blocked = await rowOf(paid.id)
+    expect(blocked.hub?.publication?.blocked).toBe(true)
+    const rows = [ready, blocked].map((row) => ({ id: row.id, version: versionOf(row) }))
+
+    // An agent never sends, not even in a batch.
+    const refused = await batch('send', { rows }, agent)
+    expect(refused.statusCode).toBe(403)
+
+    const approves = hub.calls('publications.approve').length
+    const sentBatch = await batch('send', { rows })
+    expect(sentBatch.statusCode, sentBatch.body).toBe(202)
+    expect(sentBatch.json().results).toEqual([
+      { id: ready.id, ok: true, code: null },
+      { id: blocked.id, ok: false, code: 'publication_blocked' },
+    ])
+    const outcome = await runRow(ready.id)
+    expect(outcome.state, outcome.error_text ?? '').toBe('succeeded')
+    expect(hub.calls('publications.approve').length).toBe(approves + 1)
+    expect((await rowOf(ready.id)).verdict.word).toBe('отправлено')
+    expect((await rowOf(blocked.id)).hub?.publication?.state).toBe('draft')
   })
 })
 

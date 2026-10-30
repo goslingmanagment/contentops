@@ -9,11 +9,14 @@ import {
 } from '@contentops/ui/components/dropdown-menu'
 import type { ItemMenuModel } from '@contentops/ui/components/item-menu'
 import { SelectionBar } from '@contentops/ui/components/selection-bar'
-import { CheckCheckIcon, CheckIcon, ChevronDownIcon } from 'lucide-react'
+import { CheckCheckIcon, CheckIcon, ChevronDownIcon, SendIcon, UploadCloudIcon } from 'lucide-react'
+import { useState } from 'react'
 import { useMarkActions } from './actions/use-mark-actions'
 import { usePlanDownload } from './actions/use-plan-download'
+import { usePublishActions } from './actions/use-publish-actions'
 import { useRowActions } from './actions/use-row-actions'
-import { markableRows, rememberedMarkKind } from './row-action'
+import { SendManyDialog } from './publish-controls'
+import { markableRows, publishableRows, rememberedMarkKind } from './row-action'
 import type { RowEditMode } from './row-menu'
 
 interface RowsSelectionBarProps {
@@ -43,12 +46,17 @@ export function RowsSelectionBar({
   compact = false,
 }: RowsSelectionBarProps) {
   const marks = useMarkActions({ onShowFailed })
+  const publish = usePublishActions({ onShowFailed })
   const actions = useRowActions()
   const zip = usePlanDownload()
-  const { mark, confirm } = markableRows(rows)
+  const [sending, setSending] = useState(false)
+  // Строки страниц с публикацией через Hub — своими кнопками: два вида не смешиваются.
+  const hub = publishableRows(rows)
+  const { mark, confirm } = markableRows(rows.filter((row) => !hub.all.has(row)))
   const withItems = rows.filter((row) => row.manifest !== null)
   const open = rows.filter((row) => row.mark === null && row.cancelled === null)
-  const confirmFirst = mark.length === 0
+  const publishFirst = hub.prepare.length > 0 || hub.send.length > 0
+  const confirmFirst = mark.length === 0 && !publishFirst
 
   const downloadAll = () =>
     release
@@ -75,6 +83,32 @@ export function RowsSelectionBar({
 
   return (
     <SelectionBar count={rows.length} onClear={onClear} menu={menu}>
+      {hub.prepare.length > 0 ? (
+        <Button pending={publish.batchPending} onClick={() => publish.prepareMany(hub.prepare)}>
+          <UploadCloudIcon />
+          Подготовить {formatNumber(hub.prepare.length)}
+        </Button>
+      ) : null}
+      {hub.send.length > 0 || hub.blocked.length > 0 ? (
+        <Button
+          variant={hub.prepare.length > 0 ? 'bar' : 'default'}
+          pending={publish.batchPending}
+          disabled={hub.send.length === 0}
+          onClick={() => setSending(true)}
+        >
+          <SendIcon />
+          Отправить {formatNumber(hub.send.length)}
+        </Button>
+      ) : null}
+      {sending ? (
+        <SendManyDialog
+          send={hub.send}
+          blocked={hub.blocked}
+          pending={publish.batchPending}
+          onSend={() => publish.sendMany(hub.send)}
+          onClose={() => setSending(false)}
+        />
+      ) : null}
       {mark.length > 0 ? (
         <MarkManyButton
           count={mark.length}

@@ -54,6 +54,8 @@ describe('routing on the real table', () => {
     ['POST', '/api/v1/lora/plan/rows:mark', 'plan.markMany', {}],
     ['POST', '/api/v1/lora/plan/rows/R-9:mark', 'plan.mark', { row: 'R-9' }],
     ['POST', '/api/v1/lora/plan/rows/R-9:mark-confirm', 'plan.markConfirm', { row: 'R-9' }],
+    ['POST', '/api/v1/lora/plan/rows:prepare', 'plan.prepareMany', {}],
+    ['POST', '/api/v1/lora/plan/rows/R-9:prepare', 'plan.prepare', { row: 'R-9' }],
     ['POST', '/api/v1/lora/not-uploaded:mark', 'objects.alreadyUploaded', {}],
     ['DELETE', '/api/v1/lora/i/PPV-073', 'objects.remove', { id: 'PPV-073' }],
     ['GET', '/api/v1/lora/people', 'settings.modelPeople', {}],
