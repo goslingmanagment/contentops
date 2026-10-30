@@ -20,6 +20,10 @@
         { "code": "gif-sites", "title": "Гиф-сайты" },
         { "code": "sfs", "title": "SFS" }
       ],
+      "sources": [
+        { "label": "Dropbox", "kind": "dropbox", "root": "", "credentials_ref": "DROPBOX_REFRESH_TOKEN" },
+        { "label": "Я.Диск", "kind": "yandex_disk", "root": "disk:/", "credentials_ref": "YDISK_TOKEN" }
+      ],
       "id_counters": {
         "PPV": { "next_number": 1, "legacy": true },
         "SET": { "next_number": 1, "legacy": true },

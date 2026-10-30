@@ -25,6 +25,8 @@ export interface MosaicTile {
   count?: MosaicCount
   /** Пропорция кадра, если он вписывается в ячейку: YouTube в Промо — 16:9 (§7.6). */
   mediaAspect?: CoverAspect
+  /** Настоящая картинка поверх заглушки. */
+  src?: string | null
 }
 
 /**
@@ -75,6 +77,7 @@ export function Mosaic({ tiles, layout = 'feature', className, ...props }: Mosai
             family={tile.family}
             aspect={cellAspect(layout, index)}
             mediaAspect={tile.mediaAspect}
+            src={tile.src}
             durationSeconds={tile.durationSeconds}
             countLabel={big ? tile.countLabel : undefined}
             overlay={

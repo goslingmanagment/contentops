@@ -5,6 +5,7 @@ import { z } from 'zod'
 import * as t from '../drizzle/schema.ts'
 import { type Db, logAction, SYSTEM_ACTOR, type Tx, withActorTx } from './client.ts'
 import {
+  cloudSourceKinds,
   contentTypes,
   genders,
   platforms,
@@ -87,6 +88,21 @@ const ModelSchema = z.strictObject({
     }, 'unknown time zone'),
   accounts: z.array(AccountSchema),
   promo_channels: z.array(z.strictObject({ code, title: text })).default([]),
+  /**
+   * Cloud folders of the model (SPEC §6.1): one or both of Yandex Disk and Dropbox, read-only.
+   * `root` is the model's folder at the source; `credentials_ref` names the environment
+   * variable with the token (the token itself never enters the database).
+   */
+  sources: z
+    .array(
+      z.strictObject({
+        label: text,
+        kind: z.enum(cloudSourceKinds),
+        root: z.string(),
+        credentials_ref: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
+      }),
+    )
+    .default([]),
   /** Every type is listed: a forgotten legacy flag would issue numbers twice. */
   id_counters: z.record(z.enum(contentTypes), CounterSchema),
 })
@@ -129,6 +145,11 @@ export const BootstrapConfigSchema = z
       ).map((ref) => `hub_page_ref ${ref} twice`),
       ...config.models.flatMap((m) =>
         repeated(m.promo_channels.map((p) => p.code)).map((c) => `${m.code}: channel ${c} twice`),
+      ),
+      ...config.models.flatMap((m) =>
+        repeated(m.sources.map((source) => source.label)).map(
+          (label) => `${m.code}: source ${label} twice`,
+        ),
       ),
       ...config.models.flatMap((m) =>
         m.accounts.flatMap((a) => [
@@ -188,6 +209,7 @@ export async function bootstrap(
       const modelId = await ensureModel(tx, model, created)
       await ensureAccounts(tx, modelId, model, created)
       await ensurePromoChannels(tx, modelId, model, created)
+      await ensureSources(tx, modelId, model, created)
       await ensureCounters(tx, modelId, model, created)
       await ensureGrant(tx, modelId, model.code, ownerId, config.owner.login, created)
     }
@@ -327,6 +349,19 @@ async function ensurePromoChannels(tx: Tx, modelId: string, model: ModelConfig, 
       .onConflictDoNothing({ target: [t.promoChannels.modelId, t.promoChannels.code] })
       .returning({ id: t.promoChannels.id })
     if (row) created.push(`promo channel ${model.code}/${channel.code}`)
+  }
+}
+
+/** A source is added by its label and never changed: a new root or token is a new source. */
+async function ensureSources(tx: Tx, modelId: string, model: ModelConfig, created: string[]) {
+  for (const source of model.sources) {
+    const { rows } = await tx.execute<{ label: string }>(sql`
+      INSERT INTO sources (model_id, kind, label, root_path, credentials_ref, read_only)
+      VALUES (${modelId}::uuid, ${source.kind}, ${source.label}, ${source.root},
+              ${source.credentials_ref}, true)
+      ON CONFLICT (model_id, label) DO NOTHING
+      RETURNING label`)
+    if (rows[0]) created.push(`source ${model.code}/${source.label}`)
   }
 }
 

@@ -1665,11 +1665,13 @@ CREATE TABLE public.sources (
     kind text NOT NULL,
     label text NOT NULL,
     credentials_ref text,
+    root_path text,
     read_only boolean DEFAULT true NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     row_version bigint DEFAULT 1 NOT NULL,
     CONSTRAINT sources_cloud_read_only CHECK (((kind <> ALL (ARRAY['yandex_disk'::text, 'dropbox'::text])) OR read_only)),
+    CONSTRAINT sources_cloud_root CHECK (((kind <> ALL (ARRAY['yandex_disk'::text, 'dropbox'::text])) OR ((root_path IS NOT NULL) AND (credentials_ref IS NOT NULL)))),
     CONSTRAINT sources_credentials_ref_format CHECK ((credentials_ref ~ '^[A-Z][A-Z0-9_]*$'::text)),
     CONSTRAINT sources_kind_check CHECK ((kind = ANY (ARRAY['yandex_disk'::text, 'dropbox'::text, 'web_upload'::text, 'legacy_metadata'::text])))
 );

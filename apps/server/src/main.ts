@@ -11,6 +11,8 @@ import {
 import type { Logger } from 'pino'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
+import { scanHandler, scanStreams } from './intake/scan'
+import { envSourceFactory } from './intake/source-client'
 import { createLogger } from './logger'
 import { createMediaEnv } from './media/pipeline'
 import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
@@ -65,11 +67,7 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     db: createDb(pool),
     publicUrl: required(config.PUBLIC_URL, 'PUBLIC_URL'),
     // The app starts without the secrets of switched-off integrations (SPEC §8).
-    secrets: {
-      ydisk: config.YDISK_TOKEN !== undefined,
-      dropbox: config.DROPBOX_TOKEN !== undefined,
-      hub: config.HUB_API_KEY !== undefined && config.HUB_BASE_URL !== undefined,
-    },
+    secrets: { hub: config.HUB_API_KEY !== undefined && config.HUB_BASE_URL !== undefined },
     space: {
       file: config.HOST_SPACE_FILE,
       warnGb: config.SPACE_WARN_GB,
@@ -189,7 +187,11 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
   // The tool versions and recipes of this image; a new pipeline version becomes current.
   const env = await createMediaEnv({ db, store, lp: config.SVTAV1_LP, owner, log })
   logger.info({ pipeline_version: env.pipelineVersion, tools: env.versions }, 'media pipeline')
-  const handlers: Partial<Record<values.WorkKind, WorkHandler>> = mediaHandlers(role, env)
+  const handlers: Partial<Record<values.WorkKind, WorkHandler>> = {
+    ...mediaHandlers(role, env),
+    // Discovery from the cloud folders of the models (SPEC §6.1).
+    ...(role === 'worker' ? { scan: scanHandler(envSourceFactory(process.env)) } : {}),
+  }
   const runner = new WorkRunner({
     db,
     role,
@@ -207,8 +209,17 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
   })
   const stopSweep = role === 'worker' ? startExportSweep(store, log) : () => {}
   // Periodic works (Hub polls, source scans) are scheduled only by `worker`; their streams
-  // come with their stages.
-  const scheduler = role === 'worker' ? new WorkScheduler({ db, streams: () => [], log }) : null
+  // come with their stages. A source's streams exist while its token is in the environment.
+  const startedAt = new Date()
+  const scheduler =
+    role === 'worker'
+      ? new WorkScheduler({
+          db,
+          streams: () => scanStreams(db, process.env, startedAt),
+          pollMs: 10_000,
+          log,
+        })
+      : null
   stopWork = async () => {
     stopSweep()
     await scheduler?.stop()

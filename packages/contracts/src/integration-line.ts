@@ -49,6 +49,8 @@ function offText(integration: Integration, context: IntegrationLineContext): str
   switch (integration.kind) {
     case 'ydisk':
       return 'Скан Я.Диска выключен — загрузка работает'
+    case 'dropbox':
+      return 'Скан Dropbox выключен — загрузка работает'
     case 'hub':
       return `Hub выключен${scopeSuffix(context)} — отметки работают`
     default:
@@ -65,6 +67,10 @@ function downText(integration: Integration, context: IntegrationLineContext): st
   const name = INTEGRATION_NAME[integration.kind]
   if (integration.down_reason === 'format_changed') {
     return `${name} изменил формат данных — опрос остановлен до обновления`
+  }
+  if (integration.down_reason === 'token_rejected') {
+    const since = integration.since ? ` с ${formatClock(integration.since)}` : ''
+    return `${name}${scopeSuffix(context)}: токен не принят${since}`
   }
   const since = integration.since ? ` с ${formatClock(integration.since)}` : ''
   const retry =

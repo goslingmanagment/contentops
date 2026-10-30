@@ -6,6 +6,8 @@ import { type AppDeps, buildApp } from './app'
 import { createAuthenticate } from './auth/authenticate'
 import { createCommands, createFailureRecorder } from './commands'
 import { createHandlers } from './handlers/index'
+import { envSourceFactory } from './intake/source-client'
+import { registerSourceThumbs } from './intake/source-thumbs'
 import { BlobStore, type StorageRoots } from './media/storage'
 import type { IntegrationSecrets } from './services'
 import type { SpaceOptions } from './space'
@@ -15,6 +17,8 @@ export interface ServerOptions {
   /** `PUBLIC_URL`: https gives `Secure` cookies. */
   publicUrl: string
   secrets: IntegrationSecrets
+  /** Token variables of the cloud sources; `process.env` by default. */
+  sourceEnv?: Record<string, string | undefined>
   /** Free space of the host disks for «Состояние» and the space card. */
   space?: SpaceOptions
   logger?: Logger
@@ -35,12 +39,21 @@ export function buildServer(options: ServerOptions) {
     command: createCommands(db),
     secureCookies: options.publicUrl.startsWith('https:'),
     secrets: options.secrets,
+    sourceEnv: options.sourceEnv ?? process.env,
     space: options.space ?? { file: undefined, warnGb: 200, stopGb: 100 },
     store: new BlobStore(options.storage),
   }
+  const authenticate = createAuthenticate(db)
   const deps: AppDeps = {
     handlers: createHandlers(services),
-    authenticate: createAuthenticate(db),
+    authenticate,
+    routes: (api) =>
+      registerSourceThumbs(api, {
+        db,
+        authenticate,
+        factory: envSourceFactory(services.sourceEnv),
+        cacheDir: options.storage.tmpRoot,
+      }),
     authorize: createAuthorize(db),
     recordFailure: createFailureRecorder(db),
     checks: { db: () => db.execute(sql`SELECT 1`) },

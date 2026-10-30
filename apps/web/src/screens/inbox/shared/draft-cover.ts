@@ -51,6 +51,7 @@ export function groupMosaic(group: InboxGroup): MosaicTile[] {
     .slice(0, MOSAIC_CELLS)
     .map((file, index) => ({
       seed: file.thumb.key,
+      src: file.thumb.url ?? null,
       kind,
       durationSeconds: file.duration_s ?? undefined,
       countLabel:

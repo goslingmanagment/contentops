@@ -31,6 +31,7 @@ type SwitchKey = keyof IntegrationSwitches
 const MAIN_SWITCH: Record<Integration['kind'], SwitchKey | null> = {
   hub: 'receive',
   ydisk: 'scan',
+  dropbox: 'scan',
   agents: 'enabled',
   ai: null,
   fyper: null,

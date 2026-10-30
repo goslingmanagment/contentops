@@ -15,7 +15,7 @@ let server: TestServer
 let owner: string
 
 beforeAll(async () => {
-  server = await testServer({ secrets: { ydisk: true, dropbox: false, hub: true } })
+  server = await testServer({ secrets: { hub: true } })
   owner = await signIn(server.app, OWNER.login, OWNER.password)
 })
 afterAll(() => server.close())

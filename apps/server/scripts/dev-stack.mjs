@@ -3,6 +3,9 @@
 // (Vite) proxies `/api` to it.
 // Sign in as `dmitriy` with the password below. Data stays in the container between runs;
 // `docker rm -f contentops-dev-pg` starts from scratch.
+// `DEV_FAKE_SOURCE=1` also starts a fake Dropbox of Lora with generated media
+// (`scripts/dev-source.ts`), turns its scan on and runs the `worker` role: «Приехало» fills
+// by itself within seconds.
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -118,9 +121,45 @@ execFileSync('pnpm', ['--filter', '@contentops/server', 'seed', 'lora', ...(medi
   env: { ...process.env, ...storageEnv, DATABASE_URL: url('contentops_app', 'dev-app') },
 })
 
+const children = []
+let sourceEnv = {}
+if (process.env.DEV_FAKE_SOURCE === '1') {
+  const source = spawn(process.execPath, [join(ROOT, 'apps/server/scripts/dev-source.ts')], {
+    cwd: join(ROOT, 'apps/server'),
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  children.push(source)
+  const base = await new Promise((resolve, reject) => {
+    source.stdout.on('data', (chunk) => {
+      const ready = /ready (\S+)/.exec(String(chunk))
+      if (ready) resolve(ready[1])
+    })
+    source.on('exit', () => reject(new Error('dev-source stopped')))
+  })
+  sourceEnv = {
+    DROPBOX_REFRESH_TOKEN: 'dev-dropbox-token',
+    DROPBOX_API_BASE: base,
+    DROPBOX_CONTENT_BASE: base,
+  }
+  // The owner's switch «Скан по источнику» of Lora's Dropbox, journaled like a click.
+  psql(
+    `SELECT set_config('app.actor_type', 'system', false), set_config('app.actor_id', '', false),
+            set_config('app.actor_label', 'dev-stack', false),
+            set_config('app.action', 'admin.updateIntegration', false),
+            set_config('app.request_id', gen_random_uuid()::text, false),
+            set_config('app.item_id', '', false), set_config('app.work_id', '', false);
+     INSERT INTO policy_settings (model_id, key, value)
+     SELECT id, 'dropbox.scan', 'true'::jsonb FROM models WHERE code = 'lora'
+     ON CONFLICT ON CONSTRAINT policy_settings_scope DO NOTHING`,
+    'contentops',
+  )
+  console.log(`fake Dropbox of Lora at ${base}`)
+}
+
 const roleEnv = (role) => ({
   ...process.env,
   ...storageEnv,
+  ...sourceEnv,
   ROLE: role,
   DATABASE_URL: url('contentops_app', 'dev-app'),
   PUBLIC_URL: 'http://localhost:5173',
@@ -130,20 +169,28 @@ const roleEnv = (role) => ({
 })
 
 console.log(`\nContentOps dev: http://localhost:5173 after \`pnpm dev\` · dmitriy / ${OWNER_PASSWORD}\n`)
-const children = [
+// The scan of the fake source needs `worker` even without FFmpeg.
+const roles = media
+  ? ['worker', 'worker-video', 'worker-image']
+  : process.env.DEV_FAKE_SOURCE === '1'
+    ? ['worker']
+    : []
+children.unshift(
   spawn('pnpm', ['--filter', '@contentops/server', 'dev'], {
     cwd: ROOT,
     stdio: 'inherit',
     env: roleEnv('web'),
   }),
-  ...(media ? ['worker', 'worker-video', 'worker-image'] : []).map((role) =>
+)
+children.push(
+  ...roles.map((role) =>
     spawn('pnpm', ['--filter', '@contentops/server', 'exec', 'tsx', 'src/main.ts'], {
       cwd: ROOT,
       stdio: 'inherit',
       env: roleEnv(role),
     }),
   ),
-]
+)
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     for (const child of children) child.kill(signal)

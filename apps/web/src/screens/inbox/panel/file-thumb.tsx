@@ -20,6 +20,7 @@ export function FileThumb({ file, kind, overlay, className }: FileThumbProps) {
   return (
     <Thumb
       seed={file.thumb.key}
+      src={file.thumb.url}
       kind={kind}
       aspect="3:4"
       mediaAspect={file.thumb.ratio === '3:4' ? undefined : file.thumb.ratio}

@@ -92,6 +92,7 @@ export function DecidedRow({ group, selected, restoring, onRestore, menu }: Deci
     <div data-selected={selected} className={ROW}>
       <Thumb
         seed={first?.thumb.key ?? `draft:${group.id}`}
+        src={first?.thumb.url}
         kind={groupKind(group)}
         aspect="1:1"
         showCaptions={false}

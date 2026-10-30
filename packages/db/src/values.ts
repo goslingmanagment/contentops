@@ -224,10 +224,11 @@ export const thresholdKeys = [
 ] as const
 export type ThresholdKey = (typeof thresholdKeys)[number]
 
-/** The kill switch whose area a kind works in (SPEC §8); checked before every attempt. */
+/**
+ * The kill switch whose area a kind works in (SPEC §8); checked before every attempt. The
+ * source scan and fetch (`scan`, `fetch`) are switched per source: `sourceScanSwitch`.
+ */
 export const workKindSwitch: Readonly<Partial<Record<WorkKind, KillSwitchKey>>> = {
-  scan: 'ydisk.scan',
-  fetch: 'ydisk.scan',
   hub_sync: 'hub.receive',
   hub_history: 'hub.receive',
   hub_publish: 'hub.publish',
@@ -351,6 +352,16 @@ export type SourceKind = (typeof sourceKinds)[number]
 
 /** Cloud folders of a model: one source interface, always read-only (SPEC §2.1 p. 6). */
 export const cloudSourceKinds = ['yandex_disk', 'dropbox'] as const
+export type CloudSourceKind = (typeof cloudSourceKinds)[number]
+
+/**
+ * «Скан источника и новый забор» is switched per source of a model (SPEC §8): the `scan`
+ * and `fetch` works of a source wait while its switch is off.
+ */
+export const sourceScanSwitch = {
+  yandex_disk: 'ydisk.scan',
+  dropbox: 'dropbox.scan',
+} as const satisfies Record<CloudSourceKind, KillSwitchKey>
 
 /** How the bytes of a revision were read and checked. */
 export const verifiedRoutes = ['download', 'local_copy', 'upload'] as const

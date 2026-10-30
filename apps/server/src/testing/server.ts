@@ -46,7 +46,7 @@ function counters() {
   return Object.fromEntries(types.map((type) => [type, { next_number: 1, legacy: false }]))
 }
 
-const NO_SECRETS: IntegrationSecrets = { ydisk: false, dropbox: false, hub: false }
+const NO_SECRETS: IntegrationSecrets = { hub: false }
 
 export interface TestServer {
   app: ReturnType<typeof buildServer>
@@ -69,6 +69,7 @@ export async function testServer(
     db,
     publicUrl: 'http://localhost:5173',
     secrets: options.secrets ?? NO_SECRETS,
+    sourceEnv: {},
     logger: createLogger({ level: process.env.TEST_LOG === '1' ? 'error' : 'silent' }),
     storage: store.roots,
     ...(options.filesDirect ? { filesDirect: true } : {}),

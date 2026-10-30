@@ -3,15 +3,22 @@ import { useClock } from '@/data/api-session'
 import { useIntegrations } from '@/data/integrations'
 import { IntegrationPhrase } from '@/shell/integration/integration-phrase'
 
-/** Скан Я.Диска этой модели, если он не работает (DESIGN §3.11). */
+/**
+ * Скан облака этой модели, если он не работает (DESIGN §3.11). Ненастроенное второе облако
+ * не беда, пока первое работает: у Лоры новое идёт в Dropbox, Я.Диск — архив.
+ */
 export function useDiskTrouble(model: string): IntegrationView | null {
   const integrations = useIntegrations().data ?? []
+  const clouds = integrations.filter(
+    (integration) =>
+      (integration.kind === 'ydisk' || integration.kind === 'dropbox') &&
+      (integration.model === model || integration.model === null),
+  )
+  const working = clouds.some((integration) => integration.state === 'working')
   return (
-    integrations.find(
+    clouds.find(
       (integration) =>
-        integration.kind === 'ydisk' &&
-        (integration.model === model || integration.model === null) &&
-        integration.state !== 'working',
+        integration.state !== 'working' && !(working && integration.state === 'unset'),
     ) ?? null
   )
 }

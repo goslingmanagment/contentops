@@ -1,11 +1,20 @@
 import { z } from 'zod'
 import { AccountCodeSchema, InstantSchema, ModelCodeSchema } from './common'
 
-export const IntegrationKindSchema = z.enum(['ydisk', 'hub', 'ai', 'fyper', 'telegram', 'agents'])
+export const IntegrationKindSchema = z.enum([
+  'ydisk',
+  'dropbox',
+  'hub',
+  'ai',
+  'fyper',
+  'telegram',
+  'agents',
+])
 export type IntegrationKind = z.infer<typeof IntegrationKindSchema>
 
 export const INTEGRATION_NAME: Record<IntegrationKind, string> = {
   ydisk: 'Я.Диск',
+  dropbox: 'Dropbox',
   hub: 'Hub',
   ai: 'Разметка ИИ',
   fyper: 'Fyper',
@@ -17,7 +26,12 @@ export const INTEGRATION_NAME: Record<IntegrationKind, string> = {
 export const IntegrationStateSchema = z.enum(['working', 'off', 'unset', 'down', 'catching_up'])
 export type IntegrationState = z.infer<typeof IntegrationStateSchema>
 
-export const IntegrationDownReasonSchema = z.enum(['unreachable', 'format_changed'])
+/** `token_rejected` — 401/403: «токен не принят с 13:40», no retries until it changes (SPEC §8). */
+export const IntegrationDownReasonSchema = z.enum([
+  'unreachable',
+  'format_changed',
+  'token_rejected',
+])
 export type IntegrationDownReason = z.infer<typeof IntegrationDownReasonSchema>
 
 export const IntegrationSwitchesSchema = z.object({
@@ -25,7 +39,7 @@ export const IntegrationSwitchesSchema = z.object({
   receive: z.boolean().optional(),
   /** Hub: «Автосверка». */
   auto_match: z.boolean().optional(),
-  /** Я.Диск: «Скан по источнику». */
+  /** Я.Диск, Dropbox: «Скан по источнику». */
   scan: z.boolean().optional(),
   /** Агенты: работают все токены или никто. */
   enabled: z.boolean().optional(),

@@ -702,6 +702,7 @@ export const sources = pgTable("sources", {
 	kind: text().notNull(),
 	label: text().notNull(),
 	credentialsRef: text("credentials_ref"),
+	rootPath: text("root_path"),
 	readOnly: boolean("read_only").default(true).notNull(),
 	enabled: boolean().default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -718,6 +719,7 @@ export const sources = pgTable("sources", {
 	check("sources_kind_check", sql`kind = ANY (ARRAY['yandex_disk'::text, 'dropbox'::text, 'web_upload'::text, 'legacy_metadata'::text])`),
 	check("sources_credentials_ref_format", sql`credentials_ref ~ '^[A-Z][A-Z0-9_]*$'::text`),
 	check("sources_cloud_read_only", sql`(kind <> ALL (ARRAY['yandex_disk'::text, 'dropbox'::text])) OR read_only`),
+	check("sources_cloud_root", sql`(kind <> ALL (ARRAY['yandex_disk'::text, 'dropbox'::text])) OR ((root_path IS NOT NULL) AND (credentials_ref IS NOT NULL))`),
 ]);
 
 export const customOrderMessages = pgTable("custom_order_messages", {
@@ -1238,9 +1240,9 @@ export const webUploads = pgTable("web_uploads", {
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "web_uploads_pkey"}),
 	unique("web_uploads_model_id_upload_id_key").on(table.modelId, table.uploadId),
-	check("web_uploads_bytes_received_check", sql`bytes_received >= 0`),
-	check("web_uploads_declared_kind_check", sql`declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text])`),
 	check("web_uploads_size_expected_check", sql`size_expected >= 0`),
+	check("web_uploads_declared_kind_check", sql`declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text])`),
+	check("web_uploads_bytes_received_check", sql`bytes_received >= 0`),
 	check("web_uploads_state_check", sql`state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text, 'registered'::text, 'failed'::text, 'abandoned'::text])`),
 	check("web_uploads_progress", sql`bytes_received <= size_expected`),
 	check("web_uploads_registered", sql`(state <> 'registered'::text) OR (sha256 IS NOT NULL)`),
@@ -1350,9 +1352,9 @@ export const customOrderDeliveries = pgTable("custom_order_deliveries", {
 			name: "custom_order_deliveries_model_id_order_id_retracts_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "custom_order_deliveries_pkey"}),
-	unique("custom_order_deliveries_model_id_order_id_id_key").on(table.id, table.modelId, table.orderId),
 	unique("custom_order_deliveries_manifest").on(table.manifestId, table.modelId, table.orderId),
 	unique("custom_order_deliveries_retracts_once").on(table.retractsId),
+	unique("custom_order_deliveries_model_id_order_id_id_key").on(table.id, table.modelId, table.orderId),
 	check("custom_order_deliveries_part_check", sql`part = ANY (ARRAY['video'::text, 'photos'::text])`),
 	check("custom_order_deliveries_item_type_check", sql`item_type = 'CUS'::text`),
 	check("custom_order_deliveries_shape", sql`CHECK (
@@ -1434,6 +1436,11 @@ export const itemMemberships = pgTable("item_memberships", {
 	index("item_memberships_item").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.itemId.asc().nullsLast().op("uuid_ops"), table.removedAt.asc().nullsLast().op("int4_ops"), table.displayPosition.asc().nullsLast().op("timestamptz_ops")),
 	uniqueIndex("item_memberships_one_owner").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.assetId.asc().nullsLast().op("uuid_ops")).where(sql`((kind = 'owned'::text) AND (removed_at IS NULL))`),
 	foreignKey({
+			columns: [table.modelId, table.assetId, table.pinnedVersionId],
+			foreignColumns: [assetVersions.assetId, assetVersions.id, assetVersions.modelId],
+			name: "item_memberships_model_id_asset_id_pinned_version_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
 			columns: [table.addedBy],
 			foreignColumns: [principals.id],
 			name: "item_memberships_added_by_fkey"
@@ -1447,11 +1454,6 @@ export const itemMemberships = pgTable("item_memberships", {
 			columns: [table.modelId, table.assetId, table.variantNo],
 			foreignColumns: [assets.id, assets.modelId, assets.variantNo],
 			name: "item_memberships_model_id_asset_id_variant_no_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.assetId, table.pinnedVersionId],
-			foreignColumns: [assetVersions.assetId, assetVersions.id, assetVersions.modelId],
-			name: "item_memberships_model_id_asset_id_pinned_version_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "item_memberships_pkey"}),
 	unique("item_memberships_model_id_item_id_asset_id_key").on(table.assetId, table.itemId, table.modelId),
@@ -1651,16 +1653,6 @@ export const sourceRevisions = pgTable("source_revisions", {
 	index("source_revisions_remote_sha256").using("btree", table.modelId.asc().nullsLast().op("bytea_ops"), table.remoteSha256.asc().nullsLast().op("uuid_ops")),
 	index("source_revisions_source_sha256").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.sourceSha256.asc().nullsLast().op("bytea_ops")),
 	foreignKey({
-			columns: [table.modelId, table.sourceObjectId],
-			foreignColumns: [sourceObjects.id, sourceObjects.modelId],
-			name: "source_revisions_model_id_source_object_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.previousId],
-			foreignColumns: [table.id, table.modelId],
-			name: "source_revisions_model_id_previous_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
 			columns: [table.modelId, table.scanWorkId],
 			foreignColumns: [workOperations.id, workOperations.modelId],
 			name: "source_revisions_model_id_scan_work_id_fkey"
@@ -1669,6 +1661,16 @@ export const sourceRevisions = pgTable("source_revisions", {
 			columns: [table.modelId, table.frozenByWorkId],
 			foreignColumns: [workOperations.id, workOperations.modelId],
 			name: "source_revisions_model_id_frozen_by_work_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.sourceObjectId],
+			foreignColumns: [sourceObjects.id, sourceObjects.modelId],
+			name: "source_revisions_model_id_source_object_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.previousId],
+			foreignColumns: [table.id, table.modelId],
+			name: "source_revisions_model_id_previous_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "source_revisions_pkey"}),
 	unique("source_revisions_model_id_source_object_id_sequence_no_key").on(table.modelId, table.sequenceNo, table.sourceObjectId),
@@ -1887,16 +1889,6 @@ export const customOrders = pgTable("custom_orders", {
 	index("custom_orders_buyer").using("btree", sql`model_id`, sql`lower(buyer_name)`),
 	index("custom_orders_status").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("text_ops"), table.dueAt.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
-			columns: [table.closedBy],
-			foreignColumns: [principals.id],
-			name: "custom_orders_closed_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.cancelledBy],
-			foreignColumns: [principals.id],
-			name: "custom_orders_cancelled_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
 			columns: [table.createdBy],
 			foreignColumns: [principals.id],
 			name: "custom_orders_created_by_fkey"
@@ -1905,6 +1897,16 @@ export const customOrders = pgTable("custom_orders", {
 			columns: [table.modelId, table.accountId],
 			foreignColumns: [accounts.id, accounts.modelId],
 			name: "custom_orders_model_id_account_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.closedBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_closed_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.cancelledBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_cancelled_by_fkey"
 		}).onDelete("restrict"),
 	foreignKey({
 			columns: [table.modelId],
@@ -2049,6 +2051,7 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 	primaryKey({ columns: [table.id, table.modelId], name: "inbox_drafts_pkey"}),
 	unique("inbox_drafts_source_revision").on(table.modelId, table.sourceRevisionId),
 	unique("inbox_drafts_web_upload").on(table.modelId, table.webUploadId),
+	check("inbox_drafts_proposed_ordinal_check", sql`(proposed_ordinal >= 1) AND (proposed_ordinal <= 999)`),
 	check("inbox_drafts_origin_check", sql`origin = ANY (ARRAY['disk_scan'::text, 'web_upload'::text, 'legacy_import'::text, 'archive'::text, 'derived'::text])`),
 	check("inbox_drafts_state_check", sql`state = ANY (ARRAY['discovered'::text, 'processing'::text, 'ready'::text, 'resolved'::text])`),
 	check("inbox_drafts_outcome_check", sql`outcome = ANY (ARRAY['new_item'::text, 'append'::text, 'alias'::text, 'rejected'::text])`),
@@ -2056,7 +2059,6 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 	check("inbox_drafts_byte_size_check", sql`byte_size >= 0`),
 	check("inbox_drafts_source_sha256_check", sql`octet_length(source_sha256) = 32`),
 	check("inbox_drafts_proposed_role_check", sql`proposed_role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text])`),
-	check("inbox_drafts_proposed_ordinal_check", sql`(proposed_ordinal >= 1) AND (proposed_ordinal <= 999)`),
 	check("inbox_drafts_proposed_life_use_check", sql`proposed_life_use = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text])`),
 	check("inbox_drafts_blocked_reason_check", sql`blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text])`),
 	check("inbox_drafts_reopen_count_check", sql`reopen_count >= 0`),

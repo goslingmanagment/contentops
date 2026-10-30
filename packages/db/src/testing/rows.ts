@@ -154,6 +154,8 @@ export const FACTORIES: Record<string, Factory> = {
     model_id: modelId,
     kind: 'dropbox',
     label: `Dropbox ${tag()}`,
+    root_path: '',
+    credentials_ref: 'DROPBOX_REFRESH_TOKEN',
   }),
   source_objects: async (client, modelId, testing = []) => {
     const row: Row = {

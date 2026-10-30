@@ -52,7 +52,10 @@ Agency Hub (`README.md`, `PRD.md`).
   `127.0.0.1:$SERVER_PORT`, по умолчанию 3000); в сборке продукта заглушки нет. Сервер с
   базой — `pnpm dev:server` (PostgreSQL 18 в Docker `contentops-dev-pg`, миграции,
   bootstrap из `packages/db/bootstrap.example.json`, сервер на :3000), вход `dmitriy` /
-  `contentops-dev`; окружение — `apps/server/src/config.ts`. Забыт пароль в ВМ —
+  `contentops-dev`; окружение — `apps/server/src/config.ts`. «Приехало» с источником —
+  `DEV_FAKE_SOURCE=1 pnpm dev:server`: поддельный Dropbox Лоры со сгенерированными FFmpeg
+  кадрами, скан включён, роль `worker` рядом (`DEV_PG_CONTAINER`/`DEV_PG_PORT`/`PORT` —
+  свой стенд рядом с чужим). Забыт пароль в ВМ —
   `contentops-db reset-password <login>` (пароль из `CONTENTOPS_NEW_PASSWORD` или stdin).
   После правки таблицы маршрутов —
   `pnpm --filter @contentops/server openapi`, иначе CI красный.
