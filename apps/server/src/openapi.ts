@@ -60,10 +60,26 @@ const transformObject: FastifyDynamicSwaggerOptions['transformObject'] = (input)
     }
   }
   visit(document.paths)
+  binaryAnswers(document)
   const kept = Object.entries(schemas)
     .filter(([name]) => used.has(name))
     .sort(([a], [b]) => (a < b ? -1 : 1))
   return { ...document, components: { ...document.components, schemas: Object.fromEntries(kept) } }
+}
+
+/**
+ * Routes of the `media` area answer with the file itself (nginx sends it by
+ * `X-Accel-Redirect`), not with JSON.
+ */
+function binaryAnswers(document: OpenAPIV3_1.Document): void {
+  for (const item of Object.values(document.paths ?? {})) {
+    const get = item?.get
+    if (!get?.tags?.includes('media')) continue
+    const ok = get.responses?.['200'] as OpenAPIV3_1.ResponseObject | undefined
+    if (!ok) continue
+    ok.description = 'Файл; байты отдаёт nginx по X-Accel-Redirect'
+    ok.content = { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } }
+  }
 }
 
 export const swaggerOptions: FastifyDynamicSwaggerOptions = {

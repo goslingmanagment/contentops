@@ -2,6 +2,8 @@ import { bootstrap, createDb, createPool, type Db } from '@contentops/db'
 import { createTestDatabase, type TestDatabase } from '@contentops/db/testing'
 import type { InjectOptions, LightMyRequestResponse } from 'fastify'
 import { createLogger } from '../logger'
+import type { BlobStore } from '../media/storage'
+import { tempStore } from '../media/testing'
 import { buildServer } from '../server'
 import type { IntegrationSecrets } from '../services'
 
@@ -50,28 +52,33 @@ export interface TestServer {
   app: ReturnType<typeof buildServer>
   db: Db
   database: TestDatabase
+  store: BlobStore
   close(): Promise<void>
 }
 
 /** The `web` role on a fresh database of its own, after bootstrap. */
 export async function testServer(
-  options: { secrets?: IntegrationSecrets } = {},
+  options: { secrets?: IntegrationSecrets; filesDirect?: boolean } = {},
 ): Promise<TestServer> {
   const database = await createTestDatabase()
   const pool = createPool(database.url(), { max: 20 })
   const db = createDb(pool)
   await bootstrap(db, BOOTSTRAP, { env: { CONTENTOPS_OWNER_PASSWORD: OWNER.password } })
+  const store = await tempStore('server')
   const app = buildServer({
     db,
     publicUrl: 'http://localhost:5173',
     secrets: options.secrets ?? NO_SECRETS,
     logger: createLogger({ level: process.env.TEST_LOG === '1' ? 'error' : 'silent' }),
+    storage: store.roots,
+    ...(options.filesDirect ? { filesDirect: true } : {}),
   })
   await app.ready()
   return {
     app,
     db,
     database,
+    store,
     close: async () => {
       await app.close()
       await pool.end()

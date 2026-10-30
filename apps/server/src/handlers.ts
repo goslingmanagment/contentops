@@ -2,6 +2,7 @@ import type { PathParams, Route } from '@contentops/contracts/api/route'
 import type { ApiRoutes } from '@contentops/contracts/api/routes/index'
 import type { z } from 'zod'
 import type { NotModified, RequestContext } from './context'
+import type { FileAnswer } from './file-answer'
 
 /** What a handler gets: everything already checked by the route's schemas. */
 export interface HandlerInput<R extends Route> {
@@ -13,11 +14,16 @@ export interface HandlerInput<R extends Route> {
 
 /**
  * Returns the answer before its schema; the server validates it and sends `route.success`.
- * A read of a whole resource may answer `NotModified` (304).
+ * A read of a whole resource may answer `NotModified` (304); a file route answers with a
+ * `FileAnswer`: headers and `X-Accel-Redirect`, no JSON.
  */
 export type RouteHandler<R extends Route> = (
   input: HandlerInput<R>,
-) => z.input<R['response']> | NotModified | Promise<z.input<R['response']> | NotModified>
+) =>
+  | z.input<R['response']>
+  | NotModified
+  | FileAnswer
+  | Promise<z.input<R['response']> | NotModified | FileAnswer>
 
 type AreaHandlers<Area> = {
   [Name in keyof Area]?: Area[Name] extends Route ? RouteHandler<Area[Name]> : never

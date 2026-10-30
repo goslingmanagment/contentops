@@ -16,6 +16,7 @@ export const OperationKindSchema = z.enum([
   'compat_copy',
   'source_zip',
   'montage_upload',
+  'verify_blobs',
 ])
 export type OperationKind = z.infer<typeof OperationKindSchema>
 
@@ -31,6 +32,7 @@ export const OPERATION_LABEL: Record<OperationKind, string> = {
   compat_copy: 'Копия, которая откроется везде, собирается',
   source_zip: 'Исходники собираются',
   montage_upload: 'Монтаж для PPV загружается',
+  verify_blobs: 'Проверка хранилища',
 }
 
 export const OperationSchema = z.object({
@@ -52,6 +54,8 @@ export const OperationSchema = z.object({
     })
     .nullable(),
   error: ApiErrorBodySchema.nullable(),
+  /** Report of a service run (`verify-blobs`): hashes, missing files, blobs without references. */
+  report: z.record(z.string(), z.unknown()).nullable().optional(),
 })
 export type Operation = z.infer<typeof OperationSchema>
 

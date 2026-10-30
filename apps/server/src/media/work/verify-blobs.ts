@@ -1,4 +1,4 @@
-import type { Db, WorkHandler } from '@contentops/db'
+import type { Db, Queryable, WorkHandler } from '@contentops/db'
 import { type EnqueueResult, enqueueWork } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { BlobStore } from '../storage'
@@ -127,8 +127,8 @@ export function verifyBlobsHandler(deps: { db: Db; store: BlobStore }): WorkHand
 }
 
 /** Puts a new `verify_blobs` run (system-wide, no model). */
-export async function enqueueVerifyBlobs(db: Db): Promise<EnqueueResult> {
-  return enqueueWork(db, {
+export async function enqueueVerifyBlobs(q: Queryable): Promise<EnqueueResult> {
+  return enqueueWork(q, {
     modelId: null,
     kind: 'verify_blobs',
     workKey: `verify:${new Date().toISOString()}`,

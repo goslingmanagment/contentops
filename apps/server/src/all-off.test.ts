@@ -1,6 +1,9 @@
 import { IntegrationViewSchema } from '@contentops/contracts/api/responses'
 import { ThresholdSchema } from '@contentops/contracts/domain/system'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { shaBytes } from './media/storage'
+import { registerBlob } from './media/storage-ops'
+import { tempFile } from './media/testing'
 import { createCatalogItems } from './testing/catalog-factory'
 import { call, newKey, OWNER, signIn, type TestServer, testServer } from './testing/server'
 
@@ -112,5 +115,44 @@ describe('«всё выключено»', () => {
         .json()
         .pages.every((entry: { summary: { word: string } }) => entry.summary.word === 'не видели'),
     ).toBe(true)
+  })
+
+  it('downloads a file of the catalog: the receipt is sealed, nginx sends the bytes', async () => {
+    const file = await tempFile('bytes of a fixture master', 'master.mp4')
+    await registerBlob(server.db, server.store, {
+      file: file.path,
+      sha256: file.sha256,
+      ext: 'mp4',
+      mediaKind: 'video',
+      owner: 'worker:test:1',
+    })
+    await createCatalogItems(server.db, 'lora', [
+      {
+        type: 'ppv',
+        number: 900,
+        title: 'Скачать без интеграций',
+        files: [{ role: 'master', sha256: [shaBytes(file.sha256)] }],
+      },
+    ])
+    const answer = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/i/PPV-900/downloads',
+      as: owner,
+      key: newKey(),
+      body: { kind: 'master', strip_metadata: false, account: null },
+    })
+    expect(answer.statusCode).toBe(200)
+    expect(answer.json()).toMatchObject({
+      kind: 'ready',
+      file_name: expect.stringMatching(/^PPV-900_skachat-integratsii_master__5m00s\.mp4$/),
+    })
+    const bytes = await call(server.app, {
+      method: 'GET',
+      url: answer.json().download_url,
+      as: owner,
+    })
+    expect(bytes.statusCode).toBe(200)
+    expect(bytes.headers['x-accel-redirect']).toMatch(/^\/_accel\/blobs\/sha256\//)
+    expect(bytes.headers['content-disposition']).toContain('PPV-900_skachat-integratsii_master')
   })
 })

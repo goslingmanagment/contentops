@@ -38,6 +38,8 @@ export interface AppDeps {
   authorize?: Authorize
   recordFailure?: RecordFailure
   logger?: Logger
+  /** Stream files from `web` instead of `X-Accel-Redirect` (development without nginx). */
+  filesDirect?: boolean
 }
 
 /**
@@ -107,6 +109,7 @@ export function buildApp(deps: AppDeps = {}) {
       authenticate: deps.authenticate,
       authorize: deps.authorize,
       recordFailure: deps.recordFailure,
+      filesDirect: deps.filesDirect === true,
     })
     api.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger())
     registerHealth(api, checks)

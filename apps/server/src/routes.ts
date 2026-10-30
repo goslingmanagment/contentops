@@ -12,6 +12,7 @@ import {
   type RequestContext,
 } from './context'
 import { ApiProblem, invalidRequest } from './errors'
+import { FileAnswer, sendFile } from './file-answer'
 import type { HandlerInput, HandlerRegistry } from './handlers'
 
 /**
@@ -139,6 +140,8 @@ export interface ApiRouteOptions {
   authenticate?: Authenticate
   authorize?: Authorize
   recordFailure?: RecordFailure
+  /** Stream files from `web` instead of `X-Accel-Redirect` (development without nginx). */
+  filesDirect?: boolean
 }
 
 /** Registers every route of `apiRoutes`; validation and answers follow the route's schemas. */
@@ -214,6 +217,9 @@ export function registerApiRoutes(app: FastifyInstance, options: ApiRouteOptions
           if (answer instanceof NotModified) {
             reply.header(HEADER.etag, answer.etag)
             return reply.code(304).send()
+          }
+          if (answer instanceof FileAnswer) {
+            return sendFile(request, reply, answer, options.filesDirect === true)
           }
           reply.code(entry.route.success)
           const version = entry.route.versioned ? versionOf(answer) : null

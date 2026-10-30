@@ -165,3 +165,21 @@ export async function createMediaEnv(options: MediaEnvOptions): Promise<MediaEnv
     log: options.log,
   }
 }
+
+/** Digests the web role needs to find copies in the cache (it runs no media tools). */
+export interface PipelineDigests {
+  version: string
+  platform: string
+  platformStripped: string
+}
+
+/** Digests of the current `pipeline_versions` row; `null` until a media role has started. */
+export async function currentDigests(q: Queryable): Promise<PipelineDigests | null> {
+  const { rows } = await q.execute<{ version: string; digests: Record<string, string> }>(sql`
+    SELECT version, recipe_digests AS digests FROM pipeline_versions WHERE is_current`)
+  const row = rows[0]
+  const platform = row?.digests.platform
+  const platformStripped = row?.digests['platform.stripped']
+  if (!row || !platform || !platformStripped) return null
+  return { version: row.version, platform, platformStripped }
+}

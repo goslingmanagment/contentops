@@ -3,6 +3,7 @@ import { checkRoutes } from './check'
 import { inboxRoutes, legacyRoutes } from './inbox'
 import { journalRoutes, operationRoutes } from './journal'
 import { markupRoutes } from './markup'
+import { mediaRoutes } from './media'
 import { objectBatchRoutes, objectFileRoutes } from './object-files'
 import { objectRoutes } from './objects'
 import { orderRoutes } from './orders'
@@ -25,6 +26,7 @@ export const apiRoutes = {
   promo: promoRoutes,
   journal: journalRoutes,
   operations: operationRoutes,
+  media: mediaRoutes,
   settings: settingsRoutes,
   auth: authRoutes,
 }

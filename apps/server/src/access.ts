@@ -29,6 +29,8 @@ const ROUTE_ACCESS: Record<string, Access> = {
   'admin.integrations': 'staff',
   'admin.thresholds': 'staff',
   'settings.contractors': 'staff',
+  // «Только чтение» видит превью, но не скачивает (SPEC §11.1).
+  'media.download': 'staff',
 }
 
 export function accessOf(key: string, route: Route): Access | 'model' {
