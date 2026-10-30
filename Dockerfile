@@ -38,6 +38,14 @@ RUN apt-get update \
       libvips42t64 libheif1 libheif-plugin-libde265 libde265-0 libjemalloc2 \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=ffmpeg /opt/ffmpeg/ffmpeg /opt/ffmpeg/ffprobe /usr/local/bin/
+# Node (npm, pnpm, the app) offers classic TLS key exchange only. The pilot's ISP drops TLS
+# 1.3 handshakes to Cloudflare (npm registry, Docker Hub, AI APIs) that carry a post-quantum
+# key share; dockerd in the VM runs with GODEBUG=tlsmlkem=0 for the same reason (ops/README).
+RUN mkdir -p /usr/local/share/contentops \
+ && printf '%s\n' 'nodejs_conf = nodejs_init' '[nodejs_init]' 'ssl_conf = ssl_sect' \
+      '[ssl_sect]' 'system_default = tls_defaults' '[tls_defaults]' \
+      'Groups = X25519:P-256:P-384' > /usr/local/share/contentops/node-tls.cnf
+ENV OPENSSL_CONF=/usr/local/share/contentops/node-tls.cnf
 # System package versions go into recipe digests of photo renditions (packages/media).
 RUN mkdir -p /usr/local/share/contentops \
  && dpkg-query -W -f='${Package}=${Version}\n' \

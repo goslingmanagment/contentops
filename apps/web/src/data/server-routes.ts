@@ -23,6 +23,8 @@ export const SERVER_ROUTES: ServerRoutes = {
     'thresholds',
     'updateThreshold',
     'removeThreshold',
+    'state',
+    'counters',
   ],
   settings: [
     'addPerson',
@@ -39,6 +41,7 @@ export const SERVER_ROUTES: ServerRoutes = {
     'addAccount',
     'connectIntegration',
     'ai',
+    'pauseQueue',
   ],
   plan: ['norm', 'updateNorm'],
   journal: 'all',
