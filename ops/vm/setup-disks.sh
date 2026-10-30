@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Data disks of the pilot VM `contentops` (SPEC §12.2). Safe to re-run.
+# Data disks and swap of the pilot VM `contentops` (SPEC §12.2). Safe to re-run.
 #
 #   data.vhdx    (C:, SCSI LUN 1, 1 TiB)   -> ext4 LABEL=co-data    -> /srv/vol/data
 #     /srv/vol/data/content    -> bind /srv/content   blobs, inbox, encoder output next to blobs
@@ -7,6 +7,9 @@
 #   derived.vhdx (E:, SCSI LUN 2, 300 GiB) -> ext4 LABEL=co-derived -> /srv/vol/derived
 #     /srv/vol/derived/derived -> bind /srv/derived   DERIVED_ROOT: previews, frames, thumbnails
 #     /srv/vol/derived/tmp     -> bind /srv/tmp       prefetch, exports, scratch
+#   /swapfile    (system disk, os.vhdx)    -> 8 GiB swap: a memory spike slows an encoder
+#     instead of killing it. fallocate leaves the blocks unwritten, so os.vhdx grows only as
+#     pages are swapped out. An existing swap file of another size stops the script.
 #
 # A disk whose label already exists is never touched. A blank disk is partitioned and
 # formatted only if it has the expected size, no partition table, no signature and reads as
@@ -21,6 +24,7 @@
 # 4.9M. Zeros are proven, so mkfs skips zeroing inode tables and the journal.
 #
 # Run from the Mac: ssh contentops-vm 'sudo bash -s' < ops/vm/setup-disks.sh
+# Swap only, nothing else touched (a running VM): ... 'sudo bash -s -- swap' < ...
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "setup-disks: run as root (sudo)" >&2; exit 1; }
@@ -29,6 +33,8 @@ APP_UID=1000
 APP_GID=1000
 MOUNT_OPTS=noatime,errors=remount-ro,nofail,x-systemd.device-timeout=10s
 BIND_OPTS=bind,nofail,x-systemd.before=docker.service
+SWAP_FILE=/swapfile
+SWAP_BYTES=8589934592
 
 # lun label size_bytes bytes_per_inode mountpoint
 DISKS=(
@@ -105,6 +111,29 @@ write_fstab() {
   systemctl daemon-reload
 }
 
+setup_swap() {
+  if [[ ! -e $SWAP_FILE ]]; then
+    (umask 077 && fallocate -l "$SWAP_BYTES" "$SWAP_FILE")
+    mkswap "$SWAP_FILE" >/dev/null
+    echo "swap: created $SWAP_FILE"
+  fi
+  [[ $(stat -c %s "$SWAP_FILE") == "$SWAP_BYTES" ]] || die "swap: $SWAP_FILE is not $SWAP_BYTES bytes"
+  if ! grep -qE "^${SWAP_FILE}[[:space:]]" /etc/fstab; then
+    cp -p /etc/fstab "/etc/fstab.bak-$(date +%Y%m%d-%H%M%S)"
+    printf '%s none swap sw 0 0\n' "$SWAP_FILE" >>/etc/fstab
+    echo "fstab: added $SWAP_FILE"
+    systemctl daemon-reload
+  fi
+  swapon --show=NAME --noheadings | grep -qx "$SWAP_FILE" || swapon "$SWAP_FILE"
+  swapon --show
+}
+
+if [[ ${1:-} == swap ]]; then
+  setup_swap
+  echo "setup-disks: swap ok"
+  exit 0
+fi
+
 for d in "${DISKS[@]}"; do
   read -r lun label size ratio mnt <<<"$d"
   format_if_blank "$lun" "$label" "$size" "$ratio"
@@ -133,4 +162,5 @@ for p in /srv/vol/data /srv/vol/derived /srv/content /srv/db /srv/derived /srv/t
   findmnt -no TARGET,SOURCE,FSTYPE --mountpoint "$p"
 done
 df -h --output=target,size,used,avail /srv/vol/data /srv/vol/derived
+setup_swap
 echo "setup-disks: ok"

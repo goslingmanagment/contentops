@@ -6,7 +6,7 @@
 #
 #   ssh contentops-vm 'cd /opt/contentops && ops/vm/after-reboot-check.sh'
 #
-# Checks: boot time and the previous shutdown, the six storage mounts, the read-only shares of
+# Checks: boot time and the previous shutdown, the six storage mounts, swap, the read-only shares of
 # Windows (/mnt/host with a fresh space.json, /mnt/ydisk mounted — nothing in it is read),
 # Docker and every service of the stack, /healthz on loopback and on the tailnet address
 # (`tailscale serve`), the workers' heartbeats and claims since the boot, works left running
@@ -41,6 +41,9 @@ for path in /srv/vol/data /srv/vol/derived /srv/content /srv/db /srv/derived /sr
   if mountpoint -q "$path"; then row ok mounts "$path" "$(df -h --output=avail "$path" | tail -n 1 | tr -d ' ') free in the VM"
   else row FAIL mounts "$path" "NOT mounted: the workers stay stopped (ops/README.md «Диски ВМ»)"; fi
 done
+swap=$(swapon --show=NAME,SIZE --noheadings 2>/dev/null | awk '$1 == "/swapfile" {print $2}')
+if [[ -n $swap ]]; then row ok vm "swap" "/swapfile $swap"
+else row FAIL vm "swap" "/swapfile not active (ops/vm/setup-disks.sh swap)"; fi
 # Automounted cifs shares: `stat -f` mounts them without reading any file of the copy.
 for path in /mnt/host /mnt/ydisk; do
   type=$(timeout 15 stat -f -c %T "$path" 2>/dev/null)
