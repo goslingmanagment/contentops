@@ -29,7 +29,7 @@ export function profileHandlers(): BoundRoute[] {
     }),
 
     bind(settingsRoutes.updateProfile, 'read', ({ state, body }) => {
-      state.principal.name = body.name
+      state.principal.name = body.name ?? state.principal.name
       return state.principal
     }),
 

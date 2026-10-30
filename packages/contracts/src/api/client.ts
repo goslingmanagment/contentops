@@ -113,7 +113,8 @@ export function createApiClient(fetchImpl: FetchLike, options: ApiClientOptions 
   const request = (route: Route, input: LooseInput, extraHeaders: Record<string, string> = {}) => {
     const headers: Record<string, string> = { Accept: 'application/json', ...extraHeaders }
     if (input.ifMatch !== undefined) headers[HEADER.ifMatch] = versionTag(input.ifMatch)
-    if (route.method !== 'GET')
+    // «Войти» carries no key: a double click must not answer 409 (SPEC §11.2).
+    if (route.method !== 'GET' && route !== apiRoutes.auth.signIn)
       headers[HEADER.idempotencyKey] = input.idempotencyKey ?? newIdempotencyKey()
     const init: RequestInit = { method: route.method, headers }
     if (input.signal) init.signal = input.signal

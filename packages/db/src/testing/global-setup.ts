@@ -1,18 +1,6 @@
 import type { TestProject } from 'vitest/node'
 import { runMigrations } from '../migrate.ts'
-import {
-  createDatabase,
-  databaseUrl,
-  type PostgresInfo,
-  startPostgres,
-  TEMPLATE_DATABASE,
-} from './postgres.ts'
-
-declare module 'vitest' {
-  export interface ProvidedContext {
-    contentopsPostgres: PostgresInfo
-  }
-}
+import { createDatabase, databaseUrl, startPostgres, TEMPLATE_DATABASE } from './postgres.ts'
 
 /**
  * Vitest globalSetup: one `postgres:18` container per test run with both roles and a

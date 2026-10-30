@@ -14,13 +14,13 @@ import {
 } from 'fastify-type-provider-zod'
 import type { Logger } from 'pino'
 import type { z } from 'zod'
-import { type Authenticate, requestIdGenerator } from './context'
+import { type Authenticate, type Authorize, requestIdGenerator } from './context'
 import { ApiProblem, toErrorReply } from './errors'
 import type { HandlerRegistry } from './handlers'
 import { type HealthCheck, mountsCheck, registerHealth } from './health'
 import { createLogger } from './logger'
 import { swaggerOptions } from './openapi'
-import { registerApiRoutes } from './routes'
+import { type RecordFailure, registerApiRoutes } from './routes'
 
 export interface AppDeps {
   /** Handlers by area and route name; the rest of the table answers 501. */
@@ -32,6 +32,9 @@ export interface AppDeps {
   /** `TRUSTED_PROXY`: only these peers may set `X-Forwarded-*` and `X-Request-Id`. */
   trustedProxy?: readonly string[]
   authenticate?: Authenticate
+  /** Rights on the route and the model of the path; without it every call is let through. */
+  authorize?: Authorize
+  recordFailure?: RecordFailure
   logger?: Logger
 }
 
@@ -94,7 +97,12 @@ export function buildApp(deps: AppDeps = {}) {
 
   app.register(fastifySwagger, swaggerOptions)
   app.register(async (api) => {
-    registerApiRoutes(api, { handlers: deps.handlers ?? {}, authenticate: deps.authenticate })
+    registerApiRoutes(api, {
+      handlers: deps.handlers ?? {},
+      authenticate: deps.authenticate,
+      authorize: deps.authorize,
+      recordFailure: deps.recordFailure,
+    })
     api.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger())
     registerHealth(api, checks)
   })

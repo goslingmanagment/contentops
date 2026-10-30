@@ -2,9 +2,14 @@ import { HEADER, versionTag } from '@contentops/contracts/api/headers'
 import { NoBodySchema, type Route } from '@contentops/contracts/api/route'
 import { apiRoutes } from '@contentops/contracts/api/routes/index'
 import { ApiErrorBodySchema } from '@contentops/contracts/domain/errors'
-import type { FastifyInstance, HTTPMethods } from 'fastify'
+import type { FastifyInstance, FastifyRequest, HTTPMethods } from 'fastify'
 import { z } from 'zod'
-import { type Authenticate, createRequestContext } from './context'
+import {
+  type Authenticate,
+  type Authorize,
+  createRequestContext,
+  type RequestContext,
+} from './context'
 import { ApiProblem, invalidRequest } from './errors'
 import type { HandlerInput, HandlerRegistry } from './handlers'
 
@@ -125,13 +130,26 @@ function versionOf(answer: unknown): number | null {
   return typeof answer.version === 'number' ? answer.version : null
 }
 
+/** Writes a refused or failed command to the journal after its rollback (SPEC §11.2). */
+export type RecordFailure = (ctx: RequestContext, error: unknown) => Promise<void>
+
 export interface ApiRouteOptions {
   handlers: HandlerRegistry
   authenticate?: Authenticate
+  authorize?: Authorize
+  recordFailure?: RecordFailure
 }
 
 /** Registers every route of `apiRoutes`; validation and answers follow the route's schemas. */
 export function registerApiRoutes(app: FastifyInstance, options: ApiRouteOptions): void {
+  const contexts = new WeakMap<FastifyRequest, RequestContext>()
+  /** Only changing calls of a known actor are journaled when they fail. */
+  const recordFailure = async (request: FastifyRequest, ctx: RequestContext, error: unknown) => {
+    if (request.method === 'GET' || !ctx.actor || !options.recordFailure) return
+    await options.recordFailure(ctx, error).catch((failure: unknown) => {
+      request.log.error({ err: failure }, 'failure record failed')
+    })
+  }
   for (const group of groupRoutes(tableRoutes())) {
     const [first] = group.entries
     const single = group.entries.length === 1
@@ -155,6 +173,24 @@ export function registerApiRoutes(app: FastifyInstance, options: ApiRouteOptions
         routes: group.entries.map(({ key }) => key),
         ...(single ? {} : { docQuery: mergedQuery(group.entries) }),
       },
+      // Who calls and with what rights is settled before the body is validated: an anonymous
+      // or refused call learns nothing about the schema (SPEC §11.2: 401 and 403 first).
+      preValidation: async (request, reply) => {
+        const ctx = await createRequestContext(request, reply, first.key, options.authenticate)
+        contexts.set(request, ctx)
+        if (!options.authorize) return
+        try {
+          ctx.model = await options.authorize({
+            key: first.key,
+            route: first.route,
+            actor: ctx.actor,
+            params: request.params as Record<string, string>,
+          })
+        } catch (error) {
+          await recordFailure(request, ctx, error)
+          throw error
+        }
+      },
       handler: async (request, reply) => {
         const { entry, query } = single
           ? { entry: first, query: request.query }
@@ -162,23 +198,26 @@ export function registerApiRoutes(app: FastifyInstance, options: ApiRouteOptions
         if (body === NoBodySchema && request.body !== undefined) {
           throw invalidRequest('body', [{ path: '', message: 'У этого вызова нет тела' }])
         }
-        const ctx = await createRequestContext(request, options.authenticate)
-        const handler = handlerOf(options.handlers, entry)
-        if (!handler) {
-          throw new ApiProblem('not_implemented', 'Сервер ещё не умеет этот вызов', {
-            route: entry.key,
-          })
+        const ctx = contexts.get(request)
+        if (!ctx) throw new Error('request context missing')
+        ctx.route = entry.key
+        const params = request.params as Record<string, string>
+        try {
+          const handler = handlerOf(options.handlers, entry)
+          if (!handler) {
+            throw new ApiProblem('not_implemented', 'Сервер ещё не умеет этот вызов', {
+              route: entry.key,
+            })
+          }
+          const answer = await handler({ params, query, body: request.body, ctx })
+          reply.code(entry.route.success)
+          const version = entry.route.versioned ? versionOf(answer) : null
+          if (version !== null) reply.header(HEADER.etag, versionTag(version))
+          return answer
+        } catch (error) {
+          await recordFailure(request, ctx, error)
+          throw error
         }
-        const answer = await handler({
-          params: request.params as Record<string, string>,
-          query,
-          body: request.body,
-          ctx,
-        })
-        reply.code(entry.route.success)
-        const version = entry.route.versioned ? versionOf(answer) : null
-        if (version !== null) reply.header(HEADER.etag, versionTag(version))
-        return answer
       },
     })
   }
