@@ -12,8 +12,9 @@ registered by register-tasks.ps1.
   disk full) are only logged. At most one restart per hour.
 - While C: or E: has less than 50 GB free (or is missing), the VM is neither started nor
   restarted, and the reason goes to the log. A full disk pauses the VM (critical error;
-  the pause does not expire for a week, register-tasks.ps1); starting it again would loop the
-  only database through hard power-offs. Free the space, then Resume-VM contentops.
+  the pause lasts 24 h, the Hyper-V maximum, register-tasks.ps1), then Hyper-V turns it off;
+  starting it again would loop the only database through hard power-offs. Free the space,
+  then Resume-VM contentops.
 - Log: C:\vm\contentops\logs\watchdog.log (rotated at 1 MB); counter and last restart:
   watchdog-state.json next to it.
 
