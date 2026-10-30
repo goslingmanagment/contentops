@@ -107,6 +107,8 @@ describe('canonical master — kept as is', () => {
   it.each([
     ['hdr4k60', 'skipped_hdr'],
     ['lowrate', 'skipped_lowrate'],
+    // Packets before the edit list are discarded, not missing: not `source_truncated`.
+    ['editList', 'skipped_lowrate'],
     ['av1', 'skipped_av1'],
     ['apacOnly', 'skipped_audio'],
     ['adpcm', 'skipped_audio'],

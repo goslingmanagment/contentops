@@ -245,6 +245,55 @@ export function truncated(decoded: number, promised: number | null): boolean {
 }
 
 /**
+ * Video packets outside the edit list (`D` flag, a demux pass without decoding): the container
+ * counts them in `nb_frames`, a decoder never shows them. CapCut and phone exports keep a
+ * pre-roll this way.
+ */
+export async function discardedVideoPackets(
+  paths: ToolPaths,
+  file: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  let count = 0
+  const run = await runTool(
+    paths.ffprobe,
+    [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'packet=flags',
+      '-of',
+      'csv=p=0',
+      file,
+    ],
+    {
+      signal,
+      onStdoutLine: (line) => {
+        if (line.includes('D')) count++
+      },
+    },
+  )
+  return run.code === 0 ? count : 0
+}
+
+/**
+ * The frames a source promises to show (SPEC §9.2 `source_truncated`): `nb_frames` minus the
+ * packets its edit list discards. Looked up only when the decode fell short of `nb_frames`.
+ */
+export async function shownFramesPromised(
+  paths: ToolPaths,
+  file: string,
+  promised: number | null,
+  decoded: number,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  if (promised === null || !truncated(decoded, promised)) return promised
+  return promised - (await discardedVideoPackets(paths, file, signal))
+}
+
+/**
  * Full decode of a source that becomes the master as is: the first video stream (unless
  * already decoded by the encode pass) and every decodable audio stream.
  */
@@ -315,7 +364,9 @@ export async function checkSource(
     },
   )
   const durationMs = Math.round(performance.now() - started)
-  const promisedFrames = probe.video.nbFrames
+  const promisedFrames = decodeVideo
+    ? await shownFramesPromised(paths, file, probe.video.nbFrames, frames, options.signal)
+    : probe.video.nbFrames
   let verdict: SourceVerdict = 'ok'
   if (decodeVideo && frames === 0) verdict = 'unreadable'
   else if (decodeVideo && truncated(frames, promisedFrames)) verdict = 'source_truncated'
