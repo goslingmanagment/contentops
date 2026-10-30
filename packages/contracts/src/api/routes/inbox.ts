@@ -23,6 +23,7 @@ import { LegacyReviewSchema } from '../../domain/legacy'
 import { DownloadAnswerSchema } from '../../domain/operations'
 import { BatchResultSchema } from '../../domain/pagination'
 import { defineRoute } from '../route'
+import { FileBodySchema } from './media'
 
 export const InboxQuerySchema = z.object({
   /** `active` — «Новое»; `accepted`, `rejected` — «Решённое». */
@@ -63,6 +64,16 @@ export const inboxRoutes = {
     method: 'POST',
     path: '/api/v1/{model}/inbox/groups/{group}/downloads',
     response: DownloadAnswerSchema,
+  }),
+  /**
+   * `download_url` of «Скачать исходник»: one file of the group (`file` = its key) or the ZIP
+   * the operation built (`zip` = the operation); no receipt — a draft has no ID (schema §9.2).
+   */
+  source: defineRoute({
+    method: 'GET',
+    path: '/api/v1/{model}/inbox/groups/{group}/source',
+    query: z.object({ file: z.string().optional(), zip: z.string().optional() }),
+    response: FileBodySchema,
   }),
   decide: defineRoute({
     method: 'POST',

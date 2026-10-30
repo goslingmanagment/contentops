@@ -230,10 +230,33 @@ export async function decide(
          WHERE model_id = ${model.id}::uuid AND kind = 'cross_model_duplicate' AND state = 'open'
            AND draft_id = ANY (${sql.param(ids)}::uuid[])`)
       break
-    default:
-      throw new ApiProblem('not_implemented', 'Это решение появится вместе со своим этапом', {
-        decision: body.decision,
+    case 'number_taken': {
+      // «Номер занят» (SPEC §6.4): an old number another folder holds. Keep — the block lifts
+      // and the object takes the next number of the counter; no — the group is refused.
+      const disputed = drafts.filter((draft) => draft.blocked_reason === 'id_collision')
+      if (disputed.length === 0) {
+        throw new ApiProblem('accept_blocked', 'В этой группе нет спора о номере', {
+          reason: 'no_dispute',
+        })
+      }
+      if (body.keep) await clear('id_collision')
+      else await rejectGroup(tx, model, actor, groupId, 'номер занят другой папкой')
+      break
+    }
+    case 'substitute_montage':
+      // ◆ «Подставить монтаж в строку?» needs an upload aimed at a plan row; rows of the plan
+      // take uploads with 4а, so no group of «Приехало» carries this question yet.
+      throw new ApiProblem('accept_blocked', 'В этой группе нет монтажа для строки плана', {
+        reason: 'no_plan_row',
       })
+    case 'split_archive':
+      // Archives are unpacked once by the import (SPEC §6.3, stage 3); intake keeps the archive
+      // as a fact of the source and offers no draft for it, so there is nothing to split here.
+      throw new ApiProblem(
+        'accept_blocked',
+        'Архивы распаковывает импорт старого Я.Диска (этап 3): в этой группе архива нет',
+        { reason: 'no_archive' },
+      )
   }
   await bump(tx, model, groupId)
 }

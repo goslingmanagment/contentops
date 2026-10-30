@@ -11,6 +11,7 @@ import {
 import type { Logger } from 'pino'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
+import { draftZipExport } from './intake/draft-files'
 import { fetchHandler } from './intake/fetch'
 import { intakeMediaHandlers } from './intake/media'
 import { scanHandler, scanStreams } from './intake/scan'
@@ -178,10 +179,13 @@ async function waitForStorage(config: Config, logger: Logger): Promise<void> {
 function intakeHandlers(
   config: Config,
   store: BlobStore,
+  mediaExport: WorkHandler | undefined,
 ): Partial<Record<values.WorkKind, WorkHandler>> {
   const factory = envSourceFactory(process.env)
   return {
     scan: scanHandler(factory),
+    // «Скачать исходник» of several files is one ZIP; other exports stay the pipeline's.
+    export: draftZipExport(store, mediaExport),
     fetch: fetchHandler({
       factory,
       store,
@@ -225,7 +229,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     ...mediaHandlers(role, env),
     // Discovery from the cloud folders of the models (SPEC §6.1).
     ...intakeMediaHandlers(role, env),
-    ...(role === 'worker' ? intakeHandlers(config, store) : {}),
+    ...(role === 'worker' ? intakeHandlers(config, store, mediaHandlers(role, env).export) : {}),
   }
   const runner = new WorkRunner({
     db,
