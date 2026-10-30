@@ -6,6 +6,7 @@ import { catalogHandlers } from './catalog'
 import { catalogEditHandlers } from './catalog-edits'
 import { integrationHandlers } from './integrations'
 import { journalHandlers } from './journal'
+import { mediaRouteHandlers } from './media'
 import { modelHandlers } from './models'
 import { normHandlers } from './norm'
 import { peopleHandlers } from './people'
@@ -44,5 +45,6 @@ export function createHandlers(services: Services): HandlerRegistry {
     catalogHandlers(services),
     catalogEditHandlers(services),
     tagHandlers(services),
+    mediaRouteHandlers(services),
   )
 }

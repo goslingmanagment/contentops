@@ -7,6 +7,7 @@ import type { MediaEnv } from './pipeline'
 import type { BlobStore } from './storage'
 import { renderCompatHandler, renderHandler, uniqRenderHandler } from './work/copies'
 import { deriveImageHandler, deriveVideoHandler } from './work/derive'
+import { exportHandler } from './work/export'
 import { extractFrameHandler } from './work/frame'
 import { encodeMasterHandler } from './work/master'
 import { verifyBlobsHandler } from './work/verify-blobs'
@@ -33,7 +34,10 @@ export function mediaHandlers(
     case 'worker-image':
       return { derive_image: deriveImageHandler(env) }
     case 'worker':
-      return { verify_blobs: verifyBlobsHandler({ db: env.db, store: env.store }) }
+      return {
+        verify_blobs: verifyBlobsHandler({ db: env.db, store: env.store }),
+        export: exportHandler(env),
+      }
   }
 }
 

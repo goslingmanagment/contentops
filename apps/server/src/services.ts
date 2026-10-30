@@ -1,5 +1,6 @@
 import type { Db } from '@contentops/db'
 import type { RunCommand } from './commands'
+import type { BlobStore } from './media/storage'
 import type { SpaceOptions } from './space'
 
 /** Which integrations have their secrets in the environment (SPEC §8: «не настроено»). */
@@ -18,4 +19,6 @@ export interface Services {
   secrets: IntegrationSecrets
   /** Where the host reports free space, and the pilot thresholds (SPEC §12.2). */
   space: SpaceOptions
+  /** Storage roots: bytes go out by `X-Accel-Redirect` to their keys. */
+  store: BlobStore
 }

@@ -7,7 +7,7 @@ import {
 import { AgentSchema, IssuedTokenSchema } from '../../domain/agents'
 import { TagSchema } from '../../domain/markup'
 import { ModelSchema } from '../../domain/model'
-import { OperationSchema } from '../../domain/operations'
+import { OperationAcceptedSchema, OperationSchema } from '../../domain/operations'
 import { pageSchema } from '../../domain/pagination'
 import { PersonSchema, SessionPrincipalSchema } from '../../domain/people'
 import { CountersSchema, SystemStateSchema, ThresholdSchema } from '../../domain/system'
@@ -83,5 +83,15 @@ export const adminRoutes = {
     method: 'GET',
     path: '/api/v1/admin/operations/{operation}',
     response: OperationSchema,
+  }),
+  /**
+   * `verify-blobs` (SPEC §11.2): hashes of `blobs/` against the database and the blobs
+   * without references; the report comes in the operation. Removal is the owner's command.
+   */
+  verifyBlobs: defineRoute({
+    method: 'POST',
+    path: '/api/v1/admin/blobs:verify',
+    response: OperationAcceptedSchema,
+    success: 202,
   }),
 }

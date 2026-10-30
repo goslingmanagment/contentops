@@ -113,6 +113,8 @@ const server = spawn('pnpm', ['--filter', '@contentops/server', 'dev'], {
     DERIVED_ROOT: join(storage, 'derived'),
     TMP_ROOT: join(storage, 'tmp'),
     PUBLIC_URL: 'http://localhost:5173',
+    // No nginx in development: web streams previews and downloads itself.
+    FILES_DIRECT: '1',
     LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
   },
 })

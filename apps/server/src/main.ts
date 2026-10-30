@@ -79,6 +79,12 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     trustedProxy: config.TRUSTED_PROXY,
     requireMounts: config.REQUIRE_MOUNTS,
     requireVolumes: config.REQUIRE_VOLUMES,
+    storage: {
+      dataRoot: required(config.DATA_ROOT, 'DATA_ROOT'),
+      derivedRoot: required(config.DERIVED_ROOT, 'DERIVED_ROOT'),
+      tmpRoot: required(config.TMP_ROOT, 'TMP_ROOT'),
+    },
+    filesDirect: config.FILES_DIRECT,
   })
   app.addHook('onClose', () => pool.end())
   onStop(logger, () => app.close())

@@ -26,6 +26,8 @@ export const SERVER_ROUTES: ServerRoutes = {
     'state',
     'counters',
     'tags',
+    'operation',
+    'verifyBlobs',
   ],
   settings: [
     'addPerson',
@@ -48,7 +50,7 @@ export const SERVER_ROUTES: ServerRoutes = {
   ],
   plan: ['norm', 'updateNorm'],
   journal: 'all',
-  // Каталог (2а). Скачивания и сборки из кадров — медиаконвейер (2б), пока в заглушке.
+  // Каталог (2а); скачивания, кадры мастера, обложка и версии фупа — медиаконвейер (2б).
   objects: [
     'catalogIndex',
     'pageSummaries',
@@ -72,6 +74,7 @@ export const SERVER_ROUTES: ServerRoutes = {
     'changeType',
     'remove',
     'restore',
+    'download',
   ],
   objectFiles: [
     'reorder',
@@ -82,7 +85,13 @@ export const SERVER_ROUTES: ServerRoutes = {
     'extractShoot',
     'merge',
     'makeMaster',
+    'download',
+    'makePhotos',
+    'makeCover',
+    'buildFypVersions',
   ],
+  operations: 'all',
+  media: 'all',
   objectBatch: 'all',
   markup: 'all',
 }

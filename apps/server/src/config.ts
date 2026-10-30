@@ -68,6 +68,14 @@ const EnvSchema = z.object({
   /** Pilot thresholds of free space: warning and stop of intake (SPEC §12.2). */
   SPACE_WARN_GB: z.coerce.number().nonnegative().default(200),
   SPACE_STOP_GB: z.coerce.number().nonnegative().default(100),
+  /**
+   * Development without nginx: `web` streams files itself instead of `X-Accel-Redirect`.
+   * Never set in the stack: nginx sends the bytes (SPEC §12.0 «отдача»).
+   */
+  FILES_DIRECT: z
+    .enum(['0', '1'])
+    .default('0')
+    .transform((value) => value === '1'),
   /** Who may set `X-Forwarded-*` and `X-Request-Id`: `loopback`, addresses or CIDRs. */
   TRUSTED_PROXY: commaList(z.string()).default(['loopback']),
 
