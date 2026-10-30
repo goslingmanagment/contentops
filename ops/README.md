@@ -146,6 +146,24 @@
 - База до тега `schema-freeze` — тестовая; с этапа 3 — единственная настоящая: `docker
   compose down -v` и удаление `/srv/db` после этого запрещены.
 
+## Облака моделей (2в)
+
+- Источники модели — строки `sources` из `models[].sources` в `/etc/contentops/bootstrap.json`
+  (`label`, `kind`, `root`, `credentials_ref`; повтор bootstrap добавляет новые, старые не
+  меняет). Токены — только в `.env`: `YDISK_TOKEN` (OAuth Яндекса с `cloud_api:disk.read`),
+  `DROPBOX_REFRESH_TOKEN` + `DROPBOX_APP_KEY` (+ `DROPBOX_APP_SECRET`, если приложение не PKCE).
+  Скан включает владелец в «Интеграции» по источнику; полный обход Я.Диска до первого дня
+  этапа 3 не запускается (снимок `scan:freeze` — SPEC §6.3).
+- Dropbox для ContentOps (делает владелец): dropbox.com/developers/apps → Create app →
+  Scoped access → Full Dropbox → имя `contentops-<модель>`; Permissions — только
+  `files.metadata.read` и `files.content.read` → Submit; Settings → App key (и App secret).
+  Refresh token: открыть
+  `https://www.dropbox.com/oauth2/authorize?client_id=<APP_KEY>&response_type=code&token_access_type=offline`
+  под аккаунтом модели, «Allow», код обменять одним запросом
+  `curl https://api.dropboxapi.com/oauth2/token -d code=<код> -d grant_type=authorization_code -u <APP_KEY>:<APP_SECRET>`
+  → `refresh_token` в `.env` как `DROPBOX_REFRESH_TOKEN`, ключ — `DROPBOX_APP_KEY`, секрет —
+  `DROPBOX_APP_SECRET`; затем `ops/up.sh`. Запросы на запись приложению не нужны и не даны.
+
 ## Место с Windows
 
 - Задача `ContentOps-Space` (SYSTEM, при загрузке и каждые 5 мин) пишет свободное и полное
