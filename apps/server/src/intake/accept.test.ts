@@ -12,6 +12,7 @@ import { tempStore } from '../media/testing'
 import { buildServer } from '../server'
 import { call, newKey, signIn } from '../testing/server'
 import { acceptGroup } from './accept'
+import { draftZipExport } from './draft-files'
 import { fetchHandler } from './fetch'
 import { scanHandler } from './scan'
 import { sweepStaging } from './staging'
@@ -422,5 +423,86 @@ describe('staging (SPEC §9.1)', () => {
     await makeReady(draft_id)
     expect(await sweepStaging(h.db, store)).toContain(sha)
     expect(await store.staged(sha)).toBeNull()
+  })
+})
+
+describe('«Скачать исходник» (SPEC §6.1, schema §9.2)', () => {
+  const download = (group: string) =>
+    call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${group}/downloads`,
+      as: owner,
+      key: newKey(),
+    })
+
+  it('one file: ready at once, bytes by X-Accel, the journal says who', async () => {
+    const path = `${LORA_ROOT}/6. Life/Один/01.jpg`
+    h.dropbox.tree.addFile(path, 2900)
+    await scan()
+    const { group_id } = await groupOfPath(path)
+    const early = await download(group_id)
+    expect(early.json()).toMatchObject({
+      code: 'accept_blocked',
+      details: { reason: 'not_fetched' },
+    })
+    await fetchAll()
+    const answer = await download(group_id)
+    expect(answer.statusCode).toBe(200)
+    expect(answer.json()).toMatchObject({ kind: 'ready', file_name: '01.jpg', size_bytes: 2900 })
+    const file = await call(app, { method: 'GET', url: answer.json().download_url, as: owner })
+    expect(file.statusCode).toBe(200)
+    expect(String(file.headers['x-accel-redirect'])).toMatch(/^\/_accel\/tmp\/staging\//)
+    expect(String(file.headers['content-disposition'])).toContain('01.jpg')
+    const { rows } = await h.db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM action_log
+       WHERE action = 'inbox.download' AND subject_id = ${group_id}::uuid AND entry_kind = 'action'`)
+    expect(rows[0]?.n).toBe(2 - 1)
+    const { rows: receipts } = await h.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM download_receipts`,
+    )
+    expect(receipts[0]?.n).toBe(0)
+  })
+
+  it('several files: one ZIP by an operation', async () => {
+    h.dropbox.tree.addFile(`${LORA_ROOT}/6. Life/Два/01.jpg`, 2100)
+    h.dropbox.tree.addFile(`${LORA_ROOT}/6. Life/Два/02.jpg`, 2200)
+    await scan()
+    await fetchAll()
+    const { group_id } = await groupOfPath(`${LORA_ROOT}/6. Life/Два/01.jpg`)
+    const answer = await download(group_id)
+    expect(answer.json()).toMatchObject({ kind: 'operation' })
+    const [zip] = await drain(h.db, ['export'], { export: draftZipExport(store, undefined) })
+    expect(zip?.state).toBe('succeeded')
+    const operation = await call(app, { method: 'GET', url: answer.json().status_url, as: owner })
+    expect(operation.json()).toMatchObject({ kind: 'source_zip', state: 'done' })
+    const url = operation.json().result.download_url as string
+    const file = await call(app, { method: 'GET', url, as: owner })
+    expect(file.statusCode).toBe(200)
+    expect(String(file.headers['x-accel-redirect'])).toMatch(/^\/_accel\/tmp\/exports\//)
+  })
+})
+
+describe('◆ decisions without their case', () => {
+  it('say so instead of 501', async () => {
+    const { group_id } = await groupOfPath(`${LORA_ROOT}/6. Life/Два/01.jpg`)
+    const decide = (body: object) =>
+      call(app, {
+        method: 'POST',
+        url: `/api/v1/lora/inbox/groups/${group_id}:decide`,
+        as: owner,
+        key: newKey(),
+        body,
+      })
+    expect((await decide({ decision: 'number_taken', keep: true })).json().details).toMatchObject({
+      reason: 'no_dispute',
+    })
+    expect((await decide({ decision: 'split_archive', split: true })).json().details).toMatchObject(
+      {
+        reason: 'no_archive',
+      },
+    )
+    expect(
+      (await decide({ decision: 'substitute_montage', substitute: true })).json().details,
+    ).toMatchObject({ reason: 'no_plan_row' })
   })
 })

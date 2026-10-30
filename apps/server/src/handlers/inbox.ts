@@ -8,6 +8,7 @@ import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { acceptGroup, rejectGroup, reopenGroup } from '../intake/accept'
 import { decide, mergeGroups, retryGroup, splitGroup, updateFiles } from '../intake/decisions'
+import { draftSource, planDraftDownload } from '../intake/draft-files'
 import { ITEM_TO_DB_TYPE, inboxGroup, inboxList } from '../intake/inbox-view'
 import { dropStagedOfGroup } from '../intake/staging'
 import { createUpload } from '../intake/upload'
@@ -272,6 +273,37 @@ export function inboxHandlers(services: Services): HandlerRegistry {
           })
           return inboxGroup(tx, model, id)
         }),
+
+      download: ({ params, ctx }) =>
+        command({ ctx, body: null }, async (tx) => {
+          const model = modelOf(ctx)
+          const id = groupId(params.group)
+          const group = await lockGroup(tx, model.id, id)
+          const view = await inboxGroup(tx, model, id)
+          const plan = await planDraftDownload(tx, services.store, model, id, view.title)
+          // No receipt for a draft (schema §9.2): who downloaded what and when is the journal.
+          await logAction(tx, {
+            modelId: model.id,
+            subjectKind: 'inbox_groups',
+            subjectId: id,
+            subjectLabel: group.title ?? view.title,
+            after: { Скачано: plan.files.map((file) => file.name).join(', ') },
+          })
+          if (plan.answer.kind === 'ready') return plan.answer
+          return {
+            kind: 'operation' as const,
+            operation_id: plan.answer.workId,
+            status_url: `/api/v1/${model.code}/operations/${plan.answer.workId}`,
+          }
+        }),
+
+      source: ({ params, query, ctx }) => {
+        const model = modelOf(ctx)
+        if (query.zip !== undefined && !isUuid(query.zip)) {
+          throw new ApiProblem('not_found', 'Такого архива нет')
+        }
+        return draftSource(db, services.store, model, groupId(params.group), query)
+      },
 
       retry: ({ params, ctx }) =>
         command({ ctx, body: null }, async (tx) => {
