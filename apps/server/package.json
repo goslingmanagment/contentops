@@ -9,20 +9,25 @@
     "openapi": "tsx src/write-openapi.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "seed": "tsx src/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:media": "vitest run --config vitest.media.config.ts"
   },
   "dependencies": {
     "@contentops/contracts": "workspace:*",
     "@contentops/db": "workspace:*",
+    "@contentops/media": "workspace:*",
     "@fastify/proxy-addr": "^5.1.2",
     "@fastify/swagger": "^9.9.2",
     "@node-rs/argon2": "^2.2.2",
     "drizzle-orm": "^0.45.4",
+    "exifr": "7.1.3",
     "fastify": "^5.12.7",
     "fastify-type-provider-zod": "^7.0.0",
     "openapi-types": "^12.1.3",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
+    "sharp": "0.34.2",
+    "sharp-phash": "2.2.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

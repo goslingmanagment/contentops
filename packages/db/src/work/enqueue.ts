@@ -21,6 +21,13 @@ export interface EnqueueInput {
   inputSha256?: Buffer | null
   /** Stream of a periodic work: at most one unfinished row per stream. */
   streamKey?: string | null
+  /** Typed targets inside the model (schema §3.4). */
+  draftId?: string | null
+  sourceRevisionId?: string | null
+  assetVersionId?: string | null
+  manifestId?: string | null
+  receiptId?: string | null
+  generationId?: string | null
 }
 
 export interface EnqueueResult {
@@ -38,13 +45,17 @@ export async function enqueueWork(q: Queryable, input: EnqueueInput): Promise<En
   const inserted = await q.execute(sql`
     INSERT INTO work_operations (
       model_id, kind, work_key, priority, account_id, dataset, scope, window_from, window_to,
-      pipeline_version, recipe_digest, input_sha256, stream_key
+      pipeline_version, recipe_digest, input_sha256, stream_key, draft_id, source_revision_id,
+      asset_version_id, manifest_id, receipt_id, generation_id
     ) VALUES (
       ${input.modelId}::uuid, ${input.kind}, ${input.workKey}, ${input.priority ?? 0},
       ${input.accountId ?? null}::uuid, ${input.dataset ?? null}, ${input.scope ?? null},
       ${input.windowFrom ?? null}::timestamptz, ${input.windowTo ?? null}::timestamptz,
       ${input.pipelineVersion ?? null}, ${input.recipeDigest ?? null},
-      ${input.inputSha256 ?? null}::bytea, ${input.streamKey ?? null}
+      ${input.inputSha256 ?? null}::bytea, ${input.streamKey ?? null},
+      ${input.draftId ?? null}::uuid, ${input.sourceRevisionId ?? null}::uuid,
+      ${input.assetVersionId ?? null}::uuid, ${input.manifestId ?? null}::uuid,
+      ${input.receiptId ?? null}::uuid, ${input.generationId ?? null}::uuid
     )
     ON CONFLICT DO NOTHING
     RETURNING *`)

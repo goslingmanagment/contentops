@@ -12,6 +12,10 @@ import type { Logger } from 'pino'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
 import { createLogger } from './logger'
+import { createMediaEnv } from './media/pipeline'
+import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
+import { BlobStore } from './media/storage'
+import { reconcileStorage } from './media/storage-ops'
 import { buildServer } from './server'
 import { createWorkGate } from './work-gate'
 
@@ -153,13 +157,6 @@ async function waitForStorage(config: Config, logger: Logger): Promise<void> {
   }
 }
 
-/** Handlers of each role; a kind without a handler is never claimed. They come by stage. */
-const HANDLERS: Record<WorkRole, Partial<Record<values.WorkKind, WorkHandler>>> = {
-  worker: {},
-  'worker-video': {},
-  'worker-image': {},
-}
-
 async function runWorker(role: WorkRole, config: Config, logger: Logger): Promise<void> {
   let stopWork: () => Promise<void> = async () => {}
   // A stop while waiting for the disks just exits: nothing is claimed yet.
@@ -173,24 +170,41 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
   const db = createDb(pool)
   const log = (line: string, error?: unknown) =>
     error === undefined ? logger.info(line) : logger.error({ err: error }, line)
-  const handlers = HANDLERS[role]
+  const store = new BlobStore({
+    dataRoot: required(config.DATA_ROOT, 'DATA_ROOT'),
+    derivedRoot: required(config.DERIVED_ROOT, 'DERIVED_ROOT'),
+    tmpRoot: required(config.TMP_ROOT, 'TMP_ROOT'),
+  })
+  const owner = `${role}:${hostname()}:${process.pid}`
+  // Interrupted file operations of this role are settled against the disk before any claim
+  // (schema §9.3 «Операции с файлами»).
+  const reconciled = await reconcileStorage(db, store, `${role}:`)
+  logger.info({ ...reconciled }, 'storage operations reconciled')
+  // The tool versions and recipes of this image; a new pipeline version becomes current.
+  const env = await createMediaEnv({ db, store, lp: config.SVTAV1_LP, owner, log })
+  logger.info({ pipeline_version: env.pipelineVersion, tools: env.versions }, 'media pipeline')
+  const handlers: Partial<Record<values.WorkKind, WorkHandler>> = mediaHandlers(role, env)
   const runner = new WorkRunner({
     db,
     role,
     handlers,
+    owner,
     limits: {
       fetch: config.FETCH_JOBS,
       encode: config.ENCODE_JOBS,
       copy: config.COPY_JOBS,
       image: config.IMAGE_JOBS,
     },
+    ...(role === 'worker-image' ? { dynamicLimits: imageThrottle(config.IMAGE_JOBS) } : {}),
     gate: createWorkGate(),
     log,
   })
+  const stopSweep = role === 'worker' ? startExportSweep(store, log) : () => {}
   // Periodic works (Hub polls, source scans) are scheduled only by `worker`; their streams
   // come with their stages.
   const scheduler = role === 'worker' ? new WorkScheduler({ db, streams: () => [], log }) : null
   stopWork = async () => {
+    stopSweep()
     await scheduler?.stop()
     // Running works go back to the queue without counting the attempt.
     await runner.stop()

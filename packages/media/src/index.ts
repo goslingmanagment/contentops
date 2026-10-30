@@ -8,6 +8,7 @@
 export * from './copies.ts'
 export * from './derive-video.ts'
 export * from './files.ts'
+export * from './frame.ts'
 export * from './master.ts'
 export * from './photo.ts'
 export * from './probe.ts'

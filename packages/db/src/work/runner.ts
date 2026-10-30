@@ -42,6 +42,22 @@ export class LeaseLostError extends Error {
   }
 }
 
+/**
+ * The work waits for another one (an issue waiting for its copies): it goes back to the
+ * queue without counting an attempt and is due again after `afterMs`.
+ */
+export class WorkDeferred extends Error {
+  readonly afterMs: number
+  readonly note: string
+
+  constructor(afterMs: number, note: string) {
+    super(`deferred: ${note}`)
+    this.name = 'WorkDeferred'
+    this.afterMs = afterMs
+    this.note = note
+  }
+}
+
 /** The runner is stopping; the work goes back to the queue without counting an attempt. */
 export class RunnerStoppedError extends Error {
   constructor() {
@@ -94,6 +110,11 @@ export interface WorkRunnerOptions {
    * `IMAGE_JOBS`; `general` for the light kinds of `worker`); default 1 per slot.
    */
   limits?: Partial<Record<WorkSlot, number>>
+  /**
+   * Limits that depend on the moment, asked before each claim (SPEC §12.0: photo batches
+   * slow down while two AV1 encodes run); missing slots keep `limits`.
+   */
+  dynamicLimits?: (db: Db) => Promise<Partial<Record<WorkSlot, number>>>
   gate?: WorkGate
   /** Poll interval; the runner also polls right after a work finishes. Default 1 s. */
   pollMs?: number
@@ -133,6 +154,7 @@ export class WorkRunner {
   private readonly db: Db
   private readonly handlers: Partial<Record<WorkKind, WorkHandler>>
   private readonly limits: Record<WorkSlot, number>
+  private readonly dynamicLimits: WorkRunnerOptions['dynamicLimits']
   private readonly kindsBySlot: Map<WorkSlot, WorkKind[]>
   private readonly gate: WorkGate | undefined
   private readonly pollMs: number
@@ -176,6 +198,7 @@ export class WorkRunner {
       this.kindsBySlot.set(slot, [...(this.kindsBySlot.get(slot) ?? []), kind])
     }
     this.limits = { general: 1, fetch: 1, encode: 1, copy: 1, image: 1, ...options.limits }
+    this.dynamicLimits = options.dynamicLimits
   }
 
   /** Starts polling: every `pollMs` and right after a work finishes. */
@@ -235,10 +258,11 @@ export class WorkRunner {
   }
 
   private async claimAndStart(): Promise<void> {
+    const now = this.dynamicLimits ? await this.dynamicLimits(this.db) : {}
     for (const [slot, kinds] of this.kindsBySlot) {
       if (this.stopping) return
       const busy = [...this.running.values()].filter((job) => job.slot === slot).length
-      const free = this.limits[slot] - busy
+      const free = (now[slot] ?? this.limits[slot]) - busy
       if (free <= 0) continue
       for (const work of await this.claim(kinds, free)) this.begin(work, slot)
     }
@@ -309,6 +333,10 @@ export class WorkRunner {
         await this.finishSuccess(job, result ?? {})
       } catch (error) {
         if (job.lost || this.stopping) return
+        if (error instanceof WorkDeferred) {
+          await this.release(job, 'deferred', undefined, error)
+          return
+        }
         const failure =
           error instanceof WorkError
             ? error
@@ -412,12 +440,22 @@ export class WorkRunner {
     })
   }
 
-  /** Gives the row back: on stop (`returned`) or a switched-off area (`paused`). */
-  private async release(job: Running, outcome: 'returned' | 'paused', key?: string) {
+  /**
+   * Gives the row back without counting the attempt: on stop (`returned`), a switched-off
+   * area (`paused`) or a wait for another work (`deferred`).
+   */
+  private async release(
+    job: Running,
+    outcome: 'returned' | 'paused' | 'deferred',
+    key?: string,
+    deferred?: WorkDeferred,
+  ) {
     await this.outcome(job, outcome, async (tx) => {
       const result = await tx.execute(sql`
         UPDATE work_operations
-           SET state = 'retry_wait', attempt_no = attempt_no - 1, next_attempt_at = now(),
+           SET state = 'retry_wait', attempt_no = attempt_no - 1,
+               next_attempt_at = now() + ${deferred?.afterMs ?? 0}::bigint * interval '1 millisecond',
+               progress_note = coalesce(${deferred?.note ?? null}, progress_note),
                lease_owner = NULL, lease_until = NULL,
                paused_reason = ${key ? `switch_off:${key}` : null}
          WHERE ${this.fence(job)}`)
@@ -428,7 +466,7 @@ export class WorkRunner {
   /** Runs a fenced write with the typed `work.<outcome>` journal event in one transaction. */
   private async outcome(
     job: Running,
-    outcome: 'succeeded' | 'retry' | 'failed' | 'returned' | 'paused',
+    outcome: 'succeeded' | 'retry' | 'failed' | 'returned' | 'paused' | 'deferred',
     write: (tx: Tx) => Promise<boolean>,
   ): Promise<boolean> {
     const { work } = job
@@ -454,7 +492,9 @@ export class WorkRunner {
           after: {
             kind: work.kind,
             attempt:
-              outcome === 'returned' || outcome === 'paused' ? work.attemptNo - 1 : work.attemptNo,
+              outcome === 'returned' || outcome === 'paused' || outcome === 'deferred'
+                ? work.attemptNo - 1
+                : work.attemptNo,
             generation: work.fenceGeneration,
             outcome,
             error_code:

@@ -4,6 +4,7 @@ export {
   LeaseLostError,
   RunnerStoppedError,
   type WorkContext,
+  WorkDeferred,
   WorkError,
   type WorkGate,
   type WorkHandler,

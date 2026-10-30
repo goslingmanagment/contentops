@@ -10,6 +10,7 @@ import { enqueueWork } from './enqueue.ts'
 import {
   LeaseLostError,
   RunnerStoppedError,
+  WorkDeferred,
   WorkError,
   type WorkHandler,
   WorkRunner,
@@ -213,6 +214,63 @@ describe('WorkRunner', () => {
     await succeeded(a.work.id)
     await succeeded(b.work.id)
     expect(peak).toBe(1)
+  })
+
+  it('limits asked at each claim narrow a slot for the moment', async () => {
+    const { modelId } = await newModel()
+    const gate = deferred()
+    const ids = await Promise.all(
+      [1, 2, 3].map(
+        async (n) =>
+          (await enqueueWork(db, { modelId, kind: 'derive_image', workKey: `img:${n}` })).work.id,
+      ),
+    )
+    let concurrent = 0
+    let peak = 0
+    let slow = true
+    runner(
+      'worker-image',
+      {
+        derive_image: async () => {
+          peak = Math.max(peak, ++concurrent)
+          await gate.promise
+          concurrent--
+          return {}
+        },
+      },
+      { limits: { image: 3 }, dynamicLimits: async () => (slow ? { image: 1 } : {}) },
+    )
+    await until(async () => (await Promise.all(ids.map(work))).some((w) => w?.state === 'running'))
+    await new Promise((r) => setTimeout(r, 100))
+    expect(peak).toBe(1)
+    slow = false
+    gate.resolve()
+    for (const id of ids) await succeeded(id)
+  })
+
+  it('a deferred work comes back later without counting an attempt', async () => {
+    const { modelId } = await newModel()
+    const { work: row } = await enqueueWork(db, {
+      modelId,
+      kind: 'export',
+      workKey: `export:${randomUUID()}`,
+    })
+    let calls = 0
+    runner('worker', {
+      export: async () => {
+        calls++
+        if (calls < 3) throw new WorkDeferred(10, 'ждёт копию')
+        return { outputRef: 'done' }
+      },
+    })
+    await succeeded(row.id)
+    expect(calls).toBe(3)
+    expect(await work(row.id)).toMatchObject({ attempt_no: 1, output_ref: 'done' })
+    expect((await events(row.id)).map((e) => e.action)).toEqual([
+      'work.deferred',
+      'work.deferred',
+      'work.succeeded',
+    ])
   })
 
   it('after a crash the work is picked up only when the lease expires', async () => {
