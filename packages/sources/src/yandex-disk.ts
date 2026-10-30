@@ -322,6 +322,8 @@ class YandexDiskSource implements CloudSource {
             path,
             limit: String(this.#pageSize),
             offset: String(offset),
+            // A fixed order keeps offset paging stable.
+            sort: 'name',
             fields: LIST_FIELDS,
             preview_size: this.#previewSize,
           },
