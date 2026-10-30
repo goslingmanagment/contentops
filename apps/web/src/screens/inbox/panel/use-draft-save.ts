@@ -97,6 +97,10 @@ export function useDraftSave(group: InboxGroup) {
     }
   }, [])
 
+  // Правки одной группы уходят по очереди: следующая ждёт ответа на предыдущую и берёт
+  // версию из него. Иначе тип и сразу название (или два тега подряд) дают 412 на самого себя.
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+
   /** `true` — сервер принял правку; `withUndo` — показать «Отменить» в полоске. */
   const save = useCallback(
     (patch: UpdateDraftCommand, withUndo = true): Promise<boolean> => {
@@ -104,8 +108,12 @@ export function useDraftSave(group: InboxGroup) {
       if (field === undefined) {
         return Promise.resolve(true)
       }
-      const previous = withUndo ? previousOf(latest.current.fields, patch) : null
-      return track(field, versionedSave({ patch, previous }, latest.current.version))
+      const next = queue.current.then(() => {
+        const previous = withUndo ? previousOf(latest.current.fields, patch) : null
+        return track(field, versionedSave({ patch, previous }, latest.current.version))
+      })
+      queue.current = next.catch(() => undefined)
+      return next
     },
     [track, versionedSave],
   )
