@@ -162,6 +162,8 @@ export function ItemMenuButton({
   onOpenChange,
   className,
 }: ItemMenuButtonProps) {
+  // Нечего предложить (например, «Только чтение») — кнопки нет, а не пустое меню.
+  if (menu.actions.length === 0 && !menu.dangerActions?.length) return null
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>

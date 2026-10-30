@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { type APIRequestContext, type Locator, type Page, request } from '@playwright/test'
 import { E2E } from '../env.ts'
-import { expect, mskToday, statePath, test, type Who } from '../fixtures.ts'
+import { apiAs, expect, mskToday, statePath, test, type Who } from '../fixtures.ts'
 
 /**
  * Rights by role in the browser (SPEC §11.1, DESIGN §2.3, §3.10; PLAN 4а–4в «Права на
@@ -9,8 +9,10 @@ import { expect, mskToday, statePath, test, type Who } from '../fixtures.ts'
  * данные»). «Только чтение» sees Библиотеку, План and Журнал of its model without uploads,
  * downloads or any action, and the server refuses its commands; a content manager of another
  * model gets «Нет доступа к этой модели» everywhere under `/lora`, never Лора's data; the
- * content manager of Лора works there but owner-only settings are closed to her.
- * Read-only: nothing here changes data.
+ * content manager of Лора works there but owner-only settings are closed to her. «Промо» and
+ * «Заказы» (4б, 4в) are read the same way: handoffs and orders without any action, an order
+ * without its buyer and texts. Nothing here changes data except one order Диана opens for
+ * the reader to look at.
  */
 
 const PPV = 'PPV-073'
@@ -27,7 +29,17 @@ const ACTIONS = [
   'Подтвердить',
   'Настроить',
   'Подготовить передачу',
+  'Подготовить заново',
+  'Новая передача',
+  'Скачать ZIP',
+  'Передано',
+  'Собрать заново',
   'Сделать PPV',
+  'Новый заказ',
+  'Добавить правку',
+  'Привязать сдачу…',
+  'Закрыть заказ',
+  'Снять…',
 ]
 
 async function expectNoActions(scope: Locator) {
@@ -164,6 +176,110 @@ test.describe('«Только чтение» на Лоре', () => {
     await expect(main(reader).getByRole('button', { name: 'Скачать исходник' })).toHaveCount(0)
   })
 
+  test('sees Промо, a collection and its handoff without preparing, downloading or «Передано»', async ({
+    reader,
+  }) => {
+    await reader.goto('/lora/library/promo')
+    await expect(main(reader).getByRole('heading', { name: /^Промо/ })).toBeVisible()
+    await expect(main(reader).getByRole('link', { name: 'Гиф-сайты' })).toBeVisible()
+    await expectNoActions(main(reader))
+
+    // The seed's collection PRM-005 with a handoff to Coraline Red already sent.
+    await reader.goto('/lora/library/promo/gif-sites/PRM-005')
+    await expect(main(reader).getByRole('heading', { name: /^Гифки, сентябрь/ })).toBeVisible()
+    await expectNoActions(main(reader))
+
+    await reader.goto('/lora/library/promo?view=handoffs')
+    const row = main(reader).getByRole('option').filter({ hasText: 'Coraline Red' })
+    await expect(row).toContainText('передано')
+    await row.getByRole('button', { name: /^PRM-005/ }).click()
+    const panel = main(reader).getByRole('complementary', { name: 'Передача PRM-005' })
+    await expect(panel.getByRole('heading', { name: 'Сводка для Telegram' })).toBeVisible()
+    await expectNoActions(panel)
+  })
+
+  test('sees an order without its buyer, texts or any action', async ({ reader }) => {
+    const run = Date.now() % 1_000_000_000
+    const km = await apiAs('km')
+    const order = await km.post<{ id: string }>('/api/v1/lora/orders', {
+      message_url: `https://t.me/c/2627984998/12/${run}`,
+      card_text: `📌 Кастом «чтение ${run}»`,
+      buyer: `фан №${run}`,
+      account: 'lora-2',
+      brief: `чтение ${run}`,
+      duration_raw: '3-5 минут',
+      wants_video: true,
+      wants_photos: 0,
+      deadline: null,
+      fan_name: 'no',
+    })
+    await km.context.dispose()
+
+    await reader.goto('/lora/library/customs?view=orders')
+    const list = main(reader).getByRole('listbox', { name: 'Заказы' })
+    await expect(list.getByRole('option', { name: new RegExp(`чтение ${run}`) })).toBeVisible()
+    await expectNoActions(main(reader))
+    await expect(main(reader).getByText(`фан №${run}`)).toHaveCount(0)
+
+    await reader.goto(`/lora/library/customs/orders/${order.id}`)
+    const panel = main(reader).getByRole('complementary', { name: 'Заказ' })
+    await expect(panel.getByRole('heading', { name: `Кастом «чтение ${run}»` })).toBeVisible()
+    await expect(panel.getByRole('heading', { name: 'Части' })).toBeVisible()
+    await expectNoActions(panel)
+    // Nothing to offer the reader: no «Ещё» with an empty menu.
+    await expect(panel.getByRole('button', { name: 'Ещё' })).toHaveCount(0)
+    await expect(reader.getByText(`фан №${run}`)).toHaveCount(0)
+    await expect(reader.getByText('📌 Кастом')).toHaveCount(0)
+
+    // The server refuses the reader's order commands, and the order itself stays open.
+    for (const [path, body] of [
+      [`/api/v1/lora/orders/${order.id}/revisions`, { text: 'чужая правка', message_url: null }],
+      [`/api/v1/lora/orders/${order.id}:cancel`, { reason: 'чужое решение' }],
+      [`/api/v1/lora/orders/${order.id}:close`, {}],
+    ] as const) {
+      expect(await commandAs('reader', 'POST', path, body)).toEqual({
+        status: 403,
+        code: 'forbidden',
+      })
+    }
+    const create = await commandAs('reader', 'POST', '/api/v1/lora/orders', {
+      message_url: `https://t.me/c/2627984998/12/${run + 1}`,
+      brief: 'чужой заказ',
+    })
+    expect(create).toEqual({ status: 403, code: 'forbidden' })
+  })
+
+  test('the server refuses the reader’s promo commands: add, prepare, «Передано»', async () => {
+    const add = await commandAs('reader', 'POST', '/api/v1/lora/promo/collections:add', {
+      channel: 'reddit',
+      collection: 'new',
+      title: null,
+      members: [{ item_id: 'PPV-073', file_key: 'teaser' }],
+    })
+    expect(add).toEqual({ status: 403, code: 'forbidden' })
+    const prepare = await commandAs(
+      'reader',
+      'POST',
+      '/api/v1/lora/promo/collections/PRM-005/handoffs',
+      { contractor_id: 'none', strip_metadata: true, exclude_already_handed: false, members: null },
+    )
+    expect(prepare).toEqual({ status: 403, code: 'forbidden' })
+    const reader = await apiAs('reader')
+    const handoffs = await reader.get<{ items: { id: string; collection_id: string }[] }>(
+      '/api/v1/lora/promo/handoffs',
+    )
+    await reader.context.dispose()
+    const sent = handoffs.items.find((item) => item.collection_id === 'PRM-005')
+    expect(sent).toBeDefined()
+    const mark = await commandAs(
+      'reader',
+      'POST',
+      `/api/v1/lora/promo/collections/PRM-005/handoffs/${sent?.id}:mark-sent`,
+      {},
+    )
+    expect(mark).toEqual({ status: 403, code: 'forbidden' })
+  })
+
   test('the server refuses the reader’s commands: download, markup, plan', async () => {
     const download = await commandAs('reader', 'POST', `/api/v1/lora/i/${PPV}/downloads`, {
       kind: 'master',
@@ -221,6 +337,9 @@ test.describe('Контент-менеджер Ари', () => {
       `/lora/plan/${mskToday()}`,
       '/lora/journal',
       '/lora/inbox',
+      '/lora/library/promo',
+      '/lora/library/promo/gif-sites/PRM-005',
+      '/lora/library/customs?view=orders',
     ]) {
       await stranger.goto(path)
       await forbidden(stranger)
@@ -238,6 +357,8 @@ test.describe('Контент-менеджер Ари', () => {
     expect(await statusOf('stranger', `/api/v1/lora/i/${PPV}`)).toBe(403)
     expect(await statusOf('stranger', '/api/v1/lora/i/PPV-999')).toBe(403)
     expect(await statusOf('stranger', '/api/v1/lora/index')).toBe(403)
+    expect(await statusOf('stranger', '/api/v1/lora/orders')).toBe(403)
+    expect(await statusOf('stranger', '/api/v1/lora/promo/handoffs')).toBe(403)
     const download = await commandAs('stranger', 'POST', `/api/v1/lora/i/${PPV}/downloads`, {
       kind: 'master',
       strip_metadata: false,
