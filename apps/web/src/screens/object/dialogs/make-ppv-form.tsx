@@ -24,11 +24,13 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { UploadIcon } from 'lucide-react'
 import { useId, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
+import { useActionToast } from '@/actions/action-toast-context'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
 import { useApi } from '@/data/api-session'
 import { useItem } from '@/data/object'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { FilePicker } from '@/shell/upload/file-picker'
+import { useUploads } from '@/shell/upload/upload-context'
 import { SourceLine } from './source-line'
 import { useCreatedPpv } from './use-created-ppv'
 
@@ -98,6 +100,29 @@ function MakePpvFields({ source, entry, onDone }: MakePpvFormProps & { entry: Ca
   })
   const [kind, masterSource] = form.watch(['kind', 'source'])
   const upload = masterSource === 'upload'
+  const { startUpload } = useUploads()
+  const toast = useActionToast()
+
+  // Свой монтаж идёт в лоток с целью «PPV из CUS-…» и принимается при загрузке (SPEC §6.1):
+  // номер PPV выдаётся, когда файл на сервере и проверен; лоток скажет «принято → PPV-077».
+  const submit = (body: MakePpvCommand) => {
+    if (body.source === 'upload' && montageFile) {
+      startUpload([montageFile], {
+        target: {
+          kind: 'ppv-from',
+          itemId: source,
+          title: `PPV из ${source}`,
+          ppvKind: body.kind,
+          ppvTitle: body.title,
+        },
+        kind: 'master_version',
+      })
+      toast.show({ message: `Монтаж загружается → PPV из ${source} · номер после проверки` })
+      onDone()
+      return
+    }
+    create.start(body)
+  }
 
   const chooseMontage = (files: readonly File[]) => {
     // Монтаж один: новый выбор заменяет прежний.
@@ -109,7 +134,7 @@ function MakePpvFields({ source, entry, onDone }: MakePpvFormProps & { entry: Ca
   }
 
   return (
-    <form onSubmit={form.handleSubmit(create.start)} className="flex flex-col gap-5">
+    <form onSubmit={form.handleSubmit(submit)} className="flex flex-col gap-5">
       <DialogHeader>
         <DialogTitle>Сделать PPV из {source}</DialogTitle>
         <DialogDescription className="sr-only">Вид, название и мастер</DialogDescription>
