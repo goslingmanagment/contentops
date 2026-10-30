@@ -39,6 +39,7 @@ export interface DisputeAnswer {
   reason?: string
   type?: ItemType
   number?: number
+  contractor?: string
 }
 
 export function useLegacyReview(model: ModelCode) {

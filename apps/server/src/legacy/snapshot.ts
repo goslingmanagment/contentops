@@ -27,6 +27,8 @@ export interface SnapshotWork {
 export interface SnapshotEntry extends LegacyListingEntry {
   /** Root-relative NFC path, the key of the parsed entry. */
   relative: string
+  /** The path at the source as the snapshot saw it (`disk:/1. PPV/…`). */
+  raw: string
   objectId: string
   revisionId: string | null
 }
@@ -137,6 +139,7 @@ export async function snapshotListing(
     out.push({
       path,
       relative: path,
+      raw: row.path,
       isDir: true,
       objectId: row.object_id,
       revisionId: null,
@@ -152,6 +155,7 @@ export async function snapshotListing(
     out.push({
       path,
       relative: path,
+      raw: row.path,
       isDir: false,
       objectId: row.object_id,
       revisionId: row.revision_id,

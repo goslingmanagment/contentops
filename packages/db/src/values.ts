@@ -532,6 +532,8 @@ export const draftBlockedReasons = [
   'which_frame',
   /** A montage for a plan row that no longer waits: ◆ «Подставить монтаж в строку?». */
   'row_changed',
+  /** An archive with several folders inside: ◆ «Разделить архив?» (SPEC §6.3). */
+  'archive_split',
 ] as const
 export type DraftBlockedReason = (typeof draftBlockedReasons)[number]
 

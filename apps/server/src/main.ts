@@ -18,6 +18,7 @@ import { intakeMediaHandlers } from './intake/media'
 import { scanHandler, scanStreams } from './intake/scan'
 import { envSourceFactory } from './intake/source-client'
 import { startStagingSweep } from './intake/staging'
+import { unpackArchiveHandler } from './legacy/archive'
 import { importParseHandler } from './legacy/parse'
 import { createLogger } from './logger'
 import { startGenerationCollector } from './media/collector'
@@ -191,6 +192,10 @@ function intakeHandlers(
   mediaExport: WorkHandler | undefined,
 ): Partial<Record<values.WorkKind, WorkHandler>> {
   const factory = envSourceFactory(process.env)
+  const legacyCopy =
+    config.LEGACY_SOURCE_ROOT && config.LEGACY_COPY_LIST
+      ? { root: config.LEGACY_SOURCE_ROOT, listFile: config.LEGACY_COPY_LIST }
+      : null
   return {
     scan: scanHandler(factory),
     // «Скачать исходник» of several files is one ZIP; other exports stay the pipeline's.
@@ -204,7 +209,10 @@ function intakeHandlers(
         warnGb: config.SPACE_WARN_GB,
         stopGb: config.SPACE_STOP_GB,
       },
+      ...(legacyCopy ? { legacyCopy } : {}),
     }),
+    // Archives of the old corpus, unpacked once per their bytes (SPEC §6.3).
+    unpack_archive: unpackArchiveHandler({ factory, store, ...(legacyCopy ? { legacyCopy } : {}) }),
   }
 }
 

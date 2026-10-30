@@ -192,6 +192,9 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
       if (revision.created) stats.revisions += 1
       observed.push({ entry, objectId: object.id, revisionId: revision.id })
       if (input.drafts === false) continue
+      // A revision a snapshot pinned belongs to the import of the old corpus (SPEC §6.3): its
+      // draft and group come from there; the scan takes only what changed after the snapshot.
+      if (revision.frozen) continue
       const media = mediaKindOf(entry.name, entry.mediaType)
       if (!media) continue
       const groupId = await groupOf(tx, input, entry, media === 'video')
@@ -307,6 +310,8 @@ export interface RevisionResult {
   id: string
   created: boolean
   previousId: string | null
+  /** Pinned by a snapshot `scan:freeze`. */
+  frozen?: boolean
 }
 
 const hex = (value: string | null) => (value ? Buffer.from(value, 'hex') : null)
@@ -325,8 +330,10 @@ async function observeRevision(
     md5: string | null
     remote_sha256: string | null
     content_hash: string | null
+    frozen: boolean
   }>(sql`
-    SELECT r.id, r.sequence_no, r.byte_size, encode(r.md5, 'hex') AS md5,
+    SELECT r.id, r.sequence_no, r.byte_size, r.frozen_by_work_id IS NOT NULL AS frozen,
+           encode(r.md5, 'hex') AS md5,
            encode(r.remote_sha256, 'hex') AS remote_sha256,
            encode(r.content_hash, 'hex') AS content_hash
       FROM source_objects o
@@ -342,7 +349,7 @@ async function observeRevision(
             entry.sha256 === null ||
             current.remote_sha256 === entry.sha256.toLowerCase())
         : current.content_hash === (entry.contentHash?.toLowerCase() ?? null)
-    if (same) return { id: current.id, created: false, previousId: null }
+    if (same) return { id: current.id, created: false, previousId: null, frozen: current.frozen }
   }
   const inserted = await tx.execute<{ id: string }>(sql`
     INSERT INTO source_revisions (

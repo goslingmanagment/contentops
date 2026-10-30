@@ -143,6 +143,16 @@
   `pnpm contentops import parse --model lora --wait`: заявки, номера, спорное в «Разбор
   старого», затем резерв счётчиков. До прохода приёмка не выдаёт номера типов с легаси
   (`number_not_issued`); повтор с той же версией правил ничего не меняет.
+- Байты старого корпуса — по корням в порядке SPEC §6.3 (PPV → секстинги → …): `pnpm
+  contentops import bytes --model lora --root "1. PPV" --wait` (`--folder` — одна папка).
+  Перед каждой партией обновить список копии (`Start-ScheduledTask ContentOps-CopyList`):
+  воркер читает `/ydisk` (копия, только чтение) лишь там, где список говорит «байты на
+  месте» и совпали размер и MD5; остальное — через API. Группа без спора принимается сама;
+  спорное — в «Разбор старого» и ◆ в «Приехало». Повтор команды принимает то, что стало
+  готово, и больше ничего не меняет. Партия — ключ `import_batch_scope` модели (список
+  `resource_id`): остальное получает черновик «отложено» без скачивания. Сверка со снимком —
+  `pnpm contentops import reconcile --model lora --wait --json`, Markdown — `ops.js
+  import-report lora reconcile > сверка.md` (вне git).
 - Без диска E: (или любого из `REQUIRE_HOST_MOUNTS`) `ops/up.sh` поднимает `db`, `web` и
   `proxy`, а воркеры — нет; `/healthz` красный с `volumes`. Проверка в контейнере — файл-метка
   `.contentops-volume` в корне хранилища: её пишет `ops/up.sh` после `mountpoint -q`; без

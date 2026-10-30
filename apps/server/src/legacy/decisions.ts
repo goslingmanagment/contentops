@@ -4,6 +4,8 @@ import { logAction, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { isUuid } from '../commands'
 import { ApiProblem } from '../errors'
+import { autoAcceptForObjects } from './auto-accept'
+import { importPacks } from './promo'
 import { collisions, type NumberUnit, numberUnits, registryOnly } from './review'
 
 /**
@@ -108,6 +110,16 @@ async function resolveNumbers(
     invalid('Номер остаётся только у одной папки', { folders: [...keeping] })
   }
   await decideUnits(tx, modelId, actorId, changes)
+  // Bytes waiting for this number may be accepted now (SPEC §6.4: the number decides first).
+  const { rows: model } = await tx.execute<{ code: string; title: string }>(sql`
+    SELECT code, title FROM models WHERE id = ${modelId}::uuid`)
+  if (model[0]) {
+    await autoAcceptForObjects(
+      tx,
+      { id: modelId, code: model[0].code, name: model[0].title },
+      changes.map((change) => change.unit.object_id),
+    )
+  }
   return title
 }
 
@@ -156,6 +168,18 @@ async function resolveCase(
     resolution.type = ITEM_TYPE_INFO[body.type].prefix
     resolution.number = body.number
   }
+  // «Пак подрядчику…»: whose pack, by the name «Подрядчики» has (the handoff needs it).
+  if (row.kind === 'smm_folder' && body.option === 'pack') {
+    if (!body.contractor) invalid('Нужен подрядчик', { field: 'contractor' })
+    const { rows: found } = await tx.execute<{ id: string; name: string }>(sql`
+      SELECT id, name FROM contractors
+       WHERE model_id = ${modelId}::uuid AND lower(name) = lower(${body.contractor})
+         AND archived_at IS NULL`)
+    const contractor = found[0]
+    if (!contractor) invalid(`Нет такого подрядчика: ${body.contractor}`, { field: 'contractor' })
+    resolution.contractor = contractor.name
+    resolution.contractor_id = contractor.id
+  }
   // «Игнорировать» a name: its unparsed fragments leave the queue with the case.
   const dismissed = body.option === 'ignore'
   await tx.execute(sql`
@@ -169,6 +193,12 @@ async function resolveCase(
       UPDATE legacy_claims SET resolution = 'ignored', row_version = row_version + 1
        WHERE model_id = ${modelId}::uuid AND source_object_id = ${row.source_object_id}::uuid
          AND claim_kind = 'unknown' AND resolution = 'pending'`)
+  }
+  // A pack whose collection is already imported becomes its handoff now.
+  if (row.kind === 'smm_folder' && body.option === 'pack') {
+    const { rows: model } = await tx.execute<{ code: string; title: string }>(sql`
+      SELECT code, title FROM models WHERE id = ${modelId}::uuid`)
+    await importPacks(tx, { id: modelId, code: model[0]?.code ?? '', name: model[0]?.title ?? '' })
   }
   return title
 }

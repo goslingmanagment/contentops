@@ -4,6 +4,7 @@ import { enqueueWork, type Tx, type values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
+import { splitArchive } from '../legacy/split'
 import { lockOrder } from '../orders/writes'
 import { acceptGroup, lockGroupForDecision, lockOpenDrafts, rejectGroup } from './accept'
 import { queueMedia } from './fetch'
@@ -317,14 +318,16 @@ export async function decide(
       await acceptRowMontage(tx, model, actor, groupId, row, body.substitute)
       break
     }
-    case 'split_archive':
-      // Archives are unpacked once by the import (SPEC §6.3, stage 3); intake keeps the archive
-      // as a fact of the source and offers no draft for it, so there is nothing to split here.
-      throw new ApiProblem(
-        'accept_blocked',
-        'Архивы распаковывает импорт старого Я.Диска (этап 3): в этой группе архива нет',
-        { reason: 'no_archive' },
-      )
+    case 'split_archive': {
+      // The import unpacks an archive once (SPEC §6.3): its parts become groups, or stay one.
+      if (!drafts.some((draft) => draft.blocked_reason === 'archive_split')) {
+        throw new ApiProblem('accept_blocked', 'В этой группе нет архива с несколькими папками', {
+          reason: 'no_archive',
+        })
+      }
+      await splitArchive(tx, model, groupId, body.split)
+      break
+    }
   }
   await bump(tx, model, groupId)
 }

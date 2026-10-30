@@ -239,7 +239,13 @@ function operationKind(row: WorkRowView): OperationKind {
     case 'verify_blobs':
       return 'verify_blobs'
     case 'import_parse':
-      return row.dataset === 'plan' ? 'legacy_plan' : 'legacy_parse'
+      return row.dataset === 'plan'
+        ? 'legacy_plan'
+        : row.dataset === 'bytes'
+          ? 'legacy_bytes'
+          : row.dataset === 'reconcile'
+            ? 'legacy_reconcile'
+            : 'legacy_parse'
     default:
       return 'platform_copy'
   }

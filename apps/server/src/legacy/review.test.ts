@@ -302,7 +302,15 @@ describe('the cases of the pass', () => {
   it('an SMM folder is marked as a pack, a hole is reserved by a find with its reason', async () => {
     const r = await review()
     const smm = r.disputes.find((d) => d.kind === 'smm_pack') as Dispute
-    expect((await resolve(smm.id, { option: 'pack' })).statusCode).toBe(200)
+    // A pack names its contractor, as «Подрядчики» has it.
+    expect((await resolve(smm.id, { option: 'pack' })).statusCode).toBe(400)
+    await withActorTx(h.db, ctx(), (tx) =>
+      tx.execute(sql`
+        INSERT INTO contractors (model_id, name) VALUES (${h.modelId}::uuid, 'Zen Promo')`),
+    )
+    expect((await resolve(smm.id, { option: 'pack', contractor: 'zen promo' })).statusCode).toBe(
+      200,
+    )
     const hole = byTitle(r, 'SXT-010')
     expect((await resolve(hole.id, { option: 'reserve' })).statusCode).toBe(400)
     const done = await resolve(hole.id, {

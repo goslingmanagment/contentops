@@ -19,6 +19,10 @@ export interface ZipMember {
   /** CRC-32 of the uncompressed bytes as the archive records it. */
   crc32: number
   encrypted: boolean
+  /** Compression method: 0 stored, 8 deflate; the rest cannot be unpacked here. */
+  method: number
+  /** Offset of the member's local header in the file (data in front of the archive counted). */
+  localOffset: number
   /** UTC from the timestamp extra fields; else the DOS time read in the model's zone. */
   modifiedAt: string | null
 }
@@ -114,6 +118,8 @@ export async function readZipToc(
   if (central.length !== centralSize) throw new ZipTocError('short_read')
 
   const members = parseCentral(central, timezone)
+  // Local headers sit after the same data in front of the archive.
+  for (const member of members) member.localOffset += shift
   // Without ZIP64 the count is 16-bit: writers that ignore the limit let it wrap.
   const counted = zip64 ? members.length : members.length % 0x10000
   if (counted !== count) throw new ZipTocError('entry_count_mismatch')
@@ -133,6 +139,8 @@ function parseCentral(central: Buffer, timezone: string): ZipMember[] {
     const crc = central.readUInt32LE(pos + 16)
     let compressedSize = central.readUInt32LE(pos + 20)
     let size = central.readUInt32LE(pos + 24)
+    const method = central.readUInt16LE(pos + 10)
+    let localOffset = central.readUInt32LE(pos + 42)
     const nameLength = central.readUInt16LE(pos + 28)
     const extraLength = central.readUInt16LE(pos + 30)
     const commentLength = central.readUInt16LE(pos + 32)
@@ -158,6 +166,7 @@ function parseCentral(central: Buffer, timezone: string): ZipMember[] {
         }
         if (size === MAX32) size = next()
         if (compressedSize === MAX32) compressedSize = next()
+        if (localOffset === MAX32) localOffset = next()
       } else if (id === 0x7075 && body.length > 5 && body[0] === 1) {
         // Info-ZIP Unicode path: valid while it was made for this very name.
         if (body.readUInt32LE(1) === crc32(rawName)) {
@@ -186,6 +195,8 @@ function parseCentral(central: Buffer, timezone: string): ZipMember[] {
       compressedSize,
       crc32: crc,
       encrypted: (flags & 1) !== 0,
+      method,
+      localOffset,
       modifiedAt: modifiedAt ?? dosTime(date, time, timezone),
     })
     pos = end

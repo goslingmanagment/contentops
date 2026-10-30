@@ -13,7 +13,7 @@ import { enqueueFreeze } from '../intake/freeze'
 import { scanHandler } from '../intake/scan'
 import type { IntakeHarness, WorkOutcome } from '../intake/testing'
 import { createWorkGate } from '../work-gate'
-import { enqueueImport, type ImportMode, importParseHandler } from './parse'
+import { enqueueImport, type ImportRun, importParseHandler } from './parse'
 import { snapshotOf } from './snapshot'
 
 export { plantDisk, zipOf } from './fixture-disk'
@@ -70,7 +70,7 @@ const ACTOR = { actor: SYSTEM_ACTOR('test'), action: 'test.enqueue' }
 export async function runImport(
   db: Db,
   modelId: string,
-  mode: ImportMode,
+  mode: ImportRun,
 ): Promise<WorkOutcome & { created: boolean }> {
   const { work, created } = await withActorTx(
     db,

@@ -35,7 +35,7 @@ import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs
  * report as Markdown, for the owner to read, only by this command and never into git — it
  * holds the real names of the disk:
  *
- *   docker compose exec -T worker node dist/ops.js import-report <model> [work id] > plan.md
+ *   docker compose exec -T worker node dist/ops.js import-report <model> [plan|reconcile|<work>] > x.md
  */
 
 const USAGE = `usage:
@@ -45,7 +45,7 @@ const USAGE = `usage:
   ops.js render <sha256> --model <code> [--keep-metadata]
   ops.js freeze <model> <source label> [YYYY-MM-DD] [--wait]
   ops.js freeze-export <model> [YYYY-MM-DD]
-  ops.js import-report <model> [work id]   (the last dry run, or this import work)`
+  ops.js import-report <model> [plan|reconcile|<work id>]   (Markdown, out of git)`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)

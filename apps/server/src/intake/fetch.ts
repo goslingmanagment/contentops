@@ -16,6 +16,7 @@ import {
   sourcePath,
 } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
+import { copyFromLocal, type LegacyCopyConfig } from '../legacy/copy'
 import type { BlobStore } from '../media/storage'
 import { extOfName, shaBytes } from '../media/storage'
 import { readHostSpace, type SpaceOptions } from '../space'
@@ -45,6 +46,11 @@ export interface FetchDeps {
   space?: SpaceOptions
   /** Pauses between resumes inside one attempt (tests pass one that does not sleep). */
   retry?: RetryPolicy
+  /**
+   * The local Я.Диск copy (`LEGACY_SOURCE_ROOT` + the Windows list): the old corpus is read
+   * from it where the list says the bytes are there (SPEC §6.3); the rest through the API.
+   */
+  legacyCopy?: LegacyCopyConfig
 }
 
 interface RevisionRow extends Record<string, unknown> {
@@ -63,6 +69,7 @@ interface RevisionRow extends Record<string, unknown> {
   source_sha256: string | null
   draft_id: string | null
   draft_state: string | null
+  draft_origin: string | null
 }
 
 async function revisionOf(db: Db, modelId: string, revisionId: string): Promise<RevisionRow> {
@@ -71,7 +78,8 @@ async function revisionOf(db: Db, modelId: string, revisionId: string): Promise<
            o.current_name, o.current_revision_id, r.byte_size, encode(r.md5, 'hex') AS md5,
            encode(r.remote_sha256, 'hex') AS remote_sha256,
            encode(r.content_hash, 'hex') AS content_hash, r.remote_rev,
-           encode(r.source_sha256, 'hex') AS source_sha256, d.id AS draft_id, d.state AS draft_state
+           encode(r.source_sha256, 'hex') AS source_sha256, d.id AS draft_id, d.state AS draft_state,
+           d.origin AS draft_origin
       FROM source_revisions r
       JOIN source_objects o ON o.model_id = r.model_id AND o.id = r.source_object_id
       LEFT JOIN inbox_drafts d ON d.model_id = r.model_id AND d.source_revision_id = r.id
@@ -154,6 +162,36 @@ export function fetchHandler(deps: FetchDeps): WorkHandler {
     }
     const entry = entryOf(row, source.kind, client.root)
     const dir = join(deps.store.roots.tmpRoot, 'fetch')
+    const ext = extOfName(row.current_name) || 'bin'
+    if (deps.legacyCopy && row.draft_origin === 'legacy_import' && source.kind === 'yandex_disk') {
+      const copied = await copyFromLocal(deps.legacyCopy, {
+        apiPath: row.current_path,
+        size: Number(row.byte_size),
+        md5: row.md5,
+        sha256: row.remote_sha256,
+        target: join(dir, `${row.revision_id}.copy${extOf(row.current_name)}`),
+        signal,
+      })
+      if (copied.status === 'copied') {
+        await mkdir(deps.store.stagingDir, { recursive: true })
+        await rename(copied.path, join(deps.store.stagingDir, `${copied.sha256}.${ext}`))
+        const sha = copied.sha256
+        return {
+          outputRef: `staging/${sha}.${ext}`,
+          report: { sha256: sha, bytes: copied.size, route: 'local_copy' },
+          commit: async (tx) => {
+            await tx.execute(sql`
+              UPDATE source_revisions
+                 SET source_sha256 = ${shaBytes(sha)}, verified_at = now(),
+                     verified_route = 'local_copy'
+               WHERE model_id = ${modelId}::uuid AND id = ${row.revision_id}::uuid
+                 AND source_sha256 IS NULL`)
+            await afterFetch(tx, modelId, draftId, sha, work.id)
+          },
+        }
+      }
+      await checkpoint({ progress: { num: 0, note: `копия: ${copied.reason}, качается` } })
+    }
     let result: Awaited<ReturnType<typeof downloadVerified>>
     try {
       result = await downloadVerified(client, entry, {
@@ -207,7 +245,6 @@ export function fetchHandler(deps: FetchDeps): WorkHandler {
         },
       }
     }
-    const ext = extOfName(row.current_name) || 'bin'
     await mkdir(deps.store.stagingDir, { recursive: true })
     await rename(result.path, join(deps.store.stagingDir, `${result.sha256}.${ext}`))
     const sha = result.sha256
@@ -288,6 +325,15 @@ export async function afterFetch(
       ON CONFLICT (model_id, kind, dedup_key) DO NOTHING`)
   }
   await queueMedia(tx, modelId, draftId, sha, mediaKindOf(draft.path ?? '', null), workId)
+}
+
+/** An accepted version of the model with these bytes, by hex SHA-256 (the import asks it). */
+export async function acceptedDuplicate(
+  tx: Tx,
+  modelId: string,
+  sha: string,
+): Promise<DuplicateRow | null> {
+  return (await acceptedHolder(tx, modelId, shaBytes(sha))) ?? null
 }
 
 /** The oldest accepted version of the model holding these bytes (SPEC §6.2), if any. */

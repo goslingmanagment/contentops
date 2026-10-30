@@ -25,7 +25,9 @@ import {
 } from '@contentops/legacy'
 import { sql } from 'drizzle-orm'
 import { localDay, looseGroupOf, mediaKindOf, UPLOAD_CLUSTER_MS } from '../intake/grouping'
+import { BYTES_DATASET, importBytes } from './bytes'
 import { type ImportInputs, readInputs } from './inputs'
+import { RECONCILE_DATASET, reconcileWork } from './reconcile'
 import { type SnapshotEntry, type SnapshotWork, snapshotListing, snapshotOf } from './snapshot'
 
 /**
@@ -62,21 +64,37 @@ const BATCH = 1000
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 16)
 
-/** Puts the pass (or the dry run) over a finished snapshot; a repeat finds the same work. */
+/** What the import works do with a snapshot: the pass, the dry run, the bytes, the reconciliation. */
+export type ImportRun = ImportMode | 'bytes' | 'reconcile'
+
+/**
+ * Puts an import work over a finished snapshot. The pass is one per snapshot and rules (a repeat
+ * finds it); the dry run, the bytes and the reconciliation run anew for every request.
+ */
 export async function enqueueImport(
   tx: Tx,
-  input: { modelId: string; mode: ImportMode; snapshot: SnapshotWork; nonce: string },
+  input: {
+    modelId: string
+    mode: ImportRun
+    snapshot: SnapshotWork
+    nonce: string
+    input?: unknown
+  },
 ): Promise<{ work: WorkRow; created: boolean }> {
+  const workKey =
+    input.mode === 'parse'
+      ? parseKey(input.snapshot.id)
+      : input.mode === 'plan'
+        ? planKey(input.snapshot.id, input.nonce)
+        : `import:${input.mode}:${input.snapshot.id}:${input.nonce}`
   return enqueueWork(tx, {
     modelId: input.modelId,
     kind: IMPORT_KIND,
-    workKey:
-      input.mode === 'parse'
-        ? parseKey(input.snapshot.id)
-        : planKey(input.snapshot.id, input.nonce),
+    workKey,
     dataset: input.mode,
     scope: input.snapshot.id,
     priority: 20,
+    ...(input.input === undefined ? {} : { checkpoint: { input: input.input } }),
   })
 }
 
@@ -96,6 +114,9 @@ export function importParseHandler(): WorkHandler {
     const { work, db } = ctx
     const modelId = work.modelId
     if (!modelId) throw new WorkError('permanent', 'no_model', 'разбор легаси без модели')
+    // The byte half of the import and the reconciliation are works of the same kind.
+    if (work.dataset === BYTES_DATASET) return importBytes(ctx)
+    if (work.dataset === RECONCILE_DATASET) return reconcileWork(ctx)
     const mode: ImportMode = work.dataset === 'plan' ? 'plan' : 'parse'
     const snapshot = await snapshotOf(db, modelId, work.scope)
     if (!snapshot) {

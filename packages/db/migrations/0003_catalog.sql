@@ -602,7 +602,7 @@ CREATE TABLE inbox_drafts (
   duplicate_of_version_id uuid,
   blocked_reason text CHECK (blocked_reason IN (
     'ambiguous_order', 'video_in_set', 'id_collision', 'cross_model_dup', 'master_failed',
-    'needs_type', 'source_unavailable', 'deferred', 'which_frame', 'row_changed'
+    'needs_type', 'source_unavailable', 'deferred', 'which_frame', 'row_changed', 'archive_split'
   )),
   applied_item_id uuid,
   applied_version_id uuid,

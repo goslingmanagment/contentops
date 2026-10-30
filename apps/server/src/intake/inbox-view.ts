@@ -169,6 +169,7 @@ const DECISION: Partial<Record<values.DraftBlockedReason, InboxGroup['state']>> 
   cross_model_dup: { kind: 'decision', decision: 'cross_model' },
   which_frame: { kind: 'decision', decision: 'which_frame' },
   row_changed: { kind: 'decision', decision: 'substitute_montage' },
+  archive_split: { kind: 'decision', decision: 'split_archive' },
 }
 
 /** The stage of a draft that is still being prepared (DESIGN §5.3). */
@@ -657,6 +658,15 @@ export async function inboxList(
       view(model.code, group, byGroup.get(group.id) ?? [], filter, now, extras.get(group.id)),
     )
     .filter((item): item is InboxGroup => item !== null)
+    // Drafts of the old corpus without a dispute stay out of «Новое» (DESIGN §4.9): the
+    // import accepts them itself; a decision or an error shows here.
+    .filter((item) => {
+      if (filter !== 'active') return true
+      const group = groups.find((candidate) => candidate.id === item.id)
+      const evidence = group?.evidence as { legacy?: unknown; superseded?: boolean } | null
+      if (evidence?.superseded) return false
+      return !evidence?.legacy || item.state.kind === 'decision' || item.state.kind === 'error'
+    })
     .sort((left, right) => {
       const rank = (item: InboxGroup) => SECTION[item.state.kind as keyof typeof SECTION] ?? 3
       if (filter === 'active' && rank(left) !== rank(right)) return rank(left) - rank(right)

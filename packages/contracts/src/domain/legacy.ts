@@ -80,9 +80,10 @@ export const DisputeOptionSchema = z.object({
   label: z.string(),
   /**
    * The option needs words before it is sent: `reason` — why («Игнорировать…», «Резерв по
-   * находке…»), `type_number` — the type and the number of the object («Задать тип и номер…»).
+   * находке…»), `type_number` — the type and the number of the object («Задать тип и номер…»),
+   * `contractor` — whose pack it was («Пак подрядчику…»).
    */
-  input: z.enum(['reason', 'type_number']).nullable().optional(),
+  input: z.enum(['reason', 'type_number', 'contractor']).nullable().optional(),
 })
 export type DisputeOption = z.infer<typeof DisputeOptionSchema>
 

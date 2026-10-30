@@ -108,4 +108,48 @@ export const aliases: Record<string, Alias> = {
       return { flags: { model: one(flags, 'model'), ...(snapshot ? { snapshot } : {}) } }
     },
   },
+  /**
+   * The bytes of the old corpus root by root (SPEC §6.3): `--root "1. PPV"` (can repeat),
+   * `--folder` for one folder; groups without a dispute are accepted by the import itself.
+   */
+  'import.bytes': {
+    summary: 'bytes of the old corpus for roots (or one folder) through ordinary intake',
+    route: 'legacy.bytes',
+    flags: {
+      model: 'model code',
+      root: 'top folder of the old disk, e.g. "1. PPV" (can repeat)',
+      folder: 'one folder inside the roots (optional)',
+      snapshot: 'work id of a finished snapshot (default: the latest)',
+      force: '"true" to go out of the order of SPEC §6.3',
+    },
+    toRoute: (flags) => {
+      const roots = flags.root ?? []
+      if (roots.length === 0) throw new UsageError('--root is required')
+      const folder = optional(flags, 'folder')
+      const snapshot = optional(flags, 'snapshot')
+      const force = optional(flags, 'force')
+      return {
+        flags: {
+          model: one(flags, 'model'),
+          root: roots,
+          ...(folder ? { folder } : {}),
+          ...(snapshot ? { snapshot } : {}),
+          ...(force ? { force } : {}),
+        },
+      }
+    },
+  },
+  /** The reconciliation with the snapshot (SPEC §6.3), the exit artifact of stage 3. */
+  'import.reconcile': {
+    summary: 'reconciliation of the import with the snapshot (report in the operation)',
+    route: 'legacy.reconcile',
+    flags: {
+      model: 'model code',
+      snapshot: 'work id of a finished snapshot (default: the latest)',
+    },
+    toRoute: (flags) => {
+      const snapshot = optional(flags, 'snapshot')
+      return { flags: { model: one(flags, 'model'), ...(snapshot ? { snapshot } : {}) } }
+    },
+  },
 }

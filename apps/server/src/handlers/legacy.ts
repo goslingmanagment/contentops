@@ -8,7 +8,7 @@ import { resolveDispute } from '../legacy/decisions'
 import { writeInputs } from '../legacy/inputs'
 import { saveLabelTargets } from '../legacy/labels'
 import { materializeClaims } from '../legacy/materialize'
-import { enqueueImport, type ImportMode } from '../legacy/parse'
+import { enqueueImport, type ImportRun } from '../legacy/parse'
 import { legacyReview } from '../legacy/review'
 import { snapshotOf } from '../legacy/snapshot'
 import type { Services } from '../services'
@@ -35,8 +35,15 @@ function accepted(model: ModelScope, id: string): OperationAccepted {
 
 export function legacyHandlers(services: Services): HandlerRegistry {
   const { command } = services
+  const LABELS: Record<ImportRun, string> = {
+    plan: 'Сухой прогон импорта',
+    parse: 'Разбор старых имён',
+    bytes: 'Импорт байтов',
+    reconcile: 'Сверка со снимком',
+  }
   const run =
-    (mode: ImportMode) => (input: { query: { snapshot?: string }; ctx: RequestContext }) =>
+    (mode: ImportRun, extra?: (query: Record<string, unknown>) => unknown) =>
+    (input: { query: { snapshot?: string }; ctx: RequestContext }) =>
       command({ ctx: input.ctx, body: input.query }, async (tx) => {
         const model = modelOf(input.ctx)
         const wanted = input.query.snapshot ?? null
@@ -54,14 +61,18 @@ export function legacyHandlers(services: Services): HandlerRegistry {
           mode,
           snapshot,
           nonce: input.ctx.requestId,
+          ...(extra ? { input: extra(input.query) } : {}),
         })
         if (created) {
           await logAction(tx, {
             modelId: model.id,
             subjectKind: 'work_operations',
             subjectId: work.id,
-            subjectLabel: mode === 'plan' ? 'Сухой прогон импорта' : 'Разбор старых имён',
-            after: { Снимок: snapshot.workKey },
+            subjectLabel: LABELS[mode],
+            after: {
+              Снимок: snapshot.workKey,
+              ...(extra ? { Что: JSON.stringify(extra(input.query)) } : {}),
+            },
           })
         }
         return accepted(model, work.id)
@@ -86,6 +97,12 @@ export function legacyHandlers(services: Services): HandlerRegistry {
         }),
       parse: run('parse'),
       plan: run('plan'),
+      bytes: run('bytes', (query) => ({
+        roots: query.root as string[],
+        folder: (query.folder as string | undefined) ?? null,
+        force: query.force === 'true',
+      })),
+      reconcile: run('reconcile'),
       inputs: ({ body, ctx }) =>
         command({ ctx, body }, (tx, actor) =>
           writeInputs(tx, modelOf(ctx).id, actor.id, {
