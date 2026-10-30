@@ -40,11 +40,15 @@ describe('encode log', () => {
     feed('[vist#0:0/h264 @ 0x3] [dec:h264 @ 0x4] [error] Decoding error: Invalid data')
     feed('Svt[error]: out of memory')
     feed('[out#0/mp4 @ 0x5] [error] Could not write header')
+    // A VFR iPhone source in the check's null output (VM run 30.10.2026): ours, not the source's.
+    feed(
+      '[null @ 0x7455c94d1100] [error] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1 >= 1',
+    )
     feed('Svt[warn]: Failed to set thread priority')
     feed('[info] frame=   35 fps=0.0')
     expect(frames).toEqual([0, 0.0333333])
     expect(source.count).toBe(2)
-    expect(encoder.count).toBe(2)
+    expect(encoder.count).toBe(3)
   })
   it('calls a source truncated below 95 % of promised frames', () => {
     expect(truncated(94, 100)).toBe(true)
