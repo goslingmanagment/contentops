@@ -6,10 +6,12 @@ const root = new URL('.', import.meta.url).pathname
 const pkg = JSON.parse(readFileSync(`${root}package.json`, 'utf8'))
 const external = Object.keys(pkg.dependencies).filter((name) => !name.startsWith('@contentops/'))
 
+// dist/main.js — every role of the image; dist/db.js — the `contentops-db` command
+// (bootstrap, reset-password) for the deploy, next to the migrations (MIGRATIONS_DIR).
 await build({
   absWorkingDir: root,
-  entryPoints: ['src/main.ts'],
-  outfile: 'dist/main.js',
+  entryPoints: { main: 'src/main.ts', db: '../../packages/db/src/cli.ts' },
+  outdir: 'dist',
   bundle: true,
   platform: 'node',
   target: 'node24',

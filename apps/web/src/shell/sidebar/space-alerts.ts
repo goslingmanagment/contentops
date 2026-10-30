@@ -23,6 +23,8 @@ export function spaceAlerts(
   now: Instant,
   model: ModelCode | null,
 ): IntegrationLine[] {
+  // «Мало места: 180 ГБ» и «Забор остановлен» — строки места, общие для всех моделей.
+  const space = alerts.filter((line) => kindOf(line) === 'space')
   const ours = alerts.filter((line) => {
     const source = integrations?.find((integration) => integration.id === line.integration_id)
     return source !== undefined && (source.model === null || source.model === model)
@@ -32,7 +34,7 @@ export function spaceAlerts(
     const key = `${kindOf(line)}|${line.state}`
     groups.set(key, [...(groups.get(key) ?? []), line])
   }
-  return [...groups.values()].flatMap((lines) => {
+  const integrationLines = [...groups.values()].flatMap((lines) => {
     const first = lines[0]
     if (!first) {
       return []
@@ -43,4 +45,5 @@ export function spaceAlerts(
     const source = integrations?.find((integration) => integration.id === first.integration_id)
     return [source ? describeIntegration(source, { now, accountLabel: null }) : first]
   })
+  return [...space, ...integrationLines]
 }

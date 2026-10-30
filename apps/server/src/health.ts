@@ -1,5 +1,5 @@
-import { stat } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { access, stat } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 
 /** A check of `/healthz`, sync or async: throwing or giving `false` makes it red. */
@@ -24,6 +24,32 @@ export function mountsCheck(paths: readonly string[]): HealthCheck {
     const mounted = await Promise.all(paths.map(isMountpoint))
     return mounted.every(Boolean)
   }
+}
+
+/**
+ * File that `ops/up.sh` leaves in a storage root once `mountpoint -q` passed on the host.
+ * Without the disk the root is an empty immutable directory of the system disk (ops/README),
+ * so the mark is missing; inside a container this is the only honest check.
+ */
+export const VOLUME_MARK = '.contentops-volume'
+
+export async function hasVolumeMark(path: string): Promise<boolean> {
+  try {
+    await access(join(path, VOLUME_MARK))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Paths of `REQUIRE_VOLUMES` without the mark. */
+export async function missingVolumes(paths: readonly string[]): Promise<string[]> {
+  const marked = await Promise.all(paths.map(hasVolumeMark))
+  return paths.filter((_, index) => !marked[index])
+}
+
+export function volumesCheck(paths: readonly string[]): HealthCheck {
+  return async () => (await missingVolumes(paths)).length === 0
 }
 
 async function passes(check: HealthCheck): Promise<boolean> {

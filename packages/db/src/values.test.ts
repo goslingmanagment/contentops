@@ -74,6 +74,7 @@ describe('value lists', () => {
     expect(new Set(kinds).size).toBe(kinds.length)
     expect(Object.keys(v.workKindRole).sort()).toEqual([...kinds].sort())
     expect(Object.keys(v.workKindSlot).sort()).toEqual([...kinds].sort())
+    expect(Object.keys(v.workKindQueue).sort()).toEqual([...kinds].sort())
     for (const kind of v.globalWorkKinds) expect(v.workKindRole[kind]).toBe('worker')
   })
 
@@ -84,5 +85,7 @@ describe('value lists', () => {
     expect(v.isKillSwitchKey('agents.token.')).toBe(false)
     expect(v.isPolicyKey('too_early_days')).toBe(true)
     expect(v.isPolicyKey('hub.unknown')).toBe(false)
+    expect(v.isPolicyKey('queue.compress')).toBe(true)
+    expect(v.isKillSwitchKey('queue.compress')).toBe(false)
   })
 })

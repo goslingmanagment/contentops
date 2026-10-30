@@ -9,7 +9,9 @@
 #               system libvips (sharp's prebuilt binaries cannot read HEIC)
 #   media-test  deps + the HEIC encoder used only to generate test fixtures; runs the
 #               @contentops/media tests (CI job `media`)
-#   app         placeholder: the server and web build stages arrive with apps/server
+#   build       deps + sources: server bundle, interface, production node_modules
+#   app         the image of web, migrate and the three workers (docker-compose.yml)
+#   proxy       nginx with the built interface (docker-compose.yml)
 #
 # FFmpeg and SVT-AV1 change only after an A/B on the frozen corpus (SPEC §12.0,
 # docs/reference/compression.md). The build below is BtbN's monthly 2026-08-31 build of the
@@ -67,6 +69,27 @@ ENV CONTENTOPS_MEDIA_TOOLS=1 \
     CONTENTOPS_MEDIA_STRICT=1
 CMD ["pnpm", "--filter", "@contentops/media", "test"]
 
+# Server bundle (every role + the contentops-db command), the interface, and the production
+# node_modules of the bundle's external packages.
+FROM deps AS build
+COPY . .
+RUN pnpm --filter @contentops/server build \
+ && pnpm --filter @contentops/web build \
+ && pnpm --filter @contentops/server deploy --legacy --prod /out
+
+# One image, five services (docker-compose.yml): ROLE=web|migrate|worker|worker-video|
+# worker-image. `node dist/db.js bootstrap|reset-password` for the deploy (ops/README.md).
 FROM base AS app
 WORKDIR /app
-# Placeholder: the apps/server and apps/web build stages are added with the server.
+ENV NODE_ENV=production \
+    MIGRATIONS_DIR=/app/migrations
+COPY --from=build /out/node_modules ./node_modules
+COPY --from=build /app/apps/server/dist ./dist
+COPY --from=build /app/packages/db/migrations ./migrations
+COPY --from=build /app/apps/web/dist ./web
+USER 1000:1000
+CMD ["node", "dist/main.js"]
+
+# nginx of the stack with the built interface; its config is mounted from ops/nginx.
+FROM nginx:1.30.6-alpine AS proxy
+COPY --from=app /app/web /usr/share/nginx/html

@@ -68,9 +68,14 @@ export function spaceCard(world: World, person: Person, now: Instant): SpaceCard
       (integration) => integration.model === null || person.models.includes(integration.model),
     )
     .map((integration) => integrationLineOf(world, integration, now))
+  const free = disk?.free_bytes ?? null
+  const total = disk?.total_bytes ?? null
+  if (!disk || free === null || total === null) {
+    return { label: `${disk?.name ?? 'Место'} нет данных`, used_fraction: 0, alerts }
+  }
   return {
-    label: disk ? `${disk.name} свободно ${formatBytes(disk.free_bytes)}` : '',
-    used_fraction: disk ? 1 - disk.free_bytes / disk.total_bytes : 0,
+    label: `${disk.name} свободно ${formatBytes(free)}`,
+    used_fraction: 1 - free / total,
     alerts,
   }
 }

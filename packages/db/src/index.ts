@@ -35,7 +35,13 @@ export {
   type MigrationFile,
   runMigrations,
 } from './migrate.ts'
-export { isSwitchOn, type PolicyScope, resumeSwitch } from './policy.ts'
+export {
+  isSwitchOn,
+  type PolicyScope,
+  pausedQueues,
+  resumeSwitch,
+  setQueuePaused,
+} from './policy.ts'
 export {
   ResetPasswordError,
   type ResetPasswordResult,

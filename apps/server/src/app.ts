@@ -17,7 +17,7 @@ import type { z } from 'zod'
 import { type Authenticate, type Authorize, requestIdGenerator } from './context'
 import { ApiProblem, toErrorReply } from './errors'
 import type { HandlerRegistry } from './handlers'
-import { type HealthCheck, mountsCheck, registerHealth } from './health'
+import { type HealthCheck, mountsCheck, registerHealth, volumesCheck } from './health'
 import { createLogger } from './logger'
 import { swaggerOptions } from './openapi'
 import { type RecordFailure, registerApiRoutes } from './routes'
@@ -29,6 +29,8 @@ export interface AppDeps {
   checks?: Record<string, HealthCheck>
   /** `REQUIRE_MOUNTS`: each path must be a mount point for a green `/healthz`. */
   requireMounts?: readonly string[]
+  /** `REQUIRE_VOLUMES`: each path must carry the volume mark of `ops/up.sh`. */
+  requireVolumes?: readonly string[]
   /** `TRUSTED_PROXY`: only these peers may set `X-Forwarded-*` and `X-Request-Id`. */
   trustedProxy?: readonly string[]
   authenticate?: Authenticate
@@ -93,6 +95,9 @@ export function buildApp(deps: AppDeps = {}) {
   const checks: Record<string, HealthCheck> = { ...deps.checks }
   if (deps.requireMounts && deps.requireMounts.length > 0) {
     checks.mounts = mountsCheck(deps.requireMounts)
+  }
+  if (deps.requireVolumes && deps.requireVolumes.length > 0) {
+    checks.volumes = volumesCheck(deps.requireVolumes)
   }
 
   app.register(fastifySwagger, swaggerOptions)

@@ -52,6 +52,22 @@ const EnvSchema = z.object({
 
   /** Each path must be a mount point, or `/healthz` is red (SPEC §12.2: disk E: in the VM). */
   REQUIRE_MOUNTS: commaList(AbsolutePath).default([]),
+  /**
+   * Each path must carry the volume mark that `ops/up.sh` leaves after `mountpoint -q` on the
+   * host: inside a container a bind mount always looks mounted. Without it `/healthz` is red
+   * and the workers wait (SPEC §12.2: while disk E: is not mounted the workers do not start).
+   */
+  REQUIRE_VOLUMES: commaList(AbsolutePath).default([]),
+  /** Migrations of `packages/db`; the image sets it, the bundle cannot find them itself. */
+  MIGRATIONS_DIR: AbsolutePath.optional(),
+  /**
+   * Free space of the host disks (SPEC §12.2: on the pilot the truth is in Windows, the VM
+   * disks grow): JSON written by the host every 5 min. Without it the space is «нет данных».
+   */
+  HOST_SPACE_FILE: AbsolutePath.optional(),
+  /** Pilot thresholds of free space: warning and stop of intake (SPEC §12.2). */
+  SPACE_WARN_GB: z.coerce.number().nonnegative().default(200),
+  SPACE_STOP_GB: z.coerce.number().nonnegative().default(100),
   /** Who may set `X-Forwarded-*` and `X-Request-Id`: `loopback`, addresses or CIDRs. */
   TRUSTED_PROXY: commaList(z.string()).default(['loopback']),
 
@@ -73,7 +89,8 @@ const STORAGE: ConfigKey[] = ['DATA_ROOT', 'DERIVED_ROOT', 'TMP_ROOT']
 const REQUIRED_BY_ROLE: Record<ProcessRole, ConfigKey[]> = {
   web: ['DATABASE_URL', ...STORAGE, 'PUBLIC_URL'],
   migrate: ['MIGRATE_DATABASE_URL'],
-  worker: ['DATABASE_URL', ...STORAGE, 'BACKUP_ROOT'],
+  // No backup on the pilot (SPEC §12.3): BACKUP_ROOT comes with the server (PLAN 9б).
+  worker: ['DATABASE_URL', ...STORAGE],
   'worker-video': ['DATABASE_URL', ...STORAGE],
   'worker-image': ['DATABASE_URL', ...STORAGE],
 }

@@ -2242,14 +2242,28 @@
             "type": "string"
           },
           "free_bytes": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "total_bytes": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 9007199254740991
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "warn_below_bytes": {
             "type": "integer",
@@ -2260,6 +2274,16 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "measured_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2267,7 +2291,8 @@
           "free_bytes",
           "total_bytes",
           "warn_below_bytes",
-          "stop_below_bytes"
+          "stop_below_bytes",
+          "measured_at"
         ],
         "additionalProperties": false
       },
@@ -9255,31 +9280,38 @@
             "additionalProperties": false
           },
           "hub_latency": {
-            "type": "object",
-            "properties": {
-              "typical_hours": {
-                "type": "number"
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "typical_hours": {
+                    "type": "number"
+                  },
+                  "max_hours": {
+                    "type": "number"
+                  },
+                  "wait_window_hours": {
+                    "type": "number"
+                  },
+                  "warning": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "typical_hours",
+                  "max_hours",
+                  "wait_window_hours",
+                  "warning"
+                ],
+                "additionalProperties": false
               },
-              "max_hours": {
-                "type": "number"
-              },
-              "wait_window_hours": {
-                "type": "number"
-              },
-              "warning": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+              {
+                "type": "null"
               }
-            },
-            "required": [
-              "typical_hours",
-              "max_hours",
-              "wait_window_hours",
-              "warning"
-            ],
-            "additionalProperties": false
+            ]
           },
           "storage_findings": {
             "type": "array",

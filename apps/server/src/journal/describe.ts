@@ -67,6 +67,11 @@ const WORDING: Record<string, Wording> = {
   },
   'admin.updateThreshold': { verb: 'задал', rest: 'порог {subject}', noun: 'изменение порога' },
   'admin.removeThreshold': { verb: 'убрал', rest: 'порог {subject}', noun: 'удаление порога' },
+  'settings.pauseQueue': {
+    verb: 'переключил',
+    rest: 'очередь «{subject}»',
+    noun: 'пауза очереди',
+  },
   'principal.reset_password': { verb: 'сбросил', rest: 'пароль: {subject}', noun: 'сброс пароля' },
   'principal.create': { verb: 'завёл', rest: 'владельца: {subject}', noun: 'заведение владельца' },
   bootstrap: { verb: 'выполнил', rest: 'начальную настройку', noun: 'начальная настройка' },

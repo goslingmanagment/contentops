@@ -170,7 +170,11 @@ item_type, key)`; CHECK: строка без модели не несёт `accou
 не задано, то есть выключено; JSON `null` отклоняется; валидатор на каждый ключ;
 сидов нет. Выключатели SPEC §8: `hub.receive`, `hub.auto_match`, `hub.publish`
 (публикация через Hub, с 5б), `ydisk.scan`, `dropbox.scan`, `agents.enabled`, `agents.token.<id>`,
-`fyper.enabled`, `annotation.*` (SPEC §8.3). Пороги и настройки: `too_early_days`,
+`fyper.enabled`, `annotation.*` (SPEC §8.3). Пауза очереди «Состояния» — `queue.<очередь>`
+(`fetch`, `preview`, `compress`, `frames`, `copies`; только глобальная строка): медиаобработка —
+ядро, поэтому без строки очередь работает, держит её только явное `false` владельца
+(«Пауза»), исполнитель проверяет его перед каждой попыткой (с 1а, решение по принципу MVP
+30.10.2026). Пороги и настройки: `too_early_days`,
 `phash_suggest_threshold`, `intake_auto_accept`,
 `hub_candidate_tolerance`, `hub_exact_duration_ms`, `hub_wait_window`,
 `hub_not_out_window`, `hub_vault_recheck` (SPEC §7), `hub_ad_markers` (признаки рекламы
