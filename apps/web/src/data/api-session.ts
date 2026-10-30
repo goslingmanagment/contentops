@@ -30,6 +30,11 @@ export interface ApiSession {
    * `saveServerFile`.
    */
   saveFile: (file: ServerFile) => void
+  /**
+   * Клиент самой заглушки, мимо `SERVER_ROUTES` (только в разработке): загрузка в строку
+   * плана, пока план на заглушке, отвечает ей же. В сборке продукта — `null`.
+   */
+  mockClient: ApiClient | null
 }
 
 interface ApiSessionOptions {
@@ -88,6 +93,7 @@ export function createApiSession({ demo, role, onUnauthenticated }: ApiSessionOp
     demo,
     role,
     saveFile: mock?.saveFile ?? saveServerFile,
+    mockClient: mock ? createApiClient((input, init) => mock.fetch(input, init)) : null,
   }
 }
 
@@ -117,6 +123,11 @@ export function useClock(): Clock {
  */
 export function useToday(): LocalDate {
   return mskDate(useClock().now())
+}
+
+/** Клиент заглушки для экранов, что ещё на ней; `null` с настоящим сервером в продукте. */
+export function useMockApi(): ApiClient | null {
+  return useApiSession().mockClient
 }
 
 /** «Скачать» готового файла: архив дня, копия для платформы, передача. */

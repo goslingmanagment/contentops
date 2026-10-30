@@ -8,6 +8,7 @@ import { createCommands, createFailureRecorder } from './commands'
 import { createHandlers } from './handlers/index'
 import { envSourceFactory } from './intake/source-client'
 import { registerSourceThumbs } from './intake/source-thumbs'
+import { registerTus } from './intake/tus'
 import { BlobStore, type StorageRoots } from './media/storage'
 import type { IntegrationSecrets } from './services'
 import type { SpaceOptions } from './space'
@@ -44,17 +45,20 @@ export function buildServer(options: ServerOptions) {
     store: new BlobStore(options.storage),
   }
   const authenticate = createAuthenticate(db)
+  const authorize = createAuthorize(db)
   const deps: AppDeps = {
     handlers: createHandlers(services),
     authenticate,
-    routes: (api) =>
+    routes: (api) => {
       registerSourceThumbs(api, {
         db,
         authenticate,
         factory: envSourceFactory(services.sourceEnv),
         cacheDir: options.storage.tmpRoot,
-      }),
-    authorize: createAuthorize(db),
+      })
+      registerTus(api, { db, authenticate, authorize, dataRoot: services.store.roots.dataRoot })
+    },
+    authorize,
     recordFailure: createFailureRecorder(db),
     checks: { db: () => db.execute(sql`SELECT 1`) },
     ...(options.logger ? { logger: options.logger } : {}),

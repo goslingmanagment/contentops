@@ -3,10 +3,11 @@ import { MediaKindSchema } from '../domain/files'
 import { ItemIdSchema, ItemTypeSchema } from '../domain/item-type'
 
 /**
- * Web upload (DESIGN §3.7). The file bytes travel by the chunked protocol of SPEC §6.1
- * (open question); this command is the last step — «the files are here and checked,
- * put them where they belong». With a target the files are accepted by themselves;
- * without one («Другое») they arrive in «Приехало» as a group «Загружено вами».
+ * Web upload (DESIGN §3.7). The file bytes travel by tus 1.0 (SPEC §6.1) to
+ * `/api/v1/<model>/uploads/tus`, chunk by chunk, resumed from the accepted byte; this command
+ * is the last step — «the files are here, check them and put them where they belong». With a
+ * target the files are accepted by themselves; without one («Другое») they arrive in
+ * «Приехало» as a group «Загружено вами».
  */
 
 /** What the files are, one button in the upload window. */
@@ -39,7 +40,14 @@ export const UploadTargetRefSchema = z.discriminatedUnion('kind', [
 ])
 export type UploadTargetRef = z.infer<typeof UploadTargetRefSchema>
 
+/** The address of a tus upload of a model: `Location` of its creation, the id is its tail. */
+export function tusUploadsPath(model: string): string {
+  return `/api/v1/${model}/uploads/tus`
+}
+
 export const UploadedFileSchema = z.object({
+  /** The tus upload that carried the bytes: the last segment of its address. */
+  upload_id: z.string().regex(/^[0-9a-f-]{36}$/),
   file_name: z.string().min(1),
   size_bytes: z.int().nonnegative(),
   media: MediaKindSchema,

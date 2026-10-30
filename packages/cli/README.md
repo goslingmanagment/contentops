@@ -96,3 +96,15 @@ them into the route's flags and body; it may read other routes first through `co
 
 The order's address in other `orders` commands is its `id` from `orders find`
 (`--order tg-2627984998-12-9844`).
+
+## Uploading files
+
+The bytes of a web upload go by tus, not through the route table: `apps/server/scripts/upload.ts`
+sends them in 50 MB chunks (a second run for the same files continues from the accepted
+byte) and then runs `inbox upload` itself, with the same `CONTENTOPS_URL` and
+`CONTENTOPS_TOKEN`:
+
+```sh
+node apps/server/scripts/upload.ts lora teaser --target PPV-089 teaser.mp4
+node apps/server/scripts/upload.ts lora other --type set frame-01.jpg frame-02.jpg
+```

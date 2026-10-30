@@ -4,10 +4,13 @@ import { trayItems, trayTitle } from './tray-labels'
 import {
   batchesReadyToSend,
   CHECK_DURATION_MS,
+  commandFiles,
   hasActiveWork,
   initialUploadState,
+  nextToTransfer,
   type UploadAction,
   type UploadState,
+  type UploadTransport,
   uploadReducer,
 } from './upload-store'
 
@@ -18,7 +21,10 @@ function run(state: UploadState, ...actions: UploadAction[]): UploadState {
   return actions.reduce(uploadReducer, state)
 }
 
-function withBatch(target: 'item' | null = null): UploadState {
+function withBatch(
+  target: 'item' | null = null,
+  transport: UploadTransport = 'simulated',
+): UploadState {
   return run(initialUploadState, {
     type: 'add-batch',
     batch: {
@@ -31,6 +37,7 @@ function withBatch(target: 'item' | null = null): UploadState {
       { id: 'u1', fileName: 'a.jpg', sizeBytes: 3 * MB, media: 'photo' },
       { id: 'u2', fileName: 'b.jpg', sizeBytes: 3 * MB, media: 'photo' },
     ],
+    transport,
   })
 }
 
@@ -108,6 +115,30 @@ describe('лоток загрузок', () => {
       state: 'failed',
       detail: 'не принято: тизер — один видеофайл',
     })
+  })
+
+  it('tus: по одному файлу, обрыв — «Продолжить», команда называет загрузки', () => {
+    const state = withBatch(null, 'tus')
+    expect(nextToTransfer(state)?.id).toBe('u1')
+    const cut = run(
+      state,
+      { type: 'progress', id: 'u1', loadedBytes: MB },
+      { type: 'interrupted', id: 'u1' },
+    )
+    expect(trayItems(cut, save)[0]).toMatchObject({ state: 'interrupted' })
+    expect(nextToTransfer(cut)?.id).toBe('u2')
+    const done = run(
+      cut,
+      { type: 'resume', id: 'u1' },
+      { type: 'transferred', id: 'u1', uploadId: 'up-1', now: 5 },
+      { type: 'progress', id: 'u2', loadedBytes: MB },
+      { type: 'transferred', id: 'u2', uploadId: 'up-2', now: 6 },
+    )
+    const [batch] = batchesReadyToSend(done)
+    expect(batch && commandFiles(done, batch).map((file) => file.upload_id)).toEqual([
+      'up-1',
+      'up-2',
+    ])
   })
 
   it('«Отменить загрузки» и «Убрать лоток» уносят и пачки без файлов', () => {

@@ -66,8 +66,14 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
   })
   // `/healthz`: web answers, the database takes a query as the app role (SPEC §12.2), the
   // storage roots carry their volume marks.
+  const db = createDb(pool)
+  const storage = {
+    dataRoot: required(config.DATA_ROOT, 'DATA_ROOT'),
+    derivedRoot: required(config.DERIVED_ROOT, 'DERIVED_ROOT'),
+    tmpRoot: required(config.TMP_ROOT, 'TMP_ROOT'),
+  }
   const app = buildServer({
-    db: createDb(pool),
+    db,
     publicUrl: required(config.PUBLIC_URL, 'PUBLIC_URL'),
     // The app starts without the secrets of switched-off integrations (SPEC §8).
     secrets: { hub: config.HUB_API_KEY !== undefined && config.HUB_BASE_URL !== undefined },
@@ -80,16 +86,20 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     trustedProxy: config.TRUSTED_PROXY,
     requireMounts: config.REQUIRE_MOUNTS,
     requireVolumes: config.REQUIRE_VOLUMES,
-    storage: {
-      dataRoot: required(config.DATA_ROOT, 'DATA_ROOT'),
-      derivedRoot: required(config.DERIVED_ROOT, 'DERIVED_ROOT'),
-      tmpRoot: required(config.TMP_ROOT, 'TMP_ROOT'),
-    },
+    storage,
     filesDirect: config.FILES_DIRECT,
   })
   app.addHook('onClose', () => pool.end())
   onStop(logger, () => app.close())
   await app.listen({ host: config.HOST, port: config.PORT })
+  // Web uploads register their bytes as blobs (`intake/upload.ts`): what a crash left half
+  // done is settled against the disk, as the worker roles do it — only with the disks mounted.
+  if ((await missingStorage(config)).length === 0) {
+    reconcileStorage(db, new BlobStore(storage), 'web:').then(
+      (reconciled) => logger.info({ ...reconciled }, 'storage operations reconciled'),
+      (error: unknown) => logger.error({ err: error }, 'storage operations not reconciled'),
+    )
+  }
 }
 
 /** The database is not there yet: its name, its port or its startup (SQLSTATE 57P03). */

@@ -85,6 +85,7 @@ interface DraftRow extends Record<string, unknown> {
   media_kind: values.MediaKind | null
   target_public_id: string | null
   applied_public_id: string | null
+  uploader_id: string | null
   uploader_name: string | null
   uploader_kind: 'human' | 'agent' | null
   uploader_gender: 'f' | 'm' | null
@@ -126,8 +127,19 @@ function dayWords(iso: string): string {
   return `${day} ${MONTHS[(month ?? 1) - 1]}`
 }
 
+/** «3 фото», «2 видео», «3 фото · 1 видео». */
+function contentWords(drafts: readonly DraftRow[]): string {
+  const videos = drafts.filter((draft) => draft.media_kind === 'video').length
+  const photos = drafts.length - videos
+  return [photos > 0 ? `${photos} фото` : null, videos > 0 ? `${videos} видео` : null]
+    .filter((part): part is string => part !== null)
+    .join(' · ')
+}
+
 function groupTitle(group: GroupRow, drafts: readonly DraftRow[]): string {
   if (group.proposed_title) return group.proposed_title
+  // A web upload is «Загружено вами · 3 фото» (DESIGN §5.3): who uploaded is said beside it.
+  if (group.source_kind === 'web_upload') return `Загружено вами · ${contentWords(drafts)}`
   const root = group.evidence?.root ?? group.source_label
   if (group.grouping === 'exif_day' && group.evidence?.day) {
     return `${root} · съёмка ${dayWords(group.evidence.day)}`
@@ -364,12 +376,7 @@ function view(
       : parentOf(first.path),
     root: group.evidence?.root ?? group.source_label,
     uploaded_by: web
-      ? actorOf(
-          first.decided_by ?? null,
-          first.uploader_name,
-          first.uploader_kind,
-          first.uploader_gender,
-        )
+      ? actorOf(first.uploader_id, first.uploader_name, first.uploader_kind, first.uploader_gender)
       : null,
     arrived_at: instant(arrived),
     size_bytes: drafts.reduce((sum, draft) => sum + Number(draft.byte_size ?? 0), 0),
@@ -442,7 +449,7 @@ async function loadDrafts(
              WHERE i.model_id = d.model_id AND i.id = d.target_item_id) AS target_public_id,
            (SELECT public_item_id(i.type, i.number) FROM content_items i
              WHERE i.model_id = d.model_id AND i.id = d.applied_item_id) AS applied_public_id,
-           pu.display_name AS uploader_name, pu.kind AS uploader_kind, pu.gender AS uploader_gender,
+           u.principal_id AS uploader_id, pu.display_name AS uploader_name, pu.kind AS uploader_kind, pu.gender AS uploader_gender,
            fw.progress_num AS fetch_done, fw.progress_den AS fetch_total,
            NULL::timestamptz AS shot_at,
            (SELECT g.id FROM rendition_generations g

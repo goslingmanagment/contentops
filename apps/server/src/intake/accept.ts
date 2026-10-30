@@ -27,6 +27,8 @@ type Role = values.AssetRole
 export interface AcceptOptions extends AcceptCommand {
   /** «принято при загрузке»: a web upload with a target accepted by itself. */
   how?: AcceptResult['how']
+  /** The role a web upload names itself: processed frames of a set are its `ed` files. */
+  role?: Role
 }
 
 interface GroupRow extends Record<string, unknown> {
@@ -470,7 +472,9 @@ export async function acceptGroup(
   const created: CreatedFile[] = []
   for (const draft of drafts) {
     const media: values.MediaKind = draft.media_kind ?? 'image'
-    const role = roles ? (roles.get(draft.id) as Role) : appendRole(type, draft, options.extend)
+    const role = roles
+      ? (roles.get(draft.id) as Role)
+      : (options.role ?? appendRole(type, draft, options.extend))
     // New bytes of a file that is already here: a new version of that file.
     const existing =
       draft.target_asset_id ??

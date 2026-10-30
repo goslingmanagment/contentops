@@ -520,7 +520,9 @@ source_object_id, id)`; уникальности по MD5 или SHA нет: A�
 **`inbox_groups`** — папка или кластер как единица принятия (§4, §6.1, §6.3). `id`,
 `model_id`, `source_id`, `group_key` — всегда с ID папки у источника, не путь:
 `folder:<id папки>`, `exif-day:<id папки>:2026-08-07`, `upload-window:<id папки>:…`,
-`single:<id файла>`, `split:<uuid>`; `grouping` (`folder | exif_day | upload_cluster |
+`single:<id файла>`, `split:<uuid>`, у веб-загрузки — `upload:<upload-id первого файла>`
+(`manual`, источник `web_upload` «Веб-загрузка» модели заводится при первой загрузке);
+`grouping` (`folder | exif_day | upload_cluster |
 single | manual`; правило группировки — одно, SPEC §6.1; `manual` — новый файл в принятой
 папке «отдельным объектом»),
 `folder_object_id?`, `evidence jsonb`, `discovered_at`,
@@ -598,6 +600,14 @@ registered | failed | abandoned`), `tmp_key`, `error`, `created_at`,
 загрузки — `inbox_drafts.web_upload_id` (UNIQUE: одна загрузка — один черновик); обратной
 ссылки нет.
 Порядок: файл докачан и сверен → блоб в `blobs/` → черновик обычной приёмки.
+Как это сделано (2в, 30.10.2026): строка заводится при создании загрузки tus (`receiving`,
+`tmp_key = inbox/web/<model>/<upload-id>/data` под `DATA_ROOT`), `bytes_received` пишется после
+каждого куска, `received` — когда пришли все байты. Команда `POST …/uploads` сверяет размер,
+считает SHA-256 и ссылкой переносит файл в `blobs/` по протоколу хранилища (`verified`, хэш);
+затем одной транзакцией — группа и по черновику на загрузку (`registered`), с целью — там же
+принятие. Блобом становится и «Другое», видео тоже: `encode_master` читает его из `blobs/`, в
+`staging/` веб-загрузка не кладётся. Отмена в лотке — `abandoned`; сбой регистрации — `failed`
+с `error`; брошенная загрузка остаётся `receiving`, уборки пока нет.
 
 **`work_operations`** — фоновая работа в доменной таблице (§5, §12.0).
 

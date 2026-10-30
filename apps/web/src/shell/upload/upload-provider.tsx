@@ -3,6 +3,8 @@ import {
   ItemIdSchema,
   type ModelCode,
   newIdempotencyKey,
+  tusUploadsPath,
+  type UploadedFile,
   type UploadKind,
   type UploadResult,
   uploadKindNeedsTarget,
@@ -19,8 +21,9 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Upload as TusUpload } from 'tus-js-client'
 import { describeFailure } from '@/actions/failure-message'
-import { useApi, useSaveFile } from '@/data/api-session'
+import { useApi, useMockApi, useSaveFile } from '@/data/api-session'
 import type { CatalogIndexView } from '@/data/catalog'
 import { inboxChangedKeys } from '@/data/inbox'
 import { itemQueryKeys } from '@/data/object'
@@ -34,19 +37,27 @@ import { UploadDialog } from './upload-dialog'
 import type { UploadForm } from './upload-form'
 import {
   batchesReadyToSend,
+  commandFiles,
   hasActiveWork,
   initialUploadState,
   isUploadActive,
+  nextToTransfer,
   type OperationUpdate,
   type UploadAction,
   type UploadBatch,
+  type UploadEntry,
   type UploadOutcome,
+  type UploadState,
   uploadReducer,
 } from './upload-store'
 import { mediaOf, sameTarget, targetRef, type UploadTarget } from './upload-target'
 import { useFileDrag } from './use-file-drag'
 
 const TICK_MS = 200
+/** Кусок tus: столько байт уходит одним запросом и теряется самое большее при обрыве. */
+const CHUNK_BYTES = 50 * 1024 * 1024
+/** Повторы куска до «Загрузка прервана · Продолжить». */
+const RETRY_DELAYS_MS = [0, 1_000, 3_000, 5_000, 10_000]
 
 interface DialogState {
   files: readonly File[]
@@ -65,6 +76,10 @@ export function UploadProvider({ enabled, children }: { enabled: boolean; childr
   const [screenTarget, setScreenTargetState] = useState<UploadTarget | null>(null)
   const routeTarget = useRouteTarget()
   const model = useParams({ strict: false }).model
+  const mockApi = useMockApi()
+  /** Файлы пачек, пока их байты не на сервере; передачи tus по записи лотка. */
+  const files = useRef(new Map<string, File>())
+  const transfers = useRef(new Map<string, TusUpload>())
 
   const setScreenTarget = useCallback((next: UploadTarget | null) => {
     setScreenTargetState((previous) => (sameTarget(previous, next) ? previous : next))
@@ -96,7 +111,8 @@ export function UploadProvider({ enabled, children }: { enabled: boolean; childr
 
   const uploading = state.uploads.some(isUploadActive)
   useUploadClock(uploading, dispatch)
-  useSendBatches(batchesReadyToSend(state), dispatch)
+  useTusTransfers(state, dispatch, files.current, transfers.current)
+  useSendBatches(state, dispatch, files.current)
   useLeaveWarning(uploading)
   const dialogOpen = dialog !== null
   const dragging = useFileDrag((files) => {
@@ -110,17 +126,33 @@ export function UploadProvider({ enabled, children }: { enabled: boolean; childr
       return
     }
     const target = uploadKindNeedsTarget(form.kind) ? (dialog?.target ?? null) : null
+    const entries = form.files.map((file) => {
+      const id = newIdempotencyKey()
+      files.current.set(id, file)
+      return { id, fileName: file.name, sizeBytes: file.size, media: mediaOf(file) }
+    })
     dispatch({
       type: 'add-batch',
       batch: { id: newIdempotencyKey(), model, kind: form.kind, target },
-      files: form.files.map((file) => ({
-        id: newIdempotencyKey(),
-        fileName: file.name,
-        sizeBytes: file.size,
-        media: mediaOf(file),
-      })),
+      files: entries,
+      // Строка плана в разработке живёт в заглушке: туда и команда, байты не нужны.
+      transport: mockApi && target?.kind === 'plan-row' ? 'simulated' : 'tus',
     })
     setDialog(null)
+  }
+
+  const cancelAll = () => {
+    // Незаконченные загрузки tus снимаются и на сервере (`abandoned`).
+    for (const [id, transfer] of transfers.current) {
+      void transfer.abort(true).catch(() => {})
+      transfers.current.delete(id)
+    }
+    for (const entry of state.uploads) {
+      if (isUploadActive(entry)) {
+        files.current.delete(entry.id)
+      }
+    }
+    dispatch({ type: 'cancel-uploads' })
   }
 
   const onOperationChange = useCallback(
@@ -156,7 +188,8 @@ export function UploadProvider({ enabled, children }: { enabled: boolean; childr
           items={trayItems(state, saveFile)}
           collapsed={state.collapsed}
           onCollapsedChange={(collapsed) => dispatch({ type: 'set-collapsed', collapsed })}
-          onCancelAll={uploading ? () => dispatch({ type: 'cancel-uploads' }) : undefined}
+          onCancelAll={uploading ? cancelAll : undefined}
+          onResume={(id) => dispatch({ type: 'resume', id })}
           onClose={hasActiveWork(state) ? undefined : () => dispatch({ type: 'clear-finished' })}
           avoid="main aside"
         />
@@ -188,16 +221,85 @@ function titleOf(index: CatalogIndexView | undefined, id: ItemId): string {
 }
 
 /**
+ * Байты по tus (SPEC §6.1), по одному файлу: куски по 50 МБ, после сбоя — повторы, затем
+ * «Загрузка прервана · Продолжить». Тот же файл, выбранный снова (и после перезагрузки
+ * страницы), продолжает с принятого байта: адрес загрузки tus помнит по отпечатку файла.
+ */
+function useTusTransfers(
+  state: UploadState,
+  dispatch: (action: UploadAction) => void,
+  files: Map<string, File>,
+  transfers: Map<string, TusUpload>,
+) {
+  const next = nextToTransfer(state)
+  const batch = next ? state.batches.find((candidate) => candidate.id === next.batchId) : undefined
+  const nextId = next?.id
+  useEffect(() => {
+    if (!nextId || !batch || transfers.has(nextId)) {
+      return
+    }
+    const file = files.get(nextId)
+    if (!file) {
+      dispatch({ type: 'interrupted', id: nextId })
+      return
+    }
+    dispatch({ type: 'progress', id: nextId, loadedBytes: 0 })
+    const transfer: TusUpload = new TusUpload(file, {
+      endpoint: tusUploadsPath(batch.model),
+      chunkSize: CHUNK_BYTES,
+      retryDelays: RETRY_DELAYS_MS,
+      metadata: { filename: file.name, filetype: file.type, kind: batch.kind },
+      removeFingerprintOnSuccess: true,
+      onProgress: (sent) => dispatch({ type: 'progress', id: nextId, loadedBytes: sent }),
+      onSuccess: () => {
+        transfers.delete(nextId)
+        dispatch({
+          type: 'transferred',
+          id: nextId,
+          uploadId: transfer.url?.split('/').pop() ?? '',
+          now: performance.now(),
+        })
+      },
+      onError: () => {
+        transfers.delete(nextId)
+        dispatch({ type: 'interrupted', id: nextId })
+      },
+    })
+    transfers.set(nextId, transfer)
+    void transfer.findPreviousUploads().then(
+      (previous) => {
+        const [last] = previous
+        if (last) {
+          transfer.resumeFromPreviousUpload(last)
+        }
+        transfer.start()
+      },
+      () => transfer.start(),
+    )
+  }, [batch, dispatch, files, nextId, transfers])
+}
+
+/**
  * Пачка, все файлы которой переданы, уходит на сервер одной командой с ключом повтора
  * пачки. Ответ решает, что сказать в лотке, и сбрасывает то, что поменялось: «Приехало»
  * и счётчик колонки, объект цели и план.
  */
-function useSendBatches(ready: readonly UploadBatch[], dispatch: (action: UploadAction) => void) {
+function useSendBatches(
+  state: UploadState,
+  dispatch: (action: UploadAction) => void,
+  files: Map<string, File>,
+) {
   const api = useApi()
+  const mockApi = useMockApi()
   const queryClient = useQueryClient()
   const sent = useRef(new Set<string>())
+  const ready = batchesReadyToSend(state).map((batch) => ({
+    batch,
+    files: commandFiles(state, batch),
+    entries: state.uploads.filter((entry) => entry.batchId === batch.id),
+  }))
   useEffect(() => {
-    for (const batch of ready) {
+    for (const { batch, files: body, entries } of ready) {
       if (sent.current.has(batch.id)) {
         continue
       }
@@ -205,16 +307,7 @@ function useSendBatches(ready: readonly UploadBatch[], dispatch: (action: Upload
       dispatch({ type: 'batch-sent', id: batch.id })
       const settle = (outcome: UploadOutcome) =>
         dispatch({ type: 'batch-settled', id: batch.id, outcome })
-      api.inbox
-        .upload({
-          params: { model: batch.model },
-          body: {
-            kind: batch.kind,
-            target: batch.target ? targetRef(batch.target) : null,
-            files: [...batch.files],
-          },
-          idempotencyKey: batch.id,
-        })
+      send(batch.transport === 'simulated' && mockApi ? mockApi : api, batch, body)
         .then(
           (result) => {
             for (const queryKey of changedKeys(batch.model, batch, result)) {
@@ -224,8 +317,27 @@ function useSendBatches(ready: readonly UploadBatch[], dispatch: (action: Upload
           },
           (error: unknown) => settle({ kind: 'failed', message: failureReason(error) }),
         )
+        .finally(() => forget(files, entries))
     }
-  }, [api, dispatch, queryClient, ready])
+  }, [api, dispatch, files, mockApi, queryClient, ready])
+}
+
+function send(client: ReturnType<typeof useApi>, batch: UploadBatch, files: UploadedFile[]) {
+  return client.inbox.upload({
+    params: { model: batch.model },
+    body: {
+      kind: batch.kind,
+      target: batch.target ? targetRef(batch.target) : null,
+      files,
+    },
+    idempotencyKey: batch.id,
+  })
+}
+
+function forget(files: Map<string, File>, entries: readonly UploadEntry[]) {
+  for (const entry of entries) {
+    files.delete(entry.id)
+  }
 }
 
 /** «тизер — один видеофайл», «нет связи»: причина без «Не выполнено» (§3.8). */
@@ -249,7 +361,7 @@ function changedKeys(model: ModelCode, batch: UploadBatch, result: UploadResult)
   ]
 }
 
-/** Ход имитации загрузки: прототип не шлёт файлы на сервер. */
+/** Часы лотка: изображаемая передача в заглушку и конец проверки после ответа. */
 function useUploadClock(
   active: boolean,
   dispatch: (action: { type: 'tick'; elapsedMs: number; now: number }) => void,

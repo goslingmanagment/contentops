@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import {
   SYSTEM_ACTOR,
@@ -11,10 +11,14 @@ import { recordingRetry } from '@contentops/sources/testing'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, inject, it, vi } from 'vitest'
 import type { Actor } from '../context'
+import { createLogger } from '../logger'
 import { createMediaEnv, type MediaEnv } from '../media/pipeline'
 import { mediaHandlers } from '../media/roles'
 import type { BlobStore } from '../media/storage'
 import { tempStore } from '../media/testing'
+import { buildServer } from '../server'
+import { call, newKey, signIn } from '../testing/server'
+import { tusUpload } from '../testing/tus'
 import { acceptGroup } from './accept'
 import { fetchHandler } from './fetch'
 import { inboxGroup } from './inbox-view'
@@ -33,6 +37,7 @@ let h: IntakeHarness
 let store: BlobStore
 let env: MediaEnv
 const runners: WorkRunner[] = []
+const started = new Set<values.WorkRole>()
 
 beforeAll(async () => {
   h = await intakeHarness()
@@ -46,6 +51,8 @@ afterAll(async () => {
 })
 
 function start(role: values.WorkRole): void {
+  if (started.has(role)) return
+  started.add(role)
   const handlers: Partial<Record<values.WorkKind, WorkHandler>> = {
     ...mediaHandlers(role, env),
     ...intakeMediaHandlers(role, env),
@@ -142,5 +149,66 @@ describe('intake with the real media pipeline', () => {
       { role: 'clip', media: 'video', present: true },
       { role: 'pic', media: 'image', present: true },
     ])
+  })
+
+  it('a web upload «Другое» (photo and video) becomes «готово» from its blob, then an object', async () => {
+    const app = buildServer({
+      db: h.db,
+      publicUrl: 'http://localhost:5173',
+      secrets: { hub: false },
+      sourceEnv: {},
+      logger: createLogger({ level: 'silent' }),
+      storage: store.roots,
+    })
+    await app.ready()
+    try {
+      const owner = await signIn(app, 'owner', 'owner-password')
+      // Other bytes than the first case's: those are accepted already and would be aliases.
+      const photo = await readFile(fx.files.smallPng)
+      const clip = await readFile(fx.files.av1)
+      const files = []
+      for (const [name, bytes, media] of [
+        ['photo.png', photo, 'photo'],
+        ['clip.mp4', clip, 'video'],
+      ] as const) {
+        const uploadId = await tusUpload(app, { model: 'lora', as: owner, name, bytes })
+        files.push({ upload_id: uploadId, file_name: name, size_bytes: bytes.length, media })
+      }
+      const answer = await call(app, {
+        method: 'POST',
+        url: '/api/v1/lora/uploads',
+        as: owner,
+        key: newKey(),
+        body: { kind: 'other', target: null, type: 'life', files },
+      })
+      expect(answer.json()).toMatchObject({ placed: 'inbox', decision: null })
+      const groupId = answer.json().group_id as string
+
+      start('worker-image')
+      start('worker-video')
+      const model = { id: h.modelId, code: 'lora', name: 'Лора' }
+      await vi.waitFor(
+        async () => {
+          const group = await inboxGroup(h.db, model, groupId)
+          if (group.state.kind !== 'ready') throw new Error(JSON.stringify(group.state))
+        },
+        { timeout: 280_000, interval: 500 },
+      )
+      const accepted = await call(app, {
+        method: 'POST',
+        url: `/api/v1/lora/inbox/groups/${groupId}:accept`,
+        as: owner,
+        key: newKey(),
+        body: { as: 'default' },
+      })
+      expect(accepted.json()).toMatchObject({
+        item_id: expect.stringMatching(/^LIFE-/),
+        how: 'new',
+      })
+      // Nothing of the upload went through `staging/`: the media works read its blob.
+      expect(await store.staged(createHash('sha256').update(clip).digest('hex'))).toBeNull()
+    } finally {
+      await app.close()
+    }
   })
 })

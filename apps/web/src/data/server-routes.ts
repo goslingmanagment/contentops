@@ -114,6 +114,8 @@ export const SERVER_ROUTES: ServerRoutes = {
     'reject',
     'retry',
     'restore',
+    // Веб-загрузка (2в): байты по tus, последний шаг — эта команда.
+    'upload',
   ],
   // Промо (4в): папки каналов, подборки, передачи и подрядчики.
   promo: 'all',

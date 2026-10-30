@@ -33,6 +33,7 @@ function uploadDetail(entry: UploadEntry, batch: UploadBatch | undefined): strin
     case 'queued':
       return 'в очереди'
     case 'uploading':
+    case 'interrupted':
       return formatBytesProgress(entry.loadedBytes, entry.sizeBytes)
     case 'checking':
       return 'проверяется'
@@ -49,7 +50,14 @@ function uploadItem(entry: UploadEntry, batch: UploadBatch | undefined): UploadT
     nameIsFile: true,
     detail: uploadDetail(entry, batch),
     progress: entry.sizeBytes > 0 ? (entry.loadedBytes / entry.sizeBytes) * 100 : 0,
-    state: entry.phase === 'done' ? 'done' : entry.phase === 'failed' ? 'failed' : 'running',
+    state:
+      entry.phase === 'done'
+        ? 'done'
+        : entry.phase === 'failed'
+          ? 'failed'
+          : entry.phase === 'interrupted'
+            ? 'interrupted'
+            : 'running',
   }
 }
 

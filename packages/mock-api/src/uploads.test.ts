@@ -18,6 +18,9 @@ function setup(): ApiClient {
 
 const lora = { model: 'lora' }
 
+/** A tus upload id: the mock does not receive bytes, the command names them. */
+const upload = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+
 describe('загрузка с сайта', () => {
   it('«Другое» без типа приходит в Приехало группой «Загружено вами» с ◆ «Что это?»', async () => {
     const api = setup()
@@ -28,8 +31,8 @@ describe('загрузка с сайта', () => {
         kind: 'other',
         target: null,
         files: [
-          { file_name: 'a.jpg', size_bytes: 2_000_000, media: 'photo' },
-          { file_name: 'b.jpg', size_bytes: 2_000_000, media: 'photo' },
+          { upload_id: upload(1), file_name: 'a.jpg', size_bytes: 2_000_000, media: 'photo' },
+          { upload_id: upload(2), file_name: 'b.jpg', size_bytes: 2_000_000, media: 'photo' },
         ],
       },
     })
@@ -49,7 +52,9 @@ describe('загрузка с сайта', () => {
         kind: 'other',
         target: null,
         type: 'life',
-        files: [{ file_name: 'c.mov', size_bytes: 9_000_000, media: 'video' }],
+        files: [
+          { upload_id: upload(3), file_name: 'c.mov', size_bytes: 9_000_000, media: 'video' },
+        ],
       },
     })
     expect(result.decision).toBeNull()
@@ -68,7 +73,9 @@ describe('загрузка с сайта', () => {
       body: {
         kind: 'teaser',
         target: { kind: 'item', item_id: bare.id },
-        files: [{ file_name: 'teaser.mp4', size_bytes: 30_000_000, media: 'video' }],
+        files: [
+          { upload_id: upload(4), file_name: 'teaser.mp4', size_bytes: 30_000_000, media: 'video' },
+        ],
       },
     })
     expect(result).toMatchObject({ placed: 'attached', item_id: bare.id })
@@ -94,7 +101,14 @@ describe('загрузка с сайта', () => {
       body: {
         kind: 'fyp_montage',
         target: { kind: 'plan_row', row_id: waiting.id },
-        files: [{ file_name: 'montage.mp4', size_bytes: 40_000_000, media: 'video' }],
+        files: [
+          {
+            upload_id: upload(5),
+            file_name: 'montage.mp4',
+            size_bytes: 40_000_000,
+            media: 'video',
+          },
+        ],
       },
     })
     expect(result.item_id).toMatch(/^FYP-/)
@@ -111,7 +125,7 @@ describe('загрузка с сайта', () => {
         body: {
           kind: 'teaser',
           target: null,
-          files: [{ file_name: 'x.mp4', size_bytes: 1, media: 'video' }],
+          files: [{ upload_id: upload(6), file_name: 'x.mp4', size_bytes: 1, media: 'video' }],
         },
       }),
     ).rejects.toBeInstanceOf(Error)
@@ -125,7 +139,7 @@ describe('загрузка с сайта', () => {
         body: {
           kind: 'teaser',
           target: { kind: 'item', item_id: 'PPV-073' },
-          files: [{ file_name: 'x.jpg', size_bytes: 1, media: 'photo' }],
+          files: [{ upload_id: upload(7), file_name: 'x.jpg', size_bytes: 1, media: 'photo' }],
         },
       })
       .catch((caught: unknown) => caught)
