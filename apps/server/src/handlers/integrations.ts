@@ -12,12 +12,14 @@ import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import type { Services } from '../services'
 import { modelViews } from './models'
+import { withFieldErrors } from './shared'
 
 /**
  * «Интеграции» (DESIGN §4.19, SPEC §8): each switch is a `policy_settings` row; no row means
  * off, so a fresh install has everything off. A missing secret in the environment is «не
  * настроено» whatever the switch says. «Временно недоступно» comes from the workers that
- * talk to the source; until they run nothing is down.
+ * talk to the source; until they run nothing is down. Ids are `hub.lora-1`, `ydisk.lora`:
+ * a `:` would break `…/{integration}:connect` (Fastify decodes `%3A` before matching).
  */
 
 type SwitchName = keyof IntegrationSwitches
@@ -147,7 +149,7 @@ async function entries(q: Queryable, models: readonly string[]): Promise<Entry[]
       modelCode: model.code,
       modelName: model.name,
     }
-    list.push({ integration: base(`ydisk:${model.code}`, 'ydisk', modelScope), scope: modelScope })
+    list.push({ integration: base(`ydisk.${model.code}`, 'ydisk', modelScope), scope: modelScope })
     for (const account of model.accounts) {
       const scope: Scope = {
         ...modelScope,
@@ -156,7 +158,7 @@ async function entries(q: Queryable, models: readonly string[]): Promise<Entry[]
         accountLabel: account.label,
         hubPage: account.hub_page,
       }
-      list.push({ integration: base(`hub:${account.code}`, 'hub', scope), scope })
+      list.push({ integration: base(`hub.${account.code}`, 'hub', scope), scope })
     }
   }
   for (const kind of ['ai', 'fyper', 'agents'] as const) {
@@ -267,6 +269,50 @@ export function integrationHandlers({ db, command, secrets }: Services): Handler
     },
 
     settings: {
+      /**
+       * «Настроить»: Hub gets the page code (`accounts.hub_page_ref`). Keys and addresses live
+       * in the server's environment (SPEC §8), Fyper is an agent with a token.
+       */
+      connectIntegration: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const entry = (await entries(tx, actor.models)).find(
+            (candidate) => candidate.integration.id === params.integration,
+          )
+          if (!entry) throw new ApiProblem('not_found', 'Такой интеграции нет')
+          if (entry.integration.kind === 'fyper') {
+            throw new ApiProblem('invalid_request', 'Fyper заводится в «Агентах и токенах»')
+          }
+          if (entry.integration.kind !== 'hub' || !body.hub_page || !entry.scope.accountId) {
+            throw new ApiProblem(
+              'invalid_request',
+              'Ключи и адреса интеграций задаются в окружении сервера',
+            )
+          }
+          const hubPage = body.hub_page
+          await withFieldErrors(
+            () =>
+              tx.execute(sql`
+                UPDATE accounts SET hub_page_ref = ${hubPage}, row_version = row_version + 1
+                 WHERE model_id = ${entry.scope.modelId}::uuid
+                   AND id = ${entry.scope.accountId}::uuid`),
+            {
+              accounts_hub_page_ref_key: {
+                field: 'hub_page',
+                message: 'Эта страница Hub уже привязана',
+              },
+            },
+          )
+          await logAction(tx, {
+            modelId: entry.scope.modelId,
+            subjectKind: 'integration',
+            subjectLabel: subjectOf(entry),
+            before: { 'Код страницы в Hub': entry.scope.hubPage ?? 'не задан' },
+            after: { 'Код страницы в Hub': hubPage },
+          })
+          const connected = { ...entry, scope: { ...entry.scope, hubPage } }
+          return view(connected, await policies(tx), secrets, new Date().toISOString())
+        }),
+
       /** Cloud markup is stage 8: no services yet, so the section stays hidden (DESIGN §4.19). */
       ai: () => ({ services: [], budget_month_usd: null, spent_month_usd: 0, stopped: null }),
     },

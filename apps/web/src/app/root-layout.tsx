@@ -4,10 +4,22 @@ import { getRouteApi, Outlet, useRouter } from '@tanstack/react-router'
 import { useCallback } from 'react'
 import { ActionToastProvider } from '@/actions/action-toast-provider'
 import { ApiProvider } from '@/data/api-provider'
+import { useSession } from '@/data/session'
 import { RouterUiLink } from './router-ui-link'
+import type { Skin } from './search-params'
 import { useSkin } from './use-skin'
 
 const rootRouteApi = getRouteApi('__root__')
+
+/**
+ * Вид, который человек выбрал в «Профиле» (DESIGN §7.10); `?skin=` в разработке сильнее. Пока
+ * сеанс не пришёл или на странице входа — синий.
+ */
+function SessionSkin({ devSkin }: { devSkin: Skin | undefined }) {
+  const chosen = useSession().data?.ui_skin
+  useSkin(import.meta.env.DEV && devSkin ? devSkin : chosen === 'focus' ? 'focus' : undefined)
+  return null
+}
 
 /**
  * Корень приложения: сеанс данных, подсказки, ссылки дизайн-системы поверх маршрутизатора и
@@ -15,7 +27,6 @@ const rootRouteApi = getRouteApi('__root__')
  */
 export function RootLayout() {
   const { demo, as, skin } = rootRouteApi.useSearch()
-  useSkin(import.meta.env.DEV ? skin : undefined)
   const router = useRouter()
   // После входа — тот же адрес целиком: фильтры, вид и вкладка живут в запросе (§3.10).
   const toLogin = useCallback(() => {
@@ -27,6 +38,7 @@ export function RootLayout() {
 
   return (
     <ApiProvider demo={demo ?? null} role={as ?? null} onUnauthenticated={toLogin}>
+      <SessionSkin devSkin={skin} />
       <TooltipProvider>
         <LinkComponentProvider value={RouterUiLink}>
           <ActionToastProvider>

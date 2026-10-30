@@ -1,12 +1,11 @@
-import { type AccountCode, mskDate, type WeekNorm } from '@contentops/contracts'
+import type { AccountCode, WeekNorm } from '@contentops/contracts'
 import { SectionTabs } from '@contentops/ui/components/section-tabs'
 import { Skeleton } from '@contentops/ui/components/skeleton'
 import { ErrorLine } from '@contentops/ui/components/state-lines'
 import { useHref } from '@/app/use-href'
-import { useClock } from '@/data/api-session'
-import { usePlanDay, useWeekNorm, useWeekNorms } from '@/data/plan'
+import { useWeekNorm, useWeekNorms } from '@/data/plan'
+import { useModelPeople } from '@/data/settings'
 import { useCurrentModel } from '@/shell/model/model-context'
-import { peopleOf } from '../shared/plan-text'
 import { usePlanAccess } from '../shared/use-plan-access'
 import { NormEditor } from './norm-editor'
 
@@ -26,15 +25,13 @@ export function NormsView({ account }: { account: AccountCode }) {
   const model = useCurrentModel()
   const href = useHref()
   const access = usePlanAccess()
-  const today = mskDate(useClock().now())
   const norms = useWeekNorms(
     model.code,
     model.accounts.map((page) => page.code),
   )
   const norm = useWeekNorm(model.code, account)
-  // Кто выкладывает — те, кто ведёт страницы модели в плане.
-  const day = usePlanDay(model.code, today, { mine: false, cancelled: false })
-  const people = day.data ? peopleOf(day.data.groups, day.data.rows) : []
+  // «Обычно выкладывает» выбирают из людей с правами на модель.
+  const people = useModelPeople(model.code).data ?? []
   const page = model.accounts.find((candidate) => candidate.code === account)
 
   return (

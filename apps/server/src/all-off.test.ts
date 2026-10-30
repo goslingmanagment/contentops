@@ -41,8 +41,8 @@ describe('«всё выключено»', () => {
       items.map((item: { id: string; state: string }) => [item.id, item.state]),
     )
     expect(states).toMatchObject({
-      'ydisk:lora': 'unset',
-      'hub:lora-1': 'unset',
+      'ydisk.lora': 'unset',
+      'hub.lora-1': 'unset',
       ai: 'unset',
       fyper: 'off',
       agents: 'off',
