@@ -529,6 +529,8 @@ export const draftBlockedReasons = [
   'deferred',
   /** A processed frame whose download name is not known: ◆ «К какому кадру?» (SPEC §6.1). */
   'which_frame',
+  /** A montage for a plan row that no longer waits: ◆ «Подставить монтаж в строку?». */
+  'row_changed',
 ] as const
 export type DraftBlockedReason = (typeof draftBlockedReasons)[number]
 

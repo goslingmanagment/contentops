@@ -2700,7 +2700,7 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 	check("inbox_drafts_proposed_role_check", sql`proposed_role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text])`),
 	check("inbox_drafts_proposed_ordinal_check", sql`(proposed_ordinal >= 1) AND (proposed_ordinal <= 999)`),
 	check("inbox_drafts_proposed_life_use_check", sql`proposed_life_use = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text])`),
-	check("inbox_drafts_blocked_reason_check", sql`blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text])`),
+	check("inbox_drafts_blocked_reason_check", sql`blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text, 'row_changed'::text])`),
 	check("inbox_drafts_reopen_count_check", sql`reopen_count >= 0`),
 	check("inbox_drafts_one_input", sql`num_nonnulls(source_revision_id, web_upload_id, from_version_id) = 1`),
 	check("inbox_drafts_outcome", sql`(state = 'resolved'::text) = (outcome IS NOT NULL)`),

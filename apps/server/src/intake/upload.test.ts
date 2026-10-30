@@ -50,6 +50,13 @@ beforeAll(async () => {
   await createCatalogItems(server.db, 'lora', [
     { type: 'ppv', number: 89, title: 'Вдвоём на диване', files: [{ role: 'master' }] },
     { type: 'set', number: 74, title: 'Кухня утром', files: [{ role: 'raw' }, { role: 'raw' }] },
+    {
+      type: 'raw',
+      number: 77,
+      title: 'Пляж на закате',
+      rawPurpose: 'fyp',
+      files: [{ role: 'raw' }, { role: 'raw' }],
+    },
   ])
 })
 afterAll(() => server.close())
@@ -453,7 +460,7 @@ describe('POST /{model}/uploads', () => {
     expect(await handles(74)).toEqual(['ed01', 'ed02', 'raw01', 'raw02'])
   })
 
-  it('refuses what does not fit the target before touching the bytes; a plan row waits for 4а', async () => {
+  it('refuses what does not fit the target before touching the bytes; an unknown row is 404', async () => {
     const bytes = randomBytes(1_000)
     const uploadId = await tusUpload(server.app, {
       model: 'lora',
@@ -476,6 +483,136 @@ describe('POST /{model}/uploads', () => {
       target: { kind: 'plan_row', row_id: 'row-1' },
       files: [file(uploadId, 'still.jpg', bytes, 'photo')],
     })
-    expect(row.statusCode).toBe(501)
+    // No such row in the plan of the model.
+    expect(row.statusCode).toBe(404)
+  })
+})
+
+describe('a montage for a plan row (SPEC §6.1, §7)', () => {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
+
+  async function waitingRow(): Promise<string> {
+    const response = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/plan/rows',
+      as: owner,
+      key: newKey(),
+      body: {
+        rows: [
+          {
+            item_id: null,
+            account: 'lora-1',
+            surface: 'fyp',
+            date: today,
+            time: '21:00',
+            fyp_version: null,
+            assignee: null,
+            note: null,
+            requires_new_upload: false,
+            awaiting_montage: { from_item: 'RAW-0077', expected_type: 'fyp', file_keys: ['raw01'] },
+            marked: null,
+          },
+        ],
+      },
+    })
+    expect(response.statusCode, response.body).toBe(201)
+    return response.json().rows[0].id as string
+  }
+
+  async function montage(rowId: string) {
+    const bytes = randomBytes(9_000)
+    const uploadId = await tusUpload(server.app, {
+      model: 'lora',
+      as: owner,
+      name: 'montage.mp4',
+      bytes,
+      kind: 'fyp_montage',
+    })
+    return command(owner, {
+      kind: 'fyp_montage',
+      target: { kind: 'plan_row', row_id: rowId },
+      files: [file(uploadId, 'montage.mp4', bytes, 'video')],
+    })
+  }
+
+  async function planRow(rowId: string) {
+    const response = await call(server.app, {
+      method: 'GET',
+      url: `/api/v1/lora/plan?date=${today}`,
+      as: owner,
+    })
+    return response.json().rows.find((row: { id: string }) => row.id === rowId) as {
+      manifest: { item_id: string } | null
+      awaiting_montage: unknown
+    }
+  }
+
+  it('«ждёт монтаж» → upload → a new FYP accepted at upload and put into the row', async () => {
+    const rowId = await waitingRow()
+    expect((await planRow(rowId)).awaiting_montage).not.toBeNull()
+    const answer = await montage(rowId)
+    expect(answer.statusCode, answer.body).toBe(201)
+    expect(answer.json()).toMatchObject({ placed: 'attached', decision: null })
+    const fyp = answer.json().item_id as string
+    expect(fyp).toMatch(/^FYP-\d{4}$/)
+    const row = await planRow(rowId)
+    expect(row).toMatchObject({ manifest: { item_id: fyp }, awaiting_montage: null })
+    const { rows } = await server.db.execute<{ parent: string }>(sql`
+      SELECT public_item_id(pi.type, pi.number) AS parent FROM provenance p
+        JOIN content_items ci ON ci.model_id = p.model_id AND ci.id = p.child_item_id
+        JOIN content_items pi ON pi.model_id = p.model_id AND pi.id = p.parent_item_id
+       WHERE p.relation = 'montage_from' AND public_item_id(ci.type, ci.number) = ${fyp}`)
+    expect(rows).toEqual([{ parent: 'RAW-0077' }])
+  })
+
+  it('a row that no longer waits asks «Подставить монтаж в строку?»', async () => {
+    const rowId = await waitingRow()
+    const cancelled = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/plan/rows/${rowId}:cancel`,
+      as: owner,
+      key: newKey(),
+      body: { reason: null },
+    })
+    expect(cancelled.statusCode, cancelled.body).toBe(200)
+    const answer = await montage(rowId)
+    expect(answer.json()).toMatchObject({
+      placed: 'inbox',
+      item_id: null,
+      decision: 'substitute_montage',
+    })
+    const group = answer.json().group_id as string
+    const view = await call(server.app, {
+      method: 'GET',
+      url: `/api/v1/lora/inbox/groups/${group}`,
+      as: owner,
+    })
+    expect(view.json().state).toEqual({ kind: 'decision', decision: 'substitute_montage' })
+    expect(view.json().hints).toContainEqual({
+      kind: 'row_change',
+      was: expect.stringMatching(/^ждёт монтаж фупа/),
+      now: expect.stringMatching(/^отменена/),
+    })
+    // Into a cancelled row it does not go; kept in the catalog instead.
+    const into = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${group}:decide`,
+      as: owner,
+      key: newKey(),
+      body: { decision: 'substitute_montage', substitute: true },
+    })
+    expect(into.json().code).toBe('row_cancelled')
+    const kept = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${group}:decide`,
+      as: owner,
+      key: newKey(),
+      body: { decision: 'substitute_montage', substitute: false },
+    })
+    expect(kept.statusCode, kept.body).toBe(200)
+    expect(kept.json().state).toMatchObject({ kind: 'accepted', how: 'upload' })
+    const { rows: still } = await server.db.execute<{ manifest_id: string | null }>(sql`
+      SELECT manifest_id FROM posting_plan_rows WHERE id = ${rowId}::uuid`)
+    expect(still[0]?.manifest_id).toBeNull()
   })
 })

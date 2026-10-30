@@ -8,6 +8,8 @@ import { acceptGroup, lockGroupForDecision, lockOpenDrafts, rejectGroup } from '
 import { queueMedia } from './fetch'
 import { bindFrame, ordinalOfHandle, rawFrame } from './frames'
 import { ITEM_TO_DB_TYPE } from './inbox-view'
+import { planRow } from './row-upload'
+import { acceptRowMontage } from './upload'
 
 /**
  * The other decisions of «Приехало» (DESIGN §4.8, schema §3.4): merge and split of groups
@@ -273,12 +275,24 @@ export async function decide(
       }
       break
     }
-    case 'substitute_montage':
-      // ◆ «Подставить монтаж в строку?» needs an upload aimed at a plan row; rows of the plan
-      // take uploads with 4а, so no group of «Приехало» carries this question yet.
-      throw new ApiProblem('accept_blocked', 'В этой группе нет монтажа для строки плана', {
-        reason: 'no_plan_row',
-      })
+    case 'substitute_montage': {
+      // ◆ «Подставить монтаж в строку?» (SPEC §7): the montage was uploaded for a row that no
+      // longer waits; the answer accepts it and puts it into the row, or keeps it in the catalog.
+      const waiting = drafts.filter((draft) => draft.blocked_reason === 'row_changed')
+      const { rows: evidence } = await tx.execute<{ row_id: string | null }>(sql`
+        SELECT evidence ->> 'plan_row_id' AS row_id FROM inbox_groups
+         WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
+      const rowId = evidence[0]?.row_id
+      if (waiting.length === 0 || !rowId) {
+        throw new ApiProblem('accept_blocked', 'В этой группе нет монтажа для строки плана', {
+          reason: 'no_plan_row',
+        })
+      }
+      await clear('row_changed')
+      const row = await planRow(tx, model, rowId, true)
+      await acceptRowMontage(tx, model, actor, groupId, row, body.substitute)
+      break
+    }
     case 'split_archive':
       // Archives are unpacked once by the import (SPEC §6.3, stage 3); intake keeps the archive
       // as a fact of the source and offers no draft for it, so there is nothing to split here.
