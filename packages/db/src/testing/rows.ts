@@ -666,6 +666,9 @@ export const FACTORIES: Record<string, Factory> = {
     if (testing.includes('input_manifest_id')) {
       row.expected_type = 'FYP'
       row.input_manifest_id = await idOf(client, 'asset_manifests', modelId)
+    }
+    return row
+  },
   // 0007_promo
   contractors: async (client, modelId, testing = []) => ({
     model_id: modelId,

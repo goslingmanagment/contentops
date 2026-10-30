@@ -535,7 +535,7 @@ describe('handoffs (SPEC §5, §7.1, §9.3)', () => {
     const { rows } = await server.db.execute<{ marks: number; placements: number }>(sql`
       SELECT (SELECT count(*)::int FROM action_log
                WHERE action = 'promo.markSent' AND entry_kind = 'action' AND result = 'ok') AS marks,
-             (SELECT count(*)::int FROM pg_class WHERE relname = 'placements') AS placements`)
+             (SELECT count(*)::int FROM placements) AS placements`)
     expect(rows[0]).toEqual({ marks: 1, placements: 0 })
   })
 

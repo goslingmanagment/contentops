@@ -251,6 +251,8 @@ CREATE TABLE public.content_items (
     created_by uuid,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     row_version bigint DEFAULT 1 NOT NULL,
+    default_contractor_id uuid,
+    CONSTRAINT content_items_default_contractor CHECK (((default_contractor_id IS NULL) OR (type = 'PRM'::text))),
     CONSTRAINT content_items_merged_deleted CHECK (((merged_into_item_id IS NULL) OR (deleted_at IS NOT NULL))),
     CONSTRAINT content_items_name_in_media CHECK (((name_in_media IS NULL) OR (type = 'CUS'::text))),
     CONSTRAINT content_items_name_in_media_check CHECK ((name_in_media = ANY (ARRAY['yes'::text, 'no'::text, 'unknown'::text]))),
@@ -823,6 +825,21 @@ $$;
 
 ALTER FUNCTION public.posting_plan_row_slot() OWNER TO contentops_migrate;
 
+CREATE FUNCTION public.promo_delivery_transition() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (OLD.state = 'prepared' AND NEW.state = 'preparing')
+     OR (OLD.state = 'preparing' AND NEW.state = 'sent') THEN
+    RAISE EXCEPTION 'promo handoff % cannot go % → %', OLD.id, OLD.state, NEW.state
+      USING ERRCODE = 'CO005';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.promo_delivery_transition() OWNER TO contentops_migrate;
+
 CREATE FUNCTION public.public_item_id(item_type text, item_number integer) RETURNS text
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
     RETURN ((item_type || '-'::text) || lpad((item_number)::text, GREATEST(CASE WHEN (item_type = ANY (ARRAY['FYP'::text, 'RAW'::text])) THEN 4 ELSE 3 END, length((item_number)::text)), '0'::text));
@@ -1347,6 +1364,24 @@ CREATE VIEW public.catalog_index WITH (security_invoker='true') AS
   WHERE (i.deleted_at IS NULL);
 
 ALTER VIEW public.catalog_index OWNER TO contentops_migrate;
+
+CREATE TABLE public.contractors (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    name text NOT NULL,
+    contact text,
+    channel_id uuid,
+    format text DEFAULT 'upload'::text NOT NULL,
+    archived_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT contractors_format_check CHECK ((format = ANY (ARRAY['upload'::text, 'master'::text, 'compat'::text]))),
+    CONSTRAINT contractors_name_filled CHECK ((btrim(name) <> ''::text))
+);
+
+ALTER TABLE public.contractors OWNER TO contentops_migrate;
 
 CREATE TABLE public.custom_order_messages (
     model_id uuid NOT NULL,
@@ -1893,6 +1928,47 @@ CREATE TABLE public.principals (
 
 ALTER TABLE public.principals OWNER TO contentops_migrate;
 
+CREATE TABLE public.promo_deliveries (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    package_item_id uuid NOT NULL,
+    package_item_type text DEFAULT 'PRM'::text NOT NULL,
+    channel_id uuid NOT NULL,
+    contractor_id uuid NOT NULL,
+    format text,
+    manifest_id uuid NOT NULL,
+    receipt_id uuid,
+    state text DEFAULT 'preparing'::text NOT NULL,
+    prepared_at timestamp with time zone,
+    prepared_by uuid,
+    sent_at timestamp with time zone,
+    sent_by uuid,
+    recipient_note text,
+    summary jsonb DEFAULT '{}'::jsonb NOT NULL,
+    origin text DEFAULT 'product'::text NOT NULL,
+    corrects_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT promo_deliveries_format_check CHECK ((format = ANY (ARRAY['upload'::text, 'master'::text, 'compat'::text]))),
+    CONSTRAINT promo_deliveries_not_self CHECK ((corrects_id <> id)),
+    CONSTRAINT promo_deliveries_origin_check CHECK ((origin = ANY (ARRAY['product'::text, 'import'::text]))),
+    CONSTRAINT promo_deliveries_package_item_type_check CHECK ((package_item_type = 'PRM'::text)),
+    CONSTRAINT promo_deliveries_prepared CHECK (
+CASE origin
+    WHEN 'import'::text THEN (num_nonnulls(format, prepared_at, prepared_by, receipt_id, corrects_id) = 0)
+    ELSE ((prepared_at IS NOT NULL) AND (prepared_by IS NOT NULL) AND ((state = 'preparing'::text) = (receipt_id IS NULL)))
+END),
+    CONSTRAINT promo_deliveries_sent CHECK (
+CASE origin
+    WHEN 'import'::text THEN ((state = 'sent'::text) AND (sent_at IS NULL) AND (sent_by IS NULL))
+    ELSE ((format IS NOT NULL) AND ((state = 'sent'::text) = ((sent_at IS NOT NULL) AND (sent_by IS NOT NULL))))
+END),
+    CONSTRAINT promo_deliveries_state_check CHECK ((state = ANY (ARRAY['preparing'::text, 'prepared'::text, 'sent'::text])))
+);
+
+ALTER TABLE public.promo_deliveries OWNER TO contentops_migrate;
+
 CREATE TABLE public.rendition_artifacts (
     id uuid DEFAULT uuidv7() NOT NULL,
     generation_id uuid NOT NULL,
@@ -2142,6 +2218,12 @@ ALTER TABLE ONLY public.content_items
 ALTER TABLE ONLY public.content_items
     ADD CONSTRAINT content_items_pkey PRIMARY KEY (model_id, id);
 
+ALTER TABLE ONLY public.contractors
+    ADD CONSTRAINT contractors_name UNIQUE (model_id, name);
+
+ALTER TABLE ONLY public.contractors
+    ADD CONSTRAINT contractors_pkey PRIMARY KEY (model_id, id);
+
 ALTER TABLE ONLY public.custom_order_deliveries
     ADD CONSTRAINT custom_order_deliveries_manifest UNIQUE (model_id, order_id, manifest_id);
 
@@ -2318,6 +2400,15 @@ ALTER TABLE ONLY public.promo_channels
 
 ALTER TABLE ONLY public.promo_channels
     ADD CONSTRAINT promo_channels_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_corrects_once UNIQUE (corrects_id);
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_manifest UNIQUE (model_id, manifest_id);
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_pkey PRIMARY KEY (model_id, id);
 
 ALTER TABLE ONLY public.provenance
     ADD CONSTRAINT provenance_link UNIQUE NULLS NOT DISTINCT (model_id, relation, child_item_id, child_version_id, parent_item_id, parent_version_id);
@@ -2546,6 +2637,12 @@ CREATE INDEX ppv_releases_page ON public.ppv_releases USING btree (model_id, acc
 
 CREATE UNIQUE INDEX principal_grants_live_key ON public.principal_grants USING btree (principal_id, model_id) WHERE (revoked_at IS NULL);
 
+CREATE INDEX promo_deliveries_contractor ON public.promo_deliveries USING btree (model_id, contractor_id) WHERE (state = 'sent'::text);
+
+CREATE INDEX promo_deliveries_created ON public.promo_deliveries USING btree (model_id, created_at DESC);
+
+CREATE INDEX promo_deliveries_package ON public.promo_deliveries USING btree (model_id, package_item_id, created_at);
+
 CREATE INDEX provenance_child_item ON public.provenance USING btree (model_id, child_item_id);
 
 CREATE INDEX provenance_child_version ON public.provenance USING btree (model_id, child_version_id);
@@ -2583,6 +2680,8 @@ CREATE INDEX work_operations_draft ON public.work_operations USING btree (model_
 CREATE INDEX work_operations_due ON public.work_operations USING btree (next_attempt_at, priority) WHERE (state = ANY (ARRAY['pending'::text, 'retry_wait'::text]));
 
 CREATE INDEX work_operations_lease ON public.work_operations USING btree (lease_until) WHERE (state = 'running'::text);
+
+CREATE INDEX work_operations_manifest ON public.work_operations USING btree (model_id, manifest_id) WHERE (manifest_id IS NOT NULL);
 
 CREATE INDEX work_operations_output ON public.work_operations USING btree (output_sha256) WHERE (output_sha256 IS NOT NULL);
 
@@ -2627,6 +2726,10 @@ CREATE TRIGGER content_items_fixed BEFORE UPDATE ON public.content_items FOR EAC
 CREATE TRIGGER content_items_journal AFTER INSERT OR DELETE OR UPDATE ON public.content_items FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
 CREATE TRIGGER content_items_second_person_late AFTER UPDATE OF has_second_person ON public.content_items FOR EACH ROW WHEN (((new.has_second_person IS TRUE) AND (old.has_second_person IS NOT TRUE))) EXECUTE FUNCTION public.content_item_second_person_late();
+
+CREATE TRIGGER contractors_fixed BEFORE UPDATE ON public.contractors FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id');
+
+CREATE TRIGGER contractors_journal AFTER INSERT OR DELETE OR UPDATE ON public.contractors FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
 CREATE TRIGGER custom_order_deliveries_append_only BEFORE DELETE OR UPDATE ON public.custom_order_deliveries FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
@@ -2733,6 +2836,16 @@ CREATE TRIGGER principal_grants_journal AFTER INSERT OR DELETE OR UPDATE ON publ
 CREATE TRIGGER promo_channels_fixed BEFORE UPDATE ON public.promo_channels FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id');
 
 CREATE TRIGGER promo_channels_journal AFTER INSERT OR DELETE OR UPDATE ON public.promo_channels FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER promo_deliveries_fixed BEFORE UPDATE ON public.promo_deliveries FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'package_item_id', 'package_item_type', 'channel_id', 'contractor_id', 'format', 'manifest_id', 'origin', 'corrects_id', 'prepared_at', 'prepared_by');
+
+CREATE TRIGGER promo_deliveries_journal AFTER INSERT OR DELETE OR UPDATE ON public.promo_deliveries FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER promo_deliveries_receipt_once BEFORE UPDATE ON public.promo_deliveries FOR EACH ROW EXECUTE FUNCTION public.set_once('receipt_id');
+
+CREATE TRIGGER promo_deliveries_sent_frozen BEFORE DELETE OR UPDATE ON public.promo_deliveries FOR EACH ROW WHEN ((old.state = 'sent'::text)) EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE TRIGGER promo_deliveries_transition BEFORE UPDATE ON public.promo_deliveries FOR EACH ROW EXECUTE FUNCTION public.promo_delivery_transition();
 
 CREATE TRIGGER provenance_fixed BEFORE UPDATE ON public.provenance FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'relation', 'child_item_id', 'child_version_id', 'parent_item_id', 'parent_version_id');
 
@@ -2901,6 +3014,9 @@ ALTER TABLE ONLY public.content_items
     ADD CONSTRAINT content_items_model_id_created_from_group_id_fkey FOREIGN KEY (model_id, created_from_group_id) REFERENCES public.inbox_groups(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_model_id_default_contractor_id_fkey FOREIGN KEY (model_id, default_contractor_id) REFERENCES public.contractors(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.content_items
     ADD CONSTRAINT content_items_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.content_items
@@ -2908,6 +3024,15 @@ ALTER TABLE ONLY public.content_items
 
 ALTER TABLE ONLY public.content_items
     ADD CONSTRAINT content_items_model_id_promo_channel_id_fkey FOREIGN KEY (model_id, promo_channel_id) REFERENCES public.promo_channels(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.contractors
+    ADD CONSTRAINT contractors_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.contractors
+    ADD CONSTRAINT contractors_model_id_channel_id_fkey FOREIGN KEY (model_id, channel_id) REFERENCES public.promo_channels(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.contractors
+    ADD CONSTRAINT contractors_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.custom_order_deliveries
     ADD CONSTRAINT custom_order_deliveries_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
@@ -3251,6 +3376,30 @@ ALTER TABLE ONLY public.principal_grants
 ALTER TABLE ONLY public.promo_channels
     ADD CONSTRAINT promo_channels_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_model_id_channel_id_fkey FOREIGN KEY (model_id, channel_id) REFERENCES public.promo_channels(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_model_id_contractor_id_fkey FOREIGN KEY (model_id, contractor_id) REFERENCES public.contractors(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_model_id_corrects_id_fkey FOREIGN KEY (model_id, corrects_id) REFERENCES public.promo_deliveries(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_model_id_manifest_id_fkey FOREIGN KEY (model_id, manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_model_id_receipt_id_fkey FOREIGN KEY (model_id, receipt_id) REFERENCES public.download_receipts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_package_fkey FOREIGN KEY (model_id, package_item_id, package_item_type) REFERENCES public.content_items(model_id, id, type) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_prepared_by_fkey FOREIGN KEY (prepared_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.promo_deliveries
+    ADD CONSTRAINT promo_deliveries_sent_by_fkey FOREIGN KEY (sent_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.provenance
     ADD CONSTRAINT provenance_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
@@ -3442,6 +3591,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tags TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.catalog_index TO contentops_app;
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.contractors TO contentops_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.custom_order_messages TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.custom_order_revisions TO contentops_app;
@@ -3485,6 +3636,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ppv_releases TO contentops_app
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.principal_grants TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.principals TO contentops_app;
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.promo_deliveries TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rendition_artifacts TO contentops_app;
 
