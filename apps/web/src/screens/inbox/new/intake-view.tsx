@@ -44,7 +44,7 @@ interface IntakeViewProps {
   viewParam: InboxView | undefined
   /** Вид пишется в адрес своего маршрута, без новой записи истории. */
   onViewParamChange: (view: InboxView) => void
-  /** Группа из адреса `#/<модель>/inbox/g/<id>`: её показывает панель при входе. */
+  /** Группа из адреса `/<модель>/inbox/g/<id>`: её показывает панель при входе. */
   initialGroupId?: string
 }
 

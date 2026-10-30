@@ -71,7 +71,7 @@ const STORAGE_KEY = 'library:not-uploaded'
 const getKey = (entry: CatalogEntry) => entry.id
 
 /**
- * «Ещё не залито» `#/<модель>/library/not-uploaded?page=lora-2` (DESIGN §4.3): ответить
+ * «Ещё не залито» `/<модель>/library/not-uploaded?page=lora-2` (DESIGN §4.3): ответить
  * «что ещё не залито на Fansly 2» и сразу поставить это в план. Вкладка — страница,
  * группы по типу, фупы свёрнуты, поставленное в план скрыто.
  */

@@ -1,14 +1,11 @@
-import { createHashHistory, createRouter } from '@tanstack/react-router'
+import { createBrowserHistory, createRouter } from '@tanstack/react-router'
 import { routeTree } from './route-tree'
 
-/**
- * Прототип живёт на hash-адресах и открывается двойным щелчком (file://); в продукте те
- * же маршруты работают на `createBrowserHistory` (DESIGN §9.1).
- */
+/** Адреса DESIGN §2.4 — обычные пути (`/lora/library`) на `createBrowserHistory` (§9.1). */
 export function createAppRouter() {
   return createRouter({
     routeTree,
-    history: createHashHistory(),
+    history: createBrowserHistory(),
     defaultPreload: 'intent',
     notFoundMode: 'fuzzy',
   })

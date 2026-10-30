@@ -5,8 +5,8 @@ import { CheckView } from './check/check-view'
 const routeApi = getRouteApi('/_shell/$model/plan/check')
 
 /**
- * План › Сверить `#/<модель>/plan/check` (DESIGN §4.15). Выбранный случай живёт в адресе
- * `#/<модель>/plan/check/<id>` (§2.4): ссылку можно переслать, «Назад» и обновление
+ * План › Сверить `/<модель>/plan/check` (DESIGN §4.15). Выбранный случай живёт в адресе
+ * `/<модель>/plan/check/<id>` (§2.4): ссылку можно переслать, «Назад» и обновление
  * открывают тот же случай. Выбор заменяет запись истории, а не добавляет новую.
  */
 export function PlanCheckScreen() {

@@ -10,12 +10,12 @@ import { useSkin } from './use-skin'
 const rootRouteApi = getRouteApi('__root__')
 
 /**
- * Корень приложения: сеанс данных по `?demo=` и `?as=`, вид по `?skin=`, подсказки, ссылки дизайн-системы
- * поверх маршрутизатора и полоска после действия.
+ * Корень приложения: сеанс данных, подсказки, ссылки дизайн-системы поверх маршрутизатора и
+ * полоска после действия. `?demo=`, `?as=` и `?skin=` работают только в разработке.
  */
 export function RootLayout() {
   const { demo, as, skin } = rootRouteApi.useSearch()
-  useSkin(skin)
+  useSkin(import.meta.env.DEV ? skin : undefined)
   const router = useRouter()
   // После входа — тот же адрес целиком: фильтры, вид и вкладка живут в запросе (§3.10).
   const toLogin = useCallback(() => {
@@ -26,7 +26,7 @@ export function RootLayout() {
   }, [router])
 
   return (
-    <ApiProvider demo={demo ?? null} role={as ?? 'km'} onUnauthenticated={toLogin}>
+    <ApiProvider demo={demo ?? null} role={as ?? null} onUnauthenticated={toLogin}>
       <TooltipProvider>
         <LinkComponentProvider value={RouterUiLink}>
           <ActionToastProvider>

@@ -3,9 +3,8 @@ import {
   type CatalogEntry,
   createApiClient,
   createFrozenClock,
-  createMockFetch,
-  PROTOTYPE_NOW,
 } from '@contentops/contracts'
+import { createMockFetch, PROTOTYPE_NOW } from '@contentops/mock-api'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type PageSummariesView, pageSummariesView } from '@/data/catalog'
 import {

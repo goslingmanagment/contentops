@@ -35,7 +35,7 @@ export interface CheckSearch extends CaseFilter {
 interface CheckViewProps {
   search: CheckSearch
   onSearchChange: (next: CheckSearch) => void
-  /** Выбранный случай — из адреса `#/<модель>/plan/check/<id>`; `null` — панель закрыта. */
+  /** Выбранный случай — из адреса `/<модель>/plan/check/<id>`; `null` — панель закрыта. */
   caseId: string | null
   /** Выбор другого случая или закрытие панели пишется в адрес. */
   onCaseChange: (caseId: string | null) => void

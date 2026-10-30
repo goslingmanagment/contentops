@@ -19,7 +19,7 @@ import { ThresholdsSection } from './thresholds/thresholds-section'
 
 const routeApi = getRouteApi('/_shell/settings/$tab')
 
-/** Разделы по адресу `#/settings/<раздел>`: каждый живёт в своей папке. */
+/** Разделы по адресу `/settings/<раздел>`: каждый живёт в своей папке. */
 const SECTIONS: Record<SettingsTab, ComponentType> = {
   models: ModelsSection,
   people: PeopleSection,
@@ -43,7 +43,7 @@ function useAiConnected(): boolean {
 }
 
 /**
- * Настройки `#/settings/<раздел>` (DESIGN §4.19): что видят владелец, КМ и «только
+ * Настройки `/settings/<раздел>` (DESIGN §4.19): что видят владелец, КМ и «только
  * чтение» (§2.3). Раздел без прав — «Нет доступа к этому разделу» на месте поля.
  */
 export function SettingsScreen() {

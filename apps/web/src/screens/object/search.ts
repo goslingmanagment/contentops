@@ -30,7 +30,7 @@ export type ObjectSearch = z.infer<typeof objectSearchSchema>
 
 /**
  * Какой файл в просмотре: `?compare=v1,v2` без `view` — сравнение версий мастера
- * (DESIGN §2.4, `#/lora/i/PPV-073?compare=v1,v2`), то есть тоже просмотр мастера.
+ * (DESIGN §2.4, `/lora/i/PPV-073?compare=v1,v2`), то есть тоже просмотр мастера.
  */
 export function viewerKeyOf(search: Pick<ObjectSearch, 'view' | 'compare'>): string | undefined {
   return search.view ?? (search.compare ? 'master' : undefined)

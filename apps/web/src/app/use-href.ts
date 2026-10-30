@@ -12,7 +12,8 @@ type CheckedLinkOptions = Parameters<AnyRouter['buildLocation']>[0]
 /**
  * Готовая строка ссылки для компонентов дизайн-системы, которые берут `href`
  * (`FolderTile`, `NavItem`, крошки). Параметры проверяются по реестру маршрутов, как у
- * `Link` (`ValidateLinkOptions`); `?demo=` и `?as=` подмешиваются сами.
+ * `Link` (`ValidateLinkOptions`); `?demo=` и `?as=` подмешиваются сами. Адрес — обычный
+ * путь от корня: `/lora/library`, `/lora/i/PPV-073`, `/settings/people`.
  */
 export function useHref() {
   const router = useRouter()

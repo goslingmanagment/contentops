@@ -88,7 +88,7 @@ const settingsTabRoute = createRoute({
   component: lazyRouteComponent(settingsScreens, 'SettingsScreen'),
 })
 
-/** `#/<модель>/…`: права на модель проверяются здесь, 403 и 404 — на месте поля. */
+/** `/<модель>/…`: права на модель проверяются здесь, 403 и 404 — на месте поля. */
 const modelRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: '$model',

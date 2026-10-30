@@ -1,5 +1,5 @@
 import type { Dispute } from '@contentops/contracts'
-import { buildLoraLegacy } from '@contentops/contracts/fixtures/lora-legacy'
+import { buildLoraLegacy } from '@contentops/mock-api/fixtures/lora-legacy'
 import { describe, expect, it } from 'vitest'
 import { choiceByDigit, disputeChoices } from './dispute-choices'
 

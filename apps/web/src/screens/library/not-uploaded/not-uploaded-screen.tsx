@@ -7,7 +7,7 @@ import { type BacklogSearch, BacklogView } from './backlog-view'
 const routeApi = getRouteApi('/_shell/$model/library/not-uploaded')
 
 /**
- * Папка «Ещё не залито» `#/<модель>/library/not-uploaded?page=lora-2` (DESIGN §4.3).
+ * Папка «Ещё не залито» `/<модель>/library/not-uploaded?page=lora-2` (DESIGN §4.3).
  * У каждой вкладки своё выделение и место прокрутки, поэтому вид пересоздаётся по странице.
  */
 export function NotUploadedScreen() {

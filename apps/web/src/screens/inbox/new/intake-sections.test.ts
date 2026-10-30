@@ -1,5 +1,5 @@
-import { buildLoraInbox } from '@contentops/contracts/fixtures/lora-inbox'
-import { buildCasesInbox } from '@contentops/contracts/fixtures/lora-inbox-cases'
+import { buildLoraInbox } from '@contentops/mock-api/fixtures/lora-inbox'
+import { buildCasesInbox } from '@contentops/mock-api/fixtures/lora-inbox-cases'
 import { describe, expect, it } from 'vitest'
 import {
   buildSections,

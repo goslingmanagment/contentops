@@ -10,7 +10,7 @@ import { z } from 'zod'
 import { SearchFlagSchema, SearchListSchema, ViewParamSchema } from '@/app/search-params'
 import { ordersSearchShape } from '@/screens/orders/search'
 
-/** Разделы-типы, открытые одним адресом `#/<модель>/library/<раздел>`. */
+/** Разделы-типы, открытые одним адресом `/<модель>/library/<раздел>`. */
 export const LIBRARY_SECTION_SLUGS = ['ppv', 'fyp', 'sets', 'sextings', 'life', 'raw'] as const
 export const LibrarySectionSlugSchema = z.enum(LIBRARY_SECTION_SLUGS)
 export type LibrarySectionSlug = z.infer<typeof LibrarySectionSlugSchema>

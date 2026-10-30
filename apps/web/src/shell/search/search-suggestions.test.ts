@@ -1,10 +1,5 @@
-import {
-  type ApiClient,
-  createApiClient,
-  createFrozenClock,
-  createMockFetch,
-  PROTOTYPE_NOW,
-} from '@contentops/contracts'
+import { type ApiClient, createApiClient, createFrozenClock } from '@contentops/contracts'
+import { createMockFetch, PROTOTYPE_NOW } from '@contentops/mock-api'
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { CatalogIndexView } from '@/data/catalog'
 import { type CatalogSearch, createCatalogSearch, tagNames } from '@/data/catalog-search'

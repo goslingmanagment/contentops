@@ -98,7 +98,7 @@ export function useRecent(model: ModelCode) {
   })
 }
 
-/** Удалённые и слитые объекты (`#/<модель>/library/deleted`, «⋯ → Удалённые объекты»). */
+/** Удалённые и слитые объекты (`/<модель>/library/deleted`, «⋯ → Удалённые объекты»). */
 export function useDeletedItems(model: ModelCode) {
   const api = useApi()
   return useQuery({

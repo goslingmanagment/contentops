@@ -6,8 +6,11 @@ import { newIdempotencyKey } from './idempotency-key'
 import { buildPath, type PathParams, type Route, toSearchParams } from './route'
 import { type ApiRoutes, apiRoutes } from './routes'
 
-/** Any `fetch`: the browser one, or the mock of the prototype. */
-export type FetchLike = (input: string, init: RequestInit) => Promise<Response>
+/**
+ * Any `fetch`: the browser one, or the mock of the prototype. The client also passes the
+ * route of the call, so one `fetch` can send some routes to the server and the rest elsewhere.
+ */
+export type FetchLike = (input: string, init: RequestInit, route?: Route) => Promise<Response>
 
 type Empty = Record<string, never>
 
@@ -118,7 +121,7 @@ export function createApiClient(fetchImpl: FetchLike, options: ApiClientOptions 
       headers[HEADER.contentType] = 'application/json'
       init.body = JSON.stringify(input.body)
     }
-    return fetchImpl(urlOf(route, input), init)
+    return fetchImpl(urlOf(route, input), init, route)
   }
 
   const call = async (route: Route, input: LooseInput): Promise<unknown> => {

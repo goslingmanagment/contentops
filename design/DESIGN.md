@@ -2170,8 +2170,8 @@ Table (только «Переделка в PPV» и таблицы настро
   готова.
 - Окна с полями — react-hook-form со схемами из `packages/contracts`.
 - `apps/web/src/screens/<экран>/` — по папке на экран, без общего `switch` на весь
-  продукт. `packages/contracts/fixtures/` — фикстуры и генератор каталога с постоянным
-  зерном.
+  продукт. `packages/mock-api` — заглушка API с фикстурами и генератором каталога на
+  постоянном зерне, только для разработки.
 - **Проверка состояний:** параметр адреса `?demo=` (`loading`, `empty`, `error`,
   `conflict`, `hub-off`, `hub-unset`, `hub-down`, `disk-off`, `ai-off`, `all-off`, `peak`)
   и роль `?as=km|owner|reader`; второй вид недели — `?variant=pages`. На экране
