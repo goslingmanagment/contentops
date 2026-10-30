@@ -10,6 +10,7 @@ import {
 } from '@contentops/db'
 import {
   downloadVerified,
+  isSourceError,
   type RetryPolicy,
   type SourceEntry,
   sourcePath,
@@ -166,6 +167,21 @@ export function fetchHandler(deps: FetchDeps): WorkHandler {
         },
       })
     } catch (error) {
+      // Gone from the source before its bytes came: «исходник недоступен» until a scan sees
+      // it again (SPEC §6.1), not a broken source.
+      if (isSourceError(error, 'not_found')) {
+        return {
+          report: { vanished: true },
+          commit: async (tx) => {
+            await tx.execute(sql`
+              UPDATE inbox_drafts
+                 SET blocked_reason = 'source_unavailable', updated_at = now(),
+                     row_version = row_version + 1
+               WHERE model_id = ${modelId}::uuid AND id = ${draftId}::uuid
+                 AND state <> 'resolved' AND source_sha256 IS NULL`)
+          },
+        }
+      }
       throw scanFailure(error)
     }
     if (result.status === 'changed') {
