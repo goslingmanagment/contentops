@@ -76,6 +76,7 @@ export function adminHandlers(): BoundRoute[] {
     bind(adminRoutes.me, 'read', ({ state }) => ({
       person: state.principal,
       models: state.principal.models,
+      ui_skin: 'blue',
     })),
     bind(adminRoutes.counters, 'read', ({ state }) =>
       counters(state.world, state.principal, state.clock.now()),

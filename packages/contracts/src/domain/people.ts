@@ -28,9 +28,16 @@ export const PersonSchema = z.object({
 })
 export type Person = z.infer<typeof PersonSchema>
 
-/** The principal behind the current session, with the models it may see. */
+/** Interface skin chosen by the person (DESIGN §7.10): blue by default, or «Фокус». */
+export const UiSkinSchema = z.enum(['blue', 'focus'])
+export type UiSkin = z.infer<typeof UiSkinSchema>
+
+export const UI_SKIN_LABEL: Record<UiSkin, string> = { blue: 'синий', focus: 'Фокус' }
+
+/** The principal behind the current session, with the models it may see and its skin. */
 export const SessionPrincipalSchema = z.object({
   person: PersonSchema,
   models: z.array(ModelCodeSchema),
+  ui_skin: UiSkinSchema,
 })
 export type SessionPrincipal = z.infer<typeof SessionPrincipalSchema>

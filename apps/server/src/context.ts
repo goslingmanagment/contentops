@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { HEADER, parseVersionTag } from '@contentops/contracts/api/headers'
+import type { Route } from '@contentops/contracts/api/route'
+import type { Gender } from '@contentops/contracts/domain/common'
 import type { Role } from '@contentops/contracts/domain/people'
 import { compile } from '@fastify/proxy-addr'
-import type { FastifyBaseLogger, FastifyRequest } from 'fastify'
+import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import { ApiProblem } from './errors'
 
 /** Who calls: a person by session or an agent by bearer token (SPEC §11.1). */
@@ -11,22 +13,59 @@ export interface Actor {
   type: 'person' | 'agent'
   id: string
   role: Role
+  /** Codes of the models the actor may see: every model for the owner. */
   models: readonly string[]
+  /** Name in the feed: «Диана», «Приёмка». */
+  name: string
+  gender: Gender | null
+  /** The session of a person; `null` for an agent. */
+  sessionId: string | null
+  /** The bearer token of an agent; `null` for a person. */
+  tokenId: string | null
 }
 
-/** Resolves the caller of a request; wired with sessions and tokens in a later PR. */
+/** Resolves the caller of a request: a session cookie or a bearer token. */
 export type Authenticate = (request: FastifyRequest) => Promise<Actor | null> | Actor | null
+
+/** The model of a `/{model}/…` path after the access check. */
+export interface ModelScope {
+  id: string
+  code: string
+  name: string
+}
+
+/** Checks the rights of the actor on the route before any handler; gives the model of the path. */
+export type Authorize = (input: {
+  key: string
+  route: Route
+  actor: Actor | null
+  params: Record<string, string>
+}) => Promise<ModelScope | null>
 
 /** What a handler knows about the request besides params, query and body. */
 export interface RequestContext {
   /** Returned in `X-Request-Id` and in every error; the journal record carries the same. */
   requestId: string
-  /** `null` until authentication is wired, then only on public routes. */
+  /** `area.name` of the table route, also the journal action of a command. */
+  route: string
+  method: string
+  /** Path and query as requested: part of the idempotency digest. */
+  url: string
+  /** `null` only on public routes (sign-in) or without `authenticate`. */
   actor: Actor | null
+  /** Set by `authorize` for paths with `{model}`. */
+  model: ModelScope | null
   /** `Idempotency-Key` of a command; enforced together with `idempotency_keys`. */
   idempotencyKey: string | null
   /** Version from `If-Match: "<n>"`; `requireIfMatch` gives 428 when it is absent. */
   ifMatch: number | null
+  /** Cookies of the request, by name. */
+  cookies: Readonly<Record<string, string>>
+  /** Adds a header to the answer: `Set-Cookie` of sign-in and sign-out. */
+  setHeader(name: string, value: string | string[]): void
+  /** Remote address as Fastify sees it behind the trusted proxy. */
+  ip: string
+  userAgent: string | null
   log: FastifyBaseLogger
 }
 
@@ -69,8 +108,27 @@ export function requireIfMatch(context: RequestContext): number {
   return context.ifMatch
 }
 
+/** `a=1; b=2` → `{a: '1', b: '2'}`; broken pairs are skipped. */
+export function parseCookies(header: string | undefined): Record<string, string> {
+  const cookies: Record<string, string> = {}
+  for (const part of (header ?? '').split(';')) {
+    const at = part.indexOf('=')
+    if (at < 1) continue
+    const name = part.slice(0, at).trim()
+    const raw = part.slice(at + 1).trim()
+    try {
+      cookies[name] = decodeURIComponent(raw)
+    } catch {
+      // A value that is not URI-encoded is not ours.
+    }
+  }
+  return cookies
+}
+
 export async function createRequestContext(
   request: FastifyRequest,
+  reply: FastifyReply,
+  route: string,
   authenticate: Authenticate | undefined,
 ): Promise<RequestContext> {
   const headers = request.headers
@@ -78,9 +136,19 @@ export async function createRequestContext(
   const ifMatch = readIfMatch(headers[HEADER.ifMatch.toLowerCase()])
   return {
     requestId: request.id,
+    route,
+    method: request.method,
+    url: request.url,
     actor: authenticate ? await authenticate(request) : null,
+    model: null,
     idempotencyKey,
     ifMatch,
+    cookies: parseCookies(single(headers.cookie)),
+    setHeader: (name, value) => {
+      reply.header(name, value)
+    },
+    ip: request.ip,
+    userAgent: single(headers['user-agent']) ?? null,
     log: request.log,
   }
 }

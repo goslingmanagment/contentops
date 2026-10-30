@@ -3,7 +3,7 @@ import { AiTaskSchema } from '../domain/admin'
 import { AccountCodeSchema, ModelCodeSchema } from '../domain/common'
 import { TagGroupSchema } from '../domain/markup'
 import { PlatformSchema } from '../domain/model'
-import { RoleSchema } from '../domain/people'
+import { RoleSchema, UiSkinSchema } from '../domain/people'
 import { ContractorFormatSchema } from '../domain/promo'
 
 /** Commands of the owner's settings (DESIGN §4.19–4.21); forms check the same schemas. */
@@ -72,9 +72,15 @@ export const SignInCommandSchema = z.object({
 })
 export type SignInCommand = z.infer<typeof SignInCommandSchema>
 
-export const UpdateProfileCommandSchema = z.object({
-  name: z.string().trim().min(1, 'Нужно имя'),
-})
+/** Name, skin or both; the rest stays. */
+export const UpdateProfileCommandSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Нужно имя').optional(),
+    ui_skin: UiSkinSchema.optional(),
+  })
+  .refine((change) => change.name !== undefined || change.ui_skin !== undefined, {
+    message: 'Нечего менять',
+  })
 export type UpdateProfileCommand = z.infer<typeof UpdateProfileCommandSchema>
 
 export const ChangePasswordCommandSchema = z.object({

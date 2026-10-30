@@ -1,7 +1,9 @@
+import { hostname } from 'node:os'
+import { createDb, createPool, runMigrations } from '@contentops/db'
 import type { Logger } from 'pino'
-import { buildApp } from './app'
 import { type Config, ConfigError, loadConfig } from './config'
 import { createLogger } from './logger'
+import { buildServer } from './server'
 
 function readConfig(): Config {
   try {
@@ -13,12 +15,28 @@ function readConfig(): Config {
   }
 }
 
+/** Present only when set: `loadConfig` already checked what the role needs. */
+function required(value: string | undefined, name: string): string {
+  if (value === undefined) throw new Error(`${name} is not set`)
+  return value
+}
+
 async function runWeb(config: Config, logger: Logger): Promise<void> {
-  const app = buildApp({
+  const pool = createPool(required(config.DATABASE_URL, 'DATABASE_URL'), { applicationName: 'web' })
+  const app = buildServer({
+    db: createDb(pool),
+    publicUrl: required(config.PUBLIC_URL, 'PUBLIC_URL'),
+    // The app starts without the secrets of switched-off integrations (SPEC §8).
+    secrets: {
+      ydisk: config.YDISK_TOKEN !== undefined,
+      dropbox: config.DROPBOX_TOKEN !== undefined,
+      hub: config.HUB_API_KEY !== undefined && config.HUB_BASE_URL !== undefined,
+    },
     logger,
     trustedProxy: config.TRUSTED_PROXY,
     requireMounts: config.REQUIRE_MOUNTS,
   })
+  app.addHook('onClose', () => pool.end())
   let closing = false
   const shutdown = async (signal: NodeJS.Signals) => {
     if (closing) return
@@ -50,6 +68,18 @@ switch (config.ROLE) {
     }
     break
   case 'migrate':
+    try {
+      const result = await runMigrations({
+        databaseUrl: required(config.MIGRATE_DATABASE_URL, 'MIGRATE_DATABASE_URL'),
+        appliedBy: `migrate@${hostname()}`,
+        log: (line) => logger.info(line),
+      })
+      logger.info({ version: result.version }, 'migrations applied')
+    } catch (error) {
+      logger.fatal({ err: error }, 'migrations failed')
+      process.exitCode = 1
+    }
+    break
   case 'worker':
   case 'worker-video':
   case 'worker-image':

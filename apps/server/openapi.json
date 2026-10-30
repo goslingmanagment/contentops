@@ -8924,11 +8924,15 @@
             "items": {
               "$ref": "#/components/schemas/ModelCode"
             }
+          },
+          "ui_skin": {
+            "$ref": "#/components/schemas/UiSkin"
           }
         },
         "required": [
           "person",
-          "models"
+          "models",
+          "ui_skin"
         ],
         "additionalProperties": false
       },
@@ -9548,6 +9552,20 @@
           "label"
         ]
       },
+      "UiSkin": {
+        "type": "string",
+        "enum": [
+          "blue",
+          "focus"
+        ]
+      },
+      "UiSkinInput": {
+        "type": "string",
+        "enum": [
+          "blue",
+          "focus"
+        ]
+      },
       "UniqLevel": {
         "type": "string",
         "enum": [
@@ -9937,11 +9955,11 @@
           "name": {
             "type": "string",
             "minLength": 1
+          },
+          "ui_skin": {
+            "$ref": "#/components/schemas/UiSkinInput"
           }
-        },
-        "required": [
-          "name"
-        ]
+        }
       },
       "UpdateRowCommandInput": {
         "type": "object",

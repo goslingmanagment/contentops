@@ -5,6 +5,7 @@ export {
   type BootstrapOptions,
   type BootstrapResult,
   bootstrap,
+  DEFAULT_SURFACES,
 } from './bootstrap.ts'
 export {
   type ActionEvent,
@@ -35,5 +36,10 @@ export {
   runMigrations,
 } from './migrate.ts'
 export { isSwitchOn, type PolicyScope, resumeSwitch } from './policy.ts'
+export {
+  ResetPasswordError,
+  type ResetPasswordResult,
+  resetPassword,
+} from './reset-password.ts'
 export * as values from './values.ts'
 export * from './work/index.ts'
