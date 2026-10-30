@@ -16,8 +16,8 @@ export function OrderScreen() {
   const model = useCurrentModel().code
   const navigate = useNavigate()
   const scrolled = useRef(0)
-  const closed = useOrder(model, order).data?.state === 'closed'
-  const tab: OrderTab = closed ? 'closed' : 'open'
+  const state = useOrder(model, order).data?.state
+  const tab: OrderTab = state === 'closed' || state === 'cancelled' ? state : 'open'
 
   const toList = (next: OrderTab) =>
     void navigate({
@@ -27,7 +27,7 @@ export function OrderScreen() {
       search: (previous) => ({
         ...previous,
         view: 'orders' as const,
-        tab: next === 'closed' ? ('closed' as const) : undefined,
+        tab: next === 'open' ? undefined : next,
       }),
       state: { [`orders:scroll:${next}`]: next === tab ? scrolled.current : 0 },
       replace: true,

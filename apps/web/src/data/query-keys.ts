@@ -28,7 +28,8 @@ export const queryKeys = {
     ['model', model, 'not-uploaded', account] as const,
   item: (model: ModelCode, id: string) => ['model', model, 'item', id] as const,
   search: (model: ModelCode, query: string) => ['model', model, 'search', query] as const,
-  orders: (model: ModelCode, tab: 'open' | 'closed') => ['model', model, 'orders', tab] as const,
+  orders: (model: ModelCode, tab: 'open' | 'closed' | 'cancelled') =>
+    ['model', model, 'orders', tab] as const,
   order: (model: ModelCode, id: string) => ['model', model, 'order', id] as const,
   inbox: (model: ModelCode, view: string) => ['model', model, 'inbox', view] as const,
   legacy: (model: ModelCode) => ['model', model, 'legacy'] as const,

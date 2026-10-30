@@ -37,7 +37,8 @@ type TextField = 'buyer' | 'brief' | 'duration_raw' | 'deadline'
 /** Правка текстового поля — в тело запроса; пустое значение сохраняется как «нет». */
 const TEXT_PATCH: Record<TextField, (value: string | null) => UpdateOrderCommand> = {
   buyer: (value) => ({ buyer: value }),
-  brief: (value) => ({ brief: value }),
+  // ТЗ обязательно: пустое не сохраняется, остаётся прежнее.
+  brief: (value) => (value ? { brief: value } : {}),
   duration_raw: (value) => ({ duration_raw: value ?? '' }),
   deadline: (value) => ({ deadline: value }),
 }
@@ -114,7 +115,7 @@ export function OrderFields({ order, accounts, update, editable }: OrderFieldsPr
         <FieldRow label="Страница" below={conflictBelow('account')}>
           {editable ? (
             <Select
-              value={order.account}
+              value={order.account ?? undefined}
               onValueChange={(account) => save('account', { account }, { account: order.account })}
             >
               <SelectTrigger size="sm" aria-label="Страница" className="-ml-1">
@@ -128,8 +129,10 @@ export function OrderFields({ order, accounts, update, editable }: OrderFieldsPr
                 ))}
               </SelectContent>
             </Select>
-          ) : (
+          ) : order.account ? (
             accountLabel(accounts, order.account)
+          ) : (
+            '—'
           )}
         </FieldRow>
         {order.brief !== null || editable

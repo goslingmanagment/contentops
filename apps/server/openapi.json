@@ -384,6 +384,43 @@
           "code"
         ]
       },
+      "AddOrderMessageCommandInput": {
+        "type": "object",
+        "properties": {
+          "message_url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "repost",
+              "delivery",
+              "revision",
+              "confirmation",
+              "note"
+            ]
+          },
+          "at": {
+            "$ref": "#/components/schemas/InstantInput"
+          },
+          "author": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "message_url",
+          "kind",
+          "at",
+          "author",
+          "excerpt"
+        ]
+      },
       "AddPersonCommandInput": {
         "type": "object",
         "properties": {
@@ -423,6 +460,21 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "requested_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstantInput"
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },
@@ -885,6 +937,18 @@
         "required": [
           "count",
           "level"
+        ]
+      },
+      "CancelOrderCommandInput": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "CancelReason": {
@@ -1755,6 +1819,12 @@
         "properties": {
           "basis": {
             "$ref": "#/components/schemas/RevisionBasisInput"
+          },
+          "delivery_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3164,6 +3234,8 @@
           "accept_blocked",
           "order_closed",
           "order_not_complete",
+          "order_exists",
+          "edited_by_person",
           "row_marked",
           "row_not_marked",
           "row_cancelled",
@@ -5078,6 +5150,55 @@
         "properties": {
           "item_id": {
             "$ref": "#/components/schemas/ItemIdInput"
+          },
+          "part": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderPartKindInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstantInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matched": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "complete": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5267,6 +5388,17 @@
         "enum": [
           "posted",
           "scheduled"
+        ]
+      },
+      "MarkOrderPartCommandInput": {
+        "type": "object",
+        "properties": {
+          "complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "complete"
         ]
       },
       "MarkRowCommandInput": {
@@ -6296,12 +6428,22 @@
             ]
           },
           "account": {
-            "$ref": "#/components/schemas/AccountCode"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "card": {
             "type": "object",
             "properties": {
               "url": {
+                "type": "string"
+              },
+              "ref": {
                 "type": "string"
               },
               "author": {
@@ -6319,6 +6461,7 @@
             },
             "required": [
               "url",
+              "ref",
               "author",
               "posted_at",
               "text"
@@ -6422,6 +6565,73 @@
               }
             ]
           },
+          "cancelled": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "$ref": "#/components/schemas/Instant"
+                  },
+                  "by": {
+                    "$ref": "#/components/schemas/ActorRef"
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "at",
+                  "by",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overdue_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "late_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "in_inbox": {
+            "type": "boolean"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActorRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "version": {
             "$ref": "#/components/schemas/RecordVersion"
           },
@@ -6455,6 +6665,11 @@
           "revisions",
           "messages",
           "closed_at",
+          "cancelled",
+          "overdue_days",
+          "late_days",
+          "in_inbox",
+          "created_by",
           "version",
           "state",
           "status",
@@ -6509,7 +6724,16 @@
           "item_id": {
             "$ref": "#/components/schemas/ItemId"
           },
+          "part": {
+            "$ref": "#/components/schemas/OrderPartKind"
+          },
           "matched": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
             "type": "array",
             "items": {
               "type": "string"
@@ -6530,99 +6754,64 @@
           },
           "at": {
             "$ref": "#/components/schemas/Instant"
-          }
-        },
-        "required": [
-          "id",
-          "item_id",
-          "matched",
-          "linked_by",
-          "confirmed_by",
-          "at"
-        ],
-        "additionalProperties": false
-      },
-      "OrderFields": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string",
-            "minLength": 1
           },
-          "buyer": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "delivered_at": {
+            "$ref": "#/components/schemas/Instant"
           },
-          "account": {
-            "$ref": "#/components/schemas/AccountCode"
-          },
-          "brief": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "duration_raw": {
-            "type": "string"
-          },
-          "wants_video": {
-            "type": "boolean"
-          },
-          "wants_photos": {
+          "files": {
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
           },
-          "deadline": {
+          "retracted": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LocalDate"
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "$ref": "#/components/schemas/Instant"
+                  },
+                  "by": {
+                    "$ref": "#/components/schemas/ActorRef"
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "at",
+                  "by",
+                  "reason"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "null"
               }
             ]
-          },
-          "fan_name": {
-            "$ref": "#/components/schemas/FanName"
-          },
-          "message_url": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "card_text": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
-          "title",
-          "buyer",
-          "account",
-          "brief",
-          "duration_raw",
-          "wants_video",
-          "wants_photos",
-          "deadline",
-          "fan_name",
-          "message_url",
-          "card_text"
+          "id",
+          "item_id",
+          "part",
+          "matched",
+          "evidence",
+          "linked_by",
+          "confirmed_by",
+          "at",
+          "delivered_at",
+          "files",
+          "retracted"
         ],
         "additionalProperties": false
       },
       "OrderFieldsInput": {
         "type": "object",
         "properties": {
-          "title": {
-            "type": "string",
-            "minLength": 1
-          },
           "buyer": {
             "type": [
               "string",
@@ -6630,13 +6819,18 @@
             ]
           },
           "account": {
-            "$ref": "#/components/schemas/AccountCodeInput"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCodeInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "brief": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "minLength": 1
           },
           "duration_raw": {
             "type": "string"
@@ -6662,11 +6856,25 @@
           "fan_name": {
             "$ref": "#/components/schemas/FanNameInput"
           },
-          "message_url": {
+          "card_author": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "card_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstantInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_url": {
+            "type": "string",
+            "minLength": 1
           },
           "card_text": {
             "type": [
@@ -6676,7 +6884,6 @@
           }
         },
         "required": [
-          "title",
           "buyer",
           "account",
           "brief",
@@ -6714,6 +6921,11 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "cancelled_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
           "overdue_count": {
             "type": "integer",
             "minimum": 0,
@@ -6731,6 +6943,7 @@
           "next_cursor",
           "open_count",
           "closed_count",
+          "cancelled_count",
           "overdue_count",
           "agent_silence"
         ],
@@ -6743,34 +6956,46 @@
             "$ref": "#/components/schemas/Instant"
           },
           "kind": {
-            "type": "string",
-            "enum": [
-              "card",
-              "repost",
-              "delivery",
-              "revision"
-            ]
+            "$ref": "#/components/schemas/OrderMessageKind"
           },
           "excerpt": {
             "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "at",
           "kind",
-          "excerpt"
+          "excerpt",
+          "author",
+          "url"
         ],
         "additionalProperties": false
+      },
+      "OrderMessageKind": {
+        "type": "string",
+        "enum": [
+          "card",
+          "repost",
+          "delivery",
+          "revision",
+          "confirmation",
+          "note"
+        ]
       },
       "OrderPart": {
         "type": "object",
         "properties": {
           "kind": {
-            "type": "string",
-            "enum": [
-              "video",
-              "photos"
-            ]
+            "$ref": "#/components/schemas/OrderPartKind"
           },
           "required": {
             "anyOf": [
@@ -6819,6 +7044,19 @@
                 "type": "null"
               }
             ]
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "completed_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActorRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6827,9 +7065,25 @@
           "delivered",
           "item_id",
           "delivered_on",
-          "duration_s"
+          "duration_s",
+          "complete",
+          "completed_by"
         ],
         "additionalProperties": false
+      },
+      "OrderPartKind": {
+        "type": "string",
+        "enum": [
+          "video",
+          "photos"
+        ]
+      },
+      "OrderPartKindInput": {
+        "type": "string",
+        "enum": [
+          "video",
+          "photos"
+        ]
       },
       "OrderRevision": {
         "type": "object",
@@ -6874,13 +7128,20 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "delivery_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
                   "basis",
                   "by",
                   "at",
-                  "version_label"
+                  "version_label",
+                  "delivery_id"
                 ],
                 "additionalProperties": false
               },
@@ -6908,7 +7169,16 @@
           "delivered",
           "revision",
           "overdue",
-          "closed"
+          "closed",
+          "cancelled"
+        ]
+      },
+      "OrderTabInput": {
+        "type": "string",
+        "enum": [
+          "open",
+          "closed",
+          "cancelled"
         ]
       },
       "PageSummaryEntry": {
@@ -7059,6 +7329,98 @@
           "card_text",
           "message_url"
         ]
+      },
+      "ParsedOrderCard": {
+        "type": "object",
+        "properties": {
+          "buyer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "brief": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_raw": {
+            "type": "string"
+          },
+          "wants_video": {
+            "type": "boolean"
+          },
+          "wants_photos": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalDate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fan_name": {
+            "$ref": "#/components/schemas/FanName"
+          },
+          "card_author": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "card_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "card_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "buyer",
+          "account",
+          "brief",
+          "duration_raw",
+          "wants_video",
+          "wants_photos",
+          "deadline",
+          "fan_name",
+          "message_url",
+          "card_text"
+        ],
+        "additionalProperties": false
       },
       "PauseQueueCommandInput": {
         "type": "object",
@@ -8860,6 +9222,18 @@
         ],
         "additionalProperties": false
       },
+      "RetractDeliveryCommandInput": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
       "RevisionBasis": {
         "type": "string",
         "enum": [
@@ -10075,10 +10449,6 @@
       "UpdateOrderCommandInput": {
         "type": "object",
         "properties": {
-          "title": {
-            "type": "string",
-            "minLength": 1
-          },
           "buyer": {
             "type": [
               "string",
@@ -10086,13 +10456,18 @@
             ]
           },
           "account": {
-            "$ref": "#/components/schemas/AccountCodeInput"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCodeInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "brief": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string",
+            "minLength": 1
           },
           "duration_raw": {
             "type": "string"
@@ -10118,16 +10493,20 @@
           "fan_name": {
             "$ref": "#/components/schemas/FanNameInput"
           },
-          "message_url": {
+          "card_author": {
             "type": [
               "string",
               "null"
             ]
           },
-          "card_text": {
-            "type": [
-              "string",
-              "null"
+          "card_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstantInput"
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         }
@@ -16211,14 +16590,37 @@
         "parameters": [
           {
             "schema": {
-              "type": "string",
-              "enum": [
-                "open",
-                "closed"
-              ]
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/OrderTabInput"
             },
             "in": "query",
             "name": "tab",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "q",
             "required": false
           },
           {
@@ -16445,7 +16847,76 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderFields"
+                  "$ref": "#/components/schemas/ParsedOrderCard"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/orders/{order}/parts/{part}": {
+      "post": {
+        "operationId": "orders.markPart",
+        "tags": [
+          "orders"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkOrderPartCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "order",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "part",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
                 }
               }
             }
@@ -16711,12 +17182,22 @@
         }
       }
     },
-    "/api/v1/{model}/orders/{order}/deliveries/{delivery}": {
-      "delete": {
-        "operationId": "orders.unlinkDelivery",
+    "/api/v1/{model}/orders/{order}/deliveries/{delivery}:retract": {
+      "post": {
+        "operationId": "orders.retractDelivery",
         "tags": [
           "orders"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetractDeliveryCommandInput"
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -16770,12 +17251,132 @@
         }
       }
     },
+    "/api/v1/{model}/orders/{order}/messages": {
+      "post": {
+        "operationId": "orders.addMessage",
+        "tags": [
+          "orders"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddOrderMessageCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "order",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/{model}/orders/{order}:close": {
       "post": {
         "operationId": "orders.close",
         "tags": [
           "orders"
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "order",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/orders/{order}:cancel": {
+      "post": {
+        "operationId": "orders.cancel",
+        "tags": [
+          "orders"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelOrderCommandInput"
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -17435,6 +18036,14 @@
             },
             "in": "query",
             "name": "item",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "order",
             "required": false
           },
           {

@@ -76,10 +76,23 @@ pnpm contentops plan updateNorm --model lora --account lora-1 --if-match 4 --bod
 
 # Start a long operation and wait for its result
 pnpm contentops admin verifyBlobs --wait --timeout 900 --json
+
+# The routine customs-daily: is there an order for this card? (exit 1 `not_found` — no)
+pnpm contentops orders find --model lora --tg https://t.me/c/2627984998/12/9844 --json
+
+# A new card: the order from the card's fields (see `orders create --help` for the body)
+pnpm contentops orders create --model lora --body @order.json --json
 ```
 
 ## Aliases
 
-`src/aliases.ts` maps friendly commands onto routes (`contentops objects open --link
-<interface link>` → `objects.get`). An alias declares its flags and turns them into the
-route's flags and body; it may read other routes first through `context.read`.
+`src/aliases.ts` maps friendly commands onto routes. An alias declares its flags and turns
+them into the route's flags and body; it may read other routes first through `context.read`.
+
+| Command | Calls | Flags |
+|---|---|---|
+| `objects open` | `objects.get` | `--link` — object page link from the interface |
+| `orders find` | `orders.get` | `--model`, `--tg` — link to the order card in Telegram, any spelling |
+
+The order's address in other `orders` commands is its `id` from `orders find`
+(`--order tg-2627984998-12-9844`).

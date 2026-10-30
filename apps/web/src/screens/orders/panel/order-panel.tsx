@@ -23,6 +23,7 @@ import { OrderFields } from './order-fields'
 import { OrderMessages } from './order-messages'
 import { OrderParts } from './order-parts'
 import { OrderRevisions } from './order-revisions'
+import { ReasonForm } from './reason-form'
 import { type OrderActions, useOrderActions } from './use-order-actions'
 import { useOrderUpdate } from './use-order-update'
 
@@ -93,7 +94,11 @@ interface PanelSections {
   orderId: string
   adding: boolean
   linkOpen: boolean
+  cancelling: boolean
 }
+
+/** «Снять…»: возврат, отказ фана, дубль карточки (DESIGN §4.16, п. 7). */
+const CANCEL_REASONS = ['возврат', 'отказ фана', 'дубль карточки'] as const
 
 function LoadedOrderPanel({
   order,
@@ -104,19 +109,19 @@ function LoadedOrderPanel({
   onClose,
 }: LoadedOrderPanelProps) {
   const role = useRole()
-  // Закрытый заказ только читается: правки и сдачи к нему не добавляются (§5.5).
-  const editable = (role === 'owner' || role === 'manager') && order.state !== 'closed'
+  // Закрытый и снятый заказы только читаются: правки и сдачи к ним не добавляются (§5.5).
+  const editable =
+    (role === 'owner' || role === 'manager') &&
+    order.state !== 'closed' &&
+    order.state !== 'cancelled'
   const actions = useOrderActions()
   const update = useOrderUpdate(order)
-  const [stored, setSections] = useState<PanelSections>({
-    orderId: order.id,
-    adding: false,
-    linkOpen: false,
-  })
-  const sections =
-    stored.orderId === order.id ? stored : { orderId: order.id, adding: false, linkOpen: false }
+  const closedSections = { orderId: order.id, adding: false, linkOpen: false, cancelling: false }
+  const [stored, setSections] = useState<PanelSections>(closedSections)
+  const sections = stored.orderId === order.id ? stored : closedSections
   const setAdding = (adding: boolean) => setSections({ ...sections, adding })
   const setLinkOpen = (linkOpen: boolean) => setSections({ ...sections, linkOpen })
+  const setCancelling = (cancelling: boolean) => setSections({ ...sections, cancelling })
 
   // Пункт меню строки открывает нужный раздел, как только заказ встал в панель.
   useEffect(() => {
@@ -125,6 +130,7 @@ function LoadedOrderPanel({
       orderId: order.id,
       adding: intent === 'revision',
       linkOpen: intent === 'link',
+      cancelling: intent === 'cancel',
     })
     onIntentHandled()
   }, [intent, order.id, onIntentHandled])
@@ -133,7 +139,12 @@ function LoadedOrderPanel({
   const menu = orderMenu(order, {
     editable,
     intent: (kind) =>
-      setSections({ ...sections, adding: kind === 'revision', linkOpen: kind === 'link' }),
+      setSections({
+        ...sections,
+        adding: kind === 'revision',
+        linkOpen: kind === 'link',
+        cancelling: kind === 'cancel',
+      }),
     close: () => actions.close(order),
   })
 
@@ -164,7 +175,7 @@ function LoadedOrderPanel({
         update={update}
         editable={editable}
       />
-      <OrderParts order={order} />
+      <OrderParts order={order} actions={actions} editable={editable} />
       <OrderDeliveries
         order={order}
         actions={actions}
@@ -182,6 +193,23 @@ function LoadedOrderPanel({
       />
       <OrderMessages order={order} />
       <OrderCloseNote order={order} />
+      {editable && sections.cancelling ? (
+        <ReasonForm
+          label="Почему снимаем заказ — он не будет сдан"
+          choices={CANCEL_REASONS}
+          submitLabel="Снять заказ"
+          pending={actions.cancelling}
+          onCancel={() => setCancelling(false)}
+          onSubmit={(reason) => actions.cancel(order, reason, () => setCancelling(false))}
+        />
+      ) : null}
+      {editable && !sections.cancelling ? (
+        <div>
+          <Button variant="ghost" size="sm" onClick={() => setCancelling(true)}>
+            Снять…
+          </Button>
+        </div>
+      ) : null}
     </PanelFrame>
   )
 }
@@ -201,7 +229,7 @@ function mainAction(order: Order, openRevision: string | null, actions: OrderAct
       />
     )
   }
-  if (order.state !== 'closed' && order.close_block === null) {
+  if (order.state !== 'closed' && order.state !== 'cancelled' && order.close_block === null) {
     return (
       <Button pending={actions.closing} onClick={() => actions.close(order)}>
         <CheckCheckIcon />

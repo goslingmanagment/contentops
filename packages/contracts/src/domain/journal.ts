@@ -51,6 +51,8 @@ export const JournalFilterSchema = z.object({
   actor_type: ActorTypeSchema.optional(),
   area: JournalAreaSchema.optional(),
   item: ItemIdSchema.optional(),
+  /** One order's history: its address `tg-…` (DESIGN §4.16, «автор правки виден в журнале»). */
+  order: z.string().optional(),
   result: JournalResultSchema.optional(),
   from: InstantSchema.optional(),
   to: InstantSchema.optional(),

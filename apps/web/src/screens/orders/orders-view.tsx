@@ -19,13 +19,23 @@ import { useCurrentModel } from '@/shell/model/model-context'
 import { useCustomsCount, useCustomsCrumbs } from './customs-crumbs'
 import { OrderList } from './order-list'
 import { type OrderPanelIntent, orderMenu } from './order-menu'
-import { closedOrderRows, type OrderListRow, openOrderRows } from './order-rows'
+import {
+  cancelledOrderRows,
+  closedOrderRows,
+  foundOrderRows,
+  type OrderListRow,
+  openOrderRows,
+} from './order-rows'
+import { OrderSearchField } from './order-search-field'
 import { OrdersSkeleton } from './orders-skeleton'
 import { OrderPanel } from './panel/order-panel'
 import { useOrderActions } from './panel/use-order-actions'
 
 interface OrdersViewProps {
   tab: OrderTab
+  /** «Найти заказ»: слово в адресе (`q`); пусто — вкладка. */
+  query?: string
+  onQueryChange?: (query: string) => void
   /** Заказ в панели; `null` — панель закрыта. */
   selectedId: string | null
   onSelect: (id: string) => void
@@ -50,6 +60,8 @@ interface PendingIntent {
  */
 export function OrdersView({
   tab,
+  query = '',
+  onQueryChange,
   selectedId,
   onSelect,
   onClosePanel,
@@ -61,7 +73,8 @@ export function OrdersView({
   const editable = role === 'owner' || role === 'manager'
   const navigate = useNavigate()
   const { openNewOrderDialog } = useNewOrderDialog()
-  const list = useOrderList(model.code, tab)
+  const list = useOrderList(model.code, tab, query)
+  const searching = query.trim() !== ''
   const actions = useOrderActions()
   const narrow = useMediaQuery('(max-width: 1319px)')
   const [intent, setIntent] = useState<PendingIntent | null>(null)
@@ -71,8 +84,10 @@ export function OrdersView({
   const data = list.data
   const rows = useMemo<OrderListRow[]>(() => {
     if (!data) return []
-    return tab === 'open' ? openOrderRows(data.items) : closedOrderRows(data.items)
-  }, [data, tab])
+    if (searching) return foundOrderRows(data.items)
+    if (tab === 'open') return openOrderRows(data.items)
+    return tab === 'closed' ? closedOrderRows(data.items) : cancelledOrderRows(data.items)
+  }, [data, tab, searching])
 
   useKeyboardShortcut({ code: 'Escape', enabled: selectedId !== null }, onClosePanel)
   const onIntentHandled = useCallback(() => setIntent(null), [])
@@ -150,6 +165,12 @@ export function OrdersView({
           pressed={tab === 'closed'}
           onPressedChange={() => onTabChange('closed')}
         />
+        <FilterToggleChip
+          label="Снятые"
+          pressed={tab === 'cancelled'}
+          onPressedChange={() => onTabChange('cancelled')}
+        />
+        {onQueryChange ? <OrderSearchField value={query} onChange={onQueryChange} /> : null}
       </FilterChipsRow>
       <RefreshStrip active={list.isFetching && data !== undefined} />
       <div className="-mx-7 flex min-h-0 flex-1 flex-col px-7 pt-2">
@@ -163,12 +184,18 @@ export function OrdersView({
                 : undefined
             }
           >
-            {tab === 'open' ? 'Открытых заказов нет' : 'Закрытых заказов нет'}
+            {searching
+              ? 'Ничего не нашлось'
+              : tab === 'open'
+                ? 'Открытых заказов нет'
+                : tab === 'closed'
+                  ? 'Закрытых заказов нет'
+                  : 'Снятых заказов нет'}
           </EmptyState>
         ) : null}
         {rows.length > 0 ? (
           <OrderList
-            key={tab}
+            key={searching ? 'found' : tab}
             rows={rows}
             accounts={model.accounts}
             groupLabel={groupLabel}

@@ -387,6 +387,20 @@ describe('--wait', () => {
 })
 
 describe('aliases', () => {
+  it('orders find --tg: the card link in any spelling becomes the order address', async () => {
+    const cli = harness(() => json(404, { code: 'not_found', message: 'Нет', request_id: 'r' }))
+    const link = 'https://t.me/c/2627984998/12/9844'
+    expect(await cli.run('orders', 'find', '--model', 'lora', '--tg', link)).toBe(1)
+    expect(
+      await cli.run('orders', 'find', '--model', 'lora', '--tg', 'tg:-1002627984998/12/9844'),
+    ).toBe(1)
+    expect(cli.sent.map((request) => request.url)).toEqual([
+      'http://co.test/api/v1/lora/orders/tg-2627984998-12-9844',
+      'http://co.test/api/v1/lora/orders/tg-2627984998-12-9844',
+    ])
+    expect(await cli.run('orders', 'find', '--model', 'lora', '--tg', 'не ссылка')).toBe(64)
+  })
+
   it('turn their flags into the flags of a route', async () => {
     const cli = harness(() => json(404, { code: 'not_found', message: 'Нет', request_id: 'r' }))
     const link = 'http://localhost:5173/#/lora/i/PPV-073'

@@ -1,19 +1,31 @@
-import type { ModelCode, Order, OrderList } from '@contentops/contracts'
+import type { ModelCode, Order, OrderList, OrderTab } from '@contentops/contracts'
 import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { useApi } from './api-session'
 import { queryKeys } from './query-keys'
 
-export type OrderTab = 'open' | 'closed'
+export type { OrderTab }
 
-const ORDER_TABS: readonly OrderTab[] = ['open', 'closed']
+const ORDER_TABS: readonly OrderTab[] = ['open', 'closed', 'cancelled']
 
-/** Заказы кастомов: «Открытые» или «Закрытые», с числом просроченных. */
-export function useOrderList(model: ModelCode, tab: OrderTab = 'open') {
+/** Открытых заказов — десятки: список приходит целиком, группы строятся на экране. */
+const WHOLE_LIST = 500
+
+/**
+ * Заказы кастомов: «Открытые», «Закрытые» или «Снятые», с числом просроченных; `q` ищет
+ * сразу во всех вкладках (DESIGN §4.16).
+ */
+export function useOrderList(model: ModelCode, tab: OrderTab = 'open', q?: string) {
   const api = useApi()
+  const search = q?.trim() || undefined
   return useQuery({
-    queryKey: queryKeys.orders(model, tab),
-    queryFn: ({ signal }) => api.orders.list({ params: { model }, query: { tab }, signal }),
+    queryKey: search ? [...queryKeys.orders(model, tab), search] : queryKeys.orders(model, tab),
+    queryFn: ({ signal }) =>
+      api.orders.list({
+        params: { model },
+        query: { tab, limit: WHOLE_LIST, ...(search ? { q: search } : {}) },
+        signal,
+      }),
   })
 }
 

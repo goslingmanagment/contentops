@@ -1,4 +1,4 @@
-import type { Model, Order, OrderFields } from '@contentops/contracts'
+import { isApiError, type Model, type Order, type OrderFields } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import {
   Dialog,
@@ -17,7 +17,7 @@ import { useApi } from '@/data/api-session'
 import { useOrderCreated } from '@/data/orders'
 import type { NewOrderSeed } from '@/shell/dialogs/order-dialog-context'
 import { useShellModel } from '@/shell/model/use-shell-model'
-import { textOrNull } from './form-values'
+import { trimmed } from './form-values'
 import { CardTextField } from './new-order/card-text-field'
 import { OrderFormFields } from './new-order/order-form-fields'
 import { useContentBelow } from './new-order/use-content-below'
@@ -50,10 +50,10 @@ function NewOrderForm({ model, open, onOpenChange, seed }: NewOrderDialogProps &
   const urlId = useId()
   const fields = useContentBelow()
 
-  const openOrder = (order: Order) =>
+  const openOrder = (order: string) =>
     void navigate({
       to: '/$model/library/customs/orders/$order',
-      params: { model: model.code, order: order.id },
+      params: { model: model.code, order },
     })
 
   const create = useIntentMutation<OrderFields, Order>({
@@ -65,8 +65,18 @@ function NewOrderForm({ model, open, onOpenChange, seed }: NewOrderDialogProps &
       onOpenChange(false)
       toast.show({
         message: `Заказ заведён · ${order.title}`,
-        action: { label: 'Открыть', onSelect: () => openOrder(order) },
+        action: { label: 'Открыть', onSelect: () => openOrder(order.id) },
       })
+    },
+    // По уже заведённой карточке второй заказ не создаётся — открывается прежний (§4.16).
+    handleFailure: (error) => {
+      if (!isApiError(error) || error.code !== 'order_exists') return false
+      const existing = error.body.details?.order
+      if (typeof existing !== 'string') return false
+      onOpenChange(false)
+      toast.show({ message: 'По этой карточке заказ уже есть' })
+      openOrder(existing)
+      return true
     },
   })
 
@@ -87,13 +97,19 @@ function NewOrderForm({ model, open, onOpenChange, seed }: NewOrderDialogProps &
               <div className="flex flex-col gap-2">
                 <CardTextField form={form} />
                 <label htmlFor={urlId} className="sr-only">
-                  Ссылка на сообщение
+                  Ссылка на карточку в Telegram
                 </label>
                 <Input
                   id={urlId}
-                  placeholder="Ссылка на сообщение, если есть"
-                  {...form.register('message_url', { setValueAs: textOrNull })}
+                  placeholder="Ссылка на карточку в Telegram"
+                  aria-invalid={form.formState.errors.message_url ? true : undefined}
+                  {...form.register('message_url', { setValueAs: trimmed })}
                 />
+                {form.formState.errors.message_url ? (
+                  <p className="text-destructive text-sm">
+                    {form.formState.errors.message_url.message}
+                  </p>
+                ) : null}
               </div>
               <div className="border-border border-t pt-4">
                 <OrderFormFields form={form} accounts={model.accounts} />

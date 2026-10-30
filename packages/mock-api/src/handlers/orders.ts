@@ -1,16 +1,20 @@
 import { versionTag } from '@contentops/contracts/api/headers'
 import { orderRoutes } from '@contentops/contracts/api/routes/orders'
-import type { OrderFields } from '@contentops/contracts/commands/orders'
-import { parseDuration, parseOrderCard } from '@contentops/contracts/order-card'
+import type { UpdateOrderCommand } from '@contentops/contracts/commands/orders'
+import { orderTitleOf, parseDuration, parseOrderCard } from '@contentops/contracts/order-card'
+import { orderAddress, parseTelegramRef, telegramUrl } from '@contentops/contracts/order-link'
 import { computeOrderStatus } from '@contentops/contracts/order-status'
 import { notFound, rule } from '../domain-error'
 import type { ModelWorld, OrderRecord } from '../fixtures/world-types'
 import { type BoundRoute, bind, todayOf } from '../handler'
 import type { MockState } from '../state'
-import { orderList, orderView } from '../views/orders'
+import { orderFacts, orderList, orderView } from '../views/orders'
 import { actorSays } from './actor-says'
 
-/** Custom orders (DESIGN §4.16): a person creates and edits them with the agent's commands. */
+/**
+ * Custom orders (DESIGN §4.16) in the prototype's world. The product answers these routes on
+ * the server (stage 4б); the mock keeps the screens' tests and `?demo=` running.
+ */
 
 function orderOf(model: ModelWorld, id: string): OrderRecord {
   const order = model.orders.find((candidate) => candidate.id === id)
@@ -22,11 +26,13 @@ function view(state: MockState, model: ModelWorld, order: OrderRecord) {
   return orderView(order, state.clock.now(), model.model.name_genitive, state.principal.role)
 }
 
-function applyFields(order: OrderRecord, fields: Partial<OrderFields>) {
-  if (fields.title !== undefined) order.title = fields.title
+function applyFields(order: OrderRecord, fields: UpdateOrderCommand) {
   if (fields.buyer !== undefined) order.buyer = fields.buyer
   if (fields.account !== undefined) order.account = fields.account
-  if (fields.brief !== undefined) order.brief = fields.brief
+  if (fields.brief !== undefined) {
+    order.brief = fields.brief
+    order.title = orderTitleOf(fields.brief)
+  }
   if (fields.duration_raw !== undefined) {
     const parsed = parseDuration(fields.duration_raw)
     order.duration = {
@@ -46,10 +52,22 @@ function changed(state: MockState, model: ModelWorld, order: OrderRecord) {
   return view(state, model, order)
 }
 
+function requireOpen(order: OrderRecord) {
+  if (order.closed_at) throw rule('order_closed', 'Не выполнено: заказ уже закрыт')
+  if (order.cancelled) throw rule('order_closed', 'Не выполнено: заказ снят')
+}
+
 export function orderHandlers(): BoundRoute[] {
   return [
     bind(orderRoutes.list, 'read', ({ state, model, query }) =>
-      orderList(state.world, model(), state.clock.now(), state.principal.role, query.tab ?? 'open'),
+      orderList(
+        state.world,
+        model(),
+        state.clock.now(),
+        state.principal.role,
+        query.tab ?? 'open',
+        query.q,
+      ),
     ),
     bind(
       orderRoutes.get,
@@ -70,17 +88,23 @@ export function orderHandlers(): BoundRoute[] {
     bind(orderRoutes.create, 'staff', (context) => {
       const model = context.model()
       const { body, state } = context
+      const ref = parseTelegramRef(body.message_url)
+      if (!ref) throw rule('invalid_request', 'Нужна ссылка на карточку в Telegram')
+      const id = orderAddress(ref)
+      if (model.orders.some((order) => order.id === id)) {
+        throw rule('order_exists', 'По этой карточке заказ уже заведён')
+      }
       const now = state.clock.now()
       const parsed = parseDuration(body.duration_raw)
       const order: OrderRecord = {
-        id: `tg-manual-${model.orders.length + 1}`,
-        title: body.title,
+        id,
+        title: orderTitleOf(body.brief),
         buyer: body.buyer,
         account: body.account,
         card: {
-          url: body.message_url ?? '',
-          author: state.principal.name,
-          posted_at: now,
+          url: telegramUrl(ref),
+          author: body.card_author ?? '',
+          posted_at: body.card_at ?? now,
           text: body.card_text,
         },
         brief: body.brief,
@@ -147,10 +171,20 @@ export function orderHandlers(): BoundRoute[] {
       })
       return changed(context.state, model, order)
     }),
+    bind(orderRoutes.markPart, 'staff', (context) => {
+      const model = context.model()
+      const order = orderOf(model, context.params.order)
+      requireOpen(order)
+      const part = order.parts.find((candidate) => candidate.kind === context.params.part)
+      if (!part) throw notFound('Такой части в заказе нет')
+      part.complete = context.body.complete
+      part.completed_by = context.body.complete ? context.state.actor : null
+      return changed(context.state, model, order)
+    }),
     bind(orderRoutes.addRevision, 'staff', (context) => {
       const model = context.model()
       const order = orderOf(model, context.params.order)
-      if (order.closed_at) throw rule('order_closed', 'Не выполнено: заказ уже закрыт')
+      requireOpen(order)
       const now = context.state.clock.now()
       order.revisions.push({
         id: `rev-${order.id}-${order.revisions.length + 1}`,
@@ -202,6 +236,7 @@ export function orderHandlers(): BoundRoute[] {
     bind(orderRoutes.linkDelivery, 'staff', (context) => {
       const model = context.model()
       const order = orderOf(model, context.params.order)
+      requireOpen(order)
       const record = model.items.get(context.body.item_id)
       if (record?.entry.type !== 'custom') throw rule('invalid_request', 'Сдача — это кастом')
       const part = order.parts.find((candidate) =>
@@ -212,13 +247,15 @@ export function orderHandlers(): BoundRoute[] {
         part.item_id = record.entry.id
         part.delivered_on = record.entry.delivered_on ?? todayOf(context.state)
         part.duration_s = record.entry.duration_s
+        delete part.complete
       }
       order.deliveries.push({
-        id: `dl-${record.entry.id}`,
+        id: `dl-${record.entry.id}-${order.deliveries.length + 1}`,
         item_id: record.entry.id,
-        matched: ['привязано вручную'],
+        part: part?.kind ?? 'video',
+        matched: context.body.matched ?? ['привязано вручную'],
         linked_by: context.state.actor,
-        confirmed_by: context.state.actor,
+        confirmed_by: context.body.confirmed ? context.state.actor : null,
         at: context.state.clock.now(),
       })
       record.entry.order_id = order.id
@@ -230,34 +267,64 @@ export function orderHandlers(): BoundRoute[] {
       })
       return changed(context.state, model, order)
     }),
-    bind(orderRoutes.unlinkDelivery, 'staff', (context) => {
+    bind(orderRoutes.retractDelivery, 'staff', (context) => {
       const model = context.model()
       const order = orderOf(model, context.params.order)
+      requireOpen(order)
       const delivery = order.deliveries.find(
         (candidate) => candidate.id === context.params.delivery,
       )
       if (!delivery) throw notFound('Такой сдачи нет')
-      order.deliveries = order.deliveries.filter((candidate) => candidate !== delivery)
+      delivery.retracted = {
+        at: context.state.clock.now(),
+        by: context.state.actor,
+        reason: context.body.reason,
+      }
       for (const part of order.parts) {
         if (part.item_id !== delivery.item_id) continue
         part.delivered = 0
         part.item_id = null
         part.delivered_on = null
+        delete part.complete
       }
+      return changed(context.state, model, order)
+    }),
+    bind(orderRoutes.addMessage, 'staff', (context) => {
+      const model = context.model()
+      const order = orderOf(model, context.params.order)
+      order.messages.push({
+        at: context.body.at,
+        kind: context.body.kind,
+        excerpt: context.body.excerpt,
+        author: context.body.author,
+      })
       return changed(context.state, model, order)
     }),
     bind(orderRoutes.close, 'staff', (context) => {
       const model = context.model()
       const order = orderOf(model, context.params.order)
-      if (order.closed_at) throw rule('order_closed', 'Не выполнено: заказ уже закрыт')
-      const status = computeOrderStatus(order, context.state.clock.now(), model.model.name_genitive)
+      requireOpen(order)
+      const now = context.state.clock.now()
+      const status = computeOrderStatus(orderFacts(order, now), now, model.model.name_genitive)
       if (status.close_block)
         throw rule('order_not_complete', `Не выполнено: ${status.close_block.toLowerCase()}`)
-      order.closed_at = context.state.clock.now()
+      order.closed_at = now
       context.log({
         area: 'orders',
         action: 'order.close',
         phrase: `${actorSays(context.state, 'закрыл')} заказ «${order.title}»`,
+      })
+      return changed(context.state, model, order)
+    }),
+    bind(orderRoutes.cancel, 'staff', (context) => {
+      const model = context.model()
+      const order = orderOf(model, context.params.order)
+      if (order.closed_at) throw rule('order_closed', 'Не выполнено: заказ уже закрыт')
+      order.cancelled = { at: context.state.clock.now(), reason: context.body.reason }
+      context.log({
+        area: 'orders',
+        action: 'order.cancel',
+        phrase: `${actorSays(context.state, 'снял')} заказ «${order.title}»`,
       })
       return changed(context.state, model, order)
     }),

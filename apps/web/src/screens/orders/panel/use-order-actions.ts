@@ -3,6 +3,7 @@ import type {
   ItemId,
   Order,
   OrderDelivery,
+  OrderPartKind,
   RevisionBasis,
 } from '@contentops/contracts'
 import { useActionToast } from '@/actions/action-toast-context'
@@ -31,6 +32,17 @@ interface LinkIntent extends OrderIntent {
 
 interface UnlinkIntent extends OrderIntent {
   delivery: OrderDelivery
+  reason: string
+}
+
+interface PartIntent extends OrderIntent {
+  part: OrderPartKind
+  complete: boolean
+}
+
+interface CancelIntent extends OrderIntent {
+  reason: string
+  onSaved: () => void
 }
 
 interface AddRevisionIntent extends OrderIntent {
@@ -118,12 +130,15 @@ export function useOrderActions() {
     run: ({ order, item }, key) =>
       api.orders.linkDelivery({
         params: paramsOf(order),
-        body: { item_id: item },
+        // Человек сам выбрал кастом — это и есть подтверждение привязки (SPEC §8.2).
+        body: { item_id: item, confirmed: true },
         idempotencyKey: key,
       }),
     onSuccess: (next, { item, undo }) => {
       saved(next)
-      const delivery = next.deliveries.find((candidate) => candidate.item_id === item)
+      const delivery = next.deliveries
+        .filter((candidate) => candidate.item_id === item && candidate.retracted === null)
+        .at(-1)
       if (undo || !delivery) {
         toast.show({ message: undo ? 'Отменено' : `Сдача ${item} привязана` })
         return
@@ -132,7 +147,8 @@ export function useOrderActions() {
         message: `Сдача ${item} привязана`,
         action: {
           label: 'Отменить',
-          onSelect: () => unlink.start({ order: next, delivery, undo: true }),
+          onSelect: () =>
+            unlink.start({ order: next, delivery, reason: 'отменено сразу', undo: true }),
         },
         undoable: true,
       })
@@ -141,9 +157,10 @@ export function useOrderActions() {
 
   const unlink = useIntentMutation<UnlinkIntent, Order>({
     failed: 'Сдача не отвязалась',
-    run: ({ order, delivery }, key) =>
-      api.orders.unlinkDelivery({
+    run: ({ order, delivery, reason }, key) =>
+      api.orders.retractDelivery({
         params: { ...paramsOf(order), delivery: delivery.id },
+        body: { reason },
         idempotencyKey: key,
       }),
     onSuccess: (next, { delivery, undo }) => {
@@ -160,6 +177,44 @@ export function useOrderActions() {
               undoable: true,
             },
       )
+    },
+  })
+
+  const markPart = useIntentMutation<PartIntent, Order>({
+    failed: 'Не отметилось',
+    run: ({ order, part, complete }, key) =>
+      api.orders.markPart({
+        params: { ...paramsOf(order), part },
+        body: { complete },
+        idempotencyKey: key,
+      }),
+    onSuccess: (next, { part, complete, undo }) => {
+      saved(next)
+      const name = part === 'video' ? 'Видео' : 'Фото'
+      toast.show(
+        undo
+          ? { message: 'Отменено' }
+          : {
+              message: complete ? `${name} — сдано целиком` : `${name} — ждём ещё`,
+              action: {
+                label: 'Отменить',
+                onSelect: () =>
+                  markPart.start({ order: next, part, complete: !complete, undo: true }),
+              },
+              undoable: true,
+            },
+      )
+    },
+  })
+
+  const cancel = useIntentMutation<CancelIntent, Order>({
+    failed: 'Заказ не снялся',
+    run: ({ order, reason }, key) =>
+      api.orders.cancel({ params: paramsOf(order), body: { reason }, idempotencyKey: key }),
+    onSuccess: (next, { onSaved }) => {
+      saved(next)
+      onSaved()
+      toast.show({ message: `Заказ снят · ${next.title}` })
     },
   })
 
@@ -183,8 +238,15 @@ export function useOrderActions() {
     reopening: reopen.isPending,
     link: (order: Order, item: ItemId) => link.start({ order, item }),
     linking: link.isPending,
-    unlink: (order: Order, delivery: OrderDelivery) => unlink.start({ order, delivery }),
+    unlink: (order: Order, delivery: OrderDelivery, reason: string) =>
+      unlink.start({ order, delivery, reason }),
     unlinking: unlink.isPending,
+    markPart: (order: Order, part: OrderPartKind, complete: boolean) =>
+      markPart.start({ order, part, complete }),
+    marking: markPart.isPending,
+    cancel: (order: Order, reason: string, onSaved: () => void) =>
+      cancel.start({ order, reason, onSaved }),
+    cancelling: cancel.isPending,
     close: (order: Order) => close.start({ order }),
     closing: close.isPending,
   }

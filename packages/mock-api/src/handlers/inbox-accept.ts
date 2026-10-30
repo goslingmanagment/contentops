@@ -14,6 +14,7 @@ import { ydiskPathFor } from '../fixtures/item-files'
 import type { InboxRecord, ModelWorld } from '../fixtures/world-types'
 import { todayOf } from '../handler'
 import type { MockState } from '../state'
+import { orderFacts } from '../views/orders'
 import { actorSays } from './actor-says'
 import { catalogChanged, newEntry, newRecord, nextItemId, touch } from './model-records'
 
@@ -164,7 +165,11 @@ function deliver(
     order.version += 1
   }
   const complete = order
-    ? computeOrderStatus(order, state.clock.now(), model.model.name_genitive).state === 'delivered'
+    ? computeOrderStatus(
+        orderFacts(order, state.clock.now()),
+        state.clock.now(),
+        model.model.name_genitive,
+      ).state === 'delivered'
     : false
   return { item_id: itemId, how: 'delivery', next_step: complete ? 'Закрыть заказ' : null }
 }

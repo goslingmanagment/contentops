@@ -10,7 +10,11 @@ import {
 } from './common'
 import { ItemIdSchema } from './item-type'
 
-/** States of an order (DESIGN §5.5). */
+/**
+ * States of an order on screen (DESIGN §5.5). The stored status is `open → delivered →
+ * closed` or `cancelled` (SPEC §5); «правка», «просрочено», «сдано частично» are computed by
+ * the server from deliveries, revisions, the deadline and the delivery dates.
+ */
 export const OrderStateSchema = z.enum([
   'waiting',
   'partial',
@@ -18,28 +22,52 @@ export const OrderStateSchema = z.enum([
   'revision',
   'overdue',
   'closed',
+  'cancelled',
 ])
 export type OrderState = z.infer<typeof OrderStateSchema>
 
+export const OrderPartKindSchema = z.enum(['video', 'photos'])
+export type OrderPartKind = z.infer<typeof OrderPartKindSchema>
+
 export const OrderPartSchema = z.object({
-  kind: z.enum(['video', 'photos']),
-  /** Photos ordered; `null` for the video part. */
+  kind: OrderPartKindSchema,
+  /** Photos ordered; `null` for the video part and for photos without a number. */
   required: z.int().nonnegative().nullable(),
+  /** Distinct files of the part in the live deliveries: clips or photos. */
   delivered: z.int().nonnegative(),
   item_id: ItemIdSchema.nullable(),
+  /** Day the last live delivery of the part appeared in the source (not when it was accepted). */
   delivered_on: LocalDateSchema.nullable(),
   duration_s: z.number().nonnegative().nullable(),
+  /**
+   * The part is delivered whole (SPEC §8.2): several clips are one part «видео», marked when
+   * all of them came; photos — when the ordered number came.
+   */
+  complete: z.boolean(),
+  completed_by: ActorRefSchema.nullable(),
 })
 export type OrderPart = z.infer<typeof OrderPartSchema>
 
 export const OrderDeliverySchema = z.object({
   id: z.string(),
   item_id: ItemIdSchema,
+  part: OrderPartKindSchema,
   /** «ответ на карточку», «слова в имени файла», «15:37 ≈ 15 мин», «раздел Customs». */
   matched: z.array(z.string()),
+  /** Where the facts come from: `tg:…` messages, paths, resource ids. */
+  evidence: z.array(z.string()),
   linked_by: ActorRefSchema,
+  /** «подтвердила: Диана»; an agent's confirmation is «подтверждено агентом» (SPEC §11.1). */
   confirmed_by: ActorRefSchema.nullable(),
+  /** When it was linked. */
   at: InstantSchema,
+  /** When the files appeared in the source or the message was sent: the overdue date. */
+  delivered_at: InstantSchema,
+  files: z.int().nonnegative(),
+  /** A wrong link is retracted by a new record, the delivery stays in the history. */
+  retracted: z
+    .object({ at: InstantSchema, by: ActorRefSchema, reason: z.string().nullable() })
+    .nullable(),
 })
 export type OrderDelivery = z.infer<typeof OrderDeliverySchema>
 
@@ -60,29 +88,47 @@ export const OrderRevisionSchema = z.object({
       at: InstantSchema,
       /** «новая версия CUS-195». */
       version_label: z.string().nullable(),
+      /** The delivery that fixed it, when the basis is a new version. */
+      delivery_id: z.string().nullable(),
     })
     .nullable(),
 })
 export type OrderRevision = z.infer<typeof OrderRevisionSchema>
 
+export const OrderMessageKindSchema = z.enum([
+  'card',
+  'repost',
+  'delivery',
+  'revision',
+  'confirmation',
+  'note',
+])
+export type OrderMessageKind = z.infer<typeof OrderMessageKindSchema>
+
 export const OrderMessageSchema = z.object({
   at: InstantSchema,
-  kind: z.enum(['card', 'repost', 'delivery', 'revision']),
+  kind: OrderMessageKindSchema,
   excerpt: z.string(),
+  author: z.string(),
+  /** The message in Telegram; `null` when the reference is not a Telegram link. */
+  url: z.string().nullable(),
 })
 export type OrderMessage = z.infer<typeof OrderMessageSchema>
 
 /** A custom order, as the Telegram card describes it. */
 export const OrderSchema = z.object({
-  /** `tg-<chat>-<topic>-<message>`. */
+  /** `tg-<chat>-<topic>-<message>`: the card is the order's address (SPEC §4.1). */
   id: z.string(),
+  /** Short name from the brief: «вся в красном». */
   title: z.string(),
-  /** Buyer as a number, never a name in the prototype: «фан №1482». */
+  /** Buyer as the card names them; `null` for «Только чтение». */
   buyer: z.string().nullable(),
-  account: AccountCodeSchema,
+  account: AccountCodeSchema.nullable(),
   card: z.object({
-    /** Link to the card in Telegram; empty when there is none or it is hidden from the reader. */
+    /** Link to the card in Telegram; empty when it is hidden from the reader. */
     url: z.string(),
+    /** `tg:<chat>/<topic>/<message>`. */
+    ref: z.string(),
     author: z.string(),
     posted_at: InstantSchema,
     text: z.string().nullable(),
@@ -102,6 +148,20 @@ export const OrderSchema = z.object({
   revisions: z.array(OrderRevisionSchema),
   messages: z.array(OrderMessageSchema),
   closed_at: InstantSchema.nullable(),
+  /** «снят»: a return, the fan's refusal, a wrong card; the reason is required (SPEC §5). */
+  cancelled: z
+    .object({ at: InstantSchema, by: ActorRefSchema, reason: z.string().nullable() })
+    .nullable(),
+  /**
+   * Days past the deadline while the order is not delivered; a draft in «Приехало» that
+   * chose this order already counts as its part's delivery (SPEC §8.2). `null` — not overdue.
+   */
+  overdue_days: z.int().nonnegative().nullable(),
+  /** Delivered after the deadline by the source date of the files: days late, else `null`. */
+  late_days: z.int().positive().nullable(),
+  /** A draft in «Приехало» chose this order and is not accepted yet. */
+  in_inbox: z.boolean(),
+  created_by: ActorRefSchema.nullable(),
   version: RecordVersionSchema,
   state: OrderStateSchema,
   status: StatusWordSchema,
@@ -127,9 +187,13 @@ export function orderGroupLabel(state: OrderState, modelGenitive: string): strin
     partial: 'Сдано частично',
     delivered: 'Сдано — можно закрыть',
     closed: 'Закрытые',
+    cancelled: 'Снятые',
   }
   return labels[state]
 }
+
+export const OrderTabSchema = z.enum(['open', 'closed', 'cancelled'])
+export type OrderTab = z.infer<typeof OrderTabSchema>
 
 /** `GET /api/v1/<model>/orders` */
 export const OrderListSchema = z.object({
@@ -137,8 +201,9 @@ export const OrderListSchema = z.object({
   next_cursor: z.string().nullable(),
   open_count: z.int().nonnegative(),
   closed_count: z.int().nonnegative(),
+  cancelled_count: z.int().nonnegative(),
   overdue_count: z.int().nonnegative(),
-  /** Only for the owner: «Агент заказов не отмечался 2 дня». */
+  /** Owner and managers: «Агент заказов не отмечался 2 дня». */
   agent_silence: z.string().nullable(),
 })
 export type OrderList = z.infer<typeof OrderListSchema>

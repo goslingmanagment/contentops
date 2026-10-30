@@ -1,4 +1,4 @@
-import type { OrderFields } from './commands/orders'
+import type { ParsedOrderCard } from './commands/orders'
 import type { AccountCode, LocalDate } from './domain/common'
 import type { Account, Platform } from './domain/model'
 
@@ -30,11 +30,19 @@ function deadlineOf(text: string, year: number): LocalDate | null {
   return `${year}-${match[2]}-${String(match[1]).padStart(2, '0')}`
 }
 
-function titleOf(text: string): string {
-  const quoted = /«([^»]+)»/u.exec(text)
-  if (quoted?.[1]) return quoted[1]
-  const brief = text.split('\n').find((line) => line.includes('📄'))
-  return brief ? brief.replace('📄', '').trim() : (text.split('\n')[0] ?? '').trim()
+const TITLE_LENGTH = 60
+
+/**
+ * The order's short name (DESIGN §4.16, «Кастом «вся в красном»»): the quoted part of the
+ * brief, else its first line, cut at a word to 60 characters.
+ */
+export function orderTitleOf(brief: string): string {
+  const quoted = /«([^»]+)»/u.exec(brief)
+  const line = (quoted?.[1] ?? brief.split('\n').find((part) => part.trim()) ?? '').trim()
+  if (line.length <= TITLE_LENGTH) return line
+  const cut = line.slice(0, TITLE_LENGTH)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > 20 ? cut.slice(0, space) : cut).trimEnd()}…`
 }
 
 /** How chatters write a platform in a card: «Fansly 2», «фансли 2», «OF VIP», «онлифанс фри». */
@@ -64,9 +72,9 @@ function pagePattern(account: Pick<Account, 'platform' | 'label'>): RegExp {
 }
 
 /** The page the card names; the first page of the model when the card does not say. */
-function accountOf(text: string, accounts: readonly Account[]): AccountCode {
+function accountOf(text: string, accounts: readonly Account[]): AccountCode | null {
   const named = accounts.find((account) => pagePattern(account).test(text))
-  return (named ?? accounts[0])?.code ?? ''
+  return (named ?? accounts[0])?.code ?? null
 }
 
 export function parseOrderCard(
@@ -74,18 +82,29 @@ export function parseOrderCard(
   messageUrl: string | null,
   year: number,
   accounts: readonly Account[],
-): OrderFields {
+): ParsedOrderCard {
   const buyer = /фан\s*№\s*(\d+)/u.exec(text)
   const photos = /(\d+)\s*фото/u.exec(text)
   const duration = parseDuration(text)
   const briefLine = text
     .split('\n')
     .find((line) => line.includes('📄') || /^тз/iu.test(line.trim()))
+  const named = /«([^»]+)»/u.exec(text)?.[1] ?? null
+  const briefText = briefLine
+    ? briefLine
+        .replace('📄', '')
+        .replace(/^\s*тз:?/iu, '')
+        .trim()
+    : null
+  // The name in quotes leads the brief: the order's title is taken from it.
+  const brief =
+    [named && !briefText?.includes(named) ? `«${named}»` : null, briefText]
+      .filter(Boolean)
+      .join(' ') || null
   return {
-    title: titleOf(text),
     buyer: buyer ? `фан №${buyer[1]}` : null,
     account: accountOf(text, accounts),
-    brief: briefLine ? briefLine.replace('📄', '').replace(/^тз:?/iu, '').trim() : null,
+    brief,
     duration_raw: duration?.raw ?? '',
     wants_video: duration !== null || !photos,
     wants_photos: photos ? Number(photos[1]) : 0,

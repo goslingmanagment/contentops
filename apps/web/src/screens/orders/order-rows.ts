@@ -35,6 +35,18 @@ export function closedOrderRows(orders: readonly Order[]): OrderListRow[] {
     .map(orderRow)
 }
 
+/** Снятые — последние снятые сверху. */
+export function cancelledOrderRows(orders: readonly Order[]): OrderListRow[] {
+  return [...orders]
+    .sort((left, right) => (right.cancelled?.at ?? '').localeCompare(left.cancelled?.at ?? ''))
+    .map(orderRow)
+}
+
+/** Найденное словом — из всех вкладок, в порядке сервера: новые карточки сверху. */
+export function foundOrderRows(orders: readonly Order[]): OrderListRow[] {
+  return orders.map(orderRow)
+}
+
 export function rowHeight(row: OrderListRow): number {
   return row.kind === 'group' ? GROUP_ROW_HEIGHT : ORDER_ROW_HEIGHT
 }

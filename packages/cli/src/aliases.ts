@@ -1,3 +1,4 @@
+import { orderAddress, parseTelegramRef } from '@contentops/contracts/order-link'
 import { UsageError } from './args'
 import type { RouteKey } from './table'
 
@@ -61,6 +62,21 @@ export const aliases: Record<string, Alias> = {
       const match = /\/([a-z0-9-]+)\/i\/([^/?#]+)/.exec(link)
       if (!match) throw new UsageError(`--link is not a link to an object page: ${link}`)
       return { flags: { model: match[1] as string, id: decodeURIComponent(match[2] as string) } }
+    },
+  },
+  /**
+   * The routine `customs-daily` (SPEC §8.2): the order of a Telegram card by the card's link,
+   * in any spelling (`https://t.me/c/…`, `tg:<chat>/<topic>/<message>`). 404 — no order yet.
+   */
+  'orders.find': {
+    summary: 'an order by the link to its Telegram card (exit 1 with not_found: no order yet)',
+    route: 'orders.get',
+    flags: { model: 'model code', tg: 'link to the order card in Telegram' },
+    toRoute: (flags) => {
+      const link = one(flags, 'tg')
+      const ref = parseTelegramRef(link)
+      if (!ref) throw new UsageError(`--tg is not a link to a Telegram message: ${link}`)
+      return { flags: { model: one(flags, 'model'), order: orderAddress(ref) } }
     },
   },
 }
