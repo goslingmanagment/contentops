@@ -82,7 +82,7 @@ export function PersonRow({ person, models, isMe }: PersonRowProps) {
             {isMe ? <span className="ml-2 text-ink-3 text-sm">это вы</span> : null}
           </p>
           <ModelChecks
-            person={person}
+            holder={person}
             models={models}
             disabled={rights.isPending}
             onToggle={toggleModel}

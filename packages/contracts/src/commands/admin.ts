@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { AiTaskSchema } from '../domain/admin'
+import { AgentRoleSchema } from '../domain/agents'
 import { AccountCodeSchema, ModelCodeSchema } from '../domain/common'
 import { TagGroupSchema } from '../domain/markup'
 import { PlatformSchema } from '../domain/model'
@@ -26,6 +27,21 @@ export const UpdatePersonCommandSchema = z.object({
   models: z.array(ModelCodeSchema).optional(),
 })
 export type UpdatePersonCommand = z.infer<typeof UpdatePersonCommandSchema>
+
+/** «Добавить агента»: имя, роль, модели (Fyper — агент с ролью «Только чтение»). */
+export const AddAgentCommandSchema = z.object({
+  name: z.string().trim().min(1, 'Нужно имя'),
+  role: AgentRoleSchema,
+  models: z.array(ModelCodeSchema),
+})
+export type AddAgentCommand = z.infer<typeof AddAgentCommandSchema>
+
+export const UpdateAgentCommandSchema = z.object({
+  name: z.string().trim().min(1, 'Нужно имя').optional(),
+  role: AgentRoleSchema.optional(),
+  models: z.array(ModelCodeSchema).optional(),
+})
+export type UpdateAgentCommand = z.infer<typeof UpdateAgentCommandSchema>
 
 export const AddModelCommandSchema = z.object({
   name: z.string().trim().min(1, 'Нужно имя'),
