@@ -616,11 +616,16 @@ const isPng = (b: Buffer) =>
 /** JPEG markers kept: JFIF (APP0), ICC (APP2 `ICC_PROFILE`), Adobe (APP14); the rest of APPn and COM go. */
 export function stripJpeg(input: Buffer, orientation: number): Buffer {
   const parts: Buffer[] = [input.subarray(0, 2)]
-  if (orientation > 1 && orientation <= 8) parts.push(orientationExif(orientation))
+  // The orientation-only EXIF goes right after SOI, or after JFIF APP0 when that comes first.
+  let exif = orientation > 1 && orientation <= 8 ? orientationExif(orientation) : null
   let i = 2
   while (i + 4 <= input.length) {
     if (input[i] !== 0xff) throw new Error('broken JPEG segment')
     const marker = input[i + 1] as number
+    if (exif && marker !== 0xe0) {
+      parts.push(exif)
+      exif = null
+    }
     if (marker === 0xda) {
       parts.push(input.subarray(i))
       return Buffer.concat(parts)
