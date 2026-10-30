@@ -11,6 +11,7 @@ import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import { materializeClaims } from '../legacy/materialize'
 import { handleOf } from '../media/downloads'
+import { bindGenerations } from '../media/renditions'
 import { lockBlobForReference } from '../media/storage-ops'
 import { markDeliveredParts } from '../orders/writes'
 import { aliasOpenDuplicates, resolveAlias } from './fetch'
@@ -92,6 +93,9 @@ async function takeBrokenAsIs(tx: Tx, model: ModelScope, drafts: DraftRow[]): Pr
     if (!taken.has(draft.id)) continue
     draft.blocked_reason = null
     draft.master_verified = true
+    // The previews built from the source are the master's now (schema §3.3).
+    const bytes = Buffer.from(draft.master_hex as string, 'hex')
+    await bindGenerations(tx, bytes, bytes)
   }
   return taken.size
 }
@@ -326,14 +330,19 @@ interface CreatedFile {
   media: values.MediaKind
 }
 
-async function probeOf(tx: Tx, master: Buffer) {
+/**
+ * Duration and frame size of a version: the master's own probe, else its source's — an encode
+ * keeps both, and `encode_master` stores the probe of the source only.
+ */
+async function probeOf(tx: Tx, master: Buffer, source: Buffer | null) {
   const { rows } = await tx.execute<{
     duration_ms: string | null
     width: number | null
     height: number | null
   }>(sql`
-    SELECT duration_ms, width, height FROM blob_probes WHERE sha256 = ${master}
-     ORDER BY kind, computed_at DESC LIMIT 1`)
+    SELECT duration_ms, width, height FROM blob_probes
+     WHERE sha256 = ${master} OR sha256 = ${source ?? master}
+     ORDER BY sha256 = ${master} DESC, kind, computed_at DESC LIMIT 1`)
   return rows[0] ?? { duration_ms: null, width: null, height: null }
 }
 
@@ -347,7 +356,7 @@ async function writeVersion(
 ): Promise<{ assetId: string; versionId: string }> {
   const master = Buffer.from(draft.master_hex as string, 'hex')
   const source = draft.source_hex ? Buffer.from(draft.source_hex, 'hex') : null
-  const probe = await probeOf(tx, master)
+  const probe = await probeOf(tx, master, source)
   const { rows: ids } = await tx.execute<{ asset: string; version: string }>(
     sql`SELECT uuidv7() AS asset, uuidv7() AS version`,
   )
@@ -722,6 +731,17 @@ export async function acceptGroup(
   await materializeClaims(tx, model.id, actor.id, {
     objectIds: drafts.flatMap((draft) => (draft.source_object_id ? [draft.source_object_id] : [])),
   })
+
+  // Renditions built from each source are its master's (schema §3.3); already bound ones stay.
+  for (const draft of files) {
+    if (draft.source_hex && draft.master_hex) {
+      await bindGenerations(
+        tx,
+        Buffer.from(draft.source_hex, 'hex'),
+        Buffer.from(draft.master_hex, 'hex'),
+      )
+    }
+  }
 
   // The same bytes waiting in other groups are aliases of these files from now on (§6.2).
   const accepted = files.flatMap((draft) => [draft.source_hex, draft.master_hex])

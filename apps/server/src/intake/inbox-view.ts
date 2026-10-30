@@ -524,10 +524,9 @@ async function loadDrafts(
              WHERE g.input_sha256 = d.source_sha256 AND g.kind = 'thumb640' AND g.state = 'ready'
                AND NOT g.meta_stripped
              ORDER BY g.ready_at DESC LIMIT 1) AS thumb_generation,
-           (SELECT public_item_id(i.type, i.number) || '/' || m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '')
+           (SELECT m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '')
               FROM asset_versions v
               JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id AND m.kind = 'owned'
-              JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id
              WHERE v.model_id = d.model_id AND v.id = d.duplicate_of_version_id LIMIT 1) AS duplicate_handle
       FROM inbox_drafts d
       LEFT JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id

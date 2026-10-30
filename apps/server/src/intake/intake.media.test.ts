@@ -149,6 +149,28 @@ describe('intake with the real media pipeline', () => {
       { role: 'clip', media: 'video', present: true },
       { role: 'pic', media: 'image', present: true },
     ])
+    // The library cover of each file: an active thumbnail bound to its master (photo included);
+    // the clip's version knows its length.
+    const { rows: covers } = await h.db.execute<{
+      role: string
+      cover: boolean
+      length: boolean
+    }>(sql`
+      SELECT m.role, c.thumb640_generation_id IS NOT NULL AS cover, v.duration_ms IS NOT NULL AS length
+        FROM content_items i
+        JOIN item_memberships m ON m.model_id = i.model_id AND m.item_id = i.id
+        JOIN assets a ON a.model_id = m.model_id AND a.id = m.asset_id
+        JOIN asset_versions v ON v.model_id = a.model_id AND v.id = a.current_version_id
+        LEFT JOIN LATERAL (
+          SELECT g.id AS thumb640_generation_id FROM rendition_generations g
+           WHERE g.master_sha256 = v.master_sha256 AND g.kind = 'thumb640' AND g.is_active
+             AND g.state = 'ready' LIMIT 1) c ON true
+       WHERE i.model_id = ${h.modelId}::uuid AND i.type = 'LIFE' AND i.number = 1
+       ORDER BY m.role`)
+    expect(covers).toEqual([
+      { role: 'clip', cover: true, length: true },
+      { role: 'pic', cover: true, length: false },
+    ])
   })
 
   it('a web upload «Другое» (photo and video) becomes «готово» from its blob, then an object', async () => {

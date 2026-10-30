@@ -1,6 +1,7 @@
 import type { Tx, values, WorkContext, WorkHandler } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { MediaEnv } from '../media/pipeline'
+import { bindGenerations } from '../media/renditions'
 import { mimeOfExt, shaHex } from '../media/storage'
 import { registerBlob } from '../media/storage-ops'
 import { inputSha } from '../media/work/common'
@@ -70,6 +71,9 @@ function derivePhotoForDraft(env: MediaEnv): WorkHandler {
            WHERE model_id = ${ctx.work.modelId}::uuid AND id = ${ctx.work.draftId}::uuid
              AND state <> 'resolved'
              AND EXISTS (SELECT 1 FROM blobs WHERE sha256 = ${sha} AND state = 'present')`)
+        // The photo is its own master from now on: its renditions are the master's. The inner
+        // derive looked for a master before this update and found none.
+        await bindGenerations(tx, sha, sha)
         await similarPhotos(tx, ctx.work.modelId as string, ctx.work.draftId as string, sha)
         await markReady(tx, ctx)
       },
