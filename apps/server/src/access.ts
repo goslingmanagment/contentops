@@ -30,6 +30,12 @@ const ROUTE_ACCESS: Record<string, Access> = {
   'admin.thresholds': 'staff',
   // «Только чтение» видит превью, но не скачивает (SPEC §11.1).
   'media.download': 'staff',
+  // «Приехало» и разбор старых имён — разделы КМ и владельца; «Только чтение» видит
+  // Библиотеку, План и Журнал (DESIGN §2.3).
+  'inbox.list': 'staff',
+  'inbox.get': 'staff',
+  'inbox.source': 'staff',
+  'legacy.get': 'staff',
 }
 
 export function accessOf(key: string, route: Route): Access | 'model' {
