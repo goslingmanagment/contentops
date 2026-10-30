@@ -26,6 +26,8 @@ export interface ObjectTileProps {
   title: string
   kind?: CoverKind
   coverFamily?: CoverFamily
+  /** Настоящая миниатюра обложки; без неё — синтетическая. */
+  coverSrc?: string
   durationSeconds?: number
   /** «22 фото», «22 файла» — если длительности нет. */
   countLabel?: string
@@ -64,6 +66,7 @@ function ObjectCard({
   title,
   kind,
   coverFamily,
+  coverSrc,
   durationSeconds,
   countLabel,
   versionCount,
@@ -89,6 +92,7 @@ function ObjectCard({
         seed={id}
         kind={kind}
         family={coverFamily}
+        src={coverSrc}
         durationSeconds={durationSeconds}
         countLabel={countLabel}
         versionCount={versionCount}
@@ -121,6 +125,7 @@ function ObjectRow({
   title,
   kind,
   coverFamily,
+  coverSrc,
   sign,
   columns,
   selected = false,
@@ -144,6 +149,7 @@ function ObjectRow({
         seed={id}
         kind={kind}
         family={coverFamily}
+        src={coverSrc}
         aspect="1:1"
         showCaptions={false}
         className="w-10 shrink-0 rounded-md"

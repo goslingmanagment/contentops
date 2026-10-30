@@ -91,32 +91,65 @@ node(cli, ['bootstrap', join(ROOT, 'packages/db/bootstrap.example.json')], {
   CONTENTOPS_OWNER_PASSWORD: OWNER_PASSWORD,
 })
 
+const storage = process.env.DEV_STORAGE ?? join(tmpdir(), 'contentops-dev')
+for (const dir of ['data', 'derived', 'tmp']) mkdirSync(join(storage, dir), { recursive: true })
+const storageEnv = {
+  DATA_ROOT: join(storage, 'data'),
+  DERIVED_ROOT: join(storage, 'derived'),
+  TMP_ROOT: join(storage, 'tmp'),
+}
+
+// FFmpeg on PATH: the catalog gets real test-pattern media and the media worker roles run
+// next to web (thumbnails, previews, copies, downloads). `DEV_MEDIA=0` skips them.
+const media = process.env.DEV_MEDIA !== '0' && hasFfmpeg()
+function hasFfmpeg() {
+  try {
+    execFileSync('ffmpeg', ['-hide_banner', '-version'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // A fictional catalog of Лора for the screens; a model with objects is left as it is.
-execFileSync('pnpm', ['--filter', '@contentops/server', 'seed', 'lora'], {
+execFileSync('pnpm', ['--filter', '@contentops/server', 'seed', 'lora', ...(media ? ['--media'] : [])], {
   cwd: ROOT,
   stdio: 'inherit',
-  env: { ...process.env, DATABASE_URL: url('contentops_app', 'dev-app') },
+  env: { ...process.env, ...storageEnv, DATABASE_URL: url('contentops_app', 'dev-app') },
 })
 
-const storage = join(tmpdir(), 'contentops-dev')
-for (const dir of ['data', 'derived', 'tmp']) mkdirSync(join(storage, dir), { recursive: true })
+const roleEnv = (role) => ({
+  ...process.env,
+  ...storageEnv,
+  ROLE: role,
+  DATABASE_URL: url('contentops_app', 'dev-app'),
+  PUBLIC_URL: 'http://localhost:5173',
+  // No nginx in development: web streams previews and downloads itself.
+  FILES_DIRECT: '1',
+  LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
+})
 
 console.log(`\nContentOps dev: http://localhost:5173 after \`pnpm dev\` · dmitriy / ${OWNER_PASSWORD}\n`)
-const server = spawn('pnpm', ['--filter', '@contentops/server', 'dev'], {
-  cwd: ROOT,
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    ROLE: 'web',
-    DATABASE_URL: url('contentops_app', 'dev-app'),
-    DATA_ROOT: join(storage, 'data'),
-    DERIVED_ROOT: join(storage, 'derived'),
-    TMP_ROOT: join(storage, 'tmp'),
-    PUBLIC_URL: 'http://localhost:5173',
-    // No nginx in development: web streams previews and downloads itself.
-    FILES_DIRECT: '1',
-    LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
-  },
+const children = [
+  spawn('pnpm', ['--filter', '@contentops/server', 'dev'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: roleEnv('web'),
+  }),
+  ...(media ? ['worker', 'worker-video', 'worker-image'] : []).map((role) =>
+    spawn('pnpm', ['--filter', '@contentops/server', 'exec', 'tsx', 'src/main.ts'], {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: roleEnv(role),
+    }),
+  ),
+]
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    for (const child of children) child.kill(signal)
+  })
+}
+children[0]?.on('exit', (code) => {
+  for (const child of children.slice(1)) child.kill('SIGTERM')
+  process.exit(code ?? 0)
 })
-for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.kill(signal))
-server.on('exit', (code) => process.exit(code ?? 0))

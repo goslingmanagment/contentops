@@ -312,7 +312,14 @@ export interface SeedResult {
 }
 
 /** Fills the model's catalog once; a model that already has objects is left as it is. */
-export async function seedCatalog(db: Db, model: string): Promise<SeedResult> {
+export async function seedCatalog(
+  db: Db,
+  model: string,
+  options: {
+    /** Real bytes for the files (`media-seed.ts`); random hashes without bytes otherwise. */
+    media?: (items: readonly FixtureItem[]) => FixtureItem[]
+  } = {},
+): Promise<SeedResult> {
   const { rows } = await db.execute<{ count: number }>(sql`
     SELECT count(*)::int AS count FROM content_items i JOIN models m ON m.id = i.model_id
      WHERE m.code = ${model}`)
@@ -328,7 +335,7 @@ export async function seedCatalog(db: Db, model: string): Promise<SeedResult> {
     ...lifes(rnd),
     ...promos(rnd),
   ]
-  const created = await createCatalogItems(db, model, items)
+  const created = await createCatalogItems(db, model, options.media ? options.media(items) : items)
   await linkCatalogItems(db, model, LINKS)
   await tombstoneCatalogItem(db, model, 'LIFE-186')
   // No legacy in a fictional catalog: the counters issue new numbers right away (a type

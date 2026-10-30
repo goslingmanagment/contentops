@@ -1,4 +1,5 @@
 import type { CatalogEntry } from '@contentops/contracts/domain/catalog'
+import type { MasterFrame } from '@contentops/contracts/domain/files'
 import {
   FILE_ROLE_LABEL,
   type FileRole,
@@ -13,7 +14,7 @@ import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
 import type { ModelScope } from '../context'
-import { catalogEntries, rawPurposeOf, thumbRatio } from './entries'
+import { catalogEntries, rawPurposeOf, renditionUrl, thumbRatio } from './entries'
 import {
   type DbItemType,
   findItem,
@@ -58,6 +59,8 @@ export interface MembershipRow extends Record<string, unknown> {
   owner_role: MembershipRow['role'] | null
   owner_ordinal: number | null
   owner_variant_no: number | null
+  /** Active `thumb640` generation of the version's master: the real thumbnail. */
+  thumb_generation: string | null
 }
 
 /** The sub-handle of a file: `master`, `teaser`, `pic07`, `ed07`, `u2` (naming §3, §5). */
@@ -86,7 +89,11 @@ export async function memberships(
            b.byte_size::float8 AS byte_size, b.ext,
            (v.created_at AT TIME ZONE 'Europe/Moscow')::date::text AS created_at,
            owner.item_id AS owner_item_id, owner.role AS owner_role,
-           owner.ordinal AS owner_ordinal, owner.variant_no AS owner_variant_no
+           owner.ordinal AS owner_ordinal, owner.variant_no AS owner_variant_no,
+           (SELECT g.id FROM rendition_generations g
+             WHERE g.master_sha256 = v.master_sha256 AND g.kind = 'thumb640' AND g.is_active
+               AND g.state = 'ready' AND NOT g.meta_stripped
+             LIMIT 1) AS thumb_generation
       FROM item_memberships im
       JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id
       JOIN asset_versions v ON v.model_id = a.model_id
@@ -142,6 +149,7 @@ function fileOf(
   versions: readonly VersionRow[],
   processed: ReadonlySet<number>,
   owners: ReadonlyMap<string, ItemRow>,
+  model: ModelScope,
 ): ItemFile {
   const id = publicIdOfRow(item)
   const role = fileRole(item.type, row)
@@ -174,6 +182,7 @@ function fileOf(
     thumb: {
       key: `${id}/${key}`,
       ratio: thumbRatio(row.media_kind, row.width, row.height),
+      url: renditionUrl(model, row.thumb_generation, 'thumb-640.webp'),
     },
     current_version: row.version_no,
     versions: versions
@@ -364,6 +373,49 @@ function tombstoneEntry(item: ItemRow, files: readonly ItemFile[]): CatalogEntry
   }
 }
 
+/**
+ * «Кадры мастера»: up to ten annotation frames of the master's active `frames` generation at
+ * equal steps, with their moments (SPEC §9.3 `frames/NNNN.webp`); none until it is built.
+ */
+async function masterFrames(
+  q: Queryable,
+  model: ModelScope,
+  publicId: string,
+  rows: readonly MembershipRow[],
+): Promise<MasterFrame[]> {
+  const master = rows.find(
+    (row) => row.kind === 'owned' && row.role === 'master' && row.media_kind === 'video',
+  )
+  if (!master) return []
+  const { rows: frames } = await q.execute<{
+    generation: string
+    name: string
+    frame_ms: number
+  }>(sql`
+    SELECT g.id AS generation, a.name, a.frame_ms::float8 AS frame_ms
+      FROM asset_versions v
+      JOIN rendition_generations g ON g.master_sha256 = v.master_sha256 AND g.kind = 'frames'
+                                  AND g.is_active AND g.state = 'ready' AND NOT g.meta_stripped
+      JOIN rendition_artifacts a ON a.generation_id = g.id AND a.state = 'ready'
+     WHERE v.model_id = ${model.id}::uuid AND v.id = ${master.version_id}::uuid
+     ORDER BY a.frame_ms, a.name`)
+  if (frames.length === 0) return []
+  const step = Math.max(1, frames.length / 10)
+  const picked = Array.from(
+    { length: Math.min(10, frames.length) },
+    (_, i) => frames[Math.floor(i * step)] as (typeof frames)[number],
+  )
+  const ratio = thumbRatio('video', master.width, master.height)
+  return picked.map((frame, i) => ({
+    t_s: Math.round((frame.frame_ms ?? 0) / 100) / 10,
+    thumb: {
+      key: `${publicId}/frame${String(i + 1).padStart(2, '0')}`,
+      ratio,
+      url: renditionUrl(model, frame.generation, frame.name),
+    },
+  }))
+}
+
 export async function itemDetail(q: Queryable, model: ModelScope, id: string): Promise<ItemDetail> {
   const item = await findItem(q, model, id, { withTombstones: true })
   const rows = await memberships(q, model, [item.id])
@@ -385,14 +437,26 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
   const base = rows.filter((row) => !(row.kind === 'owned' && row.variant_no > 0))
   let rank = 0
   const files = base.map((row) =>
-    fileOf(item, row, ORDERED_ROLES.has(row.role) ? ++rank : null, versions, processed, owners),
+    fileOf(
+      item,
+      row,
+      ORDERED_ROLES.has(row.role) ? ++rank : null,
+      versions,
+      processed,
+      owners,
+      model,
+    ),
   )
   const fypVersions: FypVersion[] = rows
     .filter((row) => row.kind === 'owned' && row.variant_no > 0)
     .map((row) => ({
       no: row.variant_no,
       level: row.uniq_level ?? 'soft',
-      thumb: { key: `${publicIdOfRow(item)}/u${row.variant_no}`, ratio: '9:16' },
+      thumb: {
+        key: `${publicIdOfRow(item)}/u${row.variant_no}`,
+        ratio: '9:16',
+        url: renditionUrl(model, row.thumb_generation, 'thumb-640.webp'),
+      },
       duration_s: row.duration_ms ? Math.round(row.duration_ms / 1000) : 0,
       placed: [],
     }))
@@ -417,7 +481,7 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
     version: item.row_version,
     lifecycle: await lifecycleOf(q, model, item),
     files,
-    frames: [],
+    frames: await masterFrames(q, model, publicIdOfRow(item), base),
     fyp_versions: fypVersions,
     markup: markup.get(item.id) ?? [],
     provenance: await provenanceLinks(q, model, item),

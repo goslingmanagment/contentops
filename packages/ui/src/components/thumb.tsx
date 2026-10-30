@@ -43,6 +43,11 @@ export interface ThumbProps extends Omit<ComponentProps<'div'>, 'children'> {
   overlay?: ReactNode
   /** Размер растра обложки-заглушки: `screen` — для просмотра во весь экран. */
   resolution?: 'thumb' | 'screen'
+  /**
+   * Настоящая миниатюра (`/api/v1/<model>/g/<поколение>/thumb-640.webp`); пока её нет —
+   * синтетическая обложка по `seed`. Грузится лениво, место держит `aspect-ratio`.
+   */
+  src?: string | null
 }
 
 /**
@@ -63,6 +68,7 @@ export function Thumb({
   showCaptions = true,
   overlay,
   resolution,
+  src,
   className,
   style,
   ...props
@@ -83,7 +89,19 @@ export function Thumb({
       style={fill ? style : { aspectRatio: aspectRatioValue[aspect], ...style }}
       {...props}
     >
-      {letterboxed ? (
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          className={cn(
+            'absolute inset-0 size-full',
+            letterboxed ? 'object-contain' : 'object-cover',
+          )}
+        />
+      ) : letterboxed ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <CoverArt
             seed={seed}

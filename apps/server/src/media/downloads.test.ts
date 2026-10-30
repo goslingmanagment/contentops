@@ -295,6 +295,17 @@ describe('previews by generation', () => {
     expect(again.statusCode).toBe(304)
   })
 
+  it('the catalog points the cover and the file tile at the built thumbnail', async () => {
+    const url = `/api/v1/lora/g/${generation}/thumb-640.webp`
+    const index = await call(server.app, { method: 'GET', url: '/api/v1/lora/index', as: owner })
+    const entry = index.json().items.find((e: { id: string }) => e.id === 'PPV-073')
+    expect(entry.cover.url).toBe(url)
+    const page = await call(server.app, { method: 'GET', url: '/api/v1/lora/i/PPV-073', as: owner })
+    const files = page.json().files as { key: string; thumb: { url: string | null } }[]
+    expect(files.find((f) => f.key === 'master')?.thumb.url).toBe(url)
+    expect(files.find((f) => f.key === 'pic01')?.thumb.url ?? null, 'not built yet').toBeNull()
+  })
+
   it('another model never reaches it: 403 without rights, 404 inside another model', async () => {
     const foreign = await addPerson(server.app, owner, {
       name: 'Аня',
