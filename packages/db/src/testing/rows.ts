@@ -177,12 +177,20 @@ export const FACTORIES: Record<string, Factory> = {
     path_raw: `/Lora/${tag()}.mov`,
     name: 'x.mov',
   }),
-  source_revisions: async (client, modelId) => ({
-    model_id: modelId,
-    source_object_id: await idOf(client, 'source_objects', modelId),
-    sequence_no: 1,
-    byte_size: 1,
-  }),
+  source_revisions: async (client, modelId, testing = []) => {
+    const row: Row = {
+      model_id: modelId,
+      source_object_id: await idOf(client, 'source_objects', modelId),
+      sequence_no: 1,
+      byte_size: 1,
+    }
+    // The snapshot pins a revision together with the path it saw.
+    if (testing.includes('frozen_by_work_id')) {
+      row.frozen_by_work_id = await idOf(client, 'work_operations', modelId)
+      row.frozen_path = `/Lora/${tag()}.mov`
+    }
+    return row
+  },
 
   // 0003_catalog
   inbox_groups: async (client, modelId, testing = []) => {

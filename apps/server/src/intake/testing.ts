@@ -190,25 +190,29 @@ export async function runWork(
     dataset?: string
     sourceRevisionId?: string
     draftId?: string
+    /** Run this already queued work instead of queueing a new one. */
+    workId?: string
     /** Stop waiting when the work is paused by a switch. */
     until?: (outcome: WorkOutcome) => boolean
   },
 ): Promise<WorkOutcome> {
   const key = `test:${randomUUID()}`
-  const { work } = await withActorTx(
-    db,
-    { actor: SYSTEM_ACTOR('test'), action: 'test.enqueue', requestId: randomUUID() },
-    (tx) =>
-      enqueueWork(tx, {
-        modelId: input.modelId,
-        kind: input.kind,
-        workKey: key,
-        scope: input.scope ?? null,
-        dataset: input.dataset ?? null,
-        sourceRevisionId: input.sourceRevisionId ?? null,
-        draftId: input.draftId ?? null,
-      }),
-  )
+  const { work } = input.workId
+    ? { work: { id: input.workId } }
+    : await withActorTx(
+        db,
+        { actor: SYSTEM_ACTOR('test'), action: 'test.enqueue', requestId: randomUUID() },
+        (tx) =>
+          enqueueWork(tx, {
+            modelId: input.modelId,
+            kind: input.kind,
+            workKey: key,
+            scope: input.scope ?? null,
+            dataset: input.dataset ?? null,
+            sourceRevisionId: input.sourceRevisionId ?? null,
+            draftId: input.draftId ?? null,
+          }),
+      )
   const runner = new WorkRunner({
     db,
     role: 'worker',

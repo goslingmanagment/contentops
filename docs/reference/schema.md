@@ -467,7 +467,8 @@ CHECK `kind NOT IN ('yandex_disk', 'dropbox') OR read_only` — инвариан
 (веб), `current_path`, `current_name`, `is_dir`,
 `parent_id?`, `archive_revision_id?`, `archive_entry_no?` (член распакованного архива:
 `(ревизия архива, номер входа)`, а не только имя — одинаковые имена внутри ZIP различимы,
-схема §9.7),
+схема §9.7; снимок записывает их из оглавления ZIP без распаковки, путь — путь архива, `/` и
+путь внутри),
 `current_revision_id?`, `first_seen_at`, `last_seen_at`, `gone_since?`.
 Частичные UNIQUE `(model_id, source_id, resource_id)` и
 `(model_id, archive_revision_id, archive_entry_no)`; путь не уникален — на старом пути
@@ -483,12 +484,29 @@ UNIQUE `(model_id, source_object_id, path_nfc)`. Переименование д
 изменившееся»). `id`, `model_id`, `source_object_id`, `sequence_no`, `md5?` (Я.Диск),
 `content_hash?` и `remote_rev?` (Dropbox), `byte_size`, `remote_created_at?` (время
 появления в источнике: `created` Я.Диска, `server_modified` Dropbox; по нему дата прихода
-и срок старых кастомов), `remote_modified_at?`, `detected_at`, `scan_work_id?`, `source_sha256?`,
+и срок старых кастомов), `remote_modified_at?`, `remote_shot_at?` (время съёмки от источника:
+EXIF Я.Диска, `media_info` Dropbox), `media_type?` (`media_type` Я.Диска; у Dropbox и членов
+архива — по расширению), `crc32?` (член архива: CRC-32 из оглавления ZIP), `detected_at`,
+`scan_work_id?`, `source_sha256?`,
 `verified_at?` (сумма источника сошлась: MD5 Я.Диска или `content_hash` Dropbox; SHA-256
 посчитан), `verified_route`
-(`download | local_copy | upload`), `previous_id?`, `frozen_by_work_id?` (ревизию закрепил
-снимок `scan:freeze`, SPEC §6.3: снимок — эти строки в базе, полнота листинга каталогов — в
-`report` работы).
+(`download | local_copy | upload`), `previous_id?`, `frozen_by_work_id?` и `frozen_path?`
+(ревизию закрепил снимок `scan:freeze` и путь, на котором он её видел; пишутся вместе и один
+раз, SPEC §6.3: снимок — эти строки в базе, полнота листинга каталогов — в `report` работы).
+Член архива — тоже ревизия: размер без сжатия и CRC-32 из оглавления.
+
+Снимок (`apps/server/src/intake/freeze.ts`, 2в, 30.10.2026) — работа `scan` с
+`dataset = 'freeze'`, `scope` = источник, `work_key = scan:freeze:<дата>` (одна на модель и
+дату); ставится только командой оператора (`ops.js freeze`), планировщик её не ставит. Проход
+пишет объекты, пути и ревизии, но не группы и черновики; закрепляет ревизии только в той же
+транзакции, что завершает работу. Каталог, изменившийся или пропавший во время листинга, и
+оборванный проход — частичный проход: ничего не закрепляется, работа повторяется. Каталог с
+нечитаемым ответом API и архив без оглавления (не ZIP, битый ZIP) — неполный вход: ревью-кейс
+`unreadable_input` (ключ `dir:<id>` или `archive:<ревизия>`), снимок не держат. `report`:
+`files`, `dirs`, `dirs_complete`, `incomplete_dirs` (путь и причина), `archives`,
+`archives_read`, `unreadable_archives`, `members` (знаменатель участников), `pinned`,
+`pinned_before` (закреплены более ранним снимком), `complete`. Выгрузка реестра — JSONL по
+команде (`ops.js freeze-export`).
 UNIQUE `(model_id, source_object_id, sequence_no)`; UNIQUE `(model_id,
 source_object_id, id)`; уникальности по MD5 или SHA нет: A→B→A — три ревизии.
 Индекс `(model_id, source_sha256)` — точные дубли (§6.2). Скачивание относится к
@@ -1327,7 +1345,8 @@ LLM.
     running | retry_wait`. Тест сверяет список с каждым FK на `blobs (sha256)`. Строку
     `blobs` прикладная роль не удаляет (REVOKE DELETE).
   - Записанное однажды (функция `set_once`, NULL → значение): у ревизии `source_sha256`,
-    `verified_at`, `verified_route`, `frozen_by_work_id` (три первых — только вместе); у
+    `verified_at`, `verified_route`, `frozen_by_work_id`, `frozen_path` (три первых — только
+    вместе, два последних — тоже); у
     поколения производной `master_sha256` и `bound_at`. Наблюдённые колонки ревизии, ключ
     поколения и байты артефакта — `forbid_change`.
   - `storage_operations`: отменить можно только `intent`, завершённая операция не меняется

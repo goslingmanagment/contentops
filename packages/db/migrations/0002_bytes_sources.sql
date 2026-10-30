@@ -357,8 +357,9 @@ CREATE TABLE source_paths (
 
 -- An observed state of the bytes. A→B→A gives three revisions; there is no uniqueness by a hash.
 -- Observed identity and metadata never change; `source_sha256`, `verified_at` and
--- `verified_route` are written once after download and check, `frozen_by_work_id` once by the
--- snapshot `scan:freeze` (SPEC §6.3).
+-- `verified_route` are written once after download and check, `frozen_by_work_id` and
+-- `frozen_path` once by the snapshot `scan:freeze` (SPEC §6.3). A member of an archive is a
+-- revision too: its size and CRC-32 come from the archive's central directory.
 CREATE TABLE source_revisions (
   model_id uuid NOT NULL,
   id uuid NOT NULL DEFAULT uuidv7(),
@@ -375,6 +376,12 @@ CREATE TABLE source_revisions (
   -- `created` of Yandex Disk, `server_modified` of Dropbox: the arrival date.
   remote_created_at timestamptz,
   remote_modified_at timestamptz,
+  -- Shooting time the source knows (Yandex `exif.date_time`, Dropbox `media_info`) and its
+  -- media type (Yandex `media_type`; Dropbox and archive members — by the extension).
+  remote_shot_at timestamptz,
+  media_type text,
+  -- An archive member: CRC-32 from the central directory (no bytes are unpacked to read it).
+  crc32 bytea CONSTRAINT source_revisions_crc32_check CHECK (octet_length(crc32) = 4),
   detected_at timestamptz NOT NULL DEFAULT now(),
   scan_work_id uuid,
   previous_id uuid,
@@ -383,6 +390,8 @@ CREATE TABLE source_revisions (
   verified_at timestamptz,
   verified_route text CHECK (verified_route IN ('download', 'local_copy', 'upload')),
   frozen_by_work_id uuid,
+  -- The path of the file as the snapshot saw it: the snapshot does not follow later moves.
+  frozen_path text,
   PRIMARY KEY (model_id, id),
   UNIQUE (model_id, source_object_id, sequence_no),
   -- Target of FK (model_id, id, current_revision_id) from source_objects.
@@ -396,8 +405,12 @@ CREATE TABLE source_revisions (
   -- The local hash, the check and its route arrive together.
   CONSTRAINT source_revisions_verified CHECK (
     (source_sha256 IS NULL) = (verified_at IS NULL) AND (verified_at IS NULL) = (verified_route IS NULL)
-  )
+  ),
+  CONSTRAINT source_revisions_frozen CHECK ((frozen_by_work_id IS NULL) = (frozen_path IS NULL))
 );
+-- Revisions of one snapshot: its register (SPEC §6.3).
+CREATE INDEX source_revisions_frozen ON source_revisions (model_id, frozen_by_work_id)
+  WHERE frozen_by_work_id IS NOT NULL;
 -- Exact duplicates (SPEC §6.2): by the local hash and, before download, by the API hash.
 CREATE INDEX source_revisions_source_sha256 ON source_revisions (model_id, source_sha256);
 CREATE INDEX source_revisions_remote_sha256 ON source_revisions (model_id, remote_sha256);
@@ -424,12 +437,12 @@ CREATE TRIGGER source_paths_fixed BEFORE UPDATE ON source_paths
 CREATE TRIGGER source_revisions_fixed BEFORE UPDATE ON source_revisions
   FOR EACH ROW EXECUTE FUNCTION forbid_change(
     'model_id', 'id', 'source_object_id', 'sequence_no', 'md5', 'remote_sha256', 'content_hash',
-    'remote_rev', 'byte_size', 'remote_created_at', 'remote_modified_at', 'detected_at',
-    'scan_work_id', 'previous_id'
+    'remote_rev', 'byte_size', 'remote_created_at', 'remote_modified_at', 'remote_shot_at',
+    'media_type', 'crc32', 'detected_at', 'scan_work_id', 'previous_id'
   );
 CREATE TRIGGER source_revisions_verified_once BEFORE UPDATE ON source_revisions
   FOR EACH ROW EXECUTE FUNCTION set_once(
-    'source_sha256', 'verified_at', 'verified_route', 'frozen_by_work_id'
+    'source_sha256', 'verified_at', 'verified_route', 'frozen_by_work_id', 'frozen_path'
   );
 
 CREATE TRIGGER sources_journal AFTER INSERT OR UPDATE OR DELETE ON sources

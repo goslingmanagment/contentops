@@ -138,12 +138,26 @@ export async function resolveFolders(
   return known
 }
 
+/** A file of a batch with the revision it was observed as. */
+export interface ObservedFile {
+  entry: SourceEntry
+  objectId: string
+  revisionId: string
+}
+
 export interface ApplyInput {
   source: SourceRow
   client: CloudSource
   workId: string
   entries: readonly SourceEntry[]
   folders: Map<string, FolderRef>
+  /**
+   * `false` — objects, paths and revisions only, no groups and drafts: the snapshot
+   * `scan:freeze` is metadata, drafts of the old corpus come from the import (SPEC §6.3).
+   */
+  drafts?: boolean
+  /** Each file of the batch with its revision, after the batch is committed. */
+  onFile?: (file: ObservedFile) => void
 }
 
 /** One transaction per batch, serialised per source with the scans of other streams. */
@@ -155,7 +169,8 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
     requestId: `scan:${input.workId}`,
     workId: input.workId,
   }
-  return withActorTx(db, context, async (tx) => {
+  const observed: ObservedFile[] = []
+  const stats = await withActorTx(db, context, async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`scan:${source.id}`}, 0))`)
     const stats = emptyStats()
     // Folders first: the group of a file holds its folder object.
@@ -175,6 +190,8 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
       if (object.moved) stats.moved += 1
       const revision = await observeRevision(tx, source, object.id, entry, input.workId)
       if (revision.created) stats.revisions += 1
+      observed.push({ entry, objectId: object.id, revisionId: revision.id })
+      if (input.drafts === false) continue
       const media = mediaKindOf(entry.name, entry.mediaType)
       if (!media) continue
       const groupId = await groupOf(tx, input, entry, media === 'video')
@@ -182,6 +199,8 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
     }
     return stats
   })
+  if (input.onFile) for (const file of observed) input.onFile(file)
+  return stats
 }
 
 /**
@@ -328,12 +347,13 @@ async function observeRevision(
   const inserted = await tx.execute<{ id: string }>(sql`
     INSERT INTO source_revisions (
       model_id, source_object_id, sequence_no, md5, remote_sha256, content_hash, remote_rev,
-      byte_size, remote_created_at, remote_modified_at, scan_work_id, previous_id
+      byte_size, remote_created_at, remote_modified_at, remote_shot_at, media_type, scan_work_id,
+      previous_id
     ) VALUES (
       ${source.modelId}::uuid, ${objectId}::uuid, ${(current?.sequence_no ?? 0) + 1},
       ${hex(entry.md5)}::bytea, ${hex(entry.sha256)}::bytea, ${hex(entry.contentHash)}::bytea,
       ${entry.rev}, ${size}, ${entry.createdAt}::timestamptz, ${entry.modifiedAt}::timestamptz,
-      ${workId}::uuid, ${current?.id ?? null}::uuid
+      ${entry.shotAt}::timestamptz, ${entry.mediaType}, ${workId}::uuid, ${current?.id ?? null}::uuid
     )
     RETURNING id`)
   const id = (inserted.rows[0] as { id: string }).id

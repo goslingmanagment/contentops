@@ -1071,6 +1071,9 @@ CREATE TABLE public.source_revisions (
     byte_size bigint NOT NULL,
     remote_created_at timestamp with time zone,
     remote_modified_at timestamp with time zone,
+    remote_shot_at timestamp with time zone,
+    media_type text,
+    crc32 bytea,
     detected_at timestamp with time zone DEFAULT now() NOT NULL,
     scan_work_id uuid,
     previous_id uuid,
@@ -1078,8 +1081,11 @@ CREATE TABLE public.source_revisions (
     verified_at timestamp with time zone,
     verified_route text,
     frozen_by_work_id uuid,
+    frozen_path text,
     CONSTRAINT source_revisions_byte_size_check CHECK ((byte_size >= 0)),
     CONSTRAINT source_revisions_content_hash_check CHECK ((octet_length(content_hash) = 32)),
+    CONSTRAINT source_revisions_crc32_check CHECK ((octet_length(crc32) = 4)),
+    CONSTRAINT source_revisions_frozen CHECK (((frozen_by_work_id IS NULL) = (frozen_path IS NULL))),
     CONSTRAINT source_revisions_md5_check CHECK ((octet_length(md5) = 16)),
     CONSTRAINT source_revisions_remote_sha256_check CHECK ((octet_length(remote_sha256) = 32)),
     CONSTRAINT source_revisions_sequence_no_check CHECK ((sequence_no >= 1)),
@@ -2138,6 +2144,8 @@ CREATE INDEX source_objects_last_seen ON public.source_objects USING btree (mode
 
 CREATE INDEX source_objects_path_trgm ON public.source_objects USING gin (current_path public.gin_trgm_ops);
 
+CREATE INDEX source_revisions_frozen ON public.source_revisions USING btree (model_id, frozen_by_work_id) WHERE (frozen_by_work_id IS NOT NULL);
+
 CREATE INDEX source_revisions_remote_sha256 ON public.source_revisions USING btree (model_id, remote_sha256);
 
 CREATE INDEX source_revisions_source_sha256 ON public.source_revisions USING btree (model_id, source_sha256);
@@ -2294,11 +2302,11 @@ CREATE TRIGGER source_paths_fixed BEFORE UPDATE ON public.source_paths FOR EACH 
 
 CREATE TRIGGER source_paths_journal AFTER INSERT OR DELETE OR UPDATE ON public.source_paths FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
-CREATE TRIGGER source_revisions_fixed BEFORE UPDATE ON public.source_revisions FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_object_id', 'sequence_no', 'md5', 'remote_sha256', 'content_hash', 'remote_rev', 'byte_size', 'remote_created_at', 'remote_modified_at', 'detected_at', 'scan_work_id', 'previous_id');
+CREATE TRIGGER source_revisions_fixed BEFORE UPDATE ON public.source_revisions FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_object_id', 'sequence_no', 'md5', 'remote_sha256', 'content_hash', 'remote_rev', 'byte_size', 'remote_created_at', 'remote_modified_at', 'remote_shot_at', 'media_type', 'crc32', 'detected_at', 'scan_work_id', 'previous_id');
 
 CREATE TRIGGER source_revisions_journal AFTER INSERT OR DELETE OR UPDATE ON public.source_revisions FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
-CREATE TRIGGER source_revisions_verified_once BEFORE UPDATE ON public.source_revisions FOR EACH ROW EXECUTE FUNCTION public.set_once('source_sha256', 'verified_at', 'verified_route', 'frozen_by_work_id');
+CREATE TRIGGER source_revisions_verified_once BEFORE UPDATE ON public.source_revisions FOR EACH ROW EXECUTE FUNCTION public.set_once('source_sha256', 'verified_at', 'verified_route', 'frozen_by_work_id', 'frozen_path');
 
 CREATE TRIGGER sources_fixed BEFORE UPDATE ON public.sources FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'kind');
 

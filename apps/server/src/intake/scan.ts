@@ -9,6 +9,7 @@ import {
   markLosses,
   resolveFolders,
 } from './discover'
+import { FREEZE_DATASET, freezeSource } from './freeze'
 import {
   cloudSources,
   hasCredentials,
@@ -84,12 +85,15 @@ export async function scanStreams(
     ])
 }
 
-/** The report of the last successful scan of a source: its cursor and traversal start. */
+/**
+ * The report of the last successful scan of a source: its cursor and traversal start. The
+ * snapshot `scan:freeze` is a scan of its own and carries neither.
+ */
 async function lastReport(db: Db, sourceId: string, where = sql`true`): Promise<ScanReport | null> {
   const { rows } = await db.execute<{ report: ScanReport }>(sql`
     SELECT report FROM work_operations
      WHERE kind = 'scan' AND scope = ${sourceId} AND state = 'succeeded' AND report IS NOT NULL
-       AND ${where}
+       AND dataset IS DISTINCT FROM ${FREEZE_DATASET} AND ${where}
      ORDER BY finished_at DESC LIMIT 1`)
   return rows[0]?.report ?? null
 }
@@ -115,12 +119,21 @@ export function scanFailure(error: unknown): unknown {
 }
 
 export function scanHandler(factory: SourceFactory): WorkHandler {
-  return async ({ work, db, signal, checkpoint }) => {
+  return async (context) => {
+    const { work, db, signal, checkpoint } = context
     const source = work.scope ? await sourceById(db, work.scope) : undefined
     if (!source) throw new WorkError('permanent', 'source_missing', 'источника нет')
     const client = factory(source)
     if (!client) {
       throw new WorkError('permanent', 'not_configured', `нет ${source.credentialsRef} в окружении`)
+    }
+    if (work.dataset === FREEZE_DATASET) {
+      // The snapshot of stage 3 (SPEC §6.3): only by the operator's command.
+      try {
+        return await freezeSource(context, source, client)
+      } catch (error) {
+        throw scanFailure(error)
+      }
     }
     const previous = await lastReport(db, source.id)
     const folders = new Map<string, FolderRef>()
