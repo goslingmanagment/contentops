@@ -364,7 +364,7 @@ describe('collections are a view of the catalog (SPEC §7.1)', () => {
     })
     expect(second.json().id).toBe('PRM-002')
     const first = (await get(manager, '/promo/collections/PRM-001')).json()
-    expect(first.members[0].other_collections).toEqual(['PRM-002 · Reddit'])
+    expect(first.members[0].other_collections).toEqual(['PRM-002'])
   })
 
   it('a collection of another channel is refused; an unknown file is 404', async () => {

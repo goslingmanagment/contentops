@@ -33,7 +33,7 @@ export function HandoffHistory({ handoffs, currentId, onPick }: HandoffHistoryPr
               )}
             >
               <span className="w-11 shrink-0 text-muted-foreground text-sm tabular-nums">
-                {formatDate(mskDate(handoff.created_at), today)}
+                {formatDate(handoff.sent_on ?? mskDate(handoff.created_at), today)}
               </span>
               <span className="min-w-0 flex-1 truncate text-base">{handoff.contractor_name}</span>
               <HandoffStatus

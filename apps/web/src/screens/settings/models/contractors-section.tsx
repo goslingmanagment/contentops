@@ -37,7 +37,7 @@ export function ContractorsSection({ model }: { model: Model }) {
     <SettingsSection
       title={`Подрядчики промо · ${model.name}`}
       aside={
-        <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+        <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
           <PlusIcon />
           Добавить подрядчика
         </Button>
@@ -98,7 +98,7 @@ function ContractorRow({
           }
         }}
       >
-        <SelectTrigger aria-labelledby={labelId} className="w-56">
+        <SelectTrigger aria-labelledby={labelId} className="w-64">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

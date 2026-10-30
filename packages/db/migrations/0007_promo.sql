@@ -1,4 +1,4 @@
--- 0005_promo: promo contractors and handoffs (schema §3.8, §9.1, §9.2; SPEC §7.1).
+-- 0007_promo: promo contractors and handoffs (schema §3.8, §9.1, §9.2; SPEC §7.1).
 --
 -- A collection is a `PRM` object of the catalog: its files are memberships, the files of other
 -- objects come in as references (`item_memberships.kind = 'reference'`, 0003). This file adds

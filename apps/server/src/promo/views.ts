@@ -194,35 +194,30 @@ async function handedOut(
   return result
 }
 
-/** «PRM-012 · Twitter»: live collections holding each file. */
+/** «Ещё в подборках»: live collections holding each file (`PRM-012`; the screen adds the channel). */
 async function collectionsOf(
   q: Queryable,
   model: ModelScope,
   assets: readonly string[],
-): Promise<Map<string, { package_id: string; label: string }[]>> {
-  const result = new Map<string, { package_id: string; label: string }[]>()
+): Promise<Map<string, { package_id: string; id: ItemId }[]>> {
+  const result = new Map<string, { package_id: string; id: ItemId }[]>()
   if (assets.length === 0) return result
   const { rows } = await q.execute<{
     asset_id: string
     package_id: string
     type: string
     number: number
-    channel: string
   }>(sql`
-    SELECT im.asset_id, p.id AS package_id, p.type, p.number, ch.title AS channel
+    SELECT im.asset_id, p.id AS package_id, p.type, p.number
       FROM item_memberships im
       JOIN content_items p ON p.model_id = im.model_id AND p.id = im.item_id
                           AND p.type = 'PRM' AND p.deleted_at IS NULL
-      JOIN promo_channels ch ON ch.model_id = p.model_id AND ch.id = p.promo_channel_id
      WHERE im.model_id = ${model.id}::uuid AND im.removed_at IS NULL
        AND im.asset_id = ANY(${sql.param([...new Set(assets)])}::uuid[])
      ORDER BY p.number`)
   for (const row of rows) {
     const list = result.get(row.asset_id) ?? []
-    list.push({
-      package_id: row.package_id,
-      label: `${publicIdOf(row.type, row.number)} · ${row.channel}`,
-    })
+    list.push({ package_id: row.package_id, id: publicIdOf(row.type, row.number) })
     result.set(row.asset_id, list)
   }
   return result
@@ -253,7 +248,7 @@ export async function membersOf(
     handed_to: handed.get(row.asset_id) ?? [],
     other_collections: (elsewhere.get(row.asset_id) ?? [])
       .filter((other) => other.package_id !== row.package_id)
-      .map((other) => other.label),
+      .map((other) => other.id),
   }))
 }
 
@@ -353,11 +348,15 @@ async function handoffViews(
     delivery_id: string
     handle: string
     media_kind: string
+    master_bytes: number
   }>(sql`
-    SELECT d.id AS delivery_id, e.handle_snapshot AS handle, a.media_kind
+    SELECT d.id AS delivery_id, e.handle_snapshot AS handle, a.media_kind,
+           b.byte_size::float8 AS master_bytes
       FROM promo_deliveries d
       JOIN asset_manifest_entries e ON e.model_id = d.model_id AND e.manifest_id = d.manifest_id
       JOIN assets a ON a.model_id = e.model_id AND a.id = e.asset_id
+      JOIN asset_versions v ON v.model_id = e.model_id AND v.id = e.asset_version_id
+      JOIN blobs b ON b.sha256 = v.master_sha256
      WHERE d.model_id = ${model.id}::uuid AND d.id = ANY(${sql.param(ids)}::uuid[])
      ORDER BY d.id, e.position`)
   const receipts = rows.flatMap((row) => (row.receipt_id ? [row.receipt_id] : []))
@@ -398,7 +397,11 @@ async function handoffViews(
           : 1
     const summary = row.summary ?? {}
     const videos = own.filter((entry) => entry.media_kind === 'video').length
-    const size = summary.size_bytes ?? summary.estimated_bytes ?? 0
+    // An imported pack has no issued files here: its masters stand in for the size.
+    const size =
+      summary.size_bytes ??
+      summary.estimated_bytes ??
+      own.reduce((sum, entry) => sum + entry.master_bytes, 0)
     const failure = failed ? (work?.error_text ?? 'ошибка сборки') : null
     const ready = row.state !== 'preparing' && row.receipt_id !== null
     const title = row.package_title ?? publicIdOf(row.package_type, row.package_number)
