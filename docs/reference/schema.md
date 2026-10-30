@@ -452,8 +452,13 @@ UNIQUE `(generation_id, name)`; UNIQUE `(id, output_sha256)` — для квит
 `model_id`, `kind` (`yandex_disk | dropbox | web_upload | legacy_metadata`, схема §9.7; оба
 облачных — за одним интерфейсом источника, SPEC §6.1), `label`,
 `credentials_ref` (имя переменной окружения; сам токен в БД
-не хранится), `read_only`, `enabled`. UNIQUE `(model_id, label)`;
-CHECK `kind NOT IN ('yandex_disk', 'dropbox') OR read_only` — инвариант §2.1 п. 6 в схеме.
+не хранится), `root_path` (папка модели у источника, из конфигурации bootstrap), `read_only`,
+`enabled`. UNIQUE `(model_id, label)`;
+CHECK `kind NOT IN ('yandex_disk', 'dropbox') OR read_only` — инвариант §2.1 п. 6 в схеме;
+у облачного источника `root_path` и `credentials_ref` обязательны. Курсор свежих изменений и
+начало последнего полного обхода — в `report` последней успешной работы `scan` источника
+(потоки `scan:<источник>` раз в 5 мин и `scan-full:<источник>` раз в сутки), отдельной
+таблицы состояния скана нет (2в, 30.10.2026).
 Локальная копия легаси — не вид источника: путь — переменная `LEGACY_SOURCE_ROOT`, байты
 читаются как та же ревизия Я.Диска (`verified_route = local_copy`).
 

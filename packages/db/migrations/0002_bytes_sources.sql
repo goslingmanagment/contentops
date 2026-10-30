@@ -286,7 +286,8 @@ CREATE INDEX work_operations_output ON work_operations (output_sha256)
 
 -- Where bytes and metadata come from. Both clouds sit behind one source interface and are
 -- read-only (SPEC §2.1 p. 6). The token itself is not stored: `credentials_ref` names an
--- environment variable.
+-- environment variable. `root_path` is the model's folder at the source (configuration):
+-- `disk:/…` or `/` on Yandex Disk, `/…` or `''` (the whole account) on Dropbox.
 CREATE TABLE sources (
   model_id uuid NOT NULL REFERENCES models (id) ON DELETE RESTRICT,
   id uuid NOT NULL DEFAULT uuidv7(),
@@ -294,13 +295,17 @@ CREATE TABLE sources (
   label text NOT NULL,
   credentials_ref text CONSTRAINT sources_credentials_ref_format
     CHECK (credentials_ref ~ '^[A-Z][A-Z0-9_]*$'),
+  root_path text,
   read_only boolean NOT NULL DEFAULT true,
   enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   row_version bigint NOT NULL DEFAULT 1,
   PRIMARY KEY (model_id, id),
   UNIQUE (model_id, label),
-  CONSTRAINT sources_cloud_read_only CHECK (kind NOT IN ('yandex_disk', 'dropbox') OR read_only)
+  CONSTRAINT sources_cloud_read_only CHECK (kind NOT IN ('yandex_disk', 'dropbox') OR read_only),
+  -- A cloud folder is scanned from its root and read with its token.
+  CONSTRAINT sources_cloud_root
+    CHECK (kind NOT IN ('yandex_disk', 'dropbox') OR (root_path IS NOT NULL AND credentials_ref IS NOT NULL))
 );
 
 -- An external resource. The path is not unique: a new resource can appear on an old path.

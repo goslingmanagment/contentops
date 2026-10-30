@@ -10,6 +10,7 @@ import { sql } from 'drizzle-orm'
 import { instantOrNull, requireActor } from '../commands'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { cloudSources, hasCredentials, type SourceRow } from '../intake/source-client'
 import type { Services } from '../services'
 import { modelViews } from './models'
 import { withFieldErrors } from './shared'
@@ -59,6 +60,8 @@ function switchState(rows: readonly PolicyRow[], target: SwitchTarget) {
 }
 
 interface Scope {
+  /** The cloud folder of `ydisk.<model>` / `dropbox.<model>`; `null` — not configured. */
+  source?: SourceRow | null
   modelId: string | null
   modelCode: string | null
   accountId: string | null
@@ -100,6 +103,8 @@ function targetsOf(entry: Entry): Partial<Record<SwitchName, SwitchTarget>> {
       }
     case 'ydisk':
       return { scan: { key: 'ydisk.scan', modelId, accountId: null } }
+    case 'dropbox':
+      return { scan: { key: 'dropbox.scan', modelId, accountId: null } }
     case 'agents':
       return { enabled: { key: 'agents.enabled', modelId: null, accountId: null } }
     case 'fyper':
@@ -113,7 +118,9 @@ function targetsOf(entry: Entry): Partial<Record<SwitchName, SwitchTarget>> {
 function subjectOf(entry: Entry): string {
   const { kind } = entry.integration
   if (kind === 'hub') return `Hub · ${entry.scope.accountLabel}`
-  if (kind === 'ydisk') return `Я.Диск · ${entry.scope.modelName}`
+  if (kind === 'ydisk' || kind === 'dropbox') {
+    return `${INTEGRATION_NAME[kind]} · ${entry.scope.modelName}`
+  }
   return INTEGRATION_NAME[kind]
 }
 
@@ -121,12 +128,14 @@ function subjectOf(entry: Entry): string {
 const MAIN: Partial<Record<Integration['kind'], SwitchName>> = {
   hub: 'receive',
   ydisk: 'scan',
+  dropbox: 'scan',
   agents: 'enabled',
   fyper: 'enabled',
 }
 
 async function entries(q: Queryable, models: readonly string[]): Promise<Entry[]> {
   const views = await modelViews(q, models)
+  const sources = await cloudSources(q)
   const { rows: ids } = await q.execute<{ id: string; code: string; model_code: string }>(sql`
     SELECT a.id, a.code, m.code AS model_code FROM accounts a JOIN models m ON m.id = a.model_id
      WHERE m.code = ANY(${sql.param([...models])}::text[])`)
@@ -149,7 +158,17 @@ async function entries(q: Queryable, models: readonly string[]): Promise<Entry[]
       modelCode: model.code,
       modelName: model.name,
     }
-    list.push({ integration: base(`ydisk.${model.code}`, 'ydisk', modelScope), scope: modelScope })
+    // Both clouds of every model: a model without the folder or the token is «не настроено».
+    for (const kind of ['dropbox', 'ydisk'] as const) {
+      const source =
+        sources.find(
+          (row) =>
+            row.modelCode === model.code &&
+            row.kind === (kind === 'ydisk' ? 'yandex_disk' : 'dropbox'),
+        ) ?? null
+      const scope = { ...modelScope, source }
+      list.push({ integration: base(`${kind}.${model.code}`, kind, scope), scope })
+    }
     for (const account of model.accounts) {
       const scope: Scope = {
         ...modelScope,
@@ -167,10 +186,60 @@ async function entries(q: Queryable, models: readonly string[]): Promise<Entry[]
   return list
 }
 
+/** What the scans of a source last said: success, a refused token, an outage with a retry. */
+interface ScanHealth {
+  scope: string
+  last_ok_at: string | null
+  failed_code: string | null
+  failed_at: string | null
+  retry_code: string | null
+  retry_at: string | null
+}
+
+async function scanHealth(q: Queryable): Promise<ScanHealth[]> {
+  const { rows } = await q.execute<ScanHealth & Record<string, unknown>>(sql`
+    SELECT w.scope,
+           max(w.finished_at) FILTER (WHERE w.state = 'succeeded') AS last_ok_at,
+           (array_agg(w.error_code ORDER BY w.finished_at DESC)
+              FILTER (WHERE w.state IN ('succeeded', 'failed')))[1] AS failed_code,
+           (array_agg(w.finished_at ORDER BY w.finished_at DESC)
+              FILTER (WHERE w.state IN ('succeeded', 'failed')))[1] AS failed_at,
+           (array_agg(w.error_code ORDER BY w.created_at DESC)
+              FILTER (WHERE w.state = 'retry_wait' AND w.paused_reason IS NULL))[1] AS retry_code,
+           (array_agg(w.next_attempt_at ORDER BY w.created_at DESC)
+              FILTER (WHERE w.state = 'retry_wait' AND w.paused_reason IS NULL))[1] AS retry_at
+      FROM work_operations w
+     WHERE w.kind = 'scan' AND w.scope IS NOT NULL
+     GROUP BY w.scope`)
+  return rows
+}
+
+interface ViewContext {
+  secrets: Services['secrets']
+  env: Services['sourceEnv']
+  health: readonly ScanHealth[]
+}
+
+function sourceState(integration: Integration, entry: Entry, context: ViewContext) {
+  const source = entry.scope.source
+  if (!source) return
+  const health = context.health.find((row) => row.scope === source.id)
+  integration.last_ok_at = instantOrNull(health?.last_ok_at)
+  if (health?.failed_code === 'auth_rejected') {
+    integration.state = 'down'
+    integration.down_reason = 'token_rejected'
+    integration.since = instantOrNull(health.failed_at)
+  } else if (health?.retry_code) {
+    integration.state = 'down'
+    integration.down_reason = 'unreachable'
+    integration.retry_at = instantOrNull(health.retry_at)
+  }
+}
+
 function view(
   entry: Entry,
   policies: readonly PolicyRow[],
-  secrets: Services['secrets'],
+  context: ViewContext,
   now: string,
 ): IntegrationView {
   const integration: Integration = { ...entry.integration, switches: {} }
@@ -182,17 +251,21 @@ function view(
     if (name === MAIN[integration.kind]) mainSince = state.since
   }
   const main = MAIN[integration.kind]
+  const cloud = integration.kind === 'ydisk' || integration.kind === 'dropbox'
   const configured =
     integration.kind === 'hub'
-      ? secrets.hub && entry.scope.hubPage !== null
-      : integration.kind === 'ydisk'
-        ? secrets.ydisk
+      ? context.secrets.hub && entry.scope.hubPage !== null
+      : cloud
+        ? Boolean(entry.scope.source && hasCredentials(context.env, entry.scope.source))
         : integration.kind !== 'ai'
   if (!configured) integration.state = 'unset'
   else if (main && !integration.switches[main]) {
     integration.state = 'off'
     integration.since = instantOrNull(mainSince)
-  } else integration.state = 'working'
+  } else {
+    integration.state = 'working'
+    if (cloud) sourceState(integration, entry, context)
+  }
   return {
     ...integration,
     line: describeIntegration(integration, {
@@ -205,15 +278,25 @@ function view(
 async function policies(q: Queryable): Promise<PolicyRow[]> {
   const { rows } = await q.execute<PolicyRow>(sql`
     SELECT key, model_id, account_id, value, updated_at FROM policy_settings
-     WHERE key IN ('hub.receive', 'hub.auto_match', 'ydisk.scan', 'agents.enabled',
-                   'fyper.enabled')
+     WHERE key IN ('hub.receive', 'hub.auto_match', 'ydisk.scan', 'dropbox.scan',
+                   'agents.enabled', 'fyper.enabled')
        AND item_type IS NULL`)
   return rows
 }
 
 const WORD = (on: boolean) => (on ? 'включено' : 'выключено')
 
-export function integrationHandlers({ db, command, secrets }: Services): HandlerRegistry {
+export function integrationHandlers({
+  db,
+  command,
+  secrets,
+  sourceEnv,
+}: Services): HandlerRegistry {
+  const contextOf = async (q: Queryable): Promise<ViewContext> => ({
+    secrets,
+    env: sourceEnv,
+    health: await scanHealth(q),
+  })
   return {
     admin: {
       integrations: async ({ ctx }) => {
@@ -221,7 +304,8 @@ export function integrationHandlers({ db, command, secrets }: Services): Handler
         const list = await entries(db, actor.models)
         const rows = await policies(db)
         const now = new Date().toISOString()
-        return { items: list.map((entry) => view(entry, rows, secrets, now)), next_cursor: null }
+        const context = await contextOf(db)
+        return { items: list.map((entry) => view(entry, rows, context, now)), next_cursor: null }
       },
 
       updateIntegration: ({ params, body, ctx }) =>
@@ -264,7 +348,7 @@ export function integrationHandlers({ db, command, secrets }: Services): Handler
             before: was,
             after: now,
           })
-          return view(entry, await policies(tx), secrets, new Date().toISOString())
+          return view(entry, await policies(tx), await contextOf(tx), new Date().toISOString())
         }),
     },
 
@@ -310,7 +394,7 @@ export function integrationHandlers({ db, command, secrets }: Services): Handler
             after: { 'Код страницы в Hub': hubPage },
           })
           const connected = { ...entry, scope: { ...entry.scope, hubPage } }
-          return view(connected, await policies(tx), secrets, new Date().toISOString())
+          return view(connected, await policies(tx), await contextOf(tx), new Date().toISOString())
         }),
 
       /** Cloud markup is stage 8: no services yet, so the section stays hidden (DESIGN §4.19). */

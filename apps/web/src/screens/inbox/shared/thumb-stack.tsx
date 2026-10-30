@@ -32,6 +32,7 @@ export function ThumbStack({ tiles }: { tiles: readonly MosaicTile[] }) {
           >
             <Thumb
               seed={tile.seed}
+              src={tile.src}
               kind={tile.kind}
               showCaptions={false}
               className="rounded-none"

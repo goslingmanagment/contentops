@@ -29,6 +29,7 @@ async function counts() {
     (SELECT count(*) FROM id_counters)::int AS id_counters,
     (SELECT count(*) FROM principals)::int AS principals,
     (SELECT count(*) FROM principal_grants)::int AS grants,
+    (SELECT count(*) FROM sources)::int AS sources,
     (SELECT count(*) FROM policy_settings)::int AS settings,
     (SELECT count(*) FROM action_log)::int AS log`)
   return rows[0]
@@ -62,6 +63,7 @@ describe('bootstrap', () => {
     expect(first.created).toContain('model lora')
     expect(first.created).toContain('surface lora-1/fyp')
     expect(first.created).toContain('grant dmitriy → ari')
+    expect(first.created).toContain('source lora/Dropbox')
     const after = await counts()
     expect(after).toMatchObject({
       models: 3,
@@ -71,6 +73,7 @@ describe('bootstrap', () => {
       id_counters: 8 * 3,
       principals: 1,
       grants: 3,
+      sources: 2,
       settings: 0,
     })
 

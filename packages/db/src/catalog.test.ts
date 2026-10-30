@@ -304,15 +304,27 @@ describe('identity and intake (schema §4)', () => {
     }
   })
 
-  it('a cloud source is read-only', async () => {
+  it('a cloud source is read-only and has a root and a token reference', async () => {
     const modelId = await model()
+    const cloud = { root_path: '/', credentials_ref: 'TOKEN' }
     for (const kind of ['yandex_disk', 'dropbox']) {
       await fails(
         inTx((c) =>
-          insert(c, 'sources', { model_id: modelId, kind, label: kind, read_only: false }),
+          insert(c, 'sources', {
+            model_id: modelId,
+            kind,
+            label: kind,
+            read_only: false,
+            ...cloud,
+          }),
         ),
         '23514',
         'sources_cloud_read_only',
+      )
+      await fails(
+        inTx((c) => insert(c, 'sources', { model_id: modelId, kind, label: kind })),
+        '23514',
+        'sources_cloud_root',
       )
     }
     await inTx((c) =>

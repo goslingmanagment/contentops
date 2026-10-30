@@ -46,6 +46,7 @@ const LISTS: Record<string, readonly string[]> = {
   rendition_artifacts_state_check: v.artifactStates,
   sources_kind_check: v.sourceKinds,
   sources_cloud_read_only: v.cloudSourceKinds,
+  sources_cloud_root: v.cloudSourceKinds,
   source_revisions_verified_route_check: v.verifiedRoutes,
   // 0003_catalog
   tags_tag_group_check: v.tagGroups,

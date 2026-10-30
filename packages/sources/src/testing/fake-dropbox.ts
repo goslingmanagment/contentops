@@ -19,6 +19,8 @@ export interface FakeDropboxOptions {
   /** `team` allocation instead of `individual`. */
   team?: boolean
   tree?: FakeTree
+  /** A real JPEG for `get_thumbnail_v2` (a development stack); a text marker by default. */
+  thumbnail?: (node: FakeNode) => Buffer | null
 }
 
 interface Cursor {
@@ -51,6 +53,7 @@ export class FakeDropbox extends FakeHttpServer {
   #epoch = 0
   #issued = 0
   readonly #refresh: FakeDropboxOptions['refresh']
+  readonly #thumbnail: FakeDropboxOptions['thumbnail']
 
   constructor(o: FakeDropboxOptions = {}) {
     super()
@@ -60,6 +63,7 @@ export class FakeDropbox extends FakeHttpServer {
     this.used = o.used ?? null
     this.team = o.team ?? false
     this.#refresh = o.refresh
+    this.#thumbnail = o.thumbnail
   }
 
   /** Old cursors answer `reset` from now on. */
@@ -169,7 +173,9 @@ export class FakeDropbox extends FakeHttpServer {
             'content-type': 'image/jpeg',
             'dropbox-api-result': headerJson(this.meta(node)),
           },
-          body: Buffer.from(`fake-thumbnail:${node.id}:${String(args.size)}`),
+          body:
+            this.#thumbnail?.(node) ??
+            Buffer.from(`fake-thumbnail:${node.id}:${String(args.size)}`),
         }
       }
       case 'users/get_space_usage': {

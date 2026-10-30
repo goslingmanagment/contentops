@@ -94,6 +94,8 @@ export const SERVER_ROUTES: ServerRoutes = {
   media: 'all',
   objectBatch: 'all',
   markup: 'all',
+  inbox: ['list', 'get', 'update', 'setType'],
+  legacy: ['get'],
 }
 
 const onServer = new Set<Route>(

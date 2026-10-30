@@ -3830,7 +3830,8 @@
         "type": "string",
         "enum": [
           "unreachable",
-          "format_changed"
+          "format_changed",
+          "token_rejected"
         ]
       },
       "IntegrationIcon": {
@@ -3847,6 +3848,7 @@
         "type": "string",
         "enum": [
           "ydisk",
+          "dropbox",
           "hub",
           "ai",
           "fyper",

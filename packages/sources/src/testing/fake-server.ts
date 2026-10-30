@@ -75,7 +75,8 @@ export abstract class FakeHttpServer {
     return this.requests.filter((r) => r.endpoint === endpoint)
   }
 
-  async start(): Promise<this> {
+  /** Listens on 127.0.0.1; `port` 0 — any free port (a development stack names one). */
+  async start(port = 0): Promise<this> {
     const server = createServer((req, res) => {
       const chunks: Buffer[] = []
       req.on('data', (c: Buffer) => chunks.push(c))
@@ -133,7 +134,7 @@ export abstract class FakeHttpServer {
         })
       })
     })
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve))
     this.#server = server
     this.#url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     return this

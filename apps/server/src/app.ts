@@ -2,6 +2,7 @@ import { HEADER } from '@contentops/contracts/api/headers'
 import { fromSearchParams } from '@contentops/contracts/api/route'
 import fastifySwagger from '@fastify/swagger'
 import Fastify, {
+  type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
   type FastifySerializerCompiler,
@@ -40,6 +41,8 @@ export interface AppDeps {
   logger?: Logger
   /** Stream files from `web` instead of `X-Accel-Redirect` (development without nginx). */
   filesDirect?: boolean
+  /** Routes outside the table: answers that are not JSON (pictures of the source). */
+  routes?: (api: FastifyInstance) => void
 }
 
 /**
@@ -112,6 +115,7 @@ export function buildApp(deps: AppDeps = {}) {
       filesDirect: deps.filesDirect === true,
     })
     api.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger())
+    deps.routes?.(api)
     registerHealth(api, checks)
   })
   return app

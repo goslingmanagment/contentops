@@ -26,6 +26,7 @@ export function GroupCover({ group }: { group: InboxGroup }) {
         <Thumb
           fill
           seed={only.seed}
+          src={only.src}
           kind={only.kind}
           aspect="16:9"
           durationSeconds={only.durationSeconds}

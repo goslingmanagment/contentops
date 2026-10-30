@@ -39,7 +39,18 @@ export function IntegrationsSection() {
       ) : null}
       {items && models.data ? (
         <>
-          <YdiskSection integrations={items} models={models.data} switches={switches} />
+          <YdiskSection
+            kind="dropbox"
+            integrations={items}
+            models={models.data}
+            switches={switches}
+          />
+          <YdiskSection
+            kind="ydisk"
+            integrations={items}
+            models={models.data}
+            switches={switches}
+          />
           <HubSection integrations={items} models={models.data} switches={switches} />
           <ServicesSection integrations={items} switches={switches} />
         </>

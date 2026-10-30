@@ -59,6 +59,7 @@ export function MultiPanel({ groups, actions, channelName }: MultiPanelProps) {
               {first ? (
                 <Thumb
                   seed={first.thumb.key}
+                  src={first.thumb.url}
                   kind={groupKind(group)}
                   showCaptions={false}
                   className="w-7.5 shrink-0 rounded-md"
