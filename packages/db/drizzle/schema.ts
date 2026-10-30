@@ -163,11 +163,6 @@ export const workOperations = pgTable("work_operations", {
 			name: "work_operations_output_sha256_fkey"
 		}).onDelete("restrict"),
 	foreignKey({
-			columns: [table.modelId, table.receiptId],
-			foreignColumns: [downloadReceipts.id, downloadReceipts.modelId],
-			name: "work_operations_model_id_receipt_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
 			columns: [table.generationId],
 			foreignColumns: [renditionGenerations.id],
 			name: "work_operations_generation_id_fkey"
@@ -191,6 +186,11 @@ export const workOperations = pgTable("work_operations", {
 			columns: [table.modelId, table.manifestId],
 			foreignColumns: [assetManifests.id, assetManifests.modelId],
 			name: "work_operations_model_id_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.receiptId],
+			foreignColumns: [downloadReceipts.id, downloadReceipts.modelId],
+			name: "work_operations_model_id_receipt_id_fkey"
 		}).onDelete("restrict"),
 	unique("work_operations_work_key").on(table.kind, table.modelId, table.workKey),
 	unique("work_operations_model_id_id_key").on(table.id, table.modelId),
@@ -931,11 +931,6 @@ export const downloadReceipts = pgTable("download_receipts", {
 	uniqueIndex("download_receipts_corrects").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.correctsId.asc().nullsLast().op("uuid_ops")).where(sql`(corrects_id IS NOT NULL)`),
 	index("download_receipts_issued").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.issuedAt.desc().nullsFirst().op("timestamptz_ops")),
 	foreignKey({
-			columns: [table.modelId, table.correctsId],
-			foreignColumns: [table.id, table.modelId],
-			name: "download_receipts_model_id_corrects_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
 			columns: [table.principalId],
 			foreignColumns: [principals.id],
 			name: "download_receipts_principal_id_fkey"
@@ -944,6 +939,11 @@ export const downloadReceipts = pgTable("download_receipts", {
 			columns: [table.modelId, table.manifestId],
 			foreignColumns: [assetManifests.id, assetManifests.modelId],
 			name: "download_receipts_model_id_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.correctsId],
+			foreignColumns: [table.id, table.modelId],
+			name: "download_receipts_model_id_corrects_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "download_receipts_pkey"}),
 	check("download_receipts_kind_check", sql`kind = ANY (ARRAY['master'::text, 'platform'::text, 'edit'::text, 'promo'::text])`),
@@ -1088,6 +1088,16 @@ export const assetVersions = pgTable("asset_versions", {
 }, (table): PgTableExtraConfigValue[] => [
 	index("asset_versions_master").using("btree", table.masterSha256.asc().nullsLast().op("bytea_ops")),
 	foreignKey({
+			columns: [table.modelId, table.sourceRevisionId],
+			foreignColumns: [sourceRevisions.id, sourceRevisions.modelId],
+			name: "asset_versions_model_id_source_revision_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.workId],
+			foreignColumns: [workOperations.id, workOperations.modelId],
+			name: "asset_versions_model_id_work_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
 			columns: [table.masterSha256],
 			foreignColumns: [blobs.sha256],
 			name: "asset_versions_master_sha256_fkey"
@@ -1101,16 +1111,6 @@ export const assetVersions = pgTable("asset_versions", {
 			columns: [table.modelId, table.assetId],
 			foreignColumns: [assets.id, assets.modelId],
 			name: "asset_versions_model_id_asset_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.sourceRevisionId],
-			foreignColumns: [sourceRevisions.id, sourceRevisions.modelId],
-			name: "asset_versions_model_id_source_revision_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.workId],
-			foreignColumns: [workOperations.id, workOperations.modelId],
-			name: "asset_versions_model_id_work_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "asset_versions_pkey"}),
 	unique("asset_versions_model_id_asset_id_version_no_key").on(table.assetId, table.modelId, table.versionNo),
@@ -1240,8 +1240,8 @@ export const webUploads = pgTable("web_uploads", {
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "web_uploads_pkey"}),
 	unique("web_uploads_model_id_upload_id_key").on(table.modelId, table.uploadId),
-	check("web_uploads_size_expected_check", sql`size_expected >= 0`),
 	check("web_uploads_declared_kind_check", sql`declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text])`),
+	check("web_uploads_size_expected_check", sql`size_expected >= 0`),
 	check("web_uploads_bytes_received_check", sql`bytes_received >= 0`),
 	check("web_uploads_state_check", sql`state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text, 'registered'::text, 'failed'::text, 'abandoned'::text])`),
 	check("web_uploads_progress", sql`bytes_received <= size_expected`),
@@ -1295,6 +1295,52 @@ export const inboxDraftCandidates = pgTable("inbox_draft_candidates", {
 	primaryKey({ columns: [table.id, table.modelId], name: "inbox_draft_candidates_pkey"}),
 	unique("inbox_draft_candidates_link").on(table.draftId, table.itemId, table.kind, table.modelId, table.orderId, table.versionId),
 	check("inbox_draft_candidates_kind_check", sql`kind = ANY (ARRAY['order'::text, 'existing_item'::text, 'exact_duplicate'::text, 'similar_photo'::text, 'legacy_id'::text, 'source_parent'::text, 'content_type'::text])`),
+]);
+
+export const downloadReceiptEntries = pgTable("download_receipt_entries", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	receiptId: uuid("receipt_id").notNull(),
+	position: integer().notNull(),
+	assetId: uuid("asset_id").notNull(),
+	assetVersionId: uuid("asset_version_id").notNull(),
+	renditionArtifactId: uuid("rendition_artifact_id"),
+	issuedMaster: boolean("issued_master").default(false).notNull(),
+	exportKey: text("export_key"),
+	fileName: text("file_name").notNull(),
+	fileNameNorm: text("file_name_norm").notNull().generatedAlwaysAs(sql`lower(NORMALIZE(file_name, NFC))`),
+	outputSha256: bytea("output_sha256").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	byteSize: bigint("byte_size", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	durationMs: bigint("duration_ms", { mode: "number" }),
+	width: integer(),
+	height: integer(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("download_receipt_entries_name").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.fileNameNorm.asc().nullsLast().op("text_ops")),
+	index("download_receipt_entries_version").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.assetVersionId.asc().nullsLast().op("uuid_ops"), table.receiptId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.modelId, table.receiptId],
+			foreignColumns: [downloadReceipts.id, downloadReceipts.modelId],
+			name: "download_receipt_entries_model_id_receipt_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.assetId, table.assetVersionId],
+			foreignColumns: [assetVersions.assetId, assetVersions.id, assetVersions.modelId],
+			name: "download_receipt_entries_model_id_asset_id_asset_version_i_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.renditionArtifactId, table.outputSha256],
+			foreignColumns: [renditionArtifacts.id, renditionArtifacts.outputSha256],
+			name: "download_receipt_entries_rendition_artifact_id_output_sha2_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "download_receipt_entries_pkey"}),
+	unique("download_receipt_entries_model_id_receipt_id_position_key").on(table.modelId, table.position, table.receiptId),
+	unique("download_receipt_entries_model_id_asset_version_id_id_key").on(table.assetVersionId, table.id, table.modelId),
+	check("download_receipt_entries_position_check", sql`"position" >= 1`),
+	check("download_receipt_entries_output_sha256_check", sql`octet_length(output_sha256) = 32`),
+	check("download_receipt_entries_byte_size_check", sql`byte_size >= 0`),
+	check("download_receipt_entries_one_file", sql`(num_nonnulls(rendition_artifact_id, export_key) + (issued_master)::integer) = 1`),
 ]);
 
 export const customOrderDeliveries = pgTable("custom_order_deliveries", {
@@ -1352,9 +1398,9 @@ export const customOrderDeliveries = pgTable("custom_order_deliveries", {
 			name: "custom_order_deliveries_model_id_order_id_retracts_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "custom_order_deliveries_pkey"}),
+	unique("custom_order_deliveries_model_id_order_id_id_key").on(table.id, table.modelId, table.orderId),
 	unique("custom_order_deliveries_manifest").on(table.manifestId, table.modelId, table.orderId),
 	unique("custom_order_deliveries_retracts_once").on(table.retractsId),
-	unique("custom_order_deliveries_model_id_order_id_id_key").on(table.id, table.modelId, table.orderId),
 	check("custom_order_deliveries_part_check", sql`part = ANY (ARRAY['video'::text, 'photos'::text])`),
 	check("custom_order_deliveries_item_type_check", sql`item_type = 'CUS'::text`),
 	check("custom_order_deliveries_shape", sql`CHECK (
@@ -1363,52 +1409,6 @@ CASE
     ELSE ((num_nonnulls(part, item_id, manifest_id, delivered_at, basis, draft_id, confirmed_by) = 0) AND (retract_reason IS NOT NULL))
 END)`),
 	check("custom_order_deliveries_not_self", sql`retracts_id <> id`),
-]);
-
-export const downloadReceiptEntries = pgTable("download_receipt_entries", {
-	modelId: uuid("model_id").notNull(),
-	id: uuid().default(sql`uuidv7()`).notNull(),
-	receiptId: uuid("receipt_id").notNull(),
-	position: integer().notNull(),
-	assetId: uuid("asset_id").notNull(),
-	assetVersionId: uuid("asset_version_id").notNull(),
-	renditionArtifactId: uuid("rendition_artifact_id"),
-	issuedMaster: boolean("issued_master").default(false).notNull(),
-	exportKey: text("export_key"),
-	fileName: text("file_name").notNull(),
-	fileNameNorm: text("file_name_norm").notNull().generatedAlwaysAs(sql`lower(NORMALIZE(file_name, NFC))`),
-	outputSha256: bytea("output_sha256").notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	byteSize: bigint("byte_size", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	durationMs: bigint("duration_ms", { mode: "number" }),
-	width: integer(),
-	height: integer(),
-}, (table): PgTableExtraConfigValue[] => [
-	index("download_receipt_entries_name").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.fileNameNorm.asc().nullsLast().op("text_ops")),
-	index("download_receipt_entries_version").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.assetVersionId.asc().nullsLast().op("uuid_ops"), table.receiptId.asc().nullsLast().op("uuid_ops")),
-	foreignKey({
-			columns: [table.modelId, table.receiptId],
-			foreignColumns: [downloadReceipts.id, downloadReceipts.modelId],
-			name: "download_receipt_entries_model_id_receipt_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.assetId, table.assetVersionId],
-			foreignColumns: [assetVersions.assetId, assetVersions.id, assetVersions.modelId],
-			name: "download_receipt_entries_model_id_asset_id_asset_version_i_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.renditionArtifactId, table.outputSha256],
-			foreignColumns: [renditionArtifacts.id, renditionArtifacts.outputSha256],
-			name: "download_receipt_entries_rendition_artifact_id_output_sha2_fkey"
-		}).onDelete("restrict"),
-	primaryKey({ columns: [table.id, table.modelId], name: "download_receipt_entries_pkey"}),
-	unique("download_receipt_entries_model_id_receipt_id_position_key").on(table.modelId, table.position, table.receiptId),
-	unique("download_receipt_entries_model_id_asset_version_id_id_key").on(table.assetVersionId, table.id, table.modelId),
-	check("download_receipt_entries_position_check", sql`"position" >= 1`),
-	check("download_receipt_entries_output_sha256_check", sql`octet_length(output_sha256) = 32`),
-	check("download_receipt_entries_byte_size_check", sql`byte_size >= 0`),
-	check("download_receipt_entries_one_file", sql`(num_nonnulls(rendition_artifact_id, export_key) + (issued_master)::integer) = 1`),
 ]);
 
 export const itemMemberships = pgTable("item_memberships", {
@@ -1436,11 +1436,6 @@ export const itemMemberships = pgTable("item_memberships", {
 	index("item_memberships_item").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.itemId.asc().nullsLast().op("uuid_ops"), table.removedAt.asc().nullsLast().op("int4_ops"), table.displayPosition.asc().nullsLast().op("timestamptz_ops")),
 	uniqueIndex("item_memberships_one_owner").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.assetId.asc().nullsLast().op("uuid_ops")).where(sql`((kind = 'owned'::text) AND (removed_at IS NULL))`),
 	foreignKey({
-			columns: [table.modelId, table.assetId, table.pinnedVersionId],
-			foreignColumns: [assetVersions.assetId, assetVersions.id, assetVersions.modelId],
-			name: "item_memberships_model_id_asset_id_pinned_version_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
 			columns: [table.addedBy],
 			foreignColumns: [principals.id],
 			name: "item_memberships_added_by_fkey"
@@ -1455,10 +1450,15 @@ export const itemMemberships = pgTable("item_memberships", {
 			foreignColumns: [assets.id, assets.modelId, assets.variantNo],
 			name: "item_memberships_model_id_asset_id_variant_no_fkey"
 		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.assetId, table.pinnedVersionId],
+			foreignColumns: [assetVersions.assetId, assetVersions.id, assetVersions.modelId],
+			name: "item_memberships_model_id_asset_id_pinned_version_id_fkey"
+		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "item_memberships_pkey"}),
+	unique("item_memberships_display_position").on(table.displayPosition, table.itemId, table.modelId),
 	unique("item_memberships_model_id_item_id_asset_id_key").on(table.assetId, table.itemId, table.modelId),
 	unique("item_memberships_model_id_item_id_id_key").on(table.id, table.itemId, table.modelId),
-	unique("item_memberships_display_position").on(table.displayPosition, table.itemId, table.modelId),
 	check("item_memberships_kind_check", sql`kind = ANY (ARRAY['owned'::text, 'reference'::text])`),
 	check("item_memberships_role_check", sql`role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text])`),
 	check("item_memberships_ordinal_range", sql`(ordinal >= 1) AND (ordinal <= 999)`),
@@ -1524,53 +1524,6 @@ export const platformTexts = pgTable("platform_texts", {
 	check("platform_texts_confirmed", sql`((confirmed_at IS NULL) = (confirmed_value_version IS NULL)) AND ((confirmed_value_version IS NULL) OR (confirmed_value_version <= value_version))`),
 ]);
 
-export const customOrderRevisions = pgTable("custom_order_revisions", {
-	modelId: uuid("model_id").notNull(),
-	id: uuid().default(sql`uuidv7()`).notNull(),
-	orderId: uuid("order_id").notNull(),
-	requirement: text().notNull(),
-	requestTgRef: text("request_tg_ref").notNull(),
-	requestOrdinal: integer("request_ordinal").default(1).notNull(),
-	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).notNull(),
-	done: boolean().default(false).notNull(),
-	doneBasis: text("done_basis"),
-	fixedDeliveryId: uuid("fixed_delivery_id"),
-	doneAt: timestamp("done_at", { withTimezone: true, mode: 'string' }),
-	doneBy: uuid("done_by"),
-	reopenedAt: timestamp("reopened_at", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	createdBy: uuid("created_by"),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
-}, (table): PgTableExtraConfigValue[] => [
-	foreignKey({
-			columns: [table.doneBy],
-			foreignColumns: [principals.id],
-			name: "custom_order_revisions_done_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.createdBy],
-			foreignColumns: [principals.id],
-			name: "custom_order_revisions_created_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.orderId],
-			foreignColumns: [customOrders.id, customOrders.modelId],
-			name: "custom_order_revisions_model_id_order_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.orderId, table.fixedDeliveryId],
-			foreignColumns: [customOrderDeliveries.id, customOrderDeliveries.modelId, customOrderDeliveries.orderId],
-			name: "custom_order_revisions_model_id_order_id_fixed_delivery_id_fkey"
-		}).onDelete("restrict"),
-	primaryKey({ columns: [table.id, table.modelId], name: "custom_order_revisions_pkey"}),
-	unique("custom_order_revisions_request").on(table.modelId, table.orderId, table.requestOrdinal, table.requestTgRef),
-	check("custom_order_revisions_request_ordinal_check", sql`request_ordinal >= 1`),
-	check("custom_order_revisions_done_at", sql`done = (done_at IS NOT NULL)`),
-	check("custom_order_revisions_done_basis", sql`(NOT done) OR (done_basis IS NOT NULL)`),
-]);
-
 export const reviewCases = pgTable("review_cases", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -1629,60 +1582,51 @@ export const reviewCases = pgTable("review_cases", {
 	check("review_cases_resolved", sql`(state = 'open'::text) = (resolved_at IS NULL)`),
 ]);
 
-export const sourceRevisions = pgTable("source_revisions", {
+export const customOrderRevisions = pgTable("custom_order_revisions", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
-	sourceObjectId: uuid("source_object_id").notNull(),
-	sequenceNo: integer("sequence_no").notNull(),
-	md5: bytea("md5"),
-	remoteSha256: bytea("remote_sha256"),
-	contentHash: bytea("content_hash"),
-	remoteRev: text("remote_rev"),
+	orderId: uuid("order_id").notNull(),
+	requirement: text().notNull(),
+	requestTgRef: text("request_tg_ref").notNull(),
+	requestOrdinal: integer("request_ordinal").default(1).notNull(),
+	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).notNull(),
+	done: boolean().default(false).notNull(),
+	doneBasis: text("done_basis"),
+	fixedDeliveryId: uuid("fixed_delivery_id"),
+	doneAt: timestamp("done_at", { withTimezone: true, mode: 'string' }),
+	doneBy: uuid("done_by"),
+	reopenedAt: timestamp("reopened_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	byteSize: bigint("byte_size", { mode: "number" }).notNull(),
-	remoteCreatedAt: timestamp("remote_created_at", { withTimezone: true, mode: 'string' }),
-	remoteModifiedAt: timestamp("remote_modified_at", { withTimezone: true, mode: 'string' }),
-	detectedAt: timestamp("detected_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	scanWorkId: uuid("scan_work_id"),
-	previousId: uuid("previous_id"),
-	sourceSha256: bytea("source_sha256"),
-	verifiedAt: timestamp("verified_at", { withTimezone: true, mode: 'string' }),
-	verifiedRoute: text("verified_route"),
-	frozenByWorkId: uuid("frozen_by_work_id"),
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
 }, (table): PgTableExtraConfigValue[] => [
-	index("source_revisions_remote_sha256").using("btree", table.modelId.asc().nullsLast().op("bytea_ops"), table.remoteSha256.asc().nullsLast().op("uuid_ops")),
-	index("source_revisions_source_sha256").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.sourceSha256.asc().nullsLast().op("bytea_ops")),
 	foreignKey({
-			columns: [table.modelId, table.scanWorkId],
-			foreignColumns: [workOperations.id, workOperations.modelId],
-			name: "source_revisions_model_id_scan_work_id_fkey"
+			columns: [table.doneBy],
+			foreignColumns: [principals.id],
+			name: "custom_order_revisions_done_by_fkey"
 		}).onDelete("restrict"),
 	foreignKey({
-			columns: [table.modelId, table.frozenByWorkId],
-			foreignColumns: [workOperations.id, workOperations.modelId],
-			name: "source_revisions_model_id_frozen_by_work_id_fkey"
+			columns: [table.createdBy],
+			foreignColumns: [principals.id],
+			name: "custom_order_revisions_created_by_fkey"
 		}).onDelete("restrict"),
 	foreignKey({
-			columns: [table.modelId, table.sourceObjectId],
-			foreignColumns: [sourceObjects.id, sourceObjects.modelId],
-			name: "source_revisions_model_id_source_object_id_fkey"
+			columns: [table.modelId, table.orderId],
+			foreignColumns: [customOrders.id, customOrders.modelId],
+			name: "custom_order_revisions_model_id_order_id_fkey"
 		}).onDelete("restrict"),
 	foreignKey({
-			columns: [table.modelId, table.previousId],
-			foreignColumns: [table.id, table.modelId],
-			name: "source_revisions_model_id_previous_id_fkey"
+			columns: [table.modelId, table.orderId, table.fixedDeliveryId],
+			foreignColumns: [customOrderDeliveries.id, customOrderDeliveries.modelId, customOrderDeliveries.orderId],
+			name: "custom_order_revisions_model_id_order_id_fixed_delivery_id_fkey"
 		}).onDelete("restrict"),
-	primaryKey({ columns: [table.id, table.modelId], name: "source_revisions_pkey"}),
-	unique("source_revisions_model_id_source_object_id_sequence_no_key").on(table.modelId, table.sequenceNo, table.sourceObjectId),
-	unique("source_revisions_model_id_source_object_id_id_key").on(table.id, table.modelId, table.sourceObjectId),
-	check("source_revisions_sequence_no_check", sql`sequence_no >= 1`),
-	check("source_revisions_md5_check", sql`octet_length(md5) = 16`),
-	check("source_revisions_remote_sha256_check", sql`octet_length(remote_sha256) = 32`),
-	check("source_revisions_content_hash_check", sql`octet_length(content_hash) = 32`),
-	check("source_revisions_byte_size_check", sql`byte_size >= 0`),
-	check("source_revisions_source_sha256_check", sql`octet_length(source_sha256) = 32`),
-	check("source_revisions_verified_route_check", sql`verified_route = ANY (ARRAY['download'::text, 'local_copy'::text, 'upload'::text])`),
-	check("source_revisions_verified", sql`((source_sha256 IS NULL) = (verified_at IS NULL)) AND ((verified_at IS NULL) = (verified_route IS NULL))`),
+	primaryKey({ columns: [table.id, table.modelId], name: "custom_order_revisions_pkey"}),
+	unique("custom_order_revisions_request").on(table.modelId, table.orderId, table.requestOrdinal, table.requestTgRef),
+	check("custom_order_revisions_request_ordinal_check", sql`request_ordinal >= 1`),
+	check("custom_order_revisions_done_at", sql`done = (done_at IS NOT NULL)`),
+	check("custom_order_revisions_done_basis", sql`(NOT done) OR (done_basis IS NOT NULL)`),
 ]);
 
 export const blobProbes = pgTable("blob_probes", {
@@ -1761,6 +1705,69 @@ export const inboxGroups = pgTable("inbox_groups", {
 	check("inbox_groups_proposed_type_check", sql`proposed_type = ANY (ARRAY['PPV'::text, 'SET'::text, 'SXT'::text, 'CUS'::text, 'FYP'::text, 'LIFE'::text, 'RAW'::text, 'PRM'::text])`),
 	check("inbox_groups_proposed_ppv_kind_check", sql`proposed_ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text])`),
 	check("inbox_groups_proposed_purpose_check", sql`proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text])`),
+]);
+
+export const sourceRevisions = pgTable("source_revisions", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	sourceObjectId: uuid("source_object_id").notNull(),
+	sequenceNo: integer("sequence_no").notNull(),
+	md5: bytea("md5"),
+	remoteSha256: bytea("remote_sha256"),
+	contentHash: bytea("content_hash"),
+	remoteRev: text("remote_rev"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	byteSize: bigint("byte_size", { mode: "number" }).notNull(),
+	remoteCreatedAt: timestamp("remote_created_at", { withTimezone: true, mode: 'string' }),
+	remoteModifiedAt: timestamp("remote_modified_at", { withTimezone: true, mode: 'string' }),
+	remoteShotAt: timestamp("remote_shot_at", { withTimezone: true, mode: 'string' }),
+	mediaType: text("media_type"),
+	crc32: bytea("crc32"),
+	detectedAt: timestamp("detected_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	scanWorkId: uuid("scan_work_id"),
+	previousId: uuid("previous_id"),
+	sourceSha256: bytea("source_sha256"),
+	verifiedAt: timestamp("verified_at", { withTimezone: true, mode: 'string' }),
+	verifiedRoute: text("verified_route"),
+	frozenByWorkId: uuid("frozen_by_work_id"),
+	frozenPath: text("frozen_path"),
+}, (table): PgTableExtraConfigValue[] => [
+	index("source_revisions_frozen").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.frozenByWorkId.asc().nullsLast().op("uuid_ops")).where(sql`(frozen_by_work_id IS NOT NULL)`),
+	index("source_revisions_remote_sha256").using("btree", table.modelId.asc().nullsLast().op("bytea_ops"), table.remoteSha256.asc().nullsLast().op("uuid_ops")),
+	index("source_revisions_source_sha256").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.sourceSha256.asc().nullsLast().op("bytea_ops")),
+	foreignKey({
+			columns: [table.modelId, table.sourceObjectId],
+			foreignColumns: [sourceObjects.id, sourceObjects.modelId],
+			name: "source_revisions_model_id_source_object_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.previousId],
+			foreignColumns: [table.id, table.modelId],
+			name: "source_revisions_model_id_previous_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.scanWorkId],
+			foreignColumns: [workOperations.id, workOperations.modelId],
+			name: "source_revisions_model_id_scan_work_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.frozenByWorkId],
+			foreignColumns: [workOperations.id, workOperations.modelId],
+			name: "source_revisions_model_id_frozen_by_work_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "source_revisions_pkey"}),
+	unique("source_revisions_model_id_source_object_id_sequence_no_key").on(table.modelId, table.sequenceNo, table.sourceObjectId),
+	unique("source_revisions_model_id_source_object_id_id_key").on(table.id, table.modelId, table.sourceObjectId),
+	check("source_revisions_sequence_no_check", sql`sequence_no >= 1`),
+	check("source_revisions_md5_check", sql`octet_length(md5) = 16`),
+	check("source_revisions_remote_sha256_check", sql`octet_length(remote_sha256) = 32`),
+	check("source_revisions_content_hash_check", sql`octet_length(content_hash) = 32`),
+	check("source_revisions_byte_size_check", sql`byte_size >= 0`),
+	check("source_revisions_crc32_check", sql`octet_length(crc32) = 4`),
+	check("source_revisions_source_sha256_check", sql`octet_length(source_sha256) = 32`),
+	check("source_revisions_verified_route_check", sql`verified_route = ANY (ARRAY['download'::text, 'local_copy'::text, 'upload'::text])`),
+	check("source_revisions_verified", sql`((source_sha256 IS NULL) = (verified_at IS NULL)) AND ((verified_at IS NULL) = (verified_route IS NULL))`),
+	check("source_revisions_frozen", sql`(frozen_by_work_id IS NULL) = (frozen_path IS NULL)`),
 ]);
 
 export const contentItems = pgTable("content_items", {
@@ -1889,26 +1896,6 @@ export const customOrders = pgTable("custom_orders", {
 	index("custom_orders_buyer").using("btree", sql`model_id`, sql`lower(buyer_name)`),
 	index("custom_orders_status").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("text_ops"), table.dueAt.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
-			columns: [table.createdBy],
-			foreignColumns: [principals.id],
-			name: "custom_orders_created_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.accountId],
-			foreignColumns: [accounts.id, accounts.modelId],
-			name: "custom_orders_model_id_account_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.closedBy],
-			foreignColumns: [principals.id],
-			name: "custom_orders_closed_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.cancelledBy],
-			foreignColumns: [principals.id],
-			name: "custom_orders_cancelled_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
 			columns: [table.modelId],
 			foreignColumns: [models.id],
 			name: "custom_orders_model_id_fkey"
@@ -1922,6 +1909,26 @@ export const customOrders = pgTable("custom_orders", {
 			columns: [table.photosCompletedBy],
 			foreignColumns: [principals.id],
 			name: "custom_orders_photos_completed_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.closedBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_closed_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.cancelledBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_cancelled_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_created_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.accountId],
+			foreignColumns: [accounts.id, accounts.modelId],
+			name: "custom_orders_model_id_account_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "custom_orders_pkey"}),
 	unique("custom_orders_card").on(table.modelId, table.tgChat, table.tgMessageId, table.tgTopic),
@@ -1989,6 +1996,21 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 	index("inbox_drafts_source_blob").using("btree", table.sourceBlobSha256.asc().nullsLast().op("bytea_ops")),
 	index("inbox_drafts_source_sha256").using("btree", table.sourceSha256.asc().nullsLast().op("bytea_ops")),
 	foreignKey({
+			columns: [table.modelId, table.duplicateOfVersionId],
+			foreignColumns: [assetVersions.id, assetVersions.modelId],
+			name: "inbox_drafts_model_id_duplicate_of_version_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.targetItemId],
+			foreignColumns: [contentItems.id, contentItems.modelId],
+			name: "inbox_drafts_model_id_target_item_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.targetAssetId],
+			foreignColumns: [assets.id, assets.modelId],
+			name: "inbox_drafts_model_id_target_asset_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
 			columns: [table.decidedBy],
 			foreignColumns: [principals.id],
 			name: "inbox_drafts_decided_by_fkey"
@@ -2024,21 +2046,6 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 			name: "inbox_drafts_model_id_from_version_id_fkey"
 		}).onDelete("restrict"),
 	foreignKey({
-			columns: [table.modelId, table.targetItemId],
-			foreignColumns: [contentItems.id, contentItems.modelId],
-			name: "inbox_drafts_model_id_target_item_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.targetAssetId],
-			foreignColumns: [assets.id, assets.modelId],
-			name: "inbox_drafts_model_id_target_asset_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.duplicateOfVersionId],
-			foreignColumns: [assetVersions.id, assetVersions.modelId],
-			name: "inbox_drafts_model_id_duplicate_of_version_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
 			columns: [table.modelId, table.appliedItemId],
 			foreignColumns: [contentItems.id, contentItems.modelId],
 			name: "inbox_drafts_model_id_applied_item_id_fkey"
@@ -2051,20 +2058,20 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 	primaryKey({ columns: [table.id, table.modelId], name: "inbox_drafts_pkey"}),
 	unique("inbox_drafts_source_revision").on(table.modelId, table.sourceRevisionId),
 	unique("inbox_drafts_web_upload").on(table.modelId, table.webUploadId),
-	check("inbox_drafts_proposed_ordinal_check", sql`(proposed_ordinal >= 1) AND (proposed_ordinal <= 999)`),
 	check("inbox_drafts_origin_check", sql`origin = ANY (ARRAY['disk_scan'::text, 'web_upload'::text, 'legacy_import'::text, 'archive'::text, 'derived'::text])`),
 	check("inbox_drafts_state_check", sql`state = ANY (ARRAY['discovered'::text, 'processing'::text, 'ready'::text, 'resolved'::text])`),
 	check("inbox_drafts_outcome_check", sql`outcome = ANY (ARRAY['new_item'::text, 'append'::text, 'alias'::text, 'rejected'::text])`),
 	check("inbox_drafts_md5_check", sql`octet_length(md5) = 16`),
 	check("inbox_drafts_byte_size_check", sql`byte_size >= 0`),
 	check("inbox_drafts_source_sha256_check", sql`octet_length(source_sha256) = 32`),
+	check("inbox_drafts_accept_verified", sql`(outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (master_verified_at IS NOT NULL)`),
 	check("inbox_drafts_proposed_role_check", sql`proposed_role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text])`),
+	check("inbox_drafts_proposed_ordinal_check", sql`(proposed_ordinal >= 1) AND (proposed_ordinal <= 999)`),
 	check("inbox_drafts_proposed_life_use_check", sql`proposed_life_use = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text])`),
 	check("inbox_drafts_blocked_reason_check", sql`blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text])`),
 	check("inbox_drafts_reopen_count_check", sql`reopen_count >= 0`),
 	check("inbox_drafts_one_input", sql`num_nonnulls(source_revision_id, web_upload_id, from_version_id) = 1`),
 	check("inbox_drafts_outcome", sql`(state = 'resolved'::text) = (outcome IS NOT NULL)`),
-	check("inbox_drafts_accept_verified", sql`(outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (master_verified_at IS NOT NULL)`),
 	check("inbox_drafts_accept_applied", sql`(outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (applied_item_id IS NOT NULL)`),
 	check("inbox_drafts_verified_master", sql`(master_verified_at IS NULL) OR (master_sha256 IS NOT NULL)`),
 	check("inbox_drafts_alias_target", sql`(outcome <> 'alias'::text) OR (duplicate_of_version_id IS NOT NULL)`),

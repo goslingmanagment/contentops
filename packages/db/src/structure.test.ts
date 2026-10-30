@@ -163,6 +163,9 @@ const FIXED_COLUMNS: Record<string, string[]> = {
     'byte_size',
     'remote_created_at',
     'remote_modified_at',
+    'remote_shot_at',
+    'media_type',
+    'crc32',
     'detected_at',
     'scan_work_id',
     'previous_id',
@@ -192,7 +195,13 @@ const FIXED_COLUMNS: Record<string, string[]> = {
 /** Columns written once, NULL → value (`set_once`). */
 const SET_ONCE_COLUMNS: Record<string, string[]> = {
   rendition_generations: ['master_sha256', 'bound_at'],
-  source_revisions: ['source_sha256', 'verified_at', 'verified_route', 'frozen_by_work_id'],
+  source_revisions: [
+    'source_sha256',
+    'verified_at',
+    'verified_route',
+    'frozen_by_work_id',
+    'frozen_path',
+  ],
 }
 /**
  * FKs into a table with shared rows (`model_id IS NULL`) cannot be composite: a trigger

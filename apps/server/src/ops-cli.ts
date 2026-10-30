@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util'
 import { createDb, createPool, type Db } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { loadConfig } from './config'
+import { enqueueFreeze, freezeRegister } from './intake/freeze'
 import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
@@ -18,34 +19,52 @@ import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs
  * `purge-blobs` removes the unreferenced blobs a finished report lists; each one is checked
  * again under its row lock before and after the file goes. Without `--yes` it only lists.
  * `stage` and `render` are test runs before intake (`media/test-runs.ts`).
+ *
+ * The snapshot of stage 3 (SPEC §6.3, `intake/freeze.ts`), only by this command:
+ *
+ *   docker compose exec worker node dist/ops.js freeze <model> <source label> [date] [--wait]
+ *   docker compose exec -T worker node dist/ops.js freeze-export <model> [date] > register.jsonl
+ *
+ * `freeze` puts the work `scan:freeze:<date>` (the model's today by default; a repeat finds the
+ * same work). `freeze-export` prints the register of a finished snapshot as JSON lines.
  */
 
 const USAGE = `usage:
   ops.js verify-blobs [--wait]
   ops.js purge-blobs --report <work id> [--yes]
   ops.js stage <file> --model <code>       (test runs before stage 3)
-  ops.js render <sha256> --model <code> [--keep-metadata]`
+  ops.js render <sha256> --model <code> [--keep-metadata]
+  ops.js freeze <model> <source label> [YYYY-MM-DD] [--wait]
+  ops.js freeze-export <model> [YYYY-MM-DD]`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
 }
 
-async function waitFor(
+async function waitFor<R = VerifyReport>(
   db: Db,
   id: string,
-): Promise<{ state: string; report: VerifyReport | null }> {
+  label = 'verify-blobs',
+): Promise<{ state: string; report: R | null; paused_reason: string | null }> {
   for (;;) {
     const { rows } = await db.execute<{
       state: string
-      report: VerifyReport | null
+      report: R | null
+      paused_reason: string | null
       num: string | null
       den: string | null
+      note: string | null
     }>(sql`
-      SELECT state, report, progress_num AS num, progress_den AS den FROM work_operations WHERE id = ${id}::uuid`)
+      SELECT state, report, paused_reason, progress_num AS num, progress_den AS den,
+             progress_note AS note
+        FROM work_operations WHERE id = ${id}::uuid`)
     const row = rows[0]
     if (!row) throw new Error(`no work ${id}`)
-    if (['succeeded', 'failed', 'cancelled'].includes(row.state)) return row
-    if (row.num !== null) process.stderr.write(`verify-blobs: ${row.num} / ${row.den ?? '?'}\n`)
+    // A switched-off area holds the work until it is switched on: nothing to wait for here.
+    if (['succeeded', 'failed', 'cancelled'].includes(row.state) || row.paused_reason) return row
+    if (row.num !== null) {
+      process.stderr.write(`${label}: ${row.num} / ${row.den ?? '?'} ${row.note ?? ''}\n`)
+    }
     await new Promise((resolve) => setTimeout(resolve, 5_000))
   }
 }
@@ -107,6 +126,37 @@ async function main(argv: string[]): Promise<number> {
         )
       }
       out({ outcomes })
+      return 0
+    }
+    if (command === 'freeze') {
+      const [model, label, date] = positionals
+      if (!model || !label) throw new Error(USAGE)
+      const queued = await enqueueFreeze(db, {
+        model,
+        source: label,
+        ...(date ? { date } : {}),
+      })
+      const { work } = queued
+      process.stderr.write(
+        `freeze: ${work.workKey} of «${queued.source.label}», work ${work.id}` +
+          `${queued.created ? '' : ` (already ${work.state})`}\n`,
+      )
+      if (!values.wait) {
+        out({ operation_id: work.id, work_key: work.workKey, state: work.state })
+        return 0
+      }
+      const done = await waitFor(db, work.id, 'freeze')
+      out({ operation_id: work.id, ...done })
+      return done.state === 'succeeded' ? 0 : 1
+    }
+    if (command === 'freeze-export') {
+      const [model, date] = positionals
+      if (!model) throw new Error(USAGE)
+      for await (const line of freezeRegister(db, { model, ...(date ? { date } : {}) })) {
+        if (!process.stdout.write(`${JSON.stringify(line)}\n`)) {
+          await new Promise((resolve) => process.stdout.once('drain', resolve))
+        }
+      }
       return 0
     }
     if (command === 'stage' || command === 'render') {
