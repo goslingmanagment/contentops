@@ -58,6 +58,65 @@ jobs:
             -e TESTCONTAINERS_RYUK_DISABLED=true \
             contentops-media-test:ci pnpm --filter @contentops/server test:media
 
+  # End-to-end browser scenarios of both roles (apps/e2e, SPEC §12.0 «Тесты»): PostgreSQL by
+  # Testcontainers, migrations, bootstrap and the seeded catalog with real media, the server
+  # roles with the FFmpeg build the image pins, the production build of the interface behind
+  # `vite preview` (it proxies /api as nginx does), Chromium. Every integration is off.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Pinned FFmpeg of the Dockerfile
+        id: ffmpeg
+        run: |
+          echo "url=$(sed -n 's/^ARG FFMPEG_URL=//p' Dockerfile)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sed -n 's/^ARG FFMPEG_SHA256=//p' Dockerfile)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/contentops-ffmpeg
+          key: ffmpeg-${{ steps.ffmpeg.outputs.sha }}
+      - name: FFmpeg on PATH
+        env:
+          URL: ${{ steps.ffmpeg.outputs.url }}
+          SHA: ${{ steps.ffmpeg.outputs.sha }}
+        run: |
+          dir="$HOME/.cache/contentops-ffmpeg"
+          if [ ! -x "$dir/ffmpeg" ]; then
+            curl -fsSL --retry 3 "$URL" -o "$RUNNER_TEMP/ffmpeg.tar.xz"
+            echo "$SHA  $RUNNER_TEMP/ffmpeg.tar.xz" | sha256sum -c -
+            mkdir -p "$dir"
+            tar -xJf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$dir" --strip-components=2 \
+              --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
+          fi
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./apps/e2e/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ steps.playwright.outputs.version }}
+      - run: pnpm --filter @contentops/e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter @contentops/web build
+      - run: pnpm --filter @contentops/e2e e2e
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report
+          path: |
+            apps/e2e/test-results
+            apps/e2e/playwright-report
+            apps/e2e/.stack
+          include-hidden-files: true
+          retention-days: 14
+
   # The stack of the VM (docker-compose.yml) builds from the tag there: the app and proxy
   # images and the compose file are checked here first.
   image:

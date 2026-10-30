@@ -40,6 +40,10 @@ Agency Hub (`README.md`, `PRD.md`).
   `@contentops/media` нужны закреплённые FFmpeg и libvips с HEIC, поэтому они идут в
   образе продукта (цель `media-test` в `Dockerfile`, в CI — джоб `media`); локально —
   `docker build --platform linux/amd64 --target media-test -t co-media . && docker run --rm co-media`.
+  Сквозные сценарии в браузере — `apps/e2e` (Playwright, в CI — джоб `e2e`): стек с базой,
+  воркерами и сборкой интерфейса поднимают сами, все интеграции выключены. Локально — по
+  одному сценарию (нужны Docker и FFmpeg): `pnpm --filter @contentops/web build &&
+  pnpm --filter @contentops/e2e e2e src/specs/<имя>.spec.ts`.
   Тесты, названные в PLAN, SPEC и схеме §9.4, — норма и пишутся вместе со своим этапом. Auto-merge
   выключен: код — в своём worktree, одна задача — один готовый PR, сливай сам после
   зелёного CI (`gh pr merge --squash`). В описании PR — какие пункты «Готово, когда»
