@@ -35,7 +35,7 @@ import {
 } from '../../plan/state'
 import { liveFromOf } from '../match/auto'
 import { type HubPostFacts, loadPosts, type Page, pageOf, publicationLinks } from '../match/load'
-import { albumFits, isAdPost, rowAlbum } from '../match/match'
+import { albumFits, isAdPost, modelShapes, rowAlbum } from '../match/match'
 import { hintSurface, hubSurface, summaryOf } from '../match/rules'
 import { matchSettings } from '../match/settings'
 
@@ -73,7 +73,7 @@ function checkable(row: RowRecord): boolean {
   return row.platform === 'fansly' && (row.surface === 'fyp' || row.surface === 'vault')
 }
 
-interface PostCase {
+export interface PostCase {
   post: HubPostFacts
   page: Page
   kind: 'unplanned' | 'surface'
@@ -107,12 +107,24 @@ async function postsById(
   return out
 }
 
+/** Posts without plan older than this stay out of the list (the history pass knows them). */
+const LOOSE_DAYS = 30
+
+export interface PostWindow {
+  from: string
+  to: string
+}
+
 /**
  * Posts after the start of matching that no placement holds: «пост без плана» — or, when every
  * main file is exact by name and Hub does not prove the surface, «стена или фуп?». Posts of open
  * candidates belong to their rows; ads of other pages and posts sent through Hub are not shown.
  */
-async function loosePosts(q: Queryable, state: PlanState): Promise<PostCase[]> {
+export async function loosePosts(
+  q: Queryable,
+  state: PlanState,
+  window: PostWindow | null,
+): Promise<PostCase[]> {
   const out: PostCase[] = []
   for (const account of state.view.accounts) {
     if (!works(state, account.code)) continue
@@ -123,10 +135,14 @@ async function loosePosts(q: Queryable, state: PlanState): Promise<PostCase[]> {
     if (!liveFrom) continue
     const links = await publicationLinks(q, page)
     const settings = await matchSettings(q, page)
+    const shapes = settings.ads ? await modelShapes(q, page, settings) : null
     const posts = await loadPosts(
       q,
       page,
-      sql`p.published_at >= ${liveFrom}::timestamptz
+      sql`p.published_at >= greatest(${liveFrom}::timestamptz,
+                                     ${window?.from ?? null}::timestamptz,
+                                     ${state.now}::timestamptz - make_interval(days => ${LOOSE_DAYS}))
+          AND (${window?.to ?? null}::timestamptz IS NULL OR p.published_at < ${window?.to ?? null}::timestamptz)
           AND NOT EXISTS (
             SELECT 1 FROM placements x
              WHERE x.model_id = p.model_id AND x.account_id = p.account_id
@@ -138,6 +154,13 @@ async function loosePosts(q: Queryable, state: PlanState): Promise<PostCase[]> {
              WHERE e.model_id = p.model_id AND x.account_id = p.account_id
                AND e.kind = 'observed' AND e.strength = 'candidate'
                AND e.payload ->> 'post_ref' = p.post_ref
+               -- A row settled by another post holds no candidate any more.
+               AND NOT EXISTS (
+                 SELECT 1 FROM placement_evidence f
+                  WHERE f.model_id = x.model_id AND f.placement_id = x.id AND f.strength = 'exact'
+                    AND NOT EXISTS (SELECT 1 FROM placement_evidence t
+                                     WHERE t.model_id = f.model_id AND t.corrects_id = f.id
+                                       AND t.kind = 'retract'))
                AND NOT EXISTS (SELECT 1 FROM placement_evidence r
                                 WHERE r.model_id = e.model_id
                                   AND (r.corrects_id = e.id
@@ -156,7 +179,7 @@ async function loosePosts(q: Queryable, state: PlanState): Promise<PostCase[]> {
         out.push({ post, page, kind: 'surface', itemId })
         continue
       }
-      if (await isAdPost(q, page, post, settings)) continue
+      if (shapes && isAdPost(post, settings, shapes)) continue
       out.push({ post, page, kind: 'unplanned', itemId: null })
     }
   }
@@ -173,8 +196,13 @@ async function itemOfVersion(q: Queryable, page: Page, post: HubPostFacts): Prom
   return rows[0]?.item_id ?? null
 }
 
-export async function checkModel(q: Queryable, state: PlanState): Promise<CheckModel> {
-  const postCases = await loosePosts(q, state)
+/** `window` narrows the posts without plan to a period: the day view counts only its day. */
+export async function checkModel(
+  q: Queryable,
+  state: PlanState,
+  window: PostWindow | null = null,
+): Promise<CheckModel> {
+  const postCases = await loosePosts(q, state, window)
   const evidencePosts = [...state.evidence.values()]
     .flat()
     .flatMap((row) => (typeof row.payload.post_id === 'string' ? [row.payload.post_id] : []))
@@ -659,8 +687,8 @@ export async function resolvedCases(
 }
 
 /** Posts without plan of a page on a date: «пост без плана» in the day's group (DESIGN §4.11). */
-export function unplannedOn(model: CheckModel, account: string, date: string): number {
-  return model.postCases.filter(
+export function unplannedOn(posts: readonly PostCase[], account: string, date: string): number {
+  return posts.filter(
     (one) =>
       one.kind === 'unplanned' &&
       one.page.accountCode === account &&

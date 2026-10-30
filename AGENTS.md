@@ -59,7 +59,9 @@ Agency Hub (`README.md`, `PRD.md`).
   `contentops-dev`, КМ с неделей плана — `diana` с тем же паролем; окружение — `apps/server/src/config.ts`. «Приехало» с источником —
   `DEV_FAKE_SOURCE=1 pnpm dev:server`: поддельный Dropbox Лоры со сгенерированными FFmpeg
   кадрами, скан включён, роль `worker` рядом (`DEV_PG_CONTAINER`/`DEV_PG_PORT`/`PORT` —
-  свой стенд рядом с чужим). Забыт пароль в ВМ —
+  свой стенд рядом с чужим). «Сверить» и состояния Hub в плане — `DEV_FAKE_HUB=1 pnpm
+  dev:server`: поддельный Hub с выдуманными постами по плану разработки, получение и
+  автосверка включены (`DEV_HUB_PORT` — свой порт). Забыт пароль в ВМ —
   `contentops-db reset-password <login>` (пароль из `CONTENTOPS_NEW_PASSWORD` или stdin).
   После правки таблицы маршрутов —
   `pnpm --filter @contentops/server openapi`, иначе CI красный.
