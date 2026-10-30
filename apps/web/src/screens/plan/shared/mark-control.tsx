@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { useMarkActions } from './actions/use-mark-actions'
 import { useRowActions } from './actions/use-row-actions'
+import { PendingButton, PrepareButton, SendButton } from './publish-controls'
 import { MARK_KIND_LABEL, type RowAction, rememberedMarkKind, rowActionOf } from './row-action'
 
 interface MarkControlProps {
@@ -79,6 +80,12 @@ function ActionButton({
           Отметить и подтвердить
         </Button>
       )
+    case 'prepare':
+      return <PrepareButton row={row} again={action.again} variant={variant} />
+    case 'send':
+      return <SendButton row={row} blocked={action.blocked} variant={variant} />
+    case 'hub_pending':
+      return <PendingButton op={action.op} variant={variant} />
     case 'check':
       return (
         <Button variant={tone} size={size} className={wide} onClick={onCheck}>

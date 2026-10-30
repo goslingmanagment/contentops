@@ -142,6 +142,7 @@ export function planRowView(
     note: row.note,
     album: row.album ?? (row.surface === 'vault' && entry ? vaultAlbumName(entry) : null),
     publication: { caption: null, tiers: null, price_mills: null, repost: false },
+    hub: null,
     copy: row.copy,
     downloaded: row.downloaded
       ? {

@@ -42,6 +42,7 @@ import {
 } from '../plan/writes'
 import type { Services } from '../services'
 import { integrationViews } from './integrations'
+import { assertNotSent, cancelWithRow } from './plan-publish'
 
 /**
  * The plan (DESIGN §4.11–4.13, SPEC §4, §5, §7): day and week, rows and their marks, manual
@@ -298,6 +299,17 @@ export function planHandlers(services: Services): HandlerRegistry {
             () => null,
           )
           const after: Record<string, unknown> = {}
+          // A sent publication holds what it was made of (5б).
+          if (
+            body.replace_manifest ||
+            body.caption !== undefined ||
+            body.tiers !== undefined ||
+            body.price_mills !== undefined ||
+            body.repost !== undefined ||
+            body.album !== undefined
+          ) {
+            assertNotSent(row)
+          }
           if (body.assignee !== undefined) {
             await checkAssignee(tx, model, body.assignee)
             after.Исполнитель = body.assignee ?? 'по странице'
@@ -370,7 +382,7 @@ export function planHandlers(services: Services): HandlerRegistry {
         }),
 
       cancel: ({ params, body, ctx }) =>
-        command({ ctx, body }, async (tx) => {
+        command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx.model)
           const row = await rowById(tx, model, params.row, true)
           // The reason is picked after the cancellation (DESIGN §3.8): a repeat with a reason
@@ -384,6 +396,8 @@ export function planHandlers(services: Services): HandlerRegistry {
           assertOpen(row)
           if (row.marked_at)
             throw new ApiProblem('row_marked', 'Не выполнено: сначала снимите отметку')
+          // A publication still in Hub's hands goes with the row (DESIGN §4.11).
+          await cancelWithRow(tx, model, row, actor, ctx.requestId)
           await tx.execute(sql`
             UPDATE posting_plan_rows
                SET cancelled_at = now(), cancelled_by = nullif(current_setting('app.actor_id'), '')::uuid,
@@ -416,6 +430,7 @@ export function planHandlers(services: Services): HandlerRegistry {
               'Отмеченную строку перенести нельзя — сначала снимите отметку',
             )
           }
+          assertNotSent(row)
           const target = await accountId(tx, model, body.account)
           const state = await loadState(tx, model)
           if (body.account !== row.account) {

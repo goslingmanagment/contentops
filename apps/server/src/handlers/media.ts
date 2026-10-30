@@ -246,6 +246,8 @@ function operationKind(row: WorkRowView): OperationKind {
           : row.dataset === 'reconcile'
             ? 'legacy_reconcile'
             : 'legacy_parse'
+    case 'hub_publish':
+      return 'hub_publication'
     default:
       return 'platform_copy'
   }

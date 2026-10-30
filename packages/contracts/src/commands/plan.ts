@@ -129,6 +129,13 @@ export const UpdateRowCommandSchema = z.object({
 })
 export type UpdateRowCommand = z.infer<typeof UpdateRowCommandSchema>
 
+/**
+ * «Отправить» (5б): the draft version whose checks the person saw; a newer draft is refused
+ * and shown again.
+ */
+export const SendPublicationCommandSchema = z.object({ version: z.int().positive() })
+export type SendPublicationCommand = z.infer<typeof SendPublicationCommandSchema>
+
 export const UpdateWeekNormCommandSchema = WeekNormSchema.omit({ account: true, version: true })
 export type UpdateWeekNormCommand = z.infer<typeof UpdateWeekNormCommandSchema>
 

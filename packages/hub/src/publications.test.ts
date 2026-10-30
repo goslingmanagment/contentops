@@ -294,6 +294,7 @@ describe('cancel and statuses', () => {
     expect((await allChanges(since)).map((p) => p.id)).toEqual([a.id, b.id, c.id])
     expect(publicationRowState('published')).toBe('published')
     expect(publicationRowState('not_published')).toBe('not_published')
+    expect(publicationRowState('approved')).toBe('sent')
     expect(publicationRowState('scheduled')).toBe('scheduled')
     expect(publicationRowState('unknown')).toBe('unverified')
   })

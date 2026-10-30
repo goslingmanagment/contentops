@@ -6,6 +6,9 @@
 // `DEV_FAKE_SOURCE=1` also starts a fake Dropbox of Lora with generated media
 // (`scripts/dev-source.ts`), turns its scan on and runs the `worker` role: «Приехало» fills
 // by itself within seconds.
+// `DEV_FAKE_HUB=1` starts a fake Agency Hub (`scripts/dev-hub.ts`), gives the stack its key and
+// turns «Публикация» on for Lora's pages: «Подготовить» and «Отправить» in the plan go to it
+// (never to a real Hub); `POST <hub>/__dev/publications/<id>/publish` makes one «вышло».
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -166,10 +169,42 @@ if (process.env.DEV_FAKE_SOURCE === '1') {
   console.log(`fake Dropbox of Lora at ${base}`)
 }
 
+let hubEnv = {}
+if (process.env.DEV_FAKE_HUB === '1') {
+  const fake = spawn(process.execPath, [join(ROOT, 'apps/server/scripts/dev-hub.ts')], {
+    cwd: join(ROOT, 'apps/server'),
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  children.push(fake)
+  const base = await new Promise((resolve, reject) => {
+    fake.stdout.on('data', (chunk) => {
+      const ready = /ready (\S+)/.exec(String(chunk))
+      if (ready) resolve(ready[1])
+    })
+    fake.on('exit', () => reject(new Error('dev-hub stopped')))
+  })
+  hubEnv = { HUB_BASE_URL: base, HUB_API_KEY: process.env.DEV_HUB_KEY ?? 'dev-hub-key' }
+  // The owner's switch «Публикация» of Lora's pages, journaled like a click.
+  psql(
+    `SELECT set_config('app.actor_type', 'system', false), set_config('app.actor_id', '', false),
+            set_config('app.actor_label', 'dev-stack', false),
+            set_config('app.action', 'admin.updateIntegration', false),
+            set_config('app.request_id', gen_random_uuid()::text, false),
+            set_config('app.item_id', '', false), set_config('app.work_id', '', false);
+     INSERT INTO policy_settings (model_id, account_id, key, value)
+     SELECT a.model_id, a.id, 'hub.publish', 'true'::jsonb
+       FROM accounts a JOIN models m ON m.id = a.model_id WHERE m.code = 'lora'
+     ON CONFLICT ON CONSTRAINT policy_settings_scope DO NOTHING`,
+    'contentops',
+  )
+  console.log(`fake Agency Hub at ${base}`)
+}
+
 const roleEnv = (role) => ({
   ...process.env,
   ...storageEnv,
   ...sourceEnv,
+  ...hubEnv,
   ROLE: role,
   DATABASE_URL: url('contentops_app', 'dev-app'),
   PUBLIC_URL: 'http://localhost:5173',
@@ -182,7 +217,7 @@ console.log(`\nContentOps dev: http://localhost:5173 after \`pnpm dev\` · dmitr
 // The scan of the fake source needs `worker` even without FFmpeg.
 const roles = media
   ? ['worker', 'worker-video', 'worker-image']
-  : process.env.DEV_FAKE_SOURCE === '1'
+  : process.env.DEV_FAKE_SOURCE === '1' || process.env.DEV_FAKE_HUB === '1'
     ? ['worker']
     : []
 children.unshift(

@@ -75,6 +75,44 @@ export interface RowRecord {
   created_at: string
   created_by: string | null
   row_version: number
+  /** Publication through Hub (5б, schema §3.5). */
+  hub_publication_id: number | null
+  hub_kind: PublicationKind | null
+  hub_status: string | null
+  hub_status_reason: string | null
+  hub_status_at: string | null
+  hub_updated_at: string | null
+  hub_version: number | null
+  hub_checks: HubChecks | null
+  hub_files: HubFile[]
+  hub_content_hash: string | null
+  hub_prepared_at: string | null
+  hub_prepared_by: string | null
+  hub_prepared_version: number | null
+  hub_sent_at: string | null
+  hub_sent_by: string | null
+  platform_post_ref: string | null
+  vault_album_ref: string | null
+}
+
+export type PublicationKind = 'fyp_post' | 'subscriber_post' | 'paid_post' | 'story' | 'vault_album'
+
+/** Hub's checks of the draft as kept on the row (`hub_checks`). */
+export interface HubChecks {
+  blocked: boolean
+  findings: { code: string; severity: string; media_key: string | null }[]
+}
+
+/** One file of the draft (`hub_files`): uploaded to Hub or the same file in the page's vault. */
+export interface HubFile {
+  version_id: string
+  name: string
+  role: 'media' | 'preview'
+  sha256: string | null
+  bytes: number | null
+  file_id: number | null
+  vault_media_ref: string | null
+  uploaded_at: string | null
 }
 
 const ROW_COLUMNS = sql`
@@ -90,7 +128,12 @@ const ROW_COLUMNS = sql`
   r.stated_occurred_at::text AS stated_occurred_at, r.requires_new_upload,
   r.caption, r.tier_refs, r.price_mills::text AS price_mills, r.repost, r.album_name,
   r.cancelled_at::text AS cancelled_at, r.cancelled_by, r.cancel_reason, r.note,
-  r.created_at::text AS created_at, r.created_by, r.row_version::int AS row_version`
+  r.created_at::text AS created_at, r.created_by, r.row_version::int AS row_version,
+  r.hub_publication_id::text AS hub_publication_id, r.hub_kind, r.hub_status, r.hub_status_reason,
+  r.hub_status_at::text AS hub_status_at, r.hub_updated_at::text AS hub_updated_at, r.hub_version,
+  r.hub_checks, r.hub_files, r.hub_content_hash, r.hub_prepared_at::text AS hub_prepared_at,
+  r.hub_prepared_by, r.hub_prepared_version::int AS hub_prepared_version,
+  r.hub_sent_at::text AS hub_sent_at, r.hub_sent_by, r.platform_post_ref, r.vault_album_ref`
 
 const ROW_JOINS = sql`
   FROM posting_plan_rows r
@@ -109,6 +152,12 @@ function normalise(row: RowRecord): RowRecord {
     stated_occurred_at: instantOrNull(row.stated_occurred_at),
     cancelled_at: instantOrNull(row.cancelled_at),
     created_at: instant(row.created_at),
+    hub_publication_id:
+      row.hub_publication_id === null ? null : Number(row.hub_publication_id as unknown as string),
+    hub_status_at: instantOrNull(row.hub_status_at),
+    hub_updated_at: instantOrNull(row.hub_updated_at),
+    hub_prepared_at: instantOrNull(row.hub_prepared_at),
+    hub_sent_at: instantOrNull(row.hub_sent_at),
   }
 }
 

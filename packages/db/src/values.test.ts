@@ -125,7 +125,9 @@ const LISTS: Record<string, readonly string[]> = {
   hub_post_attachments_role_check: v.hubAttachmentRoles,
   hub_post_attachments_link_state_check: v.hubLinkStates,
   hub_post_attachments_match_strength_check: v.matchStrengths,
-  hub_sync_state_dataset_check: v.hubSyncDatasets,
+  hub_sync_state_dataset_check: v.hubStateDatasets,
+  // 0009_publications
+  posting_plan_rows_hub_kind_check: v.publicationKinds,
 }
 
 let pool: pg.Pool

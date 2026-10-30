@@ -19,6 +19,7 @@ import { rowActionOf } from '../row-action'
 import { PairBlock, RowFacts } from './row-facts'
 import { RowFiles } from './row-files'
 import { RowPreview } from './row-preview'
+import { RowPublication } from './row-publication'
 
 export interface RowDetailsHandlers {
   /** Меню «⋯» строки — то же, что в строке и по правому клику (§3.6). */
@@ -84,6 +85,7 @@ export function RowDetails({
       ) : null}
       {editor}
       <RowFacts row={row} />
+      <RowPublication row={row} canAct={canAct} />
       {checkCase && account ? (
         <PairBlock checkCase={checkCase} platformLabel={account.label} />
       ) : null}

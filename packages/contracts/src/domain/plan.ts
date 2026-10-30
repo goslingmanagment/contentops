@@ -70,6 +70,90 @@ export const PlanPublicationSchema = z.object({
 })
 export type PlanPublication = z.infer<typeof PlanPublicationSchema>
 
+/** What a Hub publication publishes: by the surface (SPEC §7 table). */
+export const PublicationKindSchema = z.enum([
+  'fyp_post',
+  'subscriber_post',
+  'paid_post',
+  'story',
+  'vault_album',
+])
+export type PublicationKind = z.infer<typeof PublicationKindSchema>
+
+/**
+ * The state of a row's publication as the row shows it (SPEC §7, DESIGN §5.2): the draft with
+ * Hub's checks, «отправлено», «в расписании», ✓ «вышло», ▲ «не вышло: причина», «не удалось
+ * проверить — решает владелец в Hub», and a cancelled one.
+ */
+export const PublicationStateSchema = z.enum([
+  'draft',
+  'sent',
+  'scheduled',
+  'published',
+  'not_published',
+  'unverified',
+  'cancelled',
+])
+export type PublicationState = z.infer<typeof PublicationStateSchema>
+
+/** One of Hub's checks of a draft, in words: «Hub: вилка цен страницы не задана». */
+export const PublicationCheckSchema = z.object({
+  code: z.string(),
+  severity: z.enum(['blocking', 'warning', 'info']),
+  text: z.string(),
+})
+export type PublicationCheck = z.infer<typeof PublicationCheckSchema>
+
+export const RowPublicationSchema = z.object({
+  /** Hub's publication. */
+  id: z.int().positive(),
+  /** The draft's content version: «Отправить» names the one whose checks the person saw. */
+  version: z.int().positive(),
+  kind: PublicationKindSchema,
+  state: PublicationStateSchema,
+  /** Hub's own status word (`scheduled`, `not_published`…), for an agent. */
+  hub_status: z.string(),
+  /** The line under the word: «Hub поставил в расписание Fansly 2 на 20:00». */
+  text: z.string(),
+  publish_at: InstantSchema.nullable(),
+  checks: z.array(PublicationCheckSchema),
+  /** A blocking check: «Отправить» is off, the reason is under it. */
+  blocked: z.boolean(),
+  /** The row changed after «Подготовить»: the draft is old — prepare it again. */
+  stale: z.boolean(),
+  /** What the draft holds: uploaded to Hub or the same file already in the page's vault. */
+  files: z.array(z.object({ name: z.string(), source: z.enum(['upload', 'vault']) })),
+  prepared: z.object({ at: InstantSchema, by: ActorRefSchema }),
+  sent: z.object({ at: InstantSchema, by: ActorRefSchema }).nullable(),
+  /** The platform's post (or the vault album) it became: the exact link. */
+  post_ref: z.string().nullable(),
+  album_ref: z.string().nullable(),
+})
+export type RowPublication = z.infer<typeof RowPublicationSchema>
+
+/**
+ * Publication of the row through Hub (5б): `null` where the page does not publish through Hub
+ * and the row has no publication — the row is published by hand.
+ */
+export const PlanHubSchema = z.object({
+  /** «Публикация» of the page is on and Hub is set up. */
+  enabled: z.boolean(),
+  /** Why Hub does not publish this row: «рассылка — только вручную». */
+  manual: z.string().nullable(),
+  publication: RowPublicationSchema.nullable(),
+  /** A work of the row is under way: «Hub готовит», «отправляется», «отменяется». */
+  pending: z.enum(['prepare', 'send', 'cancel']).nullable(),
+  /** The last work of the row did not go through: why, in words. */
+  error: z.string().nullable(),
+  /** «Hub · статусы на 18:32»: the last successful read of the statuses of the page. */
+  statuses_at: InstantSchema.nullable(),
+  /** What may be done now (a person; an agent never sends). */
+  can_prepare: z.boolean(),
+  can_send: z.boolean(),
+  can_cancel: z.boolean(),
+})
+export type PlanHub = z.infer<typeof PlanHubSchema>
+
 export const PlanRowSchema = z.object({
   id: z.string(),
   date: LocalDateSchema,
@@ -106,6 +190,8 @@ export const PlanRowSchema = z.object({
   note: z.string().nullable(),
   album: z.string().nullable(),
   publication: PlanPublicationSchema,
+  /** Publication through Hub (5б). */
+  hub: PlanHubSchema.nullable(),
   copy: CopyStateSchema.nullable(),
   downloaded: z
     .object({ at: InstantSchema, by: z.string(), meta_stripped: z.boolean() })

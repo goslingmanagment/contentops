@@ -31,6 +31,7 @@ import {
   rowFiles,
   sameComposition,
 } from './composition'
+import { hubView, type PublishContext, publishContext, rowVerdict } from './publication-view'
 import { actorRef, type People, type RowRecord, surfaceOfDb } from './records'
 import { evaluateRow, hubCoverage, type PlanState, todayOf } from './state'
 
@@ -51,6 +52,8 @@ export interface ViewContext {
   /** Catalog entries of the rows' objects, by internal id. */
   entries: Map<string, CatalogEntry>
   integrations: Integration[]
+  /** Publication through Hub (5б): switches, works under way, freshness of the statuses. */
+  publish: PublishContext
 }
 
 export async function viewContext(
@@ -69,7 +72,13 @@ export async function viewContext(
           sql``,
         )
       : []
-  return { q, state, entries: new Map(list.map((entry) => [entry.uid, entry])), integrations }
+  return {
+    q,
+    state,
+    entries: new Map(list.map((entry) => [entry.uid, entry])),
+    integrations,
+    publish: await publishContext(q, state, integrations),
+  }
 }
 
 const EXPECTED: Record<string, 'fyp' | 'ppv' | 'teaser'> = {
@@ -149,7 +158,8 @@ export async function rowView(
         ? publicIdOf(row.item_type, row.item_number)
         : null
   const page = state.view.accounts.find((account) => account.code === row.account)
-  const verdict = evaluateRow(state, row, { copy, hasNewerVersion: hasNewer })
+  const hub = hubView(context.publish, state, row)
+  const verdict = rowVerdict(evaluateRow(state, row, { copy, hasNewerVersion: hasNewer }), hub)
   const open = !row.marked_at && !row.cancelled_at
   return {
     id: row.id,
@@ -199,6 +209,7 @@ export async function rowView(
       price_mills: row.price_mills === null ? null : Number(row.price_mills),
       repost: row.repost,
     },
+    hub,
     copy,
     downloaded: await lastDownload(q, state.model.id, row.id),
     warnings: open

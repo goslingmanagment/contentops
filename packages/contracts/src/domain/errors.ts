@@ -38,6 +38,15 @@ export const ERROR_CODES = [
   'number_not_issued',
   /** Type change or removal while plan rows, placements, deliveries or promo point at it. */
   'item_in_use',
+  /**
+   * Hub does not publish this row (5б): a mass message, a surface of the other platform, an
+   * OnlyFans file not in the page's vault, «Публикация» off, a row without time.
+   */
+  'publication_refused',
+  /** Hub's blocking check stands: «Hub: вилка цен страницы не задана». */
+  'publication_blocked',
+  /** Hub has handed the publication to the platform: only the owner takes it off, in Hub. */
+  'publication_handed',
 ] as const
 
 export const ErrorCodeSchema = z.enum(ERROR_CODES)
@@ -71,6 +80,9 @@ export const HTTP_STATUS_BY_CODE: Record<ErrorCode, number> = {
   handoff_replaced: 422,
   number_not_issued: 422,
   item_in_use: 422,
+  publication_refused: 422,
+  publication_blocked: 422,
+  publication_handed: 422,
 }
 
 /** One format for every error. */

@@ -21,6 +21,7 @@ export const OperationKindSchema = z.enum([
   'legacy_plan',
   'legacy_bytes',
   'legacy_reconcile',
+  'hub_publication',
 ])
 export type OperationKind = z.infer<typeof OperationKindSchema>
 
@@ -41,6 +42,7 @@ export const OPERATION_LABEL: Record<OperationKind, string> = {
   legacy_plan: 'Сухой прогон импорта',
   legacy_bytes: 'Импорт байтов старого Я.Диска',
   legacy_reconcile: 'Сверка импорта со снимком',
+  hub_publication: 'Публикация через Hub',
 }
 
 export const OperationSchema = z.object({
