@@ -56,6 +56,8 @@ Agency Hub (`README.md`, `PRD.md`).
   `contentops-db reset-password <login>` (пароль из `CONTENTOPS_NEW_PASSWORD` или stdin).
   После правки таблицы маршрутов —
   `pnpm --filter @contentops/server openapi`, иначе CI красный.
+  Клиенты Я.Диска и Dropbox — `packages/sources` (только чтение); живая проверка Я.Диска —
+  `node packages/sources/scripts/live-smoke.ts` (токен из Keychain `ydisk-audit`, печатает только счёт).
 - **Выкатка:** в ВМ из тега — `ops/README.md`, «Стек и выкатка» (`ops/up.sh`); до этапа 3
   там тестовые прогоны, с этапа 3 — настоящая база.
 - **Опасно:** копия Я.Диска на winpc (и через `/mnt/c` из WSL) — ничего не удалять, не
