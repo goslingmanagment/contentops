@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { type AgentRole, AgentRoleSchema } from '@contentops/contracts/domain/agents'
 import { ROLE_LABEL } from '@contentops/contracts/domain/people'
-import { type Db, isSwitchOn, logAction, SYSTEM_ACTOR, type Tx, withActorTx } from '@contentops/db'
+import {
+  type Db,
+  isSwitchOn,
+  logAction,
+  SYSTEM_ACTOR,
+  type Tx,
+  values,
+  withActorTx,
+} from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { newSecret, sha256, TOKEN_PREFIX, TOKEN_PREFIX_LENGTH } from './auth/secrets'
 import { applySwitches, switchesOf } from './handlers/integrations'
@@ -159,4 +167,104 @@ export async function opsSwitch(
     applySwitches(tx, { models, actorId: null }, integration, switches),
   )
   return switchesOf(db, models, integration)
+}
+
+export interface OpsPolicyResult {
+  key: string
+  scope: { model: string | null; page: string | null; type: string | null }
+  before: unknown
+  value: unknown
+}
+
+/**
+ * `ops.js policy <key> <json|off> [--model m] [--page p] [--type PPV]` — a value of
+ * `policy_settings` (schema §3.1) other than a switch: the thresholds of «Пороги» by their keys
+ * (`hub_candidate_tolerance 30`), and what has no screen — `hub_ad_markers` of a page,
+ * `import_batch_scope` of a model. `off` — not set (SQL NULL), the function is off there.
+ * Switches go through `ops.js switch`.
+ */
+export async function opsPolicy(
+  db: Db,
+  input: {
+    key: string
+    value: string
+    model?: string | undefined
+    page?: string | undefined
+    type?: string | undefined
+  },
+): Promise<OpsPolicyResult> {
+  if (!(values.thresholdKeys as readonly string[]).includes(input.key)) {
+    throw new Error(
+      `${input.key}: not a policy key (${values.thresholdKeys.join(', ')}); switches — ops.js switch`,
+    )
+  }
+  let value: unknown = null
+  if (input.value !== 'off') {
+    try {
+      value = JSON.parse(input.value)
+    } catch {
+      throw new Error(`${input.value}: expected JSON (30, "x", [..], {..}) or off`)
+    }
+    if (value === null) throw new Error('null: use off')
+  }
+  if (input.type && (input.model || input.page)) throw new Error('--type goes alone')
+  if (input.type && !(values.contentTypes as readonly string[]).includes(input.type)) {
+    throw new Error(`${input.type}: expected one of ${values.contentTypes.join(', ')}`)
+  }
+  return withActorTx(db, context('policy.ops'), async (tx) => {
+    let modelId: string | null = null
+    let accountId: string | null = null
+    let label = 'для всего'
+    if (input.page) {
+      const { rows } = await tx.execute<{ id: string; model_id: string; title: string }>(sql`
+        SELECT a.id, a.model_id, a.title FROM accounts a JOIN models m ON m.id = a.model_id
+         WHERE a.code = ${input.page}
+           ${input.model ? sql`AND m.code = ${input.model}` : sql``}`)
+      const account = rows[0]
+      if (!account || rows.length > 1) throw new Error(`${input.page}: no such page`)
+      modelId = account.model_id
+      accountId = account.id
+      label = `для страницы ${account.title}`
+    } else if (input.model) {
+      const { rows } = await tx.execute<{ id: string; title: string }>(sql`
+        SELECT id, title FROM models WHERE code = ${input.model}`)
+      const model = rows[0]
+      if (!model) throw new Error(`${input.model}: no such model`)
+      modelId = model.id
+      label = `для модели ${model.title}`
+    } else if (input.type) {
+      label = `для типа ${input.type}`
+    }
+    const itemType = input.type ?? null
+    const { rows: was } = await tx.execute<{ value: unknown }>(sql`
+      SELECT value FROM policy_settings
+       WHERE key = ${input.key} AND model_id IS NOT DISTINCT FROM ${modelId}::uuid
+         AND account_id IS NOT DISTINCT FROM ${accountId}::uuid
+         AND item_type IS NOT DISTINCT FROM ${itemType}
+       FOR UPDATE`)
+    const before = was[0]?.value ?? null
+    const { rows: saved } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO policy_settings (model_id, account_id, item_type, key, value)
+      VALUES (${modelId}::uuid, ${accountId}::uuid, ${itemType}, ${input.key},
+              ${value === null ? null : JSON.stringify(value)}::jsonb)
+      ON CONFLICT ON CONSTRAINT policy_settings_scope DO UPDATE
+         SET value = excluded.value, updated_at = now(), updated_by = NULL,
+             row_version = policy_settings.row_version + 1
+      RETURNING id`)
+    const word = (v: unknown) => (v === null ? 'не задано' : JSON.stringify(v))
+    await logAction(tx, {
+      modelId,
+      subjectKind: 'policy_settings',
+      subjectId: saved[0]?.id ?? null,
+      subjectLabel: `${input.key} ${label}`,
+      before: { [input.key]: word(before) },
+      after: { [input.key]: word(value) },
+    })
+    return {
+      key: input.key,
+      scope: { model: input.model ?? null, page: input.page ?? null, type: itemType },
+      before,
+      value,
+    }
+  })
 }
