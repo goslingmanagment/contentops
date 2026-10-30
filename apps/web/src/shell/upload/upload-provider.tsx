@@ -103,9 +103,29 @@ export function UploadProvider({ enabled, children }: { enabled: boolean; childr
     [],
   )
 
+  const startUpload = useCallback<UploadsApi['startUpload']>(
+    (picked, options) => {
+      if (!model) {
+        return
+      }
+      const entries = picked.map((file) => {
+        const id = newIdempotencyKey()
+        files.current.set(id, file)
+        return { id, fileName: file.name, sizeBytes: file.size, media: mediaOf(file) }
+      })
+      dispatch({
+        type: 'add-batch',
+        batch: { id: newIdempotencyKey(), model, kind: options.kind, target: options.target },
+        files: entries,
+        transport: 'tus',
+      })
+    },
+    [model],
+  )
+
   const api = useMemo<UploadsApi>(
-    () => ({ openUploadDialog, trackOperation, setScreenTarget }),
-    [openUploadDialog, setScreenTarget, trackOperation],
+    () => ({ openUploadDialog, startUpload, trackOperation, setScreenTarget }),
+    [openUploadDialog, setScreenTarget, startUpload, trackOperation],
   )
 
   const uploading = state.uploads.some(isUploadActive)
@@ -357,6 +377,8 @@ function changedKeys(model: ModelCode, batch: UploadBatch, result: UploadResult)
     ...inboxChangedKeys(model),
     ...(result.item_id ? itemQueryKeys(model, result.item_id) : []),
     ...(batch.target?.kind === 'plan-row' ? planChangedKeys(model) : []),
+    // The custom the PPV was made from: «PPV-077 сделан из него», «→ PPV-077» in its list.
+    ...(batch.target?.kind === 'ppv-from' ? itemQueryKeys(model, batch.target.itemId) : []),
   ]
 }
 

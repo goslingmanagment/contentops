@@ -7,9 +7,9 @@ import type { UploadTarget } from './upload-target'
  */
 export function DropHint({ target }: { target: UploadTarget | null }) {
   const text = target
-    ? target.kind === 'item'
-      ? 'Отпустите — станет тизером или новой версией'
-      : 'Отпустите — монтаж для этой строки'
+    ? target.kind === 'plan-row'
+      ? 'Отпустите — монтаж для этой строки'
+      : 'Отпустите — станет тизером или новой версией'
     : 'Отпустите — откроется загрузка'
   return (
     <div

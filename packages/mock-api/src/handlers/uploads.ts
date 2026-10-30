@@ -355,6 +355,11 @@ export function uploadHandlers(): BoundRoute[] {
         }
       }
       const today = todayOf(state)
+      if (body.target.kind === 'ppv_from_custom') {
+        // Заглушка делает PPV из кастома своим путём (`makePpv`); загрузку с этой целью
+        // принимает только сервер.
+        throw rule('invalid_request', 'Свой монтаж для PPV принимает сервер')
+      }
       const record =
         body.target.kind === 'item'
           ? recordOf(context.facts(), body.target.item_id)

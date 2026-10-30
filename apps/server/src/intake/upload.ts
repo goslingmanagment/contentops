@@ -6,6 +6,7 @@ import type { UploadResult } from '@contentops/contracts/domain/inbox'
 import { type Db, enqueueWork, logAction, type Tx, type values, withActorTx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { findItem, type ItemRow } from '../catalog/ids'
+import { linkNewPpv, requireCustomForPpv } from '../catalog/make-ppv'
 import { journalActor, requireActor } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
@@ -266,6 +267,15 @@ export async function createUpload(
   const media = body.files.map(mediaOf)
   const itemId = body.target?.kind === 'item' ? body.target.item_id : null
   if (itemId) checkTarget(body.kind, await findItem(services.db, model, itemId), media)
+  const ppvFrom = body.target?.kind === 'ppv_from_custom' ? body.target : null
+  if (ppvFrom) {
+    if (body.kind !== 'master_version') {
+      throw blocked('wrong_target', 'Свой монтаж для PPV — мастер нового PPV')
+    }
+    if (media.length !== 1 || media[0] !== 'video') {
+      throw blocked('wrong_files', 'Свой монтаж для PPV — один видеофайл')
+    }
+  }
   if (rowId) {
     const row = await planRow(services.db, model, rowId)
     if (expectedKind(row) !== body.kind) {
@@ -306,6 +316,8 @@ export async function createUpload(
       }
     }
     if (rowId) return uploadForRow(tx, model, actor, rowId, body, planned, ids[0] as string)
+    if (ppvFrom)
+      return uploadForCustomPpv(tx, model, actor, ppvFrom, body, planned, ids[0] as string)
     const target = itemId ? await findItem(tx, model, itemId) : null
     await tx.execute(sql`
       UPDATE web_uploads
@@ -411,6 +423,54 @@ export async function createUpload(
     }).catch(() => undefined)
   }
   return result
+}
+
+type PpvFromCustom = Extract<
+  NonNullable<CreateUploadCommand['target']>,
+  { kind: 'ppv_from_custom' }
+>
+
+/**
+ * «Сделать PPV» → «Загрузить свой монтаж» (DESIGN §4.5, §6.6): the montage is the master of a
+ * new PPV accepted on upload — «принято при загрузке», the uploader is the author (SPEC §6.1)
+ * — with the link «PPV из кастома»; the fan's name is not carried over.
+ */
+async function uploadForCustomPpv(
+  tx: Tx,
+  model: ModelScope,
+  actor: Actor,
+  target: PpvFromCustom,
+  body: CreateUploadCommand,
+  planned: readonly Planned[],
+  key: string,
+): Promise<UploadResult> {
+  const custom = await findItem(tx, model, target.item_id, { lock: true })
+  await requireCustomForPpv(tx, model, custom, false)
+  await tx.execute(sql`
+    UPDATE web_uploads SET state = 'registered', declared_kind = ${DECLARED_KIND[body.kind]}
+     WHERE model_id = ${model.id}::uuid
+       AND id = ANY (${sql.param(planned.map((item) => item.row.id))}::uuid[])`)
+  const groupId = await makeGroup(tx, model.id, key, 'PPV', planned.length)
+  await tx.execute(sql`
+    UPDATE inbox_groups
+       SET proposed_title = ${target.title.trim()}, proposed_ppv_kind = ${target.ppv_kind},
+           has_second_person = ${custom.has_second_person},
+           evidence = evidence || ${JSON.stringify({ ppv_from_custom: target.item_id })}::jsonb
+     WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
+  for (const item of planned) {
+    const draftId = await makeDraft(tx, model.id, groupId, item, null, true)
+    await enqueueWork(tx, {
+      modelId: model.id,
+      kind: 'derive_video',
+      workKey: `derive:${item.sha}:${draftId}`,
+      inputSha256: shaBytes(item.sha),
+      draftId,
+      priority: 10,
+    })
+  }
+  const accepted = await acceptGroup(tx, model, actor, groupId, { as: 'default', how: 'upload' })
+  await linkNewPpv(tx, model, actor, accepted.item_id, 'ppv_from_custom', custom.id)
+  return { group_id: groupId, placed: 'attached', item_id: accepted.item_id, decision: null }
 }
 
 /**

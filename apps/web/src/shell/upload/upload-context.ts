@@ -12,6 +12,8 @@ export interface OpenUploadOptions {
 export interface UploadsApi {
   /** Открыть окно «Загрузить», можно сразу с файлами (перетаскивание). */
   openUploadDialog(files?: readonly File[], options?: OpenUploadOptions): void
+  /** Загрузить сразу, без окна, когда цель и вид уже выбраны («Загрузить свой монтаж»). */
+  startUpload(files: readonly File[], options: { target: UploadTarget; kind: UploadKind }): void
   /** Показать долгую сборку (202) в лотке и следить за ней. */
   trackOperation(model: ModelCode, operationId: string, label: string): void
   /** Цель загрузки, которую выставил экран: выбранная строка плана, объект в панели. */

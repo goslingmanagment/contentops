@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PpvKindSchema } from '../domain/catalog'
 import { MediaKindSchema } from '../domain/files'
 import { ItemIdSchema, ItemTypeSchema } from '../domain/item-type'
 
@@ -33,10 +34,20 @@ export function uploadKindNeedsTarget(kind: UploadKind): boolean {
   return kind !== 'other'
 }
 
-/** An object or a plan row: the montage for a row waiting for it. */
+/**
+ * An object, a plan row (the montage for a row waiting for it), or a new PPV made from a
+ * custom with one's own montage («Сделать PPV» → «Загрузить свой монтаж», DESIGN §4.5): the
+ * montage is accepted on upload as the master of the new PPV (SPEC §6.1).
+ */
 export const UploadTargetRefSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('item'), item_id: ItemIdSchema }),
   z.object({ kind: z.literal('plan_row'), row_id: z.string().min(1) }),
+  z.object({
+    kind: z.literal('ppv_from_custom'),
+    item_id: ItemIdSchema,
+    ppv_kind: PpvKindSchema,
+    title: z.string().trim().min(1, 'Нужно название'),
+  }),
 ])
 export type UploadTargetRef = z.infer<typeof UploadTargetRefSchema>
 
