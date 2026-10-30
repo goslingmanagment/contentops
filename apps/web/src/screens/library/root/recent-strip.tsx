@@ -142,6 +142,7 @@ export function RecentStrip({
                       title={entry.title}
                       kind={cover.kind}
                       coverFamily={cover.family}
+                      coverSrc={cover.src}
                       durationSeconds={cover.durationSeconds}
                       countLabel={cover.countLabel}
                       versionCount={cover.versionCount}

@@ -69,6 +69,7 @@ function tileOf(entry: CatalogEntry, captions: boolean): MosaicTile {
   const cover = itemCover(entry)
   return {
     seed: cover.seed,
+    src: cover.src,
     kind: cover.kind,
     family: cover.family,
     durationSeconds: captions ? cover.durationSeconds : undefined,
