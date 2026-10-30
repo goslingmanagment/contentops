@@ -95,9 +95,10 @@
 Изменения 11.09.2026 по таблицам — в схеме §9.2; там, где схема §9 говорит иначе, она сильнее.
 Колонки 13 таблиц `0001_foundation` (схема §9.5) и состояния `storage_operations` сведены
 со схемой §9 30.09.2026. С 30.10.2026 колонки, ключи и ограничения этих 13 таблиц задают
-`packages/db/migrations/0001_foundation.sql` и золотой `packages/db/schema.sql`, а 32 таблиц
+`packages/db/migrations/0001_foundation.sql` и золотой `packages/db/schema.sql`, 32 таблиц
 этапа 2а — `0002_bytes_sources.sql` и `0003_catalog.sql` (выборы — схема §9.2 «Миграции 0002
-и 0003»); описание ниже — смысл и решения.
+и 0003»), 4 таблиц заказов — `0004_orders.sql` (выборы — схема §9.2 «Миграция 0004»);
+описание ниже — смысл и решения.
 
 Сквозные соглашения: `created_at timestamptz NOT NULL DEFAULT now()`;
 `created_by` → `principals` там, где действие инициировал человек или агент;
@@ -816,8 +817,8 @@ UNIQUE `(model_id, account_id, album_id, member_ref)`; `missing_since` толь�
 
 **`custom_orders`** (§8.2). `id`, `model_id`, `account_id?`, `tg_chat`, `tg_topic?`,
 `tg_message_id`, `card_author`, `card_at`, `buyer_name?` (в файлы и публикации
-не подставляется), `brief`, `ordered_duration_raw` («8-10
-минут», «10 минут - 20 фото»), `duration_min_s?`, `duration_max_s?`,
+не подставляется), `brief`, `ordered_duration_raw?` («8-10
+минут», «10 минут - 20 фото»; у части карточек длительности нет), `duration_min_s?`, `duration_max_s?`,
 `photo_count?`, `due_at?`, `status` (`open | delivered | closed | cancelled`), `name_in_media`
 (`yes | no | unknown`; у кастома видно то же значение), `closed_at/by`,
 `cancelled_at/by`, `cancel_reason?`, `row_version`, `created_at/by`, `updated_at`.
@@ -825,8 +826,8 @@ UNIQUE NULLS NOT DISTINCT `(model_id, tg_chat, tg_topic, tg_message_id)`;
 CHECK `(status = 'closed') = (closed_at IS NOT NULL)`; CHECK `(status = 'cancelled') =
 (cancelled_at IS NOT NULL AND cancel_reason IS NOT NULL)`. Индексы `(model_id, status,
 due_at)`, `(model_id, lower(buyer_name))`, GIN `pg_trgm (brief)`.
-Закрыть можно только при сдаче и без открытых правок — проверка в команде закрытия;
-`closed` по-прежнему значит «сдан». `cancelled` — «снят» (возврат, отказ фана, ошибочная
+Закрыть можно только при сдаче и без открытых правок — проверяет триггер на строке заказа
+(схема §9.2 «Миграция 0004»); `closed` по-прежнему значит «сдан». `cancelled` — «снят» (возврат, отказ фана, ошибочная
 карточка): причина обязательна, снять может человек или агент (автор — в журнале),
 просрочки у снятого нет (30.10.2026).
 
@@ -840,10 +841,10 @@ UNIQUE `(model_id, order_id, tg_ref, kind)`. Перепост карточки �
 `item_id` (CUS), `manifest_id` (закрытый состав версий), `draft_id?`,
 `delivered_at` (у сдачи из Telegram — время сообщения, а не веб-загрузки), `basis jsonb`
 (какие признаки сработали), `evidence_refs jsonb`
-(`tg:…`, путь, `resource_id`), `linked_at/by`, `confirmed_by?`, `retracted_at?`,
+(`tg:…`, путь, `resource_id`), `linked_at/by`, `confirmed_by?`, `retracts_id?`,
 `retract_reason?`. UNIQUE `(model_id, order_id, manifest_id)`; индекс
 `(model_id, item_id)`. Один заказ — несколько сдач; ошибочная привязка отзывается
-новой записью, не правкой.
+новой записью, не правкой (схема §9.2); строка сдачи не меняется.
 
 **`custom_order_revisions`** — правка (§5, §8.2). `id`, `model_id`, `order_id`,
 `requirement`, `request_tg_ref`, `request_ordinal` (одно сообщение может нести
@@ -941,12 +942,12 @@ teaser pic raw ed clip thumb cap`), `media_kind`, `platform` (`fansly onlyfans`)
 | Повтор наблюдения не даёт улики; у исправления один преемник | UNIQUE `(placement_id, source, dedup_key)`, UNIQUE `(corrects_id)` |
 | Заявка легаси всегда `claim`, ручное всегда `exact` | CHECK в `placement_evidence` |
 | Правка не закрывается одной привязкой версии | CHECK `NOT done OR done_basis IS NOT NULL` |
+| Заказ сдан — только при всех частях; закрыт — только сданный и без открытых правок | триггеры `custom_orders_status`, `custom_order_deliveries_lock`, `custom_order_revisions_lock` (схема §9.2 «Миграция 0004») |
 | Передача отмечена только с датой и автором (кроме прошлых паков из импорта) | CHECK в `promo_deliveries` |
 | Смешать модели нельзя | составные FK `(model_id, …)` во всех доменных связях; структурный тест по `pg_constraint` |
 
 Переходы §5, которые остаются в коде, а не в constraint: цепочка черновика
-(предварительна), снятие подтверждения поля (SPEC не запрещает), «нельзя закрыть
-заказ с открытой правкой» (межстрочное, проверяется командой закрытия), цикл в
+(предварительна), снятие подтверждения поля (SPEC не запрещает), цикл в
 происхождении (проверка под блокировкой объектов), запрет смены типа и удаления объекта
 при связях (проверяется командой).
 
@@ -1347,6 +1348,38 @@ LLM.
   - Зеркало Drizzle — только таблицы: drizzle-kit 0.31 превращает составной FK в связь по
     одному `model_id` и повторяет ключи, поэтому `relations.ts` не порождается; соединения
     пишутся в SQL.
+- **Миграция 0004** (`0004_orders`, этап 2в, 30.10.2026) — где норма молчала, выбран самый
+  простой вариант, который держит инварианты заказа в базе (ведение заказов — этап 4б):
+  - Статус между `open` и `delivered` выводит триггер `custom_orders_status` из отметок
+    частей; команда пишет отметки (`video_completed_at/by`, `photos_completed_at/by`),
+    `closed` с `closed_at/by` или `cancelled` с причиной, сам `delivered` не пишет. Отметка
+    стоит только на действующих сдачах своей части: видео — хотя бы один ролик, фото — не
+    меньше `photo_count` разных файлов-изображений (без числа — хотя бы одно; функция
+    `custom_order_live_files`). Отметку незаказанной части отклоняет CHECK, остальные отказы
+    — код `CO005`.
+  - `closed` — только при всех отметках и без открытых правок. `closed` и `cancelled`
+    окончательны: статус, отметки и ожидаемые части не меняются, новых сдач, отзывов и
+    открытых правок нет; поля карточки править можно. Возврата из «снят» нет
+    (предварительно, список статусов закрывается до `schema-freeze`).
+  - Сериализация: сдача, отзыв и правка первым делом берут замок строки заказа (`FOR NO KEY
+    UPDATE`, триггеры `custom_order_deliveries_lock` и `custom_order_revisions_lock`),
+    отметки и закрытие берут тот же замок своим UPDATE; проверка идёт после замка и видит
+    всё, что закоммичено до него.
+  - Сдача неизменна, как версия: UPDATE и DELETE запрещены, триггера журнала нет, её запись
+    — строка `action` команды. Сдача — одной части; кастом с видео и фото — две сдачи со
+    своими составами (`asset_manifests.purpose = 'submission'`). `item_type` по умолчанию
+    `'CUS'`, CHECK `= 'CUS'`; основание (`basis`) и `delivered_at` обязательны. Отзыв —
+    строка с `retracts_id` и `retract_reason`, без части, CUS, состава и даты; время отзыва
+    — его `linked_at`, поэтому `retracted_at` не нужен. Отзыв снимает отметку своей части
+    (команда ставит её снова, если часть всё ещё сдана); отзыв отзыва — `CO005`. UNIQUE
+    `(model_id, order_id, manifest_id)` обычный: у отзывов состава нет, они не сталкиваются.
+  - `ordered_duration_raw` может быть пустым: у 2 из 41 изученной карточки длительности нет
+    (`legacy-and-import.md` §9.2); `duration_min_s/max_s` — целые секунды, как названы;
+    `name_in_media` по умолчанию `unknown`; `done_basis` — свободный текст; `tg_topic` и
+    `tg_message_id` — числа. Неизменны `model_id` и `id` заказа, у сообщений и правок ещё
+    `order_id`.
+  - `catalog_index`: в конце добавлены `order_id` и `delivered_at` первой действующей сдачи
+    CUS; `name_in_media` у CUS с заказом берётся из заказа.
 
 ### 9.3. Транзакции и протоколы
 
@@ -1405,7 +1438,8 @@ LLM.
   `item_id` / `asset_id` / `kind` членства, заголовок состава и квитанции.
   `forbid_update_delete()` + `REVOKE UPDATE, DELETE` у прикладной роли на
   `asset_versions`, `asset_manifests`, `asset_manifest_entries`, `download_receipts`,
-  `download_receipt_entries`, `placement_evidence`, `hub_observations`, `action_log`.
+  `download_receipt_entries`, `custom_order_deliveries`, `placement_evidence`,
+  `hub_observations`, `action_log`.
   Тест перечисляет все охраны.
 - Приёмочные тесты (Testcontainers, PostgreSQL 18, прикладная роль): чистое применение
   и повтор без изменений; два раннера одновременно; обрыв между DDL и записью версии;

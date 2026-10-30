@@ -720,6 +720,33 @@ export const sources = pgTable("sources", {
 	check("sources_cloud_read_only", sql`(kind <> ALL (ARRAY['yandex_disk'::text, 'dropbox'::text])) OR read_only`),
 ]);
 
+export const customOrderMessages = pgTable("custom_order_messages", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	orderId: uuid("order_id").notNull(),
+	tgRef: text("tg_ref").notNull(),
+	kind: text().notNull(),
+	messageAt: timestamp("message_at", { withTimezone: true, mode: 'string' }).notNull(),
+	author: text().notNull(),
+	excerpt: text().notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	recordedBy: uuid("recorded_by"),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.recordedBy],
+			foreignColumns: [principals.id],
+			name: "custom_order_messages_recorded_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.orderId],
+			foreignColumns: [customOrders.id, customOrders.modelId],
+			name: "custom_order_messages_model_id_order_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "custom_order_messages_pkey"}),
+	unique("custom_order_messages_ref").on(table.kind, table.modelId, table.orderId, table.tgRef),
+	check("custom_order_messages_kind_check", sql`kind = ANY (ARRAY['card'::text, 'repost'::text, 'delivery'::text, 'revision'::text, 'confirmation'::text, 'note'::text])`),
+]);
+
 export const assets = pgTable("assets", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -1258,9 +1285,82 @@ export const inboxDraftCandidates = pgTable("inbox_draft_candidates", {
 			foreignColumns: [assetVersions.id, assetVersions.modelId],
 			name: "inbox_draft_candidates_model_id_version_id_fkey"
 		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.orderId],
+			foreignColumns: [customOrders.id, customOrders.modelId],
+			name: "inbox_draft_candidates_model_id_order_id_fkey"
+		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "inbox_draft_candidates_pkey"}),
 	unique("inbox_draft_candidates_link").on(table.draftId, table.itemId, table.kind, table.modelId, table.orderId, table.versionId),
 	check("inbox_draft_candidates_kind_check", sql`kind = ANY (ARRAY['order'::text, 'existing_item'::text, 'exact_duplicate'::text, 'similar_photo'::text, 'legacy_id'::text, 'source_parent'::text, 'content_type'::text])`),
+]);
+
+export const customOrderDeliveries = pgTable("custom_order_deliveries", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	orderId: uuid("order_id").notNull(),
+	part: text(),
+	itemId: uuid("item_id"),
+	itemType: text("item_type").default('CUS').notNull(),
+	manifestId: uuid("manifest_id"),
+	draftId: uuid("draft_id"),
+	deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: 'string' }),
+	basis: jsonb(),
+	evidenceRefs: jsonb("evidence_refs").default([]).notNull(),
+	linkedAt: timestamp("linked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	linkedBy: uuid("linked_by"),
+	confirmedBy: uuid("confirmed_by"),
+	retractsId: uuid("retracts_id"),
+	retractReason: text("retract_reason"),
+}, (table): PgTableExtraConfigValue[] => [
+	index("custom_order_deliveries_item").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.itemId.asc().nullsLast().op("uuid_ops")).where(sql`(item_id IS NOT NULL)`),
+	foreignKey({
+			columns: [table.linkedBy],
+			foreignColumns: [principals.id],
+			name: "custom_order_deliveries_linked_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.confirmedBy],
+			foreignColumns: [principals.id],
+			name: "custom_order_deliveries_confirmed_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.orderId],
+			foreignColumns: [customOrders.id, customOrders.modelId],
+			name: "custom_order_deliveries_model_id_order_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.itemId, table.itemType],
+			foreignColumns: [contentItems.id, contentItems.modelId, contentItems.type],
+			name: "custom_order_deliveries_model_id_item_id_item_type_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.manifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "custom_order_deliveries_model_id_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.draftId],
+			foreignColumns: [inboxDrafts.id, inboxDrafts.modelId],
+			name: "custom_order_deliveries_model_id_draft_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.orderId, table.retractsId],
+			foreignColumns: [table.id, table.modelId, table.orderId],
+			name: "custom_order_deliveries_model_id_order_id_retracts_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "custom_order_deliveries_pkey"}),
+	unique("custom_order_deliveries_model_id_order_id_id_key").on(table.id, table.modelId, table.orderId),
+	unique("custom_order_deliveries_manifest").on(table.manifestId, table.modelId, table.orderId),
+	unique("custom_order_deliveries_retracts_once").on(table.retractsId),
+	check("custom_order_deliveries_part_check", sql`part = ANY (ARRAY['video'::text, 'photos'::text])`),
+	check("custom_order_deliveries_item_type_check", sql`item_type = 'CUS'::text`),
+	check("custom_order_deliveries_shape", sql`CHECK (
+CASE
+    WHEN (retracts_id IS NULL) THEN ((num_nulls(part, item_id, manifest_id, delivered_at, basis) = 0) AND (retract_reason IS NULL))
+    ELSE ((num_nonnulls(part, item_id, manifest_id, delivered_at, basis, draft_id, confirmed_by) = 0) AND (retract_reason IS NOT NULL))
+END)`),
+	check("custom_order_deliveries_not_self", sql`retracts_id <> id`),
 ]);
 
 export const downloadReceiptEntries = pgTable("download_receipt_entries", {
@@ -1420,6 +1520,53 @@ export const platformTexts = pgTable("platform_texts", {
 	check("platform_texts_source_check", sql`source = ANY (ARRAY['ai'::text, 'human'::text, 'import'::text])`),
 	check("platform_texts_account", sql`(account_id IS NULL) OR (platform <> 'generic'::text)`),
 	check("platform_texts_confirmed", sql`((confirmed_at IS NULL) = (confirmed_value_version IS NULL)) AND ((confirmed_value_version IS NULL) OR (confirmed_value_version <= value_version))`),
+]);
+
+export const customOrderRevisions = pgTable("custom_order_revisions", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	orderId: uuid("order_id").notNull(),
+	requirement: text().notNull(),
+	requestTgRef: text("request_tg_ref").notNull(),
+	requestOrdinal: integer("request_ordinal").default(1).notNull(),
+	requestedAt: timestamp("requested_at", { withTimezone: true, mode: 'string' }).notNull(),
+	done: boolean().default(false).notNull(),
+	doneBasis: text("done_basis"),
+	fixedDeliveryId: uuid("fixed_delivery_id"),
+	doneAt: timestamp("done_at", { withTimezone: true, mode: 'string' }),
+	doneBy: uuid("done_by"),
+	reopenedAt: timestamp("reopened_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.doneBy],
+			foreignColumns: [principals.id],
+			name: "custom_order_revisions_done_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [principals.id],
+			name: "custom_order_revisions_created_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.orderId],
+			foreignColumns: [customOrders.id, customOrders.modelId],
+			name: "custom_order_revisions_model_id_order_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.orderId, table.fixedDeliveryId],
+			foreignColumns: [customOrderDeliveries.id, customOrderDeliveries.modelId, customOrderDeliveries.orderId],
+			name: "custom_order_revisions_model_id_order_id_fixed_delivery_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "custom_order_revisions_pkey"}),
+	unique("custom_order_revisions_request").on(table.modelId, table.orderId, table.requestOrdinal, table.requestTgRef),
+	check("custom_order_revisions_request_ordinal_check", sql`request_ordinal >= 1`),
+	check("custom_order_revisions_done_at", sql`done = (done_at IS NOT NULL)`),
+	check("custom_order_revisions_done_basis", sql`(NOT done) OR (done_basis IS NOT NULL)`),
 ]);
 
 export const reviewCases = pgTable("review_cases", {
@@ -1589,6 +1736,7 @@ export const inboxGroups = pgTable("inbox_groups", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+	customOrderId: uuid("custom_order_id"),
 }, (table): PgTableExtraConfigValue[] => [
 	foreignKey({
 			columns: [table.modelId, table.sourceId],
@@ -1599,6 +1747,11 @@ export const inboxGroups = pgTable("inbox_groups", {
 			columns: [table.modelId, table.folderObjectId],
 			foreignColumns: [sourceObjects.id, sourceObjects.modelId],
 			name: "inbox_groups_model_id_folder_object_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.customOrderId],
+			foreignColumns: [customOrders.id, customOrders.modelId],
+			name: "inbox_groups_model_id_custom_order_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "inbox_groups_pkey"}),
 	unique("inbox_groups_model_id_source_id_group_key_key").on(table.groupKey, table.modelId, table.sourceId),
@@ -1691,6 +1844,95 @@ export const contentItems = pgTable("content_items", {
 	check("content_items_promo_channel", sql`(type = 'PRM'::text) = (promo_channel_id IS NOT NULL)`),
 	check("content_items_name_in_media", sql`(name_in_media IS NULL) OR (type = 'CUS'::text)`),
 	check("content_items_merged_deleted", sql`(merged_into_item_id IS NULL) OR (deleted_at IS NOT NULL)`),
+]);
+
+export const customOrders = pgTable("custom_orders", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	accountId: uuid("account_id"),
+	tgChat: text("tg_chat").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	tgTopic: bigint("tg_topic", { mode: "number" }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	tgMessageId: bigint("tg_message_id", { mode: "number" }).notNull(),
+	cardAuthor: text("card_author").notNull(),
+	cardAt: timestamp("card_at", { withTimezone: true, mode: 'string' }).notNull(),
+	buyerName: text("buyer_name"),
+	brief: text().notNull(),
+	orderedDurationRaw: text("ordered_duration_raw"),
+	durationMinS: integer("duration_min_s"),
+	durationMaxS: integer("duration_max_s"),
+	expectsVideo: boolean("expects_video").notNull(),
+	expectsPhotos: boolean("expects_photos").notNull(),
+	photoCount: integer("photo_count"),
+	dueAt: timestamp("due_at", { withTimezone: true, mode: 'string' }),
+	status: text().default('open').notNull(),
+	nameInMedia: text("name_in_media").default('unknown').notNull(),
+	videoCompletedAt: timestamp("video_completed_at", { withTimezone: true, mode: 'string' }),
+	videoCompletedBy: uuid("video_completed_by"),
+	photosCompletedAt: timestamp("photos_completed_at", { withTimezone: true, mode: 'string' }),
+	photosCompletedBy: uuid("photos_completed_by"),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	closedBy: uuid("closed_by"),
+	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
+	cancelledBy: uuid("cancelled_by"),
+	cancelReason: text("cancel_reason"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("custom_orders_brief_trgm").using("gin", table.brief.asc().nullsLast().op("gin_trgm_ops")),
+	index("custom_orders_buyer").using("btree", sql`model_id`, sql`lower(buyer_name)`),
+	index("custom_orders_status").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.status.asc().nullsLast().op("text_ops"), table.dueAt.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.closedBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_closed_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.cancelledBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_cancelled_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_created_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.accountId],
+			foreignColumns: [accounts.id, accounts.modelId],
+			name: "custom_orders_model_id_account_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId],
+			foreignColumns: [models.id],
+			name: "custom_orders_model_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.videoCompletedBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_video_completed_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.photosCompletedBy],
+			foreignColumns: [principals.id],
+			name: "custom_orders_photos_completed_by_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "custom_orders_pkey"}),
+	unique("custom_orders_card").on(table.modelId, table.tgChat, table.tgMessageId, table.tgTopic),
+	check("custom_orders_duration_min_s_check", sql`duration_min_s >= 0`),
+	check("custom_orders_status_check", sql`status = ANY (ARRAY['open'::text, 'delivered'::text, 'closed'::text, 'cancelled'::text])`),
+	check("custom_orders_name_in_media_check", sql`name_in_media = ANY (ARRAY['yes'::text, 'no'::text, 'unknown'::text])`),
+	check("custom_orders_duration", sql`duration_max_s >= COALESCE(duration_min_s, 0)`),
+	check("custom_orders_parts", sql`expects_video OR expects_photos`),
+	check("custom_orders_photo_count", sql`(photo_count IS NULL) OR ((photo_count > 0) AND expects_photos)`),
+	check("custom_orders_video_mark", sql`((video_completed_at IS NULL) OR expects_video) AND ((video_completed_by IS NULL) OR (video_completed_at IS NOT NULL))`),
+	check("custom_orders_photos_mark", sql`((photos_completed_at IS NULL) OR expects_photos) AND ((photos_completed_by IS NULL) OR (photos_completed_at IS NOT NULL))`),
+	check("custom_orders_closed", sql`(status = 'closed'::text) = (closed_at IS NOT NULL)`),
+	check("custom_orders_cancelled", sql`(status = 'cancelled'::text) = ((cancelled_at IS NOT NULL) AND (cancel_reason IS NOT NULL))`),
 ]);
 
 export const inboxDrafts = pgTable("inbox_drafts", {
@@ -1865,4 +2107,6 @@ export const catalogIndex = pgView("catalog_index", {	modelId: uuid("model_id"),
 	promoChannelCode: text("promo_channel_code"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }),
-}).with({"securityInvoker":true}).as(sql`SELECT i.model_id, i.id AS item_id, public_item_id(i.type, i.number) AS public_id, i.type, i.number, i.title, i.title_en, COALESCE(tg.slugs, '{}'::text[]) AS tags, CASE WHEN af.confirmed > 0 AND af.confirmed = af.total THEN 'confirmed'::text WHEN af.confirmed > 0 THEN 'partial'::text ELSE 'draft'::text END AS markup_state, cv.version_id AS cover_version_id, cv.width AS cover_width, cv.height AS cover_height, cv.thumb320_generation_id AS cover_thumb320_generation_id, cv.thumb640_generation_id AS cover_thumb640_generation_id, m.duration_ms, m.photo_count, m.video_count, m.version_count, COALESCE(m.has_teaser, false) AS has_teaser, m.size_bytes, COALESCE(arrival.arrived_at, i.created_at) AS arrived_at, i.shot_on, i.ppv_kind, i.raw_purpose, ppv.public_id AS ppv_made_as, i.name_in_media, i.has_second_person, CASE WHEN i.type = 'SET'::text THEN COALESCE(m.selected_count, 0) ELSE NULL::integer END AS selected_count, CASE WHEN i.type = 'SET'::text THEN COALESCE(m.processed_count, 0) ELSE NULL::integer END AS processed_count, CASE WHEN i.type = 'LIFE'::text THEN COALESCE(m.life_unassigned, 0) ELSE NULL::integer END AS life_unassigned, CASE WHEN i.type = 'LIFE'::text THEN COALESCE(m.life_chat_count, 0) ELSE NULL::integer END AS life_chat_count, CASE WHEN i.type = 'LIFE'::text THEN COALESCE(m.life_feed_count, 0) ELSE NULL::integer END AS life_feed_count, i.type = 'CUS'::text AND COALESCE(m.video_count, 0) = 0 AND COALESCE(m.photo_count, 0) > 0 AS photo_custom, COALESCE(al.aliases, '{}'::text[]) AS aliases, pc.code AS promo_channel_code, i.created_at, i.updated_at FROM content_items i LEFT JOIN promo_channels pc ON pc.model_id = i.model_id AND pc.id = i.promo_channel_id LEFT JOIN LATERAL ( SELECT array_agg(DISTINCT COALESCE(merged.slug, t.slug) ORDER BY (COALESCE(merged.slug, t.slug))) AS slugs FROM item_tags it JOIN tags t ON t.id = it.tag_id LEFT JOIN tags merged ON merged.id = t.merged_into_tag_id WHERE it.model_id = i.model_id AND it.item_id = i.id) tg ON true LEFT JOIN LATERAL ( SELECT count(*) AS total, count(*) FILTER (WHERE f.confirmed_value_version = f.value_version) AS confirmed FROM annotation_fields f WHERE f.model_id = i.model_id AND (f.item_id = i.id OR (f.version_id IN ( SELECT a.current_version_id FROM item_memberships im JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id WHERE im.model_id = i.model_id AND im.item_id = i.id AND im.kind = 'owned'::text AND im.removed_at IS NULL)))) af ON true LEFT JOIN LATERAL ( SELECT v.id AS version_id, v.width, v.height, ( SELECT g.id FROM rendition_generations g WHERE g.master_sha256 = v.master_sha256 AND g.kind = 'thumb320'::text AND g.is_active AND g.state = 'ready'::text AND NOT g.meta_stripped ORDER BY g.ready_at DESC LIMIT 1) AS thumb320_generation_id, ( SELECT g.id FROM rendition_generations g WHERE g.master_sha256 = v.master_sha256 AND g.kind = 'thumb640'::text AND g.is_active AND g.state = 'ready'::text AND NOT g.meta_stripped ORDER BY g.ready_at DESC LIMIT 1) AS thumb640_generation_id FROM item_memberships im JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id JOIN asset_versions v ON v.model_id = a.model_id AND v.id = COALESCE(im.pinned_version_id, a.current_version_id) WHERE im.model_id = i.model_id AND im.item_id = i.id AND (im.id = i.cover_membership_id OR i.cover_membership_id IS NULL AND im.removed_at IS NULL) ORDER BY im.display_position, im.added_at, im.id LIMIT 1) cv ON true LEFT JOIN LATERAL ( SELECT count(*) FILTER (WHERE a.media_kind = 'image'::text AND im.variant_no = 0)::integer AS photo_count, count(*) FILTER (WHERE a.media_kind = 'video'::text AND im.variant_no = 0)::integer AS video_count, max(v.version_no) FILTER (WHERE im.kind = 'owned'::text) AS version_count, bool_or(im.kind = 'owned'::text AND im.role = 'teaser'::text) AS has_teaser, COALESCE(max(v.duration_ms) FILTER (WHERE im.kind = 'owned'::text AND im.role = 'master'::text AND im.variant_no = 0), sum(v.duration_ms) FILTER (WHERE a.media_kind = 'video'::text AND im.variant_no = 0)::bigint) AS duration_ms, sum(b.byte_size)::bigint AS size_bytes, count(*) FILTER (WHERE im.selected)::integer AS selected_count, count(*) FILTER (WHERE im.role = 'ed'::text)::integer AS processed_count, count(*) FILTER (WHERE im.life_use IS NULL)::integer AS life_unassigned, count(*) FILTER (WHERE im.life_use = ANY (ARRAY['chats'::text, 'both'::text]))::integer AS life_chat_count, count(*) FILTER (WHERE im.life_use = ANY (ARRAY['feed'::text, 'both'::text]))::integer AS life_feed_count FROM item_memberships im JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id JOIN asset_versions v ON v.model_id = a.model_id AND v.id = COALESCE(im.pinned_version_id, a.current_version_id) JOIN blobs b ON b.sha256 = v.master_sha256 WHERE im.model_id = i.model_id AND im.item_id = i.id AND im.removed_at IS NULL) m ON true LEFT JOIN LATERAL ( SELECT min(COALESCE(r.remote_created_at, r.detected_at)) AS arrived_at FROM item_memberships im JOIN asset_versions v ON v.model_id = im.model_id AND v.asset_id = im.asset_id JOIN source_revisions r ON r.model_id = v.model_id AND r.id = v.source_revision_id WHERE im.model_id = i.model_id AND im.item_id = i.id AND im.kind = 'owned'::text) arrival ON true LEFT JOIN LATERAL ( SELECT public_item_id(c.type, c.number) AS public_id FROM provenance p JOIN content_items c ON c.model_id = p.model_id AND c.id = p.child_item_id WHERE p.model_id = i.model_id AND p.parent_item_id = i.id AND p.relation = 'ppv_from_custom'::text AND p.voided_by_id IS NULL AND c.deleted_at IS NULL ORDER BY c.number LIMIT 1) ppv ON i.type = 'CUS'::text LEFT JOIN LATERAL ( SELECT array_agg(DISTINCT a.value_raw ORDER BY a.value_raw) AS aliases FROM aliases a WHERE a.model_id = i.model_id AND a.item_id = i.id AND (a.kind = ANY (ARRAY['legacy_id'::text, 'merged_id'::text, 'vault_album'::text]))) al ON true WHERE i.deleted_at IS NULL`);
+	orderId: uuid("order_id"),
+	deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: 'string' }),
+}).with({"securityInvoker":true}).as(sql`SELECT i.model_id, i.id AS item_id, public_item_id(i.type, i.number) AS public_id, i.type, i.number, i.title, i.title_en, COALESCE(tg.slugs, '{}'::text[]) AS tags, CASE WHEN af.confirmed > 0 AND af.confirmed = af.total THEN 'confirmed'::text WHEN af.confirmed > 0 THEN 'partial'::text ELSE 'draft'::text END AS markup_state, cv.version_id AS cover_version_id, cv.width AS cover_width, cv.height AS cover_height, cv.thumb320_generation_id AS cover_thumb320_generation_id, cv.thumb640_generation_id AS cover_thumb640_generation_id, m.duration_ms, m.photo_count, m.video_count, m.version_count, COALESCE(m.has_teaser, false) AS has_teaser, m.size_bytes, COALESCE(arrival.arrived_at, i.created_at) AS arrived_at, i.shot_on, i.ppv_kind, i.raw_purpose, ppv.public_id AS ppv_made_as, COALESCE(cd.name_in_media, i.name_in_media) AS name_in_media, i.has_second_person, CASE WHEN i.type = 'SET'::text THEN COALESCE(m.selected_count, 0) ELSE NULL::integer END AS selected_count, CASE WHEN i.type = 'SET'::text THEN COALESCE(m.processed_count, 0) ELSE NULL::integer END AS processed_count, CASE WHEN i.type = 'LIFE'::text THEN COALESCE(m.life_unassigned, 0) ELSE NULL::integer END AS life_unassigned, CASE WHEN i.type = 'LIFE'::text THEN COALESCE(m.life_chat_count, 0) ELSE NULL::integer END AS life_chat_count, CASE WHEN i.type = 'LIFE'::text THEN COALESCE(m.life_feed_count, 0) ELSE NULL::integer END AS life_feed_count, i.type = 'CUS'::text AND COALESCE(m.video_count, 0) = 0 AND COALESCE(m.photo_count, 0) > 0 AS photo_custom, COALESCE(al.aliases, '{}'::text[]) AS aliases, pc.code AS promo_channel_code, i.created_at, i.updated_at, cd.order_id, cd.delivered_at FROM content_items i LEFT JOIN promo_channels pc ON pc.model_id = i.model_id AND pc.id = i.promo_channel_id LEFT JOIN LATERAL ( SELECT array_agg(DISTINCT COALESCE(merged.slug, t.slug) ORDER BY (COALESCE(merged.slug, t.slug))) AS slugs FROM item_tags it JOIN tags t ON t.id = it.tag_id LEFT JOIN tags merged ON merged.id = t.merged_into_tag_id WHERE it.model_id = i.model_id AND it.item_id = i.id) tg ON true LEFT JOIN LATERAL ( SELECT count(*) AS total, count(*) FILTER (WHERE f.confirmed_value_version = f.value_version) AS confirmed FROM annotation_fields f WHERE f.model_id = i.model_id AND (f.item_id = i.id OR (f.version_id IN ( SELECT a.current_version_id FROM item_memberships im JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id WHERE im.model_id = i.model_id AND im.item_id = i.id AND im.kind = 'owned'::text AND im.removed_at IS NULL)))) af ON true LEFT JOIN LATERAL ( SELECT v.id AS version_id, v.width, v.height, ( SELECT g.id FROM rendition_generations g WHERE g.master_sha256 = v.master_sha256 AND g.kind = 'thumb320'::text AND g.is_active AND g.state = 'ready'::text AND NOT g.meta_stripped ORDER BY g.ready_at DESC LIMIT 1) AS thumb320_generation_id, ( SELECT g.id FROM rendition_generations g WHERE g.master_sha256 = v.master_sha256 AND g.kind = 'thumb640'::text AND g.is_active AND g.state = 'ready'::text AND NOT g.meta_stripped ORDER BY g.ready_at DESC LIMIT 1) AS thumb640_generation_id FROM item_memberships im JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id JOIN asset_versions v ON v.model_id = a.model_id AND v.id = COALESCE(im.pinned_version_id, a.current_version_id) WHERE im.model_id = i.model_id AND im.item_id = i.id AND (im.id = i.cover_membership_id OR i.cover_membership_id IS NULL AND im.removed_at IS NULL) ORDER BY im.display_position, im.added_at, im.id LIMIT 1) cv ON true LEFT JOIN LATERAL ( SELECT count(*) FILTER (WHERE a.media_kind = 'image'::text AND im.variant_no = 0)::integer AS photo_count, count(*) FILTER (WHERE a.media_kind = 'video'::text AND im.variant_no = 0)::integer AS video_count, max(v.version_no) FILTER (WHERE im.kind = 'owned'::text) AS version_count, bool_or(im.kind = 'owned'::text AND im.role = 'teaser'::text) AS has_teaser, COALESCE(max(v.duration_ms) FILTER (WHERE im.kind = 'owned'::text AND im.role = 'master'::text AND im.variant_no = 0), sum(v.duration_ms) FILTER (WHERE a.media_kind = 'video'::text AND im.variant_no = 0)::bigint) AS duration_ms, sum(b.byte_size)::bigint AS size_bytes, count(*) FILTER (WHERE im.selected)::integer AS selected_count, count(*) FILTER (WHERE im.role = 'ed'::text)::integer AS processed_count, count(*) FILTER (WHERE im.life_use IS NULL)::integer AS life_unassigned, count(*) FILTER (WHERE im.life_use = ANY (ARRAY['chats'::text, 'both'::text]))::integer AS life_chat_count, count(*) FILTER (WHERE im.life_use = ANY (ARRAY['feed'::text, 'both'::text]))::integer AS life_feed_count FROM item_memberships im JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id JOIN asset_versions v ON v.model_id = a.model_id AND v.id = COALESCE(im.pinned_version_id, a.current_version_id) JOIN blobs b ON b.sha256 = v.master_sha256 WHERE im.model_id = i.model_id AND im.item_id = i.id AND im.removed_at IS NULL) m ON true LEFT JOIN LATERAL ( SELECT min(COALESCE(r.remote_created_at, r.detected_at)) AS arrived_at FROM item_memberships im JOIN asset_versions v ON v.model_id = im.model_id AND v.asset_id = im.asset_id JOIN source_revisions r ON r.model_id = v.model_id AND r.id = v.source_revision_id WHERE im.model_id = i.model_id AND im.item_id = i.id AND im.kind = 'owned'::text) arrival ON true LEFT JOIN LATERAL ( SELECT public_item_id(c.type, c.number) AS public_id FROM provenance p JOIN content_items c ON c.model_id = p.model_id AND c.id = p.child_item_id WHERE p.model_id = i.model_id AND p.parent_item_id = i.id AND p.relation = 'ppv_from_custom'::text AND p.voided_by_id IS NULL AND c.deleted_at IS NULL ORDER BY c.number LIMIT 1) ppv ON i.type = 'CUS'::text LEFT JOIN LATERAL ( SELECT array_agg(DISTINCT a.value_raw ORDER BY a.value_raw) AS aliases FROM aliases a WHERE a.model_id = i.model_id AND a.item_id = i.id AND (a.kind = ANY (ARRAY['legacy_id'::text, 'merged_id'::text, 'vault_album'::text]))) al ON true LEFT JOIN LATERAL ( SELECT d.order_id, d.delivered_at, o.name_in_media FROM custom_order_deliveries d JOIN custom_orders o ON o.model_id = d.model_id AND o.id = d.order_id WHERE d.model_id = i.model_id AND d.item_id = i.id AND NOT (EXISTS ( SELECT 1 FROM custom_order_deliveries r WHERE r.retracts_id = d.id)) ORDER BY d.delivered_at, d.id LIMIT 1) cd ON i.type = 'CUS'::text WHERE i.deleted_at IS NULL`);

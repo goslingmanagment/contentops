@@ -2,9 +2,10 @@
  * Every value list of the database, one list in code (schema §1 p. 12, §4).
  * Columns hold `text` + CHECK; `values.test.ts` compares each CHECK with these arrays.
  * Lists that §4 calls preliminary (work state, failure kind, idempotency state, draft state
- * and outcome, blob state, review case kind, master check verdict) close before the
- * `schema-freeze` tag. Lists inside SQL functions (`role_fits_type`, `public_item_id`,
- * `blob_is_referenced`) are compared by behaviour in `catalog.test.ts`.
+ * and outcome, blob state, review case kind, master check verdict, order status) close before
+ * the `schema-freeze` tag. Lists inside SQL functions (`role_fits_type`, `public_item_id`,
+ * `blob_is_referenced`) are compared by behaviour in `catalog.test.ts`, the order rules
+ * (`custom_order_status`, `custom_order_live_files`) in `orders.test.ts`.
  */
 
 /** Public ID types (SPEC §4.1). */
@@ -568,6 +569,33 @@ export type ReviewCaseState = (typeof reviewCaseStates)[number]
 export const receiptKinds = ['master', 'platform', 'edit', 'promo'] as const
 export type ReceiptKind = (typeof receiptKinds)[number]
 
+// ---------------------------------------------------------------------------
+// Custom orders (schema §3.7, §9.2; SPEC §5, §8.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Preliminary (schema §4). `open ⇔ delivered` follows the part marks (trigger
+ * `custom_orders_status`); `closed` needs every part and no open revision; `cancelled` needs a
+ * reason. `closed` and `cancelled` are final.
+ */
+export const orderStatuses = ['open', 'delivered', 'closed', 'cancelled'] as const
+export type OrderStatus = (typeof orderStatuses)[number]
+export const finalOrderStatuses = ['closed', 'cancelled'] as const
+
+/** Parts of an order: several clips are one part `video`; photos count distinct files. */
+export const orderParts = ['video', 'photos'] as const
+export type OrderPart = (typeof orderParts)[number]
+
+export const orderMessageKinds = [
+  'card',
+  'repost',
+  'delivery',
+  'revision',
+  'confirmation',
+  'note',
+] as const
+export type OrderMessageKind = (typeof orderMessageKinds)[number]
+
 /** Codes of `RAISE` in the migration functions. */
 export const dbErrorCodes = {
   journalContextMissing: 'CO001',
@@ -576,7 +604,11 @@ export const dbErrorCodes = {
   immutableColumn: 'CO003',
   /** A sealed manifest or receipt does not hold exactly `entry_count` rows at commit. */
   sealedCountMismatch: 'CO004',
-  /** A transition the schema forbids: reopening an accepted draft, cancelling a started operation. */
+  /**
+   * A transition the schema forbids: reopening an accepted draft, cancelling a started
+   * operation; an order part mark without its deliveries, closing an order before every part
+   * or with an open revision, any change of a final order, a retraction of a retraction.
+   */
   transitionRefused: 'CO005',
   /** A private tag of another model. */
   foreignTag: 'CO006',
