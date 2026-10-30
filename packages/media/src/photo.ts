@@ -5,9 +5,15 @@ import sharp from 'sharp'
 import phash from 'sharp-phash'
 import type { Artifact } from './derive-video.ts'
 import { removeQuietly, Scratch, sha256File, tempPathIn } from './files.ts'
-import { type Camera, parseZoned, type ShotTime } from './probe.ts'
+import { type Camera, parseZoned, type ShotTime, UnreadableMediaError } from './probe.ts'
 import { type DigestedRecipe, digested, recipe } from './recipe.ts'
-import { abortAware, detectToolVersions, type ToolVersions, throwIfAborted } from './tools.ts'
+import {
+  abortAware,
+  detectToolVersions,
+  MediaAbortError,
+  type ToolVersions,
+  throwIfAborted,
+} from './tools.ts'
 
 /**
  * Photo job (SPEC §9.3, §12.0 «Фото»): one idempotent pass — EXIF and orientation → preview
@@ -242,17 +248,28 @@ export async function processPhoto(options: PhotoOptions): Promise<PhotoResult> 
   const versions = options.versions ?? (await detectToolVersions({ signal }))
   const recipes = photoRecipes(versions)
   throwIfAborted(signal)
-  const probe = await probePhoto(options.input)
-  throwIfAborted(signal)
-
-  // One decode: oriented, sRGB, ≤2048 px — every output is cut from it.
+  // One decode: oriented, sRGB, ≤2048 px — every output is cut from it. A file libvips cannot
+  // decode is unreadable and waits for a replacement, as a video would (SPEC §9.2).
   const p = PHOTO_PROFILE
-  const { data, info } = await sharp(options.input, { failOn: 'error' })
-    .rotate()
-    .resize(p.intermediate, p.intermediate, { fit: 'inside', withoutEnlargement: true })
-    .toColourspace('srgb')
-    .raw()
-    .toBuffer({ resolveWithObject: true })
+  let probe: PhotoProbe
+  let decoded: { data: Buffer; info: sharp.OutputInfo }
+  try {
+    probe = await probePhoto(options.input)
+    throwIfAborted(signal)
+    decoded = await sharp(options.input, { failOn: 'error' })
+      .rotate()
+      .resize(p.intermediate, p.intermediate, { fit: 'inside', withoutEnlargement: true })
+      .toColourspace('srgb')
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+  } catch (error) {
+    if (signal?.aborted) throw new MediaAbortError()
+    throw new UnreadableMediaError(
+      `cannot decode ${options.input}`,
+      String((error as Error).message ?? error),
+    )
+  }
+  const { data, info } = decoded
   const raw = { raw: { width: info.width, height: info.height, channels: info.channels } } as const
   const fit = (side: number) =>
     sharp(data, raw).resize(side, side, { fit: 'inside', withoutEnlargement: true })

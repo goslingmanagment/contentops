@@ -3,6 +3,7 @@ import sharp from 'sharp'
 import { beforeAll, describe, expect, inject, it } from 'vitest'
 import { sha256File } from './files.ts'
 import { type PhotoResult, phashDistance, processPhoto } from './photo.ts'
+import { UnreadableMediaError } from './probe.ts'
 import { FIXTURE_PHOTO_EXIF } from './testing/fixtures.ts'
 import { freshDir, listFiles, toolVersions } from './testing/helpers.ts'
 import { MediaAbortError, type ToolVersions } from './tools.ts'
@@ -101,6 +102,14 @@ describe('photo job (SPEC §9.3, §12.0 «Фото»)', () => {
     }
     const different = (await run(fx.files.smallPng, 'phash-other')).result.phash.bits
     expect(phashDistance(base.phash.bits, different)).toBeGreaterThan(10)
+  })
+
+  it('an undecodable file is unreadable and leaves nothing', async () => {
+    const outDir = await freshDir('unreadable')
+    await expect(
+      processPhoto({ input: fx.files.unreadable, outDir, versions }),
+    ).rejects.toBeInstanceOf(UnreadableMediaError)
+    expect(await listFiles(outDir)).toEqual([])
   })
 
   it('abort leaves nothing behind', async () => {
