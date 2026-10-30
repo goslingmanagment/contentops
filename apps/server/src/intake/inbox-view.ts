@@ -187,6 +187,17 @@ const PREPARING_BLOCK = {
   checking: 'Проверяется',
 } as const
 
+/** Verdicts of a broken source that may be taken as it is (schema §9.2 «Принятие»). */
+const BROKEN_SOURCE: Record<string, string> = {
+  source_decode_errors: 'ошибки декодирования',
+  source_truncated: 'файл обрезан',
+}
+
+/** Other master verdicts in words; `unreadable` waits for a replacement in the draft. */
+const MASTER_FAILURE: Record<string, string> = {
+  unreadable: 'файл не читается — ждёт замены',
+}
+
 /** State of the unresolved drafts of a group, and the line under a disabled «Принять». */
 export function activeState(
   group: GroupRow,
@@ -200,13 +211,25 @@ export function activeState(
   )
   if (failed) {
     const vanished = failed.blocked_reason === 'source_unavailable'
+    if (vanished) {
+      return {
+        state: { kind: 'error', error: 'vanished', detail: 'Файла больше нет в источнике' },
+        block: 'Файла нет в источнике',
+      }
+    }
+    // A broken source kept its bytes as the would-be master: «Принять как есть» (SPEC §9.2).
+    const verdict = /^master: (\w+)/.exec(failed.error ?? '')?.[1] ?? null
+    const broken = failed.has_master && verdict !== null && verdict in BROKEN_SOURCE
     return {
       state: {
         kind: 'error',
-        error: vanished ? 'vanished' : 'master_failed',
-        detail: vanished ? 'Файла больше нет в источнике' : (failed.error ?? 'Мастер не собрался'),
+        error: broken ? 'source_broken' : 'master_failed',
+        detail:
+          (verdict && (BROKEN_SOURCE[verdict] ?? MASTER_FAILURE[verdict])) ??
+          failed.error ??
+          'Мастер не собрался',
       },
-      block: vanished ? 'Файла нет в источнике' : 'Сначала разберитесь с ошибкой',
+      block: broken ? 'Примите как есть или отклоните' : 'Сначала разберитесь с ошибкой',
     }
   }
   for (const draft of drafts) {

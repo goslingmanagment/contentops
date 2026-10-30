@@ -30,6 +30,7 @@ export interface DraftActionModel {
 }
 
 const DEFAULT: AcceptCommand = { as: 'default' }
+const AS_IS: AcceptCommand = { as: 'default', as_is: true }
 const SEPARATE: AcceptCommand = { as: 'separate' }
 const REGULAR: readonly SecondaryKind[] = ['extend', 'reject']
 
@@ -63,6 +64,7 @@ function backToTarget(note: ReadyNote): string {
 
 const ERROR_PRIMARY: Record<DraftErrorKind, { kind: PrimaryKind; label: string }> = {
   master_failed: { kind: 'retry', label: 'Повторить' },
+  source_broken: { kind: 'accept', label: 'Принять как есть' },
   archive_unreadable: { kind: 'retry', label: 'Повторить' },
   vanished: { kind: 'wait', label: 'Ждать' },
   upload_failed: { kind: 'reupload', label: 'Загрузить заново' },
@@ -117,7 +119,11 @@ export function draftActionsOf(group: InboxGroup, separate = false): DraftAction
       return blockedAccept(group.accept_block ?? DECISION_LABEL[state.decision])
     case 'error':
       return {
-        primary: { ...ERROR_PRIMARY[state.error], enabled: true, command: DEFAULT },
+        primary: {
+          ...ERROR_PRIMARY[state.error],
+          enabled: true,
+          command: state.error === 'source_broken' ? AS_IS : DEFAULT,
+        },
         secondary: ['reject'],
         note: null,
       }

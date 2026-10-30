@@ -37,6 +37,9 @@
                 "type": "null"
               }
             ]
+          },
+          "as_is": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2801,6 +2804,7 @@
         "type": "string",
         "enum": [
           "master_failed",
+          "source_broken",
           "vanished",
           "archive_unreadable",
           "upload_failed"

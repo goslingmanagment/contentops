@@ -12,6 +12,7 @@ import { materializeClaims } from '../legacy/materialize'
 import { handleOf } from '../media/downloads'
 import { lockBlobForReference } from '../media/storage-ops'
 import { markDeliveredParts } from '../orders/writes'
+import { aliasOpenDuplicates, resolveAlias } from './fetch'
 
 /**
  * «Принять» (SPEC §4.1, §6.1, schema §5 «Принятие группы», §9.3): one transaction after the
@@ -30,6 +31,68 @@ export interface AcceptOptions extends AcceptCommand {
   how?: AcceptResult['how']
   /** The role a web upload names itself: processed frames of a set are its `ed` files. */
   role?: Role
+}
+
+/**
+ * Exact duplicates inside one group (SPEC §6.2): one file per bytes, the other drafts become
+ * aliases of it and need no master of their own (schema §5 «подтверждены дублями»). A twin
+ * that is ready keeps the file; the order of the files stays the drafts' order.
+ */
+function splitTwins(drafts: readonly DraftRow[]): {
+  files: DraftRow[]
+  twins: { draft: DraftRow; of: DraftRow }[]
+} {
+  const bytesOf = (draft: DraftRow) => draft.source_hex ?? draft.master_hex
+  const keeper = new Map<string, DraftRow>()
+  for (const draft of drafts) {
+    const bytes = bytesOf(draft)
+    if (!bytes) continue
+    const kept = keeper.get(bytes)
+    if (!kept || (!kept.master_verified && draft.master_verified)) keeper.set(bytes, draft)
+  }
+  const files: DraftRow[] = []
+  const twins: { draft: DraftRow; of: DraftRow }[] = []
+  for (const draft of drafts) {
+    const bytes = bytesOf(draft)
+    const kept = bytes ? keeper.get(bytes) : undefined
+    if (kept && kept !== draft) twins.push({ draft, of: kept })
+    else files.push(draft)
+  }
+  return { files, twins }
+}
+
+/**
+ * «Принять как есть» (SPEC §9.2, schema §9.2 «Принятие»): a broken source — decode errors or
+ * truncated — that opens and gave a preview is its own master by the KM's decision, which sets
+ * `master_verified_at`. An unreadable source kept no bytes as a master and keeps waiting for a
+ * replacement. Returns the drafts taken as they are.
+ */
+async function takeBrokenAsIs(tx: Tx, model: ModelScope, drafts: DraftRow[]): Promise<number> {
+  const failed = drafts.filter((draft) => draft.blocked_reason === 'master_failed')
+  if (failed.length === 0) {
+    throw blocked('not_broken', 'Принимать как есть нечего: исходник не битый')
+  }
+  const { rows } = await tx.execute<{ id: string }>(sql`
+    UPDATE inbox_drafts d
+       SET master_verified_at = now(), master_is_source = true, blocked_reason = NULL, error = NULL,
+           updated_at = now(), row_version = row_version + 1
+     WHERE d.model_id = ${model.id}::uuid
+       AND d.id = ANY (${sql.param(failed.map((draft) => draft.id))}::uuid[])
+       AND d.master_sha256 IS NOT NULL AND d.master_sha256 = d.source_sha256
+       AND EXISTS (SELECT 1 FROM master_checks c
+                    WHERE c.source_sha256 = d.source_sha256
+                      AND c.report ->> 'acceptance' = 'accept_as_is_only')
+       AND EXISTS (SELECT 1 FROM rendition_generations g
+                    WHERE g.input_sha256 = d.source_sha256 AND g.state = 'ready'
+                      AND g.kind IN ('preview', 'thumb640'))
+    RETURNING d.id`)
+  const taken = new Set(rows.map((row) => row.id))
+  for (const draft of drafts) {
+    if (!taken.has(draft.id)) continue
+    draft.blocked_reason = null
+    draft.master_verified = true
+  }
+  return taken.size
 }
 
 interface GroupRow extends Record<string, unknown> {
@@ -438,11 +501,13 @@ export async function acceptGroup(
   const group = await lockGroupForDecision(tx, model, groupId)
   const drafts = await lockOpenDrafts(tx, model, groupId)
   if (drafts.length === 0) throw new ApiProblem('case_resolved', 'Группа уже решена')
+  const asIs = options.as_is ? await takeBrokenAsIs(tx, model, drafts) : 0
   const stuck = drafts.find((draft) => draft.blocked_reason)
   if (stuck) {
     throw blocked(stuck.blocked_reason as string, 'Сначала примите решение по группе')
   }
-  const notReady = drafts.filter((draft) => !draft.master_verified || !draft.master_hex)
+  const { files, twins } = splitTwins(drafts)
+  const notReady = files.filter((draft) => !draft.master_verified || !draft.master_hex)
   if (notReady.length > 0) {
     // A partial group is refused, never thinned (schema §5).
     throw blocked('not_ready', 'Не все файлы готовы: мастер ещё не проверен', {
@@ -468,10 +533,10 @@ export async function acceptGroup(
     // One group makes one object (schema §4): «Отдельным объектом» is a split first.
     throw blocked('separate', 'Сначала вынесите файлы в отдельную группу')
   }
-  const roles = target ? null : rolesFor(type, drafts)
+  const roles = target ? null : rolesFor(type, files)
 
   // Bytes by ascending SHA-256 (schema §9.3): two accepts over shared bytes never deadlock.
-  const masters = [...new Set(drafts.map((draft) => draft.master_hex as string))].sort()
+  const masters = [...new Set(files.map((draft) => draft.master_hex as string))].sort()
   for (const hex of masters) {
     if (!(await lockBlobForReference(tx, hex))) {
       throw blocked('bytes_missing', 'Байтов мастера нет на месте', { sha256: hex })
@@ -507,7 +572,7 @@ export async function acceptGroup(
   const ordinals = await nextOrdinals(tx, model.id, item.id)
   let position = await nextPosition(tx, model.id, item.id)
   const created: CreatedFile[] = []
-  for (const draft of drafts) {
+  for (const draft of files) {
     const media: values.MediaKind = draft.media_kind ?? 'image'
     // A role the draft already carries (a processed frame bound to its source) wins when it
     // fits the type of the object.
@@ -588,6 +653,18 @@ export async function acceptGroup(
     await markDeliveredParts(tx, model, group.custom_order_id, actor)
   }
 
+  for (const { draft, of } of twins) {
+    const file = created.find((one) => one.draftId === of.id) as CreatedFile
+    await resolveAlias(
+      tx,
+      model.id,
+      draft.id,
+      { version_id: file.versionId, asset_id: file.assetId, item_id: item.id, type: item.type },
+      draft.source_object_id,
+      { decidedBy: actor.id },
+    )
+  }
+
   const outcome = target ? 'append' : 'new_item'
   for (const file of created) {
     await tx.execute(sql`
@@ -608,12 +685,20 @@ export async function acceptGroup(
     objectIds: drafts.flatMap((draft) => (draft.source_object_id ? [draft.source_object_id] : [])),
   })
 
+  // The same bytes waiting in other groups are aliases of these files from now on (§6.2).
+  const accepted = files.flatMap((draft) => [draft.source_hex, draft.master_hex])
+  const elsewhere = await aliasOpenDuplicates(tx, model.id, group.id, [
+    ...new Set(accepted.filter((hex): hex is string => Boolean(hex))),
+  ])
+
   const publicId = publicIdOf(item.type, item.number)
   await logItemAction(tx, model, item, {
     action: how === 'upload' ? 'draft.accept_on_upload' : 'draft.accept',
     after: {
       Как: target ? `дополнение ${publicId}` : `новый объект ${publicId}`,
       Файлов: String(created.length),
+      ...(twins.length + elsewhere > 0 ? { Дублей: String(twins.length + elsewhere) } : {}),
+      ...(asIs > 0 ? { 'Как есть': `битый исходник: ${asIs}` } : {}),
       ...(how === 'upload' ? { Принято: 'при загрузке' } : {}),
     },
   })
