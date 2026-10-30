@@ -233,7 +233,7 @@ export async function sealWaitingVersionRows(
  * stripped copy is the one prepared. Nothing to do before the media pipeline ran once.
  */
 export async function enqueueCopies(
-  tx: Tx,
+  tx: Queryable,
   modelId: string,
   files: readonly FileRow[],
 ): Promise<void> {
@@ -259,6 +259,22 @@ export async function enqueueCopies(
       recipeDigest: digests.platformStripped,
     })
   }
+}
+
+/**
+ * Copies of the open plan rows under the current recipe: a new recipe (the size cap of
+ * `platform.mp4`, say) builds them ahead of the task again, not only at the next placement or
+ * download — else the row would wait on a copy nobody builds. `worker` runs it on start; a
+ * ready copy or a work of the same key is left as is.
+ */
+export async function enqueueOpenRowCopies(q: Queryable): Promise<number> {
+  const { rows } = await q.execute<{ model_id: string; manifest_id: string }>(sql`
+    SELECT DISTINCT model_id, manifest_id FROM posting_plan_rows
+     WHERE manifest_id IS NOT NULL AND marked_at IS NULL AND cancelled_at IS NULL`)
+  for (const row of rows) {
+    await enqueueCopies(q, row.model_id, await manifestFiles(q, row.model_id, row.manifest_id))
+  }
+  return rows.length
 }
 
 /** The copy line of a row: ready with its size, building with progress, or failed. */
