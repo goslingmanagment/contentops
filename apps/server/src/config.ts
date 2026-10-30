@@ -41,6 +41,11 @@ const EnvSchema = z.object({
   TMP_ROOT: AbsolutePath.optional(),
   BACKUP_ROOT: AbsolutePath.optional(),
   LEGACY_SOURCE_ROOT: AbsolutePath.optional(),
+  /**
+   * The Windows list of the local Я.Диск copy (`ops/winpc/ydisk-copy-list.ps1`, SPEC §12.2):
+   * the import reads the copy only where it says the bytes are there.
+   */
+  LEGACY_COPY_LIST: AbsolutePath.optional(),
   PUBLIC_URL: z.url({ protocol: /^https?$/ }).optional(),
 
   FETCH_JOBS: Count.default(4),

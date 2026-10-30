@@ -5,7 +5,7 @@ import { setJournalItem, type Tx, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { findItem, type ItemRow, publicIdOf } from '../catalog/ids'
 import { tagIds } from '../catalog/markup-writes'
-import { issueNumber } from '../catalog/numbers'
+import { claimNumber, issueNumber } from '../catalog/numbers'
 import { logItemAction, touchItem } from '../catalog/writes'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
@@ -32,6 +32,11 @@ export interface AcceptOptions extends AcceptCommand {
   how?: AcceptResult['how']
   /** The role a web upload names itself: processed frames of a set are its `ed` files. */
   role?: Role
+  /**
+   * The old corpus (SPEC §6.3–6.4): the number the old name keeps (`[PPV-023]` → 23, or the
+   * registry's for a typo) instead of the counter's, and the object's origin «импорт».
+   */
+  legacy?: { number: number | null; promoChannelId?: string | null }
 }
 
 /**
@@ -181,7 +186,7 @@ export async function lockOpenDrafts(
 }
 
 /** Roles of the files of a new object by its type (naming §3, `values.rolesByType`). */
-function rolesFor(type: DbType, drafts: readonly DraftRow[]): Map<string, Role> {
+function rolesFor(type: DbType, drafts: readonly DraftRow[], promo = false): Map<string, Role> {
   const videos = drafts.filter((draft) => draft.media_kind === 'video')
   const photos = drafts.filter((draft) => draft.media_kind !== 'video')
   const roles = new Map<string, Role>()
@@ -219,7 +224,12 @@ function rolesFor(type: DbType, drafts: readonly DraftRow[]): Map<string, Role> 
       for (const draft of drafts) roles.set(draft.id, 'raw')
       break
     case 'PRM':
-      throw blocked('promo', 'Подборки Промо собираются в разделе «Промо»')
+      // Past SMM folders of the old disk become collections (SPEC §6.3); new ones are built
+      // in «Промо».
+      if (!promo) throw blocked('promo', 'Подборки Промо собираются в разделе «Промо»')
+      for (const draft of videos) roles.set(draft.id, 'clip')
+      for (const draft of photos) roles.set(draft.id, 'pic')
+      break
   }
   return roles
 }
@@ -554,7 +564,7 @@ export async function acceptGroup(
     // One group makes one object (schema §4): «Отдельным объектом» is a split first.
     throw blocked('separate', 'Сначала вынесите файлы в отдельную группу')
   }
-  const roles = target ? null : rolesFor(type, files)
+  const roles = target ? null : rolesFor(type, files, Boolean(options.legacy?.promoChannelId))
 
   // Bytes by ascending SHA-256 (schema §9.3): two accepts over shared bytes never deadlock.
   const masters = [...new Set(files.map((draft) => draft.master_hex as string))].sort()
@@ -571,7 +581,9 @@ export async function acceptGroup(
     how = options.how ?? 'extend'
     await setJournalItem(tx, item.id)
   } else {
-    const number = await issueNumber(tx, model.id, type)
+    const kept = options.legacy?.number ?? null
+    const number = kept ?? (await issueNumber(tx, model.id, type))
+    if (kept !== null) await claimNumber(tx, model.id, type, kept)
     // A delivery without its own title is called as the order is (DESIGN §6.6: the PPV made
     // from it later takes this title without typing).
     const title =
@@ -582,14 +594,16 @@ export async function acceptGroup(
     const { rows } = await tx.execute<{ id: string }>(sql`
       INSERT INTO content_items (
         model_id, type, number, title, title_en, description, ppv_kind, raw_purpose,
-        has_second_person, name_in_media, created_from_group_id, origin, created_by
+        has_second_person, name_in_media, created_from_group_id, origin, created_by,
+        promo_channel_id
       ) VALUES (
         ${model.id}::uuid, ${type}, ${number}, ${title}, ${group.proposed_title_en},
         ${group.proposed_description},
         ${type === 'PPV' ? (group.proposed_ppv_kind ?? 'bundle') : null},
         ${type === 'RAW' ? (group.proposed_purpose ?? 'unknown') : null},
         ${group.has_second_person ?? false}, ${type === 'CUS' ? 'unknown' : null},
-        ${group.id}::uuid, 'intake', ${actor.id}::uuid
+        ${group.id}::uuid, ${options.legacy ? 'import' : 'intake'}, ${actor.id}::uuid,
+        ${type === 'PRM' ? (options.legacy?.promoChannelId ?? null) : null}::uuid
       )
       RETURNING id`)
     item = { id: (rows[0] as { id: string }).id, type, number }
@@ -665,7 +679,8 @@ export async function acceptGroup(
     for (const tagId of tags.values()) {
       await tx.execute(sql`
         INSERT INTO item_tags (model_id, item_id, tag_id, source, added_by)
-        VALUES (${model.id}::uuid, ${item.id}::uuid, ${tagId}::uuid, 'human', ${actor.id}::uuid)
+        VALUES (${model.id}::uuid, ${item.id}::uuid, ${tagId}::uuid,
+                ${options.legacy ? 'import' : 'human'}, ${actor.id}::uuid)
         ON CONFLICT DO NOTHING`)
     }
     // Statuses of the fields move from the group to the object (schema §5).

@@ -1,5 +1,6 @@
 import type { Tx, values, WorkContext, WorkHandler } from '@contentops/db'
 import { sql } from 'drizzle-orm'
+import { autoAcceptForDraft } from '../legacy/auto-accept'
 import type { MediaEnv } from '../media/pipeline'
 import { mimeOfExt, shaHex } from '../media/storage'
 import { registerBlob } from '../media/storage-ops'
@@ -17,11 +18,17 @@ import { encodeMasterHandler } from '../media/work/master'
 
 async function markReady(tx: Tx, ctx: WorkContext): Promise<void> {
   if (!ctx.work.draftId || !ctx.work.modelId) return
-  await tx.execute(sql`
+  const { rowCount } = await tx.execute(sql`
     UPDATE inbox_drafts
        SET state = 'ready', ready_at = now(), updated_at = now(), row_version = row_version + 1
      WHERE model_id = ${ctx.work.modelId}::uuid AND id = ${ctx.work.draftId}::uuid
        AND state IN ('discovered', 'processing') AND master_verified_at IS NOT NULL`)
+  if (!rowCount) return
+  // The old corpus accepts itself when nothing is in dispute (SPEC §6.3, DESIGN §4.9); a
+  // failure there never undoes the media work — the group just stays in its queue.
+  const modelId = ctx.work.modelId
+  const draftId = ctx.work.draftId
+  await tx.transaction((inner) => autoAcceptForDraft(inner, modelId, draftId)).catch(() => null)
 }
 
 function encodeMasterForDraft(env: MediaEnv): WorkHandler {

@@ -290,7 +290,11 @@ const CASE_OPTIONS: Record<string, DisputeOption[]> = {
   ],
   unreadable_input: [option('manual', 'Разобрать вручную')],
   cross_model_duplicate: [],
-  smm_folder: [option('pack', 'Пак подрядчику'), option('vendor_shoot', 'Съёмка вендора'), UNCLEAR],
+  smm_folder: [
+    option('pack', 'Пак подрядчику…', 'contractor'),
+    option('vendor_shoot', 'Съёмка вендора'),
+    UNCLEAR,
+  ],
   number_hole: [
     option('leave_empty', 'Оставить пустыми'),
     option('reserve', 'Резерв по находке…', 'reason'),

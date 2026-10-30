@@ -2649,7 +2649,8 @@
                 "type": "string",
                 "enum": [
                   "reason",
-                  "type_number"
+                  "type_number",
+                  "contractor"
                 ]
               },
               {
@@ -6725,7 +6726,9 @@
           "montage_upload",
           "verify_blobs",
           "legacy_parse",
-          "legacy_plan"
+          "legacy_plan",
+          "legacy_bytes",
+          "legacy_reconcile"
         ]
       },
       "Order": {
@@ -9421,6 +9424,11 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 999999
+          },
+          "contractor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           }
         },
         "required": [
@@ -15645,6 +15653,132 @@
     "/api/v1/{model}/legacy:plan": {
       "post": {
         "operationId": "legacy.plan",
+        "tags": [
+          "legacy"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "snapshot",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationAccepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/legacy:bytes": {
+      "post": {
+        "operationId": "legacy.bytes",
+        "tags": [
+          "legacy"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "snapshot",
+            "required": false
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/QueryListInput"
+            },
+            "in": "query",
+            "name": "root",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "folder",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "force",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationAccepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/legacy:reconcile": {
+      "post": {
+        "operationId": "legacy.reconcile",
         "tags": [
           "legacy"
         ],

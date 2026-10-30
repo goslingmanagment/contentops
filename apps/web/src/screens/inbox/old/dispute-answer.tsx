@@ -24,7 +24,7 @@ interface DisputeAnswerFormProps {
 
 /**
  * Слова к решению спорного (DESIGN §4.9): «Игнорировать…» и «Резерв по находке…» просят
- * причину, «Задать тип и номер…» — тип и номер. Поле сразу в фокусе, `Enter` — сохранить,
+ * причину, «Задать тип и номер…» — тип и номер, «Пак подрядчику…» — подрядчика. Поле сразу в фокусе, `Enter` — сохранить,
  * `Esc` — отмена.
  */
 export function DisputeAnswerForm({ option, pending, onSubmit, onCancel }: DisputeAnswerFormProps) {
@@ -33,7 +33,7 @@ export function DisputeAnswerForm({ option, pending, onSubmit, onCancel }: Dispu
   const [number, setNumber] = useState('')
   const parsed = Number.parseInt(number, 10)
   const ready =
-    option.input === 'reason'
+    option.input === 'reason' || option.input === 'contractor'
       ? reason.trim() !== ''
       : type !== undefined && Number.isInteger(parsed) && parsed > 0
   const submit = (event: FormEvent) => {
@@ -41,7 +41,13 @@ export function DisputeAnswerForm({ option, pending, onSubmit, onCancel }: Dispu
     if (!ready || pending) {
       return
     }
-    onSubmit(option.input === 'reason' ? { reason: reason.trim() } : { type, number: parsed })
+    onSubmit(
+      option.input === 'reason'
+        ? { reason: reason.trim() }
+        : option.input === 'contractor'
+          ? { contractor: reason.trim() }
+          : { type, number: parsed },
+    )
   }
   return (
     <form
@@ -55,11 +61,11 @@ export function DisputeAnswerForm({ option, pending, onSubmit, onCancel }: Dispu
       }}
       className="flex flex-wrap items-center gap-2"
     >
-      {option.input === 'reason' ? (
+      {option.input === 'reason' || option.input === 'contractor' ? (
         <Input
           autoFocus
-          aria-label="Причина"
-          placeholder="Причина"
+          aria-label={option.input === 'contractor' ? 'Подрядчик' : 'Причина'}
+          placeholder={option.input === 'contractor' ? 'Подрядчик' : 'Причина'}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           className="h-8 w-72"

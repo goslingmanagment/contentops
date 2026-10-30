@@ -26,7 +26,7 @@ import {
 import { LegacyInputsSchema, LegacyReviewSchema } from '../../domain/legacy'
 import { DownloadAnswerSchema, OperationAcceptedSchema } from '../../domain/operations'
 import { BatchResultSchema } from '../../domain/pagination'
-import { defineRoute } from '../route'
+import { defineRoute, QueryListSchema } from '../route'
 import { FileBodySchema } from './media'
 
 export const InboxQuerySchema = z.object({
@@ -151,6 +151,15 @@ export const LegacyRunQuerySchema = z.object({
   snapshot: z.string().optional(),
 })
 
+export const LegacyBytesQuerySchema = LegacyRunQuerySchema.extend({
+  /** Top folders of the old disk, in the order of SPEC §6.3: `1. PPV`, `5. Sextings`; can repeat. */
+  root: QueryListSchema,
+  /** One folder inside them; the whole roots when left out. */
+  folder: z.string().optional(),
+  /** `true` — out of the order of the norm (one folder again, a test). */
+  force: z.enum(['true', 'false']).optional(),
+})
+
 export const legacyRoutes = {
   get: defineRoute({ method: 'GET', path: '/api/v1/{model}/legacy', response: LegacyReviewSchema }),
   saveLabels: defineRoute({
@@ -181,6 +190,26 @@ export const legacyRoutes = {
   plan: defineRoute({
     method: 'POST',
     path: '/api/v1/{model}/legacy:plan',
+    query: LegacyRunQuerySchema,
+    response: OperationAcceptedSchema,
+    success: 202,
+  }),
+  /**
+   * The bytes of the old corpus, root by root (SPEC §6.3): groups and drafts of the snapshot's
+   * revisions, their bytes from the local copy or the API, archives unpacked, groups without a
+   * dispute accepted by themselves. A repeat accepts what became ready and changes nothing else.
+   */
+  bytes: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/legacy:bytes',
+    query: LegacyBytesQuerySchema,
+    response: OperationAcceptedSchema,
+    success: 202,
+  }),
+  /** The reconciliation with the snapshot (SPEC §6.3 «Сверка»): the report in the operation. */
+  reconcile: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/legacy:reconcile',
     query: LegacyRunQuerySchema,
     response: OperationAcceptedSchema,
     success: 202,

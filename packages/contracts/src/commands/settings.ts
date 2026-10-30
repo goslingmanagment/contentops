@@ -56,6 +56,8 @@ export const ResolveDisputeCommandSchema = z.object({
   /** Option with `input: type_number`: what the old name is. */
   type: ItemTypeSchema.optional(),
   number: z.int().min(1).max(999_999).optional(),
+  /** Option with `input: contractor`: the contractor's name as «Подрядчики» has it. */
+  contractor: z.string().trim().min(1).max(200).optional(),
 })
 export type ResolveDisputeCommand = z.infer<typeof ResolveDisputeCommandSchema>
 

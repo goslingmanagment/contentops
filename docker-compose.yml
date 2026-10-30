@@ -136,6 +136,10 @@ services:
       HUB_API_KEY: ${HUB_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # The old corpus (SPEC §6.3): the local Я.Диск copy, read only where its Windows list
+      # says the bytes are on disk; everything is copied into /srv/tmp before any processing.
+      LEGACY_SOURCE_ROOT: /ydisk
+      LEGACY_COPY_LIST: /host/ydisk-copy-list.jsonl
     volumes:
       - ${DATA_ROOT:-/srv/content}:/srv/content
       - ${DERIVED_ROOT:-/srv/derived}:/srv/derived
@@ -144,6 +148,14 @@ services:
       - type: bind
         source: ${HOST_SHARE:-/mnt/host}
         target: /host
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: false
+      # The Я.Диск copy (cifs ro, automount in the VM): read only, never written.
+      - type: bind
+        source: ${LEGACY_COPY:-/mnt/ydisk}
+        target: /ydisk
         read_only: true
         bind:
           propagation: rslave
