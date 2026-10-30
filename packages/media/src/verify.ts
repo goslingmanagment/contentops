@@ -8,8 +8,12 @@ import { progressParser, runTool, type ToolPaths } from './tools.ts'
  */
 
 const ERROR_LINE = /\[(error|fatal|panic)\]/
-/** Output-side contexts of the FFmpeg CLI: their errors are the encoder's, not the source's. */
-const OUTPUT_SIDE = /^(Svt\[|\[(out#|vost#|aost#|enc:|mux))/
+/**
+ * Output-side contexts of the FFmpeg CLI: their errors are the encoder's, not the source's.
+ * The muxers we write to (`null` of a check, `mp4` of a master) count as output too: a
+ * timestamp they refuse is about what we feed them, not a decode error of the source.
+ */
+const OUTPUT_SIDE = /^(Svt\[|\[(out#|vost#|aost#|enc:|mux|null @|mp4 @))/
 
 export interface ErrorLog {
   count: number
@@ -296,6 +300,9 @@ export async function checkSource(
       ...maps,
       '-fps_mode',
       'passthrough',
+      // As the master command (SPEC §9.2): VFR frames 8 ms apart in a stream whose container
+      // says 30000/1001 (iPhone 120 fps inserts) collide in a 1/30 output time base.
+      ...(decodeVideo ? ['-enc_time_base:v', '1/1000000'] : []),
       '-f',
       'null',
       '-',
