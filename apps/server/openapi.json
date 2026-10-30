@@ -1793,6 +1793,33 @@
               "additionalProperties": false
             }
           },
+          "prepared_for": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contractor_id": {
+                  "type": "string"
+                },
+                "contractor": {
+                  "type": "string"
+                },
+                "collection_id": {
+                  "$ref": "#/components/schemas/ItemId"
+                },
+                "on": {
+                  "$ref": "#/components/schemas/LocalDate"
+                }
+              },
+              "required": [
+                "contractor_id",
+                "contractor",
+                "collection_id",
+                "on"
+              ],
+              "additionalProperties": false
+            }
+          },
           "other_collections": {
             "type": "array",
             "items": {
@@ -1810,6 +1837,7 @@
           "uploaded_on",
           "added_on",
           "handed_to",
+          "prepared_for",
           "other_collections"
         ],
         "additionalProperties": false
@@ -3702,6 +3730,36 @@
               "string",
               "null"
             ]
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pending_from": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "collection_id": {
+                  "$ref": "#/components/schemas/ItemId"
+                },
+                "on": {
+                  "$ref": "#/components/schemas/LocalDate"
+                }
+              },
+              "required": [
+                "collection_id",
+                "on"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pending_text": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3709,7 +3767,10 @@
           "already",
           "total",
           "from",
-          "text"
+          "text",
+          "pending",
+          "pending_from",
+          "pending_text"
         ],
         "additionalProperties": false
       },
@@ -4405,6 +4466,9 @@
               "additionalProperties": false
             }
           },
+          "promo": {
+            "$ref": "#/components/schemas/ItemPromo"
+          },
           "receipts": {
             "type": "array",
             "items": {
@@ -4457,6 +4521,7 @@
           "pages",
           "order",
           "handoffs",
+          "promo",
           "receipts",
           "ready_for_ppv",
           "frame_check",
@@ -4726,6 +4791,87 @@
           "summary",
           "surfaces",
           "action"
+        ],
+        "additionalProperties": false
+      },
+      "ItemPromo": {
+        "type": "object",
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/ItemId"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "channel_name": {
+                  "type": "string"
+                },
+                "contractor": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "channel",
+                "channel_name",
+                "contractor",
+                "files"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "handed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contractor": {
+                  "type": "string"
+                },
+                "collection_id": {
+                  "$ref": "#/components/schemas/ItemId"
+                },
+                "on": {
+                  "$ref": "#/components/schemas/LocalDate"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "contractor",
+                "collection_id",
+                "on",
+                "files"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "collections",
+          "handed"
         ],
         "additionalProperties": false
       },

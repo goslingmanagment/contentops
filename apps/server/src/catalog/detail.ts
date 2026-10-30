@@ -15,7 +15,7 @@ import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
 import type { ModelScope } from '../context'
 import { itemOrderSummary } from '../orders/view'
-import { handoffsOf } from '../promo/views'
+import { handoffsOf, itemPromo } from '../promo/views'
 import { catalogEntries, rawPurposeOf, renditionUrl, thumbRatio } from './entries'
 import {
   type DbItemType,
@@ -503,6 +503,7 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
             status,
           }))
         : [],
+    promo: await itemPromo(q, model, item.id),
     receipts: [],
     // A video custom without a PPV whose order is delivered and has no open revision.
     ready_for_ppv:

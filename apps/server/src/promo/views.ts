@@ -9,6 +9,7 @@ import type {
   Handoff,
   HandoffOverlap,
   HandoffState,
+  ItemPromo,
   PromoChannel,
   PromoCollection,
 } from '@contentops/contracts/domain/promo'
@@ -154,14 +155,22 @@ interface Handed {
   on: LocalDate
 }
 
-/** Sent handoffs (imported packs too) that carried each file, oldest first. */
+/**
+ * Handoffs that carried each file, oldest first: sent ones (imported packs too) — «передавали»;
+ * or, with `pending`, prepared ones nobody marked «Передано» yet (a replaced one is not).
+ */
 async function handedOut(
   q: Queryable,
   model: ModelScope,
   assets: readonly string[],
+  pending = false,
 ): Promise<Map<string, Handed[]>> {
   const result = new Map<string, Handed[]>()
   if (assets.length === 0) return result
+  const which = pending
+    ? sql`d.state <> 'sent' AND NOT EXISTS (SELECT 1 FROM promo_deliveries n
+                                             WHERE n.model_id = d.model_id AND n.corrects_id = d.id)`
+    : sql`d.state = 'sent'`
   const { rows } = await q.execute<{
     asset_id: string
     contractor_id: string
@@ -173,12 +182,13 @@ async function handedOut(
     SELECT DISTINCT e.asset_id, d.contractor_id, c.name AS contractor, p.type, p.number,
            coalesce((d.sent_at AT TIME ZONE 'Europe/Moscow')::date::text,
                     d.summary ->> 'folder_date',
-                    (d.created_at AT TIME ZONE 'Europe/Moscow')::date::text) AS on
+                    (coalesce(d.prepared_at, d.created_at) AT TIME ZONE 'Europe/Moscow')::date::text)
+             AS on
       FROM promo_deliveries d
       JOIN asset_manifest_entries e ON e.model_id = d.model_id AND e.manifest_id = d.manifest_id
       JOIN contractors c ON c.model_id = d.model_id AND c.id = d.contractor_id
       JOIN content_items p ON p.model_id = d.model_id AND p.id = d.package_item_id
-     WHERE d.model_id = ${model.id}::uuid AND d.state = 'sent'
+     WHERE d.model_id = ${model.id}::uuid AND ${which}
        AND e.asset_id = ANY(${sql.param([...new Set(assets)])}::uuid[])
      ORDER BY 6, 4, 5`)
   for (const row of rows) {
@@ -230,8 +240,9 @@ export async function membersOf(
   rows: readonly MaterialRow[],
 ): Promise<CollectionMember[]> {
   const assets = rows.map((row) => row.asset_id)
-  const [handed, elsewhere] = await Promise.all([
+  const [handed, pending, elsewhere] = await Promise.all([
     handedOut(q, model, assets),
+    handedOut(q, model, assets, true),
     collectionsOf(q, model, assets),
   ])
   return rows.map((row) => ({
@@ -246,6 +257,7 @@ export async function membersOf(
     uploaded_on: row.uploaded_on,
     added_on: row.added_on,
     handed_to: handed.get(row.asset_id) ?? [],
+    prepared_for: pending.get(row.asset_id) ?? [],
     other_collections: (elsewhere.get(row.asset_id) ?? [])
       .filter((other) => other.package_id !== row.package_id)
       .map((other) => other.id),
@@ -739,4 +751,94 @@ export async function overlapOf(
   const contractor = await findContractor(q, model, contractorId)
   const members = await membersOf(q, model, await materialRows(q, model, { packages: [item.id] }))
   return computeHandoffOverlap(members, { id: contractor.id, name: contractor.name }, today())
+}
+
+// ---------------------------------------------------------------------------
+// From the source object (SPEC §7.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the files of an object went in «Промо»: the live collections holding them (with the
+ * collection's contractor) and the sent handoffs that carried them. Files are named by their
+ * handles in the object.
+ */
+export async function itemPromo(
+  q: Queryable,
+  model: ModelScope,
+  itemId: string,
+): Promise<ItemPromo> {
+  const { rows: held } = await q.execute<{
+    type: string
+    number: number
+    title: string | null
+    channel: string
+    channel_name: string
+    contractor: string | null
+    role: string
+    ordinal: number | null
+    variant_no: number
+  }>(sql`
+    SELECT p.type, p.number, p.title, ch.code AS channel, ch.title AS channel_name,
+           c.name AS contractor, own.role, own.ordinal, own.variant_no
+      FROM item_memberships own
+      JOIN item_memberships ref ON ref.model_id = own.model_id AND ref.asset_id = own.asset_id
+                               AND ref.item_id <> own.item_id AND ref.removed_at IS NULL
+      JOIN content_items p ON p.model_id = ref.model_id AND p.id = ref.item_id
+                          AND p.type = 'PRM' AND p.deleted_at IS NULL
+      JOIN promo_channels ch ON ch.model_id = p.model_id AND ch.id = p.promo_channel_id
+      LEFT JOIN contractors c ON c.model_id = p.model_id AND c.id = p.default_contractor_id
+     WHERE own.model_id = ${model.id}::uuid AND own.item_id = ${itemId}::uuid
+       AND own.kind = 'owned' AND own.removed_at IS NULL
+     ORDER BY p.number, own.display_position NULLS LAST, own.id`)
+  const collections = new Map<string, ItemPromo['collections'][number]>()
+  for (const row of held) {
+    const id = publicIdOf(row.type, row.number)
+    const entry = collections.get(id) ?? {
+      id,
+      title: row.title ?? id,
+      channel: row.channel,
+      channel_name: row.channel_name,
+      contractor: row.contractor,
+      files: [],
+    }
+    entry.files.push(handleOf(row.role, row.ordinal, row.variant_no))
+    collections.set(id, entry)
+  }
+  const { rows: sent } = await q.execute<{
+    delivery_id: string
+    contractor: string
+    type: string
+    number: number
+    on: string
+    role: string
+    ordinal: number | null
+    variant_no: number
+  }>(sql`
+    SELECT d.id AS delivery_id, c.name AS contractor, p.type, p.number,
+           coalesce((d.sent_at AT TIME ZONE 'Europe/Moscow')::date::text,
+                    d.summary ->> 'folder_date',
+                    (d.created_at AT TIME ZONE 'Europe/Moscow')::date::text) AS on,
+           own.role, own.ordinal, own.variant_no
+      FROM item_memberships own
+      JOIN asset_manifest_entries e ON e.model_id = own.model_id AND e.asset_id = own.asset_id
+      JOIN promo_deliveries d ON d.model_id = e.model_id AND d.manifest_id = e.manifest_id
+                             AND d.state = 'sent'
+      JOIN contractors c ON c.model_id = d.model_id AND c.id = d.contractor_id
+      JOIN content_items p ON p.model_id = d.model_id AND p.id = d.package_item_id
+     WHERE own.model_id = ${model.id}::uuid AND own.item_id = ${itemId}::uuid
+       AND own.kind = 'owned' AND own.removed_at IS NULL
+     ORDER BY 5, d.created_at, d.id, e.position`)
+  const handed = new Map<string, ItemPromo['handed'][number]>()
+  for (const row of sent) {
+    const entry = handed.get(row.delivery_id) ?? {
+      contractor: row.contractor,
+      collection_id: publicIdOf(row.type, row.number),
+      on: row.on,
+      files: [],
+    }
+    const file = handleOf(row.role, row.ordinal, row.variant_no)
+    if (!entry.files.includes(file)) entry.files.push(file)
+    handed.set(row.delivery_id, entry)
+  }
+  return { collections: [...collections.values()], handed: [...handed.values()] }
 }

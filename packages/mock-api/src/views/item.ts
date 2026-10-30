@@ -208,6 +208,8 @@ export function itemDetail(context: FactsContext, id: ItemId, role: Role): ItemD
       id: handoff.id,
       status: handoffStatus(context.world, handoff, mskDate(context.now)),
     })),
+    // The prototype keeps no links back from collections: the server answers them.
+    promo: { collections: [], handed: [] },
     receipts: record.receipts,
     ready_for_ppv: record.ppv_montage === undefined && readyForPpv(entry, order, context.now),
     ppv_montage: record.ppv_montage === undefined ? null : { operation_id: record.ppv_montage },

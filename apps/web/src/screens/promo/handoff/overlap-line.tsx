@@ -15,25 +15,36 @@ interface OverlapLineProps {
  * Строка проверки перед «Подготовить» (DESIGN §4.17): «38 из 100 уже передавали Coraline
  * Red (PRM-011, 02.09) · Убрать их · Оставить». Считаются и прежние передачи этой же
  * подборки. Выбрано «Убрать их»: повтор подрядчику уходит, только если человек выбрал
- * «Оставить».
+ * «Оставить». Подготовленные без «Передано» — отдельной строкой: «20 из 100 уже в PRM-013
+ * (подготовлена 21.09, «Передано» не нажато)»; их «Убрать их» не трогает.
  */
 export function OverlapLine({ overlap, choice, onChoiceChange }: OverlapLineProps) {
-  if (!overlap.text) return null
+  if (!overlap.text && !overlap.pending_text) return null
   return (
     <div className="flex flex-col gap-2.5 rounded-xl bg-attention-bg px-3.5 py-3">
-      <p className="flex gap-2 text-base">
-        <StatusSign kind="turn" className="mt-0.5" />
-        <span>{overlap.text}</span>
-      </p>
-      <ChoiceChips
-        label="Уже переданные"
-        value={choice}
-        onChange={onChoiceChange}
-        choices={[
-          { value: 'drop', label: 'Убрать их' },
-          { value: 'keep', label: 'Оставить' },
-        ]}
-      />
+      {overlap.text ? (
+        <p className="flex gap-2 text-base">
+          <StatusSign kind="turn" className="mt-0.5" />
+          <span>{overlap.text}</span>
+        </p>
+      ) : null}
+      {overlap.pending_text ? (
+        <p className="flex gap-2 text-base">
+          <StatusSign kind="turn" className="mt-0.5" />
+          <span>{overlap.pending_text}</span>
+        </p>
+      ) : null}
+      {overlap.text ? (
+        <ChoiceChips
+          label="Уже переданные"
+          value={choice}
+          onChange={onChoiceChange}
+          choices={[
+            { value: 'drop', label: 'Убрать их' },
+            { value: 'keep', label: 'Оставить' },
+          ]}
+        />
+      ) : null}
     </div>
   )
 }
