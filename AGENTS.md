@@ -14,7 +14,7 @@ Agency Hub (`README.md`, `PRD.md`).
   (у последнего папка улик `hub-media-discovery/`; `annotation.md` появится на этапе 8а),
   итоги слепого просмотра `docs/blind-2026-09-06.json.gz`, `tools/`, `design/DESIGN.md`
   (образец интерфейса 1б, принят 28.09.2026; прототип перенесён в корень в 1а, исходный
-  образец — тег `design-1b`) и код продукта в корне: `apps/`, `packages/`, `ops/`, `Dockerfile`, `docker-compose.yml`,
+  образец — тег `design-1b`) и код продукта в корне: `apps/`, `packages/`, `ops/`, `Dockerfile` с `.dockerignore`, `docker-compose.yml`,
   `.env.example`, `.github/` (CI), файлы pnpm workspace (решение владельца 30.09.2026).
   Новых каталогов под процесс (`plans/`, `evidence/`, `decisions/`, брифы, обзоры) не
   заводить; черновики и пробы — в scratchpad, не в репо.
@@ -36,8 +36,11 @@ Agency Hub (`README.md`, `PRD.md`).
   (потолок 2 GB: T3 и лёгкие агенты); сборки и тесты — на Mac и в CI. Локально — только
   тайпчек, линт и тесты затронутого пакета (`pnpm --filter <пакет> typecheck`, `… test`,
   `pnpm biome check <пути>`). CI — GitHub Actions на GitHub-hosted `ubuntu-24.04` с
-  первого PR 1а: `pnpm check` (тайпчек, Biome, тесты, Testcontainers). Тесты, названные
-  в PLAN, SPEC и схеме §9.4, — норма и пишутся вместе со своим этапом. Auto-merge
+  первого PR 1а: `pnpm check` (тайпчек, Biome, тесты, Testcontainers). Медиатестам
+  `@contentops/media` нужны закреплённые FFmpeg и libvips с HEIC, поэтому они идут в
+  образе продукта (цель `media-test` в `Dockerfile`, в CI — джоб `media`); локально —
+  `docker build --platform linux/amd64 --target media-test -t co-media . && docker run --rm co-media`.
+  Тесты, названные в PLAN, SPEC и схеме §9.4, — норма и пишутся вместе со своим этапом. Auto-merge
   выключен: код — в своём worktree, одна задача — один готовый PR, сливай сам после
   зелёного CI (`gh pr merge --squash`). В описании PR — какие пункты «Готово, когда»
   PLAN закрыты. Подэтап закрывает агент, когда закрыты все его пункты, — отчётом со

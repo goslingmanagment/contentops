@@ -3,8 +3,11 @@ packages:
   - packages/*
 # Install scripts stay off: esbuild ships its binary as an optional dependency,
 # and the native extras of ssh2 (cpu-features) and protobufjs are not used.
+# sharp is the exception: in the image it compiles against the system libvips (SPEC §12.0:
+# prebuilt binaries cannot read HEIC); elsewhere its install check keeps the prebuilt.
 allowBuilds:
   cpu-features: false
   esbuild: false
   protobufjs: false
+  sharp: true
   ssh2: false
