@@ -2347,6 +2347,7 @@ export const postingPlanRows = pgTable("posting_plan_rows", {
 	expectedType: text("expected_type"),
 	expectedRole: text("expected_role"),
 	inputManifestId: uuid("input_manifest_id"),
+	uniqVariantNo: integer("uniq_variant_no"),
 	markedBy: uuid("marked_by"),
 	markedAt: timestamp("marked_at", { withTimezone: true, mode: 'string' }),
 	markKind: text("mark_kind"),
@@ -2370,8 +2371,29 @@ export const postingPlanRows = pgTable("posting_plan_rows", {
 	index("posting_plan_rows_item").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.itemId.asc().nullsLast().op("timestamptz_ops"), table.slotAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("posting_plan_rows_open").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.slotAt.asc().nullsLast().op("uuid_ops")).where(sql`((marked_at IS NULL) AND (cancelled_at IS NULL))`),
 	index("posting_plan_rows_page").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.accountId.asc().nullsLast().op("uuid_ops"), table.slotAt.asc().nullsLast().op("timestamptz_ops")),
-	uniqueIndex("posting_plan_rows_release_surface").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.releaseId.asc().nullsLast().op("uuid_ops"), table.releaseSurfaceKind.asc().nullsLast().op("uuid_ops")).where(sql`((release_id IS NOT NULL) AND (cancelled_at IS NULL))`),
-	index("posting_plan_rows_tasks").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.assigneeId.asc().nullsLast().op("date_ops"), table.slotDate.asc().nullsLast().op("date_ops")),
+	uniqueIndex("posting_plan_rows_release_surface").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.releaseId.asc().nullsLast().op("text_ops"), table.releaseSurfaceKind.asc().nullsLast().op("uuid_ops")).where(sql`((release_id IS NOT NULL) AND (cancelled_at IS NULL))`),
+	index("posting_plan_rows_tasks").using("btree", table.modelId.asc().nullsLast().op("date_ops"), table.assigneeId.asc().nullsLast().op("date_ops"), table.slotDate.asc().nullsLast().op("uuid_ops")),
+	index("posting_plan_rows_uniq_waiting").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.itemId.asc().nullsLast().op("uuid_ops"), table.uniqVariantNo.asc().nullsLast().op("uuid_ops")).where(sql`((manifest_id IS NULL) AND (uniq_variant_no IS NOT NULL))`),
+	foreignKey({
+			columns: [table.modelId, table.itemId, table.releaseId],
+			foreignColumns: [ppvReleases.id, ppvReleases.itemId, ppvReleases.modelId],
+			name: "posting_plan_rows_model_id_release_id_item_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.manifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.markedManifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_marked_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.inputManifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_input_manifest_id_fkey"
+		}).onDelete("restrict"),
 	foreignKey({
 			columns: [table.assigneeId],
 			foreignColumns: [principals.id],
@@ -2402,37 +2424,18 @@ export const postingPlanRows = pgTable("posting_plan_rows", {
 			foreignColumns: [surfaces.accountId, surfaces.id, surfaces.modelId],
 			name: "posting_plan_rows_model_id_account_id_surface_id_fkey"
 		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.itemId, table.releaseId],
-			foreignColumns: [ppvReleases.id, ppvReleases.itemId, ppvReleases.modelId],
-			name: "posting_plan_rows_model_id_release_id_item_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.manifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_manifest_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.markedManifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_marked_manifest_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.inputManifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_input_manifest_id_fkey"
-		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "posting_plan_rows_pkey"}),
 	check("posting_plan_rows_release_surface_kind_check", sql`release_surface_kind = ANY (ARRAY['wall'::text, 'story'::text, 'vault'::text, 'mass_dm'::text])`),
 	check("posting_plan_rows_expected_type_check", sql`expected_type = ANY (ARRAY['FYP'::text, 'PPV'::text])`),
 	check("posting_plan_rows_expected_role", sql`expected_role = 'teaser'::text`),
+	check("posting_plan_rows_uniq_variant", sql`uniq_variant_no > 0`),
 	check("posting_plan_rows_mark_kind_check", sql`mark_kind = ANY (ARRAY['posted'::text, 'scheduled'::text])`),
 	check("posting_plan_rows_price", sql`price_mills >= 0`),
 	check("posting_plan_rows_cancel_reason_check", sql`cancel_reason = ANY (ARRAY['late'::text, 'replaced'::text, 'paused'::text, 'second_person'::text])`),
 	check("posting_plan_rows_marked_cancelled", sql`(marked_at IS NULL) OR (cancelled_at IS NULL)`),
 	check("posting_plan_rows_release_item", sql`(release_id IS NULL) OR (item_id IS NOT NULL)`),
 	check("posting_plan_rows_release_kind", sql`(release_id IS NULL) = (release_surface_kind IS NULL)`),
-	check("posting_plan_rows_ships", sql`(manifest_id IS NOT NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL)`),
+	check("posting_plan_rows_ships", sql`(manifest_id IS NOT NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL) OR (uniq_variant_no IS NOT NULL)`),
 	check("posting_plan_rows_object", sql`(item_id IS NOT NULL) OR (expected_type IS NOT NULL)`),
 	check("posting_plan_rows_inputs", sql`(input_manifest_id IS NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL)`),
 	check("posting_plan_rows_mark", sql`CHECK (

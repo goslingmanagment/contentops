@@ -72,6 +72,9 @@ CREATE TABLE posting_plan_rows (
   expected_type text CHECK (expected_type IN ('FYP', 'PPV')),
   expected_role text CONSTRAINT posting_plan_rows_expected_role CHECK (expected_role = 'teaser'),
   input_manifest_id uuid,
+  -- A FYP on another page ships its unique version `uN` («Версии для Fansly 2, 3», SPEC §4);
+  -- a version still being built leaves the composition empty until `uniq_render` seals it.
+  uniq_variant_no integer CONSTRAINT posting_plan_rows_uniq_variant CHECK (uniq_variant_no > 0),
   marked_by uuid REFERENCES principals (id) ON DELETE RESTRICT,
   marked_at timestamptz,
   -- «выложено» / «в планировщике» (SPEC §5).
@@ -114,6 +117,7 @@ CREATE TABLE posting_plan_rows (
   -- What the row ships: a composition, or what it waits for.
   CONSTRAINT posting_plan_rows_ships CHECK (
     manifest_id IS NOT NULL OR expected_type IS NOT NULL OR expected_role IS NOT NULL
+    OR uniq_variant_no IS NOT NULL
   ),
   CONSTRAINT posting_plan_rows_object CHECK (item_id IS NOT NULL OR expected_type IS NOT NULL),
   CONSTRAINT posting_plan_rows_inputs
@@ -139,6 +143,9 @@ CREATE INDEX posting_plan_rows_item ON posting_plan_rows (model_id, item_id, slo
 -- «Пропущена» is computed from these.
 CREATE INDEX posting_plan_rows_open ON posting_plan_rows (model_id, slot_at)
   WHERE marked_at IS NULL AND cancelled_at IS NULL;
+-- Rows waiting for a unique FYP version: `uniq_render` fills them when the version is built.
+CREATE INDEX posting_plan_rows_uniq_waiting ON posting_plan_rows (model_id, item_id, uniq_variant_no)
+  WHERE manifest_id IS NULL AND uniq_variant_no IS NOT NULL;
 -- One live row per surface of a release.
 CREATE UNIQUE INDEX posting_plan_rows_release_surface
   ON posting_plan_rows (model_id, release_id, release_surface_kind)

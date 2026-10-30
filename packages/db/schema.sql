@@ -1800,6 +1800,7 @@ CREATE TABLE public.posting_plan_rows (
     expected_type text,
     expected_role text,
     input_manifest_id uuid,
+    uniq_variant_no integer,
     marked_by uuid,
     marked_at timestamp with time zone,
     mark_kind text,
@@ -1834,7 +1835,8 @@ END),
     CONSTRAINT posting_plan_rows_release_item CHECK (((release_id IS NULL) OR (item_id IS NOT NULL))),
     CONSTRAINT posting_plan_rows_release_kind CHECK (((release_id IS NULL) = (release_surface_kind IS NULL))),
     CONSTRAINT posting_plan_rows_release_surface_kind_check CHECK ((release_surface_kind = ANY (ARRAY['wall'::text, 'story'::text, 'vault'::text, 'mass_dm'::text]))),
-    CONSTRAINT posting_plan_rows_ships CHECK (((manifest_id IS NOT NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL)))
+    CONSTRAINT posting_plan_rows_ships CHECK (((manifest_id IS NOT NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL) OR (uniq_variant_no IS NOT NULL))),
+    CONSTRAINT posting_plan_rows_uniq_variant CHECK ((uniq_variant_no > 0))
 );
 
 ALTER TABLE public.posting_plan_rows OWNER TO contentops_migrate;
@@ -2537,6 +2539,8 @@ CREATE INDEX posting_plan_rows_page ON public.posting_plan_rows USING btree (mod
 CREATE UNIQUE INDEX posting_plan_rows_release_surface ON public.posting_plan_rows USING btree (model_id, release_id, release_surface_kind) WHERE ((release_id IS NOT NULL) AND (cancelled_at IS NULL));
 
 CREATE INDEX posting_plan_rows_tasks ON public.posting_plan_rows USING btree (model_id, assignee_id, slot_date);
+
+CREATE INDEX posting_plan_rows_uniq_waiting ON public.posting_plan_rows USING btree (model_id, item_id, uniq_variant_no) WHERE ((manifest_id IS NULL) AND (uniq_variant_no IS NOT NULL));
 
 CREATE INDEX ppv_releases_page ON public.ppv_releases USING btree (model_id, account_id, release_date DESC);
 
