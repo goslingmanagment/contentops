@@ -83,7 +83,7 @@ function rejectedSummary(rejected: ReadonlyMap<string, string>): CheckSummary | 
   const [first] = rejected.values()
   return first === undefined
     ? null
-    : { tone: 'blocked', text: `Не поставлено: ${first}`, thresholdUnset: false }
+    : { tone: 'blocked', text: `Не поставлено: ${first}`, thresholdUnset: false, question: null }
 }
 
 /**

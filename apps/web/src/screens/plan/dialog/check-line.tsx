@@ -1,8 +1,12 @@
-import type { NewPlanRow } from '@contentops/contracts'
+import type { ItemId, NewPlanRow } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { cn } from '@contentops/ui/lib/utils'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { useIntentMutation } from '@/actions/use-intent-mutation'
+import { useApi } from '@/data/api-session'
 import { usePlanPreview, useRowChecks } from '@/data/plan'
+import { queryKeys } from '@/data/query-keys'
 import { useRole } from '@/data/session'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { batchNotes, batchSummary, type CheckSummary, pickCheck } from './check-summary'
@@ -84,6 +88,9 @@ export function CheckLine({
           <span className={cn('line-clamp-2 text-pretty', TONE_CLASS[summary.tone])}>
             {summary.text}
           </span>
+          {summary.question && role !== 'reader' ? (
+            <SecondPersonQuestion itemId={summary.question.item_id} />
+          ) : null}
           {summary.thresholdUnset && role === 'owner' ? (
             <Button
               type="button"
@@ -97,5 +104,57 @@ export function CheckLine({
         </>
       ) : null}
     </p>
+  )
+}
+
+/**
+ * «Есть второй человек? · Нет · Есть» (DESIGN §4.13): у старого объекта второго человека не
+ * проверяли — спрашивается один раз, при первой постановке на OnlyFans; ответ ставит отметку
+ * объекта, и проверка строк повторяется.
+ */
+function SecondPersonQuestion({ itemId }: { itemId: ItemId }) {
+  const model = useCurrentModel().code
+  const api = useApi()
+  const queryClient = useQueryClient()
+  const answer = useIntentMutation<{ yes: boolean }, unknown>({
+    failed: 'Не отметилось',
+    run: ({ yes }, idempotencyKey) =>
+      api.objectBatch.secondPerson({
+        params: { model },
+        body: { items: [itemId], second_person: yes, cancel_onlyfans_rows: false },
+        idempotencyKey,
+      }),
+    invalidates: () => [
+      [...queryKeys.model(model), 'plan-check'],
+      [...queryKeys.model(model), 'plan-preview'],
+      queryKeys.catalogIndex(model),
+      queryKeys.item(model, itemId),
+    ],
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [...queryKeys.model(model), 'plan-check'] })
+    },
+  })
+  return (
+    <span className="flex shrink-0 items-baseline gap-1.5">
+      <Button
+        type="button"
+        variant="link"
+        size="inline"
+        disabled={answer.isPending}
+        onClick={() => answer.start({ yes: false })}
+      >
+        Нет
+      </Button>
+      <span className="text-ink-3">·</span>
+      <Button
+        type="button"
+        variant="link"
+        size="inline"
+        disabled={answer.isPending}
+        onClick={() => answer.start({ yes: true })}
+      >
+        Есть
+      </Button>
+    </span>
   )
 }

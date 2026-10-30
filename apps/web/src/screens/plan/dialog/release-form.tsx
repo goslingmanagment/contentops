@@ -110,7 +110,7 @@ export function ReleaseFormView({ entry, data, preset, tabs, left, onDone }: Rel
         checkLines={checkLinesFor(rows.length)}
         check={
           alreadyText && (rows.length === 0 || check.summary?.tone === 'muted')
-            ? { tone: 'muted', text: alreadyText, thresholdUnset: false }
+            ? { tone: 'muted', text: alreadyText, thresholdUnset: false, question: null }
             : check.summary
         }
         summary={

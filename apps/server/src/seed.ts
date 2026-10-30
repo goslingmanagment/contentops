@@ -2,14 +2,16 @@ import { createDb, createPool } from '@contentops/db'
 import { BlobStore } from './media/storage'
 import { seedCatalog } from './testing/catalog-seed'
 import { enqueueSeedRenditions, prepareSeedMedia, withSeedMedia } from './testing/media-seed'
+import { seedPlan } from './testing/plan-seed'
 
 /**
- * `contentops seed [model] [--media]` — a fictional catalog for the dev stand and the pilot
+ * `contentops seed [model] [--media] [--plan]` — a fictional catalog for the dev stand and the pilot
  * VM before stage 3 (PLAN 2а): `DATABASE_URL` of the app role, the model code (default
  * `lora`). With `--media` the files get real bytes drawn by FFmpeg and sharp (test patterns,
  * no people; `DATA_ROOT`, `DERIVED_ROOT`, `TMP_ROOT` needed) and the worker roles build
- * their renditions. A model that already has objects is left as it is. Never for a
- * database with real content.
+ * their renditions. With `--plan` a week of the plan and the content manager Диана (`diana`,
+ * the password of `CONTENTOPS_OWNER_PASSWORD`) for the screens of 4а. A model that already has
+ * objects (rows) is left as it is. Never for a database with real content.
  */
 const url = process.env.DATABASE_URL
 if (!url) {
@@ -18,6 +20,7 @@ if (!url) {
 }
 const args = process.argv.slice(2)
 const withMedia = args.includes('--media')
+const withPlan = args.includes('--plan')
 const model = args.find((arg) => !arg.startsWith('--')) ?? 'lora'
 const pool = createPool(url, { max: 2, applicationName: 'seed' })
 try {
@@ -57,6 +60,18 @@ try {
       ? `seed: ${model} already has objects, nothing to do`
       : `seed: ${model} — ${result.created} objects${prepared ? ' with real media' : ''}`,
   )
+  if (withPlan) {
+    const plan = await seedPlan(
+      db,
+      model,
+      process.env.CONTENTOPS_OWNER_PASSWORD ?? 'contentops-dev',
+    )
+    console.log(
+      plan.skipped
+        ? `seed: ${model} already has a plan, nothing to do`
+        : `seed: ${model} — ${plan.rows} plan rows, content manager diana`,
+    )
+  }
 } finally {
   await pool.end()
 }

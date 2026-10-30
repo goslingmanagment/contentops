@@ -52,7 +52,8 @@ export const SERVER_ROUTES: ServerRoutes = {
     'addContractor',
     'updateContractor',
   ],
-  plan: ['norm', 'updateNorm'],
+  // План и задачи (4а): «Сверить» — этап 5, его область `check` идёт в заглушку.
+  plan: 'all',
   journal: 'all',
   // Каталог (2а); скачивания, кадры мастера, обложка и версии фупа — медиаконвейер (2б).
   objects: [
@@ -123,6 +124,9 @@ export const SERVER_ROUTES: ServerRoutes = {
   promo: 'all',
   legacy: ['get'],
 }
+
+/** План и задачи — на сервере: экраны берут «сегодня» по настоящим часам, а не заглушки. */
+export const SERVER_CLOCK = SERVER_ROUTES.plan === 'all'
 
 const onServer = new Set<Route>(
   Object.entries(SERVER_ROUTES).flatMap(([area, names]) => {
