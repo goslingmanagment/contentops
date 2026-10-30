@@ -9,7 +9,7 @@ import type { ObjectSearch } from './search'
 const routeApi = getRouteApi('/_shell/$model/i/$id')
 
 /**
- * Объект `#/<модель>/i/<ID>` (DESIGN §4.4): понять без просмотра, что внутри и где уже
+ * Объект `/<модель>/i/<ID>` (DESIGN §4.4): понять без просмотра, что внутри и где уже
  * залито; скачать; поставить в план. Вкладка, раскрытая страница и просмотр — в адресе.
  */
 export function ObjectScreen() {

@@ -2,42 +2,47 @@ import {
   type ApiClient,
   type Clock,
   createApiClient,
-  createMockFetch,
-  createPrototypeClock,
-  type DemoMode,
+  type FetchLike,
   isApiError,
   type LocalDate,
   mskDate,
-  type PrototypeRole,
+  systemClock,
 } from '@contentops/contracts'
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 import { createContext, useContext } from 'react'
-import { prototypeFileSaver, type ServerFile } from '@/lib/save-file'
+import { type ServerFile, saveServerFile } from '@/lib/save-file'
+import { devMock } from './dev-mock'
+import { isServerRoute } from './server-routes'
 
 /**
- * Сеанс данных прототипа: часы, клиент API поверх заглушки и кэш запросов. Всё живёт,
- * пока не сменились `?demo=` и `?as=`; смена даёт новый сеанс с чистым кэшем.
+ * Сеанс данных: часы, клиент API и кэш запросов. Всё живёт, пока не сменились `?demo=` и
+ * `?as=`; смена даёт новый сеанс с чистым кэшем.
  */
 export interface ApiSession {
   client: ApiClient
   clock: Clock
   queryClient: QueryClient
-  demo: DemoMode | null
-  role: PrototypeRole
+  demo: string | null
+  role: string | null
   /**
    * Единственный путь выдачи файла браузеру: «Скачать» везде, где сервер дал ссылку. У
-   * заглушки файлов нет — по ссылке она отдаёт текстовый образец (`prototypeFileSaver`);
-   * с настоящим сервером это `saveServerFile`.
+   * заглушки файлов нет — по ссылке она отдаёт текстовый образец; с настоящим сервером это
+   * `saveServerFile`.
    */
   saveFile: (file: ServerFile) => void
 }
 
 interface ApiSessionOptions {
-  demo: DemoMode | null
-  role: PrototypeRole
+  /** `?demo=` и `?as=` — переключатели заглушки в разработке; на пути сервера не влияют. */
+  demo: string | null
+  role: string | null
   /** 401 от любого запроса ведёт на вход. */
   onUnauthenticated: () => void
 }
+
+/** Настоящий сервер: тот же origin, с cookie сеанса. */
+const serverFetch: FetchLike = (input, init) =>
+  window.fetch(input, { ...init, credentials: 'same-origin' })
 
 /** Ошибки правил и доступа не повторяются; сбой сервера — один повтор. */
 function shouldRetry(failureCount: number, error: unknown): boolean {
@@ -47,10 +52,17 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
   return failureCount < 1
 }
 
+/**
+ * В разработке путь идёт на сервер, только если он есть в `SERVER_ROUTES`, остальное —
+ * в заглушку; в сборке продукта заглушки нет и всё идёт на сервер.
+ */
 export function createApiSession({ demo, role, onUnauthenticated }: ApiSessionOptions): ApiSession {
-  const clock = createPrototypeClock()
-  const mockFetch = createMockFetch({ demo, role, clock })
-  const client = createApiClient(mockFetch)
+  const mock = devMock()?.(demo, role) ?? null
+  const fetchImpl: FetchLike = mock
+    ? (input, init, route) =>
+        route && isServerRoute(route) ? serverFetch(input, init) : mock.fetch(input, init)
+    : serverFetch
+  const client = createApiClient(fetchImpl)
   const toLoginOn401 = (error: unknown) => {
     if (isApiError(error) && error.status === 401) {
       onUnauthenticated()
@@ -69,7 +81,14 @@ export function createApiSession({ demo, role, onUnauthenticated }: ApiSessionOp
       mutations: { retry: false },
     },
   })
-  return { client, clock, queryClient, demo, role, saveFile: prototypeFileSaver(mockFetch) }
+  return {
+    client,
+    clock: mock?.clock ?? systemClock,
+    queryClient,
+    demo,
+    role,
+    saveFile: mock?.saveFile ?? saveServerFile,
+  }
 }
 
 export const ApiSessionContext = createContext<ApiSession | null>(null)
@@ -87,7 +106,7 @@ export function useApi(): ApiClient {
   return useApiSession().client
 }
 
-/** «Сейчас» прототипа: 22.09.2026 14:20 МСК и дальше по настоящему времени. */
+/** «Сейчас»: настоящее время; у заглушки — 22.09.2026 14:20 МСК и дальше по настоящему времени. */
 export function useClock(): Clock {
   return useApiSession().clock
 }

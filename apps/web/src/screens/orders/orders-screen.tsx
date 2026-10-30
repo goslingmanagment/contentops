@@ -9,7 +9,7 @@ const routeApi = getRouteApi('/_shell/$model/library/customs')
 const SelectedOrderSchema = z.string().nullable()
 
 /**
- * Кастомы › Заказы `#/<модель>/library/customs?view=orders` (DESIGN §4.16). Открытый
+ * Кастомы › Заказы `/<модель>/library/customs?view=orders` (DESIGN §4.16). Открытый
  * заказ — выделение: живёт в записи истории, адрес не меняется, «Назад» его возвращает.
  */
 export function OrdersScreen() {

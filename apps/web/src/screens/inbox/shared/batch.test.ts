@@ -1,5 +1,5 @@
 import type { InboxGroup } from '@contentops/contracts'
-import { buildLoraInbox } from '@contentops/contracts/fixtures/lora-inbox'
+import { buildLoraInbox } from '@contentops/mock-api/fixtures/lora-inbox'
 import { describe, expect, it } from 'vitest'
 import { batchModelOf, canMergeGroups, isAcceptable } from './batch'
 

@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createApiClient } from './api/client'
-import { createMockFetch } from './api/mock/mock-fetch'
-import { createFrozenClock, mskInstant, PROTOTYPE_NOW } from './clock'
+import { mskInstant } from './clock'
 import type { Evidence, PersonName, PlacementFacts, PlanFacts } from './domain/placement'
 import { evaluatePlacement } from './placement'
 import { describeEvidence } from './placement/texts'
@@ -10,6 +8,7 @@ import { describeEvidence } from './placement/texts'
 
 const DIANA: PersonName = { name: 'Диана', gender: 'f' }
 const at = (time: string, date = '2026-09-22') => mskInstant(date, time)
+const NOW = at('14:20')
 
 function plan(patch: Partial<PlanFacts> = {}): PlanFacts {
   return {
@@ -40,7 +39,7 @@ function marked(time: string, kind: 'posted' | 'scheduled' = 'posted', date = '2
 
 function facts(patch: Partial<PlacementFacts> = {}): PlacementFacts {
   return {
-    now: PROTOTYPE_NOW,
+    now: NOW,
     account: { code: 'lora-2', label: 'Fansly 2', platform: 'fansly' },
     surface: 'wall',
     hub: { state: 'complete', since: null, visible_from: '2025-02-01' },
@@ -520,30 +519,5 @@ describe('уровень размещения по строкам таблицы
       sign: 'trouble',
       word: 'нельзя на OnlyFans',
     })
-  })
-
-  it('Слишком рано и два поста в одно время → янтарные подписи из проверки строки', async () => {
-    const api = createApiClient(
-      createMockFetch({ latency: false, clock: createFrozenClock(PROTOTYPE_NOW) }),
-    )
-    const row = {
-      item_id: 'SET-071',
-      account: 'lora-1',
-      surface: 'wall' as const,
-      date: '2026-09-22',
-      time: '20:00',
-      fyp_version: null,
-      assignee: null,
-      note: null,
-      requires_new_upload: false,
-      awaiting_montage: null,
-      marked: null,
-    }
-    const check = await api.plan.checkRow({ params: { model: 'lora' }, body: row })
-    expect(check.warnings.map((warning) => warning.text)).toEqual([
-      'слишком рано: на Fansly 1 было 21.09 — вчера',
-      'в 20:00 на Fansly 1 уже стоит SET-074 — два поста в одно время',
-    ])
-    expect(check.tone).toBe('attention')
   })
 })

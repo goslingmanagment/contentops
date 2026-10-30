@@ -49,7 +49,7 @@ function headerMeta(
 }
 
 /**
- * Промо — папка Библиотеки `#/<модель>/library/promo` (DESIGN §4.17): каналы папками с
+ * Промо — папка Библиотеки `/<модель>/library/promo` (DESIGN §4.17): каналы папками с
  * мозаикой или «Передачи» списком (`?view=handoffs`).
  */
 export function PromoRootScreen() {

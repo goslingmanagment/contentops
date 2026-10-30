@@ -212,8 +212,18 @@ importers:
       '@contentops/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+    devDependencies:
+      '@contentops/mock-api':
+        specifier: workspace:*
+        version: link:../../packages/mock-api
 
   packages/contracts: {}
+
+  packages/mock-api:
+    dependencies:
+      '@contentops/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/ui:
     dependencies:

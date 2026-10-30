@@ -2,21 +2,13 @@
  * `@contentops/contracts` — the data layer shared by the screens and the future server:
  * domain schemas and types, the pure rules (placement level, order and handoff states,
  * «Ещё не залито», search resolving), Russian formatting, the API routes with a typed
- * client, and the in-memory mock server of the prototype.
+ * client. The in-memory mock server of the prototype lives in `@contentops/mock-api`.
  */
 
 export * from './api/client'
 export * from './api/errors'
 export * from './api/headers'
 export * from './api/idempotency-key'
-export { createMockFetch, type MockFetch } from './api/mock/mock-fetch'
-export {
-  type DemoMode,
-  DemoModeSchema,
-  type MockOptions,
-  type PrototypeRole,
-  PrototypeRoleSchema,
-} from './api/mock/options'
 export * from './api/responses'
 export * from './api/route'
 export * from './api/routes'

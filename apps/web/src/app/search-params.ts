@@ -1,4 +1,3 @@
-import { DemoModeSchema, PrototypeRoleSchema } from '@contentops/contracts'
 import type { ObjectTileView } from '@contentops/ui/components/object-tile'
 import { z } from 'zod'
 
@@ -11,10 +10,14 @@ import { z } from 'zod'
 export const SkinSchema = z.enum(['focus'])
 export type Skin = z.infer<typeof SkinSchema>
 
-/** `?demo=`, `?as=` (DESIGN §9.1) и `?skin=` живут на корне и сохраняются при переходах. */
+/**
+ * `?demo=`, `?as=` (DESIGN §9.1) и `?skin=` живут на корне и сохраняются при переходах.
+ * Это переключатели разработки: значения `?demo=` и `?as=` проверяет сама заглушка, в
+ * сборке продукта их нет.
+ */
 export const RootSearchSchema = z.object({
-  demo: DemoModeSchema.optional().catch(undefined),
-  as: PrototypeRoleSchema.optional().catch(undefined),
+  demo: z.string().optional().catch(undefined),
+  as: z.string().optional().catch(undefined),
   skin: SkinSchema.optional().catch(undefined),
 })
 export type RootSearch = z.infer<typeof RootSearchSchema>

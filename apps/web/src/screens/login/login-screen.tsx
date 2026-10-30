@@ -13,7 +13,7 @@ import { signInFailure, useSignIn } from './use-sign-in'
 const routeApi = getRouteApi('/login')
 
 /**
- * Вход `#/login` (DESIGN §4.21, §3.10): страница без колонки, по центру белая карточка
+ * Вход `/login` (DESIGN §4.21, §3.10): страница без колонки, по центру белая карточка
  * 400 — «Логин», «Пароль», «Войти». После входа — тот же адрес, откуда пришли.
  */
 export function LoginScreen() {

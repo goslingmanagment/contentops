@@ -1,7 +1,7 @@
 import type { Role } from '@contentops/contracts'
 import { z } from 'zod'
 
-/** Разделы настроек (DESIGN §2.4, §4.19): `#/settings/<раздел>`. */
+/** Разделы настроек (DESIGN §2.4, §4.19): `/settings/<раздел>`. */
 export const SETTINGS_TABS = [
   'models',
   'people',

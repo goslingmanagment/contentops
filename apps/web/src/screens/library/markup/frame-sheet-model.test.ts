@@ -1,10 +1,5 @@
-import {
-  createApiClient,
-  createFrozenClock,
-  createMockFetch,
-  type ItemDetail,
-  PROTOTYPE_NOW,
-} from '@contentops/contracts'
+import { createApiClient, createFrozenClock, type ItemDetail } from '@contentops/contracts'
+import { createMockFetch, PROTOTYPE_NOW } from '@contentops/mock-api'
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   initialBlocked,

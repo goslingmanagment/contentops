@@ -3,12 +3,11 @@ import {
   type CatalogEntry,
   createApiClient,
   createFrozenClock,
-  createMockFetch,
   type ItemId,
   type PageSummaryEntry,
-  PROTOTYPE_NOW,
   type WeekNorm,
 } from '@contentops/contracts'
+import { createMockFetch, PROTOTYPE_NOW } from '@contentops/mock-api'
 
 /**
  * Мир Лоры для модульных тестов окна «В план»: каталог, страницы, нормы и сводка по

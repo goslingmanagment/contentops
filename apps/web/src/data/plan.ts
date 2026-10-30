@@ -100,7 +100,7 @@ export function useItemLoader(model: ModelCode) {
   )
 }
 
-/** Норма недели страницы (`#/<модель>/settings/pages/<страница>`). */
+/** Норма недели страницы (`/<модель>/settings/pages/<страница>`). */
 export function useWeekNorm(model: ModelCode, account: AccountCode) {
   const api = useApi()
   return useQuery({

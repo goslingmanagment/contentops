@@ -1,10 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { LORA_ACCOUNTS } from './fixtures/models'
+import type { Account, Platform } from './domain/model'
 import { parseOrderCard } from './order-card'
 
 /** «Новый заказ» (DESIGN §4.16): what the card text turns into. */
 
-const parse = (text: string) => parseOrderCard(text, null, 2026, LORA_ACCOUNTS)
+const page = (code: string, label: string, platform: Platform, position: number): Account => ({
+  code,
+  model: 'lora',
+  platform,
+  label,
+  handle: code,
+  hub_page: code,
+  usual_assignee: null,
+  uniq_level: 'soft',
+  position,
+})
+
+/** Pages of Лора (DESIGN §9.2), in their order. */
+const LORA_PAGES = [
+  page('lora-1', 'Fansly 1', 'fansly', 0),
+  page('lora-2', 'Fansly 2', 'fansly', 1),
+  page('lora-3', 'Fansly 3', 'fansly', 2),
+  page('lora-vip-of', 'OF VIP', 'onlyfans', 3),
+  page('lora-of', 'OF Free', 'onlyfans', 4),
+]
+
+const parse = (text: string) => parseOrderCard(text, null, 2026, LORA_PAGES)
 
 describe('parseOrderCard', () => {
   it('reads the page the card names', () => {

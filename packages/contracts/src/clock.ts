@@ -1,12 +1,5 @@
 import type { Instant, IsoWeek, LocalDate, LocalTime } from './domain/common'
 
-/**
- * «Сейчас» of the prototype: Tuesday 22.09.2026, 14:20 Moscow time.
- * Everything that depends on the current moment takes it from here.
- */
-export const PROTOTYPE_NOW: Instant = '2026-09-22T11:20:00Z'
-export const PROTOTYPE_TODAY: LocalDate = '2026-09-22'
-
 /** Moscow has no daylight saving time since 2014: always UTC+3. */
 const MSK_OFFSET_MS = 3 * 60 * 60 * 1000
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -73,17 +66,16 @@ export function weekDates(week: IsoWeek): LocalDate[] {
   return Array.from({ length: 7 }, (_, index) => addDays(monday, index))
 }
 
-/** A moving clock that starts at `start` and follows real time; tests pass a frozen one. */
+/**
+ * «Сейчас»: everything that depends on the current moment takes it from a clock. The product
+ * runs on `systemClock`, the mock on its prototype clock, tests pass a frozen one.
+ */
 export interface Clock {
   now(): Instant
 }
 
-export function createFrozenClock(at: Instant = PROTOTYPE_NOW): Clock {
-  return { now: () => at }
-}
+export const systemClock: Clock = { now: () => instantFromMs(Date.now()) }
 
-export function createPrototypeClock(start: Instant = PROTOTYPE_NOW): Clock {
-  const startedAt = Date.now()
-  const startMs = instantMs(start)
-  return { now: () => instantFromMs(startMs + (Date.now() - startedAt)) }
+export function createFrozenClock(at: Instant): Clock {
+  return { now: () => at }
 }

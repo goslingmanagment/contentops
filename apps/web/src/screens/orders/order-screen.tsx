@@ -7,7 +7,7 @@ import { OrdersView } from './orders-view'
 const routeApi = getRouteApi('/_shell/$model/library/customs/orders/$order')
 
 /**
- * Заказ по своему адресу `#/<модель>/library/customs/orders/<id>` (DESIGN §2.4): тот же
+ * Заказ по своему адресу `/<модель>/library/customs/orders/<id>` (DESIGN §2.4): тот же
  * список с открытой панелью. Сюда ведут ссылки из «Приехало», поиска и объекта; другой
  * заказ открывается заменой адреса, закрытие панели возвращает в список на то же место.
  */

@@ -96,7 +96,7 @@ export function useClosedCases(model: ModelCode, show: ClosedView, enabled = tru
   })
 }
 
-/** Один случай по адресу `#/<модель>/plan/check/<id>`; решённый отвечает 422. */
+/** Один случай по адресу `/<модель>/plan/check/<id>`; решённый отвечает 422. */
 export function useCheckCase(model: ModelCode, id: string, enabled = true) {
   const api = useApi()
   return useQuery({

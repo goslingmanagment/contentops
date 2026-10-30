@@ -10,7 +10,7 @@ function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
 /**
  * Ссылка дизайн-системы поверх маршрутизатора: обычный `<a href>` для нового окна и
  * средней кнопки, переход без перезагрузки — для простого нажатия по внутренней ссылке
- * (hash-адрес прототипа, путь от корня или тот же origin — `routerHrefOf`).
+ * (путь от корня или тот же origin — `routerHrefOf`).
  */
 export function RouterUiLink({ href, onClick, target, ...props }: UiLinkProps) {
   const router = useRouter()

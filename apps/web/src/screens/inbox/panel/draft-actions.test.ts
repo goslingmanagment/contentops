@@ -1,5 +1,5 @@
 import type { InboxGroup } from '@contentops/contracts'
-import { buildCasesInbox } from '@contentops/contracts/fixtures/lora-inbox-cases'
+import { buildCasesInbox } from '@contentops/mock-api/fixtures/lora-inbox-cases'
 import { describe, expect, it } from 'vitest'
 import { draftActionsOf } from './draft-actions'
 

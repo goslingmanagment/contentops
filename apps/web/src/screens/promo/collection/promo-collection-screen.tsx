@@ -39,7 +39,7 @@ const routeApi = getRouteApi('/_shell/$model/library/promo/$channel/$collection'
 const NO_CATALOG: ReadonlyMap<ItemId, CatalogEntry> = new Map()
 
 /**
- * Подборка промо `#/<модель>/library/promo/<канал>/<PRM>` (DESIGN §4.17): сетка файлов,
+ * Подборка промо `/<модель>/library/promo/<канал>/<PRM>` (DESIGN §4.17): сетка файлов,
  * «Подготовить передачу» — правая панель 400 в два шага, для всей подборки из шапки или
  * для выбранного из полосы выделения; «ⓘ» — карточка материала.
  */

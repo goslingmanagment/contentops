@@ -1,0 +1,18 @@
+{
+  "name": "@contentops/mock-api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "In-memory mock of the API for development only; never part of the product build.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@contentops/contracts": "workspace:*"
+  }
+}

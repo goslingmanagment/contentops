@@ -13,5 +13,8 @@
   "dependencies": {
     "@contentops/ui": "workspace:*",
     "@contentops/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@contentops/mock-api": "workspace:*"
   }
 }

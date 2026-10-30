@@ -13,7 +13,7 @@ function sectionTypeOf(slug: string): SectionType | null {
   return type === null || type === 'promo' ? null : type
 }
 
-/** Раздел-тип `#/<модель>/library/<тип>` (DESIGN §4.2). */
+/** Раздел-тип `/<модель>/library/<тип>` (DESIGN §4.2). */
 export function LibrarySectionScreen() {
   const { section } = sectionApi.useParams()
   const search = sectionApi.useSearch()
@@ -33,7 +33,7 @@ export function LibrarySectionScreen() {
 }
 
 /**
- * Кастомы как раздел: `#/<модель>/library/customs` без `?view=orders`. В шапке —
+ * Кастомы как раздел: `/<модель>/library/customs` без `?view=orders`. В шапке —
  * «Все · Заказы · Переделка в PPV»; заказы и переделку рисуют их экраны.
  */
 export function CustomsSectionScreen() {

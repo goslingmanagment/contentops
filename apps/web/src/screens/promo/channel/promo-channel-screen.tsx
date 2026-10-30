@@ -29,7 +29,7 @@ const routeApi = getRouteApi('/_shell/$model/library/promo/$channel')
 const NO_MEMBERS: readonly CollectionMember[] = []
 
 /**
- * Канал промо `#/<модель>/library/promo/<канал>` (DESIGN §4.17): сверху подборки PRM
+ * Канал промо `/<модель>/library/promo/<канал>` (DESIGN §4.17): сверху подборки PRM
  * папками, ниже «Без подборки» — материалы по дням. Выбор без подборки можно сразу
  * подготовить к передаче: сначала заводится новая подборка.
  */

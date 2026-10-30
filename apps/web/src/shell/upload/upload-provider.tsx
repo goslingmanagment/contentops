@@ -168,7 +168,7 @@ export function UploadProvider({ enabled, children }: { enabled: boolean; childr
   )
 }
 
-/** Объект из адреса `#/<модель>/i/<ID>` — цель по умолчанию, с названием из индекса. */
+/** Объект из адреса `/<модель>/i/<ID>` — цель по умолчанию, с названием из индекса. */
 function useRouteTarget(): () => UploadTarget | null {
   const queryClient = useQueryClient()
   const params = useParams({ strict: false })

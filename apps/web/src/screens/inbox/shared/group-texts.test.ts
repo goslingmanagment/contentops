@@ -1,5 +1,5 @@
 import { mskInstant } from '@contentops/contracts'
-import { buildCasesInbox } from '@contentops/contracts/fixtures/lora-inbox-cases'
+import { buildCasesInbox } from '@contentops/mock-api/fixtures/lora-inbox-cases'
 import { describe, expect, it } from 'vitest'
 import { bytesOf, groupStateView, metaLine } from './group-texts'
 

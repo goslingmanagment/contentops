@@ -7,8 +7,8 @@ import { readLastSection, type SectionKey } from '@/shell/last-section'
 import { useModelIndexPrefetch } from '@/shell/model/model-scope'
 
 /**
- * Адреса без экрана ведут дальше: `#/` — в последний раздел или Библиотеку первой
- * доступной модели, `#/<модель>` — в Библиотеку, `#/<модель>/plan` — на сегодня.
+ * Адреса без экрана ведут дальше: `/` — в последний раздел или Библиотеку первой
+ * доступной модели, `/<модель>` — в Библиотеку, `/<модель>/plan` — на сегодня.
  */
 
 function SectionRedirect({ model, section }: { model: string; section: SectionKey }) {
