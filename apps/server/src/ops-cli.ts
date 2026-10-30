@@ -12,6 +12,7 @@ import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
+import { smokeSetup } from './smoke/setup'
 
 /**
  * Owner's storage commands (SPEC §9.1, schema §5 «Удаление байтов»), run inside the stack:
@@ -42,6 +43,11 @@ import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs
  * (SPEC §7; stages 7, 9a and «Старый формат» 9b) — one `hub_history` work per page:
  *
  *   docker compose exec worker node dist/ops.js hub-history <model> [page]
+ *
+ * The smoke checks of stage 6 (`ops/smoke.sh`, `smoke/setup.ts`): the model `smoke`, its
+ * contractor and the smoke agent; `--token` prints a new token of the agent once:
+ *
+ *   docker compose exec -T worker node dist/ops.js smoke-setup [--token]
  */
 
 const USAGE = `usage:
@@ -52,7 +58,8 @@ const USAGE = `usage:
   ops.js freeze <model> <source label> [YYYY-MM-DD] [--wait]
   ops.js freeze-export <model> [YYYY-MM-DD]
   ops.js import-report <model> [plan|reconcile|<work id>]   (Markdown, out of git)
-  ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)`
+  ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)
+  ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
@@ -96,6 +103,7 @@ async function main(argv: string[]): Promise<number> {
       yes: { type: 'boolean' },
       model: { type: 'string' },
       'keep-metadata': { type: 'boolean' },
+      token: { type: 'boolean' },
     },
     allowPositionals: true,
   })
@@ -201,6 +209,19 @@ async function main(argv: string[]): Promise<number> {
       const done = await waitFor(db, work.id, 'freeze')
       out({ operation_id: work.id, ...done })
       return done.state === 'succeeded' ? 0 : 1
+    }
+    if (command === 'smoke-setup') {
+      const result = await smokeSetup(db, {
+        token: values.token === true,
+        log: (line) => process.stderr.write(`${line}\n`),
+      })
+      if (!result.agents_enabled) {
+        process.stderr.write(
+          'smoke-setup: «Агенты» are off (Настройки › Интеграции): the token is refused until the owner turns them on\n',
+        )
+      }
+      out(result)
+      return 0
     }
     if (command === 'hub-history') {
       const [model, account] = positionals

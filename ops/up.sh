@@ -19,12 +19,26 @@ cd "$(dirname "$0")/.."
 log() { printf 'up: %s\n' "$*"; }
 die() { printf 'up: %s\n' "$*" >&2; exit 1; }
 
+# GNU stat in the VM, BSD stat on a Mac (the local stack of ops/smoke-recovery.sh).
+file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+# `mountpoint -q` of util-linux; without it (a Mac) the same test by device numbers.
+is_mount() {
+  if command -v mountpoint >/dev/null; then
+    mountpoint -q "$1"
+  else
+    [[ -d $1 && $(stat -f '%d' "$1") != "$(stat -f '%d' "$1/..")" ]]
+  fi
+}
+
 [[ -f .env ]] || die ".env is missing: copy .env.example, fill the secrets, chmod 600 .env"
-mode=$(stat -c '%a' .env)
+mode=$(file_mode .env)
 [[ $mode == 600 ]] || die ".env has mode $mode, needs 600: chmod 600 .env"
 
-# Only the values this script needs; compose reads the whole file itself.
-env_value() { sed -n "s/^$1=//p" .env | tail -n 1; }
+# Only the values this script needs; compose reads the whole file itself. A variable set in
+# the shell wins over .env, as it does for compose (ops/smoke-recovery.sh uses it).
+env_value() {
+  if [[ -n ${!1+set} ]]; then printf '%s' "${!1}"; else sed -n "s/^$1=//p" .env | tail -n 1; fi
+}
 env_or() { local value; value=$(env_value "$1"); printf '%s' "${value:-$2}"; }
 PROXY_PORT=$(env_or PROXY_PORT 8080)
 IFS=, read -r -a required_mounts <<<"$(env_value REQUIRE_HOST_MOUNTS)"
@@ -34,7 +48,7 @@ volume_roots=("$(env_or DATA_ROOT /srv/content)" "$(env_or DERIVED_ROOT /srv/der
 missing=()
 for path in "${required_mounts[@]}"; do
   [[ -n $path ]] || continue
-  mountpoint -q "$path" || missing+=("$path")
+  is_mount "$path" || missing+=("$path")
 done
 for root in "${volume_roots[@]}"; do
   [[ " ${missing[*]} " == *" $root "* ]] && continue

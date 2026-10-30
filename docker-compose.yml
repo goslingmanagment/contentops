@@ -97,12 +97,13 @@ services:
       - ${DERIVED_ROOT:-/srv/derived}:/srv/derived
       - ${TMP_ROOT:-/srv/tmp}:/srv/tmp
       # Read-only share of the host; automounted, so the mount must propagate (rslave).
+      # MOUNT_PROPAGATION=rprivate only for a local stack on Docker Desktop, which has no rslave.
       - type: bind
         source: ${HOST_SHARE:-/mnt/host}
         target: /host
         read_only: true
         bind:
-          propagation: rslave
+          propagation: ${MOUNT_PROPAGATION:-rslave}
           create_host_path: false
     oom_score_adj: -200
     depends_on:
@@ -150,7 +151,7 @@ services:
         target: /host
         read_only: true
         bind:
-          propagation: rslave
+          propagation: ${MOUNT_PROPAGATION:-rslave}
           create_host_path: false
       # The Я.Диск copy (cifs ro, automount in the VM): read only, never written.
       - type: bind
@@ -158,7 +159,7 @@ services:
         target: /ydisk
         read_only: true
         bind:
-          propagation: rslave
+          propagation: ${MOUNT_PROPAGATION:-rslave}
           create_host_path: false
     cpu_shares: 512
     oom_score_adj: 300

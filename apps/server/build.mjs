@@ -9,7 +9,8 @@ const external = Object.keys(pkg.dependencies).filter((name) => !name.startsWith
 // dist/main.js — every role of the image; dist/db.js — the `contentops-db` command
 // (bootstrap, reset-password) for the deploy, next to the migrations (MIGRATIONS_DIR);
 // dist/seed.js — the fictional catalog for the pilot's test runs before stage 3;
-// dist/ops.js — the owner's storage commands (verify-blobs, purge-blobs).
+// dist/ops.js — the owner's storage commands (verify-blobs, purge-blobs); dist/smoke.js — the
+// smoke checks of stage 6 (ops/smoke.sh).
 await build({
   absWorkingDir: root,
   entryPoints: {
@@ -17,6 +18,7 @@ await build({
     db: '../../packages/db/src/cli.ts',
     seed: 'src/seed.ts',
     ops: 'src/ops-cli.ts',
+    smoke: 'src/smoke/run.ts',
   },
   outdir: 'dist',
   bundle: true,
