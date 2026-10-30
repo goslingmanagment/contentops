@@ -6,7 +6,10 @@ import { checkVersion, isUuid } from '../commands'
 import type { ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { acceptGroup, rejectGroup, reopenGroup } from '../intake/accept'
+import { decide, mergeGroups, retryGroup, splitGroup, updateFiles } from '../intake/decisions'
 import { ITEM_TO_DB_TYPE, inboxGroup, inboxList } from '../intake/inbox-view'
+import { dropStagedOfGroup } from '../intake/staging'
 import type { Services } from '../services'
 
 /** «Приехало» (DESIGN §4.8–4.10): reading groups and editing the fields of a future object. */
@@ -134,6 +137,146 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             subjectLabel: group.title ?? id,
             after: body,
           })
+          return inboxGroup(tx, model, id)
+        }),
+
+      files: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx) => {
+          const model = modelOf(ctx)
+          const id = groupId(params.group)
+          const group = await lockGroup(tx, model.id, id)
+          await checkVersion(
+            tx,
+            ctx,
+            {
+              version: Number(group.row_version),
+              subjectKind: 'inbox_groups',
+              subjectId: id,
+              field: 'files',
+            },
+            () => null,
+          )
+          await updateFiles(tx, model, id, body)
+          return inboxGroup(tx, model, id)
+        }),
+
+      accept: async ({ params, body, ctx }) => {
+        const model = modelOf(ctx)
+        const id = groupId(params.group)
+        const result = await command({ ctx, body }, (tx, actor) =>
+          acceptGroup(tx, model, actor, id, body),
+        )
+        await dropStagedOfGroup(services, model.id, id)
+        return result
+      },
+
+      acceptMany: async ({ body, ctx }) => {
+        const model = modelOf(ctx)
+        const results = await command({ ctx, body }, async (tx, actor) => {
+          const out = []
+          for (const raw of body.group_ids) {
+            if (!isUuid(raw)) {
+              out.push({ id: raw, ok: false, code: 'not_found', accepted: null })
+              continue
+            }
+            try {
+              // Each group in its own savepoint: one refusal does not undo the others.
+              const accepted = await tx.transaction((inner) =>
+                acceptGroup(inner, model, actor, raw, { as: 'default' }),
+              )
+              out.push({ id: raw, ok: true, code: null, accepted })
+            } catch (error) {
+              if (!(error instanceof ApiProblem)) throw error
+              const reason = (error.details?.reason as string | undefined) ?? error.code
+              out.push({ id: raw, ok: false, code: reason, accepted: null })
+            }
+          }
+          return { results: out }
+        })
+        for (const row of results.results) {
+          if (row.ok) await dropStagedOfGroup(services, model.id, row.id)
+        }
+        return results
+      },
+
+      reject: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx)
+          const id = groupId(params.group)
+          const count = await rejectGroup(tx, model, actor, id, body.reason)
+          await logAction(tx, {
+            modelId: model.id,
+            subjectKind: 'inbox_groups',
+            subjectId: id,
+            subjectLabel: 'Отклонено',
+            after: { Файлов: String(count), Причина: body.reason ?? '—' },
+          })
+          return inboxGroup(tx, model, id)
+        }),
+
+      restore: ({ params, ctx }) =>
+        command({ ctx, body: null }, async (tx) => {
+          const model = modelOf(ctx)
+          const id = groupId(params.group)
+          const count = await reopenGroup(tx, model, id)
+          await logAction(tx, {
+            modelId: model.id,
+            subjectKind: 'inbox_groups',
+            subjectId: id,
+            subjectLabel: 'Возвращено в работу',
+            after: { Файлов: String(count) },
+          })
+          return inboxGroup(tx, model, id)
+        }),
+
+      merge: ({ body, ctx }) =>
+        command({ ctx, body }, async (tx) => {
+          const model = modelOf(ctx)
+          const into = await mergeGroups(tx, model, body.group_ids)
+          await logAction(tx, {
+            modelId: model.id,
+            subjectKind: 'inbox_groups',
+            subjectId: into,
+            subjectLabel: 'Слито',
+            after: { Групп: String(body.group_ids.length) },
+          })
+          return inboxGroup(tx, model, into)
+        }),
+
+      split: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx) => {
+          const model = modelOf(ctx)
+          const created = await splitGroup(tx, model, groupId(params.group), body.file_keys)
+          await logAction(tx, {
+            modelId: model.id,
+            subjectKind: 'inbox_groups',
+            subjectId: created,
+            subjectLabel: 'Разделено',
+            after: { Файлов: String(body.file_keys.length) },
+          })
+          return inboxGroup(tx, model, created)
+        }),
+
+      decide: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx)
+          const id = groupId(params.group)
+          await decide(tx, model, actor, id, body)
+          await logAction(tx, {
+            modelId: model.id,
+            subjectKind: 'inbox_groups',
+            subjectId: id,
+            subjectLabel: 'Решение',
+            after: body,
+          })
+          return inboxGroup(tx, model, id)
+        }),
+
+      retry: ({ params, ctx }) =>
+        command({ ctx, body: null }, async (tx) => {
+          const model = modelOf(ctx)
+          const id = groupId(params.group)
+          await retryGroup(tx, model, id)
           return inboxGroup(tx, model, id)
         }),
 

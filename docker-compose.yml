@@ -85,8 +85,11 @@ services:
       HOST_SPACE_FILE: /host/space.json
       SPACE_WARN_GB: ${SPACE_WARN_GB:-200}
       SPACE_STOP_GB: ${SPACE_STOP_GB:-100}
+      # Cloud sources (SPEC §6.1): `sources.credentials_ref` names the variable.
       YDISK_TOKEN: ${YDISK_TOKEN:-}
-      DROPBOX_TOKEN: ${DROPBOX_TOKEN:-}
+      DROPBOX_REFRESH_TOKEN: ${DROPBOX_REFRESH_TOKEN:-}
+      DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:-}
+      DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET:-}
       HUB_BASE_URL: ${HUB_BASE_URL:-}
       HUB_API_KEY: ${HUB_API_KEY:-}
     volumes:
@@ -121,13 +124,30 @@ services:
       ROLE: worker
       FETCH_JOBS: ${FETCH_JOBS:-4}
       FETCH_AHEAD_GB: ${FETCH_AHEAD_GB:-25}
+      # Intake stops below SPACE_STOP_GB of free C: (SPEC §12.2).
+      HOST_SPACE_FILE: /host/space.json
+      SPACE_STOP_GB: ${SPACE_STOP_GB:-100}
+      # Cloud sources (SPEC §6.1): `sources.credentials_ref` names the variable.
       YDISK_TOKEN: ${YDISK_TOKEN:-}
-      DROPBOX_TOKEN: ${DROPBOX_TOKEN:-}
+      DROPBOX_REFRESH_TOKEN: ${DROPBOX_REFRESH_TOKEN:-}
+      DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:-}
+      DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET:-}
       HUB_BASE_URL: ${HUB_BASE_URL:-}
       HUB_API_KEY: ${HUB_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    volumes: *storage
+    volumes:
+      - ${DATA_ROOT:-/srv/content}:/srv/content
+      - ${DERIVED_ROOT:-/srv/derived}:/srv/derived
+      - ${TMP_ROOT:-/srv/tmp}:/srv/tmp
+      # Free space of the host (read-only), like web.
+      - type: bind
+        source: ${HOST_SHARE:-/mnt/host}
+        target: /host
+        read_only: true
+        bind:
+          propagation: rslave
+          create_host_path: false
     cpu_shares: 512
     oom_score_adj: 300
     # Running works go back to the queue on stop (WorkRunner.stop waits up to 30 s).

@@ -11,6 +11,8 @@ import {
 import type { Logger } from 'pino'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
+import { fetchHandler } from './intake/fetch'
+import { intakeMediaHandlers } from './intake/media'
 import { scanHandler, scanStreams } from './intake/scan'
 import { envSourceFactory } from './intake/source-client'
 import { createLogger } from './logger'
@@ -161,6 +163,27 @@ async function waitForStorage(config: Config, logger: Logger): Promise<void> {
   }
 }
 
+/** Discovery and fetch from the cloud folders of the models (SPEC §6.1), role `worker`. */
+function intakeHandlers(
+  config: Config,
+  store: BlobStore,
+): Partial<Record<values.WorkKind, WorkHandler>> {
+  const factory = envSourceFactory(process.env)
+  return {
+    scan: scanHandler(factory),
+    fetch: fetchHandler({
+      factory,
+      store,
+      fetchAheadGb: config.FETCH_AHEAD_GB,
+      space: {
+        file: config.HOST_SPACE_FILE,
+        warnGb: config.SPACE_WARN_GB,
+        stopGb: config.SPACE_STOP_GB,
+      },
+    }),
+  }
+}
+
 async function runWorker(role: WorkRole, config: Config, logger: Logger): Promise<void> {
   let stopWork: () => Promise<void> = async () => {}
   // A stop while waiting for the disks just exits: nothing is claimed yet.
@@ -190,7 +213,8 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
   const handlers: Partial<Record<values.WorkKind, WorkHandler>> = {
     ...mediaHandlers(role, env),
     // Discovery from the cloud folders of the models (SPEC §6.1).
-    ...(role === 'worker' ? { scan: scanHandler(envSourceFactory(process.env)) } : {}),
+    ...intakeMediaHandlers(role, env),
+    ...(role === 'worker' ? intakeHandlers(config, store) : {}),
   }
   const runner = new WorkRunner({
     db,

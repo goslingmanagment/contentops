@@ -2,9 +2,11 @@ import type { ActorRef } from '@contentops/contracts/domain/common'
 import type { FileRole } from '@contentops/contracts/domain/files'
 import type {
   DraftFile,
+  DraftHint,
   DraftState,
   InboxGroup,
   InboxList,
+  OrderCandidate,
 } from '@contentops/contracts/domain/inbox'
 import type { ItemType } from '@contentops/contracts/domain/item-type'
 import type { Queryable, values } from '@contentops/db'
@@ -49,6 +51,7 @@ interface GroupRow extends Record<string, unknown> {
   proposed_ppv_kind: values.PpvKind | null
   proposed_purpose: values.RawPurpose | null
   has_second_person: boolean | null
+  custom_order_id: string | null
   row_version: string
   discovered_at: string
   source_kind: values.SourceKind
@@ -87,6 +90,8 @@ interface DraftRow extends Record<string, unknown> {
   uploader_gender: 'f' | 'm' | null
   fetch_done: string | null
   fetch_total: string | null
+  thumb_generation: string | null
+  duplicate_handle: string | null
   shot_at: string | null
 }
 
@@ -207,7 +212,14 @@ export function activeState(
   }
   const target = drafts.find((draft) => draft.target_public_id)?.target_public_id
   return {
-    state: { kind: 'ready', note: target ? { kind: 'extends', item_id: target } : { kind: 'new' } },
+    state: {
+      kind: 'ready',
+      note: target
+        ? { kind: 'extends', item_id: target }
+        : group.custom_order_id
+          ? { kind: 'order_part', order_id: group.custom_order_id, part: orderPart(drafts) }
+          : { kind: 'new' },
+    },
     block: null,
   }
 }
@@ -250,6 +262,7 @@ function resolvedState(
     item_id: latest.applied_public_id,
     how:
       latest.origin === 'web_upload' && latest.outcome !== 'alias' ? 'upload' : HOW[latest.outcome],
+    ...(latest.duplicate_handle ? { file_key: latest.duplicate_handle } : {}),
     by,
     at: instant(latest.decided_at),
   }
@@ -295,10 +308,27 @@ function fileOf(model: string, draft: DraftRow, index: number): DraftFile {
     thumb: {
       key: `draft:${draft.id}`,
       ratio: video ? '9:16' : '3:4',
-      url: draft.origin === 'disk_scan' ? sourceThumbPath(model, draft.id) : null,
+      url: draft.thumb_generation
+        ? `/api/v1/${model}/g/${draft.thumb_generation}/thumb-640.webp`
+        : draft.origin === 'disk_scan'
+          ? sourceThumbPath(model, draft.id)
+          : null,
     },
     shot_at: instantOrNull(draft.shot_at),
   }
+}
+
+interface Extras {
+  hints: DraftHint[]
+  candidates: OrderCandidate[]
+}
+
+const NO_EXTRAS: Extras = { hints: [], candidates: [] }
+
+function orderPart(drafts: readonly DraftRow[]): string {
+  const video = drafts.some((draft) => draft.media_kind === 'video')
+  const photo = drafts.some((draft) => draft.media_kind !== 'video')
+  return video && photo ? 'видео и фото' : video ? 'видео' : 'фото'
 }
 
 function view(
@@ -307,6 +337,7 @@ function view(
   drafts: readonly DraftRow[],
   filter: InboxFilter,
   now: Date,
+  extras: Extras = NO_EXTRAS,
 ): InboxGroup | null {
   if (drafts.length === 0) return null
   let state: DraftState | null
@@ -356,12 +387,12 @@ function view(
       collection: null,
       second_person: group.has_second_person ?? false,
       fan_name: null,
-      order_id: null,
+      order_id: group.custom_order_id,
       shot_on: null,
     },
-    hints: [],
+    hints: extras.hints,
     files: drafts.map((draft, index) => fileOf(model, draft, index)),
-    candidates: [],
+    candidates: extras.candidates,
     archive_entries: null,
     target_item: drafts.find((draft) => draft.target_public_id)?.target_public_id ?? null,
     version: Number(group.row_version),
@@ -376,7 +407,7 @@ async function loadGroups(
   const { rows } = await q.execute<GroupRow>(sql`
     SELECT g.id, g.group_key, g.grouping, g.evidence, g.proposed_type, g.proposed_title,
            g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
-           g.has_second_person, g.row_version, g.discovered_at, s.kind AS source_kind,
+           g.has_second_person, g.custom_order_id, g.row_version, g.discovered_at, s.kind AS source_kind,
            s.label AS source_label
       FROM inbox_groups g JOIN sources s ON s.model_id = g.model_id AND s.id = g.source_id
      WHERE g.model_id = ${modelId}::uuid
@@ -413,7 +444,16 @@ async function loadDrafts(
              WHERE i.model_id = d.model_id AND i.id = d.applied_item_id) AS applied_public_id,
            pu.display_name AS uploader_name, pu.kind AS uploader_kind, pu.gender AS uploader_gender,
            fw.progress_num AS fetch_done, fw.progress_den AS fetch_total,
-           NULL::timestamptz AS shot_at
+           NULL::timestamptz AS shot_at,
+           (SELECT g.id FROM rendition_generations g
+             WHERE g.input_sha256 = d.source_sha256 AND g.kind = 'thumb640' AND g.state = 'ready'
+               AND NOT g.meta_stripped
+             ORDER BY g.ready_at DESC LIMIT 1) AS thumb_generation,
+           (SELECT public_item_id(i.type, i.number) || '/' || m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '')
+              FROM asset_versions v
+              JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id AND m.kind = 'owned'
+              JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id
+             WHERE v.model_id = d.model_id AND v.id = d.duplicate_of_version_id LIMIT 1) AS duplicate_handle
       FROM inbox_drafts d
       LEFT JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id
       LEFT JOIN blobs b ON b.sha256 = d.source_blob_sha256
@@ -430,6 +470,69 @@ async function loadDrafts(
        AND d.group_id = ANY (${sql.param(groupIds)}::uuid[]) AND ${which}
      ORDER BY d.group_id, d.proposed_ordinal NULLS LAST, d.path, d.id`)
   return rows
+}
+
+/**
+ * Candidates of the drafts (schema §3.4 `inbox_draft_candidates`): ◆ «Какой заказ?» without a
+ * preselection, and the pHash hint «Похоже на фото № 7 из SET-069 — сравнить» (SPEC §6.2).
+ */
+async function loadExtras(q: Queryable, modelId: string, drafts: readonly DraftRow[]) {
+  const extras = new Map<string, Extras>()
+  if (drafts.length === 0) return extras
+  const groupOf = new Map(drafts.map((draft) => [draft.id, draft.group_id]))
+  const { rows } = await q.execute<{
+    draft_id: string
+    kind: 'order' | 'similar_photo'
+    order_id: string | null
+    item_public: string | null
+    handle: string | null
+    ordinal: number | null
+    buyer: string | null
+    brief: string | null
+    due: string | null
+    signals: Record<string, unknown> | null
+  }>(sql`
+    SELECT c.draft_id, c.kind, c.order_id, public_item_id(i.type, i.number) AS item_public,
+           m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '') AS handle, m.ordinal,
+           o.buyer_name AS buyer, o.brief, (o.due_at AT TIME ZONE 'Europe/Moscow')::date::text AS due,
+           c.signals
+      FROM inbox_draft_candidates c
+      LEFT JOIN content_items i ON i.model_id = c.model_id AND i.id = c.item_id
+      LEFT JOIN asset_versions v ON v.model_id = c.model_id AND v.id = c.version_id
+      LEFT JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id
+                                  AND m.kind = 'owned'
+      LEFT JOIN custom_orders o ON o.model_id = c.model_id AND o.id = c.order_id
+     WHERE c.model_id = ${modelId}::uuid AND c.dismissed_at IS NULL
+       AND c.kind IN ('order', 'similar_photo')
+       AND c.draft_id = ANY (${sql.param(drafts.map((draft) => draft.id))}::uuid[])
+     ORDER BY c.score DESC NULLS LAST, c.created_at`)
+  for (const row of rows) {
+    const group = groupOf.get(row.draft_id) as string
+    const entry = extras.get(group) ?? { hints: [], candidates: [] }
+    extras.set(group, entry)
+    if (row.kind === 'similar_photo' && row.item_public) {
+      const number = row.ordinal ? ` № ${row.ordinal}` : ''
+      entry.hints.push({
+        kind: 'similar',
+        text: `Похоже на фото${number} из ${row.item_public} — сравнить`,
+        item_id: row.item_public,
+        file_key: row.handle ?? row.item_public,
+      })
+    } else if (
+      row.kind === 'order' &&
+      row.order_id &&
+      !entry.candidates.some((candidate) => candidate.order_id === row.order_id)
+    ) {
+      entry.candidates.push({
+        order_id: row.order_id,
+        title: row.buyer ?? 'Заказ',
+        deadline: row.due,
+        excerpt: (row.brief ?? '').slice(0, 140),
+        matched: Object.keys(row.signals ?? {}),
+      })
+    }
+  }
+  return extras
 }
 
 const SECTION = { decision: 0, error: 0, ready: 1, preparing: 2 } as const
@@ -449,11 +552,14 @@ export async function inboxList(
     groups.map((group) => group.id),
     filter,
   )
+  const extras = await loadExtras(q, modelId, drafts)
   const byGroup = new Map<string, DraftRow[]>()
   for (const draft of drafts)
     byGroup.set(draft.group_id, [...(byGroup.get(draft.group_id) ?? []), draft])
   const items = groups
-    .map((group) => view(model.code, group, byGroup.get(group.id) ?? [], filter, now))
+    .map((group) =>
+      view(model.code, group, byGroup.get(group.id) ?? [], filter, now, extras.get(group.id)),
+    )
     .filter((item): item is InboxGroup => item !== null)
     .sort((left, right) => {
       const rank = (item: InboxGroup) => SECTION[item.state.kind as keyof typeof SECTION] ?? 3
@@ -499,7 +605,8 @@ export async function inboxGroup(
   const now = new Date()
   for (const filter of ['active', 'accepted', 'rejected'] as const) {
     const drafts = await loadDrafts(q, modelId, [groupId], filter)
-    const shown = view(model.code, group, drafts, filter, now)
+    const extras = await loadExtras(q, modelId, drafts)
+    const shown = view(model.code, group, drafts, filter, now, extras.get(groupId))
     if (shown) return shown
   }
   throw new ApiProblem('not_found', 'Такой группы нет')

@@ -1,4 +1,4 @@
-import { type Db, SYSTEM_ACTOR, type Tx, withActorTx } from '@contentops/db'
+import { type Db, enqueueWork, SYSTEM_ACTOR, type Tx, withActorTx } from '@contentops/db'
 import {
   type CloudSource,
   components,
@@ -181,6 +181,43 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
       if (await ensureDraft(tx, source, groupId, revision, entry)) stats.drafts += 1
     }
     return stats
+  })
+}
+
+/**
+ * A new revision seen by `fetch` (SPEC §6.1: «изменился во время скачивания»): the bytes go
+ * to the next revision of the same object, its draft joins the group of the stale one.
+ */
+export async function recordChangedRevision(
+  tx: Tx,
+  source: SourceRow,
+  workId: string,
+  objectId: string,
+  groupId: string,
+  entry: SourceEntry,
+): Promise<void> {
+  const revision = await observeRevision(tx, source, objectId, entry, workId)
+  if (mediaKindOf(entry.name, entry.mediaType)) {
+    await ensureDraft(tx, source, groupId, revision, entry)
+  }
+}
+
+/** The fetch of a new draft, queued in the transaction that discovered it. */
+export async function queueFetch(
+  tx: Tx,
+  modelId: string,
+  draftId: string,
+  revisionId: string,
+  size: number,
+): Promise<void> {
+  await enqueueWork(tx, {
+    modelId,
+    kind: 'fetch',
+    workKey: `fetch:${revisionId}`,
+    sourceRevisionId: revisionId,
+    draftId,
+    // New and small first (SPEC §12.0): a smaller file gets a higher priority.
+    priority: Math.max(1, 100 - Math.round(Math.log2(Math.max(size, 1)))),
   })
 }
 
@@ -435,7 +472,7 @@ async function ensureDraft(
     return false
   }
   // New bytes of an accepted file: the draft proposes a new version of the same file.
-  await tx.execute(sql`
+  const inserted = await tx.execute<{ id: string }>(sql`
     INSERT INTO inbox_drafts (
       model_id, group_id, source_revision_id, origin, priority, md5, byte_size, path,
       target_item_id, target_asset_id
@@ -455,7 +492,10 @@ async function ensureDraft(
                                         AND id = ${revision.id}::uuid)
            AND d.outcome IN ('new_item', 'append')
          ORDER BY r.sequence_no DESC LIMIT 1
-      ) prior ON true`)
+      ) prior ON true
+    RETURNING id`)
+  const draftId = inserted.rows[0]?.id
+  if (draftId) await queueFetch(tx, source.modelId, draftId, revision.id, entry.size ?? 0)
   return true
 }
 
