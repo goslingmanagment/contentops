@@ -84,7 +84,8 @@ function retryAfter(response: Response): number | null {
   return Number.isFinite(seconds) ? seconds : null
 }
 
-async function errorFrom(response: Response): Promise<ApiError> {
+/** The error of a failed answer; a body outside the error format becomes `internal`. */
+export async function errorFrom(response: Response): Promise<ApiError> {
   const text = await response.text()
   let parsed: unknown = null
   try {
