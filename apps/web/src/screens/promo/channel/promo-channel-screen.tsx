@@ -108,7 +108,8 @@ export function PromoChannelScreen() {
         {query.isPending ? <ChannelSkeleton /> : null}
         {empty ? (
           <EmptyState>
-            В {contents.channel.name} пока ничего. Выделите материалы в Библиотеке → В промо
+            В {contents.channel.name} пока ничего.
+            {editable ? ' Выделите материалы в Библиотеке → В промо' : ''}
           </EmptyState>
         ) : null}
         {contents && contents.collections.length > 0 ? (
