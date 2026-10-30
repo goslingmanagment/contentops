@@ -67,7 +67,10 @@ export function markReason(mark: NonNullable<PlanFacts['mark']>): string {
 }
 
 export function coverageReason(hub: HubCoverage, accountLabel: string): string {
+  if (hub.reason) return hub.reason
   switch (hub.state) {
+    case 'unproven':
+      return 'Нет доказательства покрытия постов'
     case 'partial':
       return 'Hub видит не все посты этой страницы'
     case 'off':
@@ -125,12 +128,16 @@ export function describeEvidence(evidence: Evidence, today: LocalDate): string {
       return `В альбоме файл от ${formatDate(evidence.file_on, today)}`
     case 'vault_reupload':
       return `Новый файл на платформе ${formatDate(evidence.file_on, today)}`
-    case 'manual_confirm':
+    case 'manual_confirm': {
+      const agent = evidence.by_agent ? ' · подтверждено агентом' : ''
       return evidence.basis === 'pair'
-        ? `Это оно · ${dated(evidence.by, evidence.recorded_at, today)}`
-        : `Отчёт о выполнении · ${dated(evidence.by, evidence.recorded_at, today)}`
+        ? `Это оно · ${dated(evidence.by, evidence.recorded_at, today)}${agent}`
+        : `Отчёт о выполнении · ${dated(evidence.by, evidence.recorded_at, today)}${agent}`
+    }
     case 'manual_earlier':
-      return `Подтверждено вручную ${formatDate(evidence.confirmed_on, today)}`
+      return `Подтверждено ${evidence.by_agent ? 'агентом' : 'вручную'} ${formatDate(evidence.confirmed_on, today)}`
+    case 'hub_history':
+      return `Hub: похожий пост ${formatDate(mskDate(evidence.post_at), today)}, не подтверждение`
     case 'manual_reject':
       return `Не то · ${dated(evidence.by, evidence.recorded_at, today)}`
     case 'legacy_claim':

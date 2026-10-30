@@ -346,9 +346,17 @@ export async function markPlacement(
             ${unknownTime ? 'unknown' : 'exact'}, ${occurred ? 'km' : null}, 'km_mark', 'plan',
             ${actor.id}::uuid)
     ON CONFLICT (model_id, surface_id, manual_key) WHERE manual_key IS NOT NULL
-    DO UPDATE SET occurred_at = EXCLUDED.occurred_at, occurred_source = EXCLUDED.occurred_source,
-                  event_precision = EXCLUDED.event_precision, planned_at = EXCLUDED.planned_at,
-                  row_version = placements.row_version + 1
+    DO UPDATE SET
+      -- Hub's time of the post stands over the mark's (SPEC §7: the mark proves nothing).
+      occurred_at = CASE WHEN placements.occurred_source = 'hub' THEN placements.occurred_at
+                         ELSE EXCLUDED.occurred_at END,
+      occurred_source = CASE WHEN placements.occurred_source = 'hub' THEN 'hub'
+                             ELSE EXCLUDED.occurred_source END,
+      event_precision = CASE WHEN placements.occurred_source = 'hub' THEN placements.event_precision
+                             ELSE EXCLUDED.event_precision END,
+      surface_source = CASE WHEN placements.surface_source IN ('hub', 'km') THEN placements.surface_source
+                            ELSE 'km_mark' END,
+      planned_at = EXCLUDED.planned_at, row_version = placements.row_version + 1
     RETURNING id`)
   const placementId = rows[0]?.id as string
   const files = row.manifest_id ? await manifestFiles(tx, model.id, row.manifest_id) : []

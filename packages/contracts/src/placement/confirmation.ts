@@ -76,8 +76,8 @@ export function confirmation(facts: PlacementFacts, evidence: readonly Evidence[
   if (manual) {
     return {
       level: 'confirmed_manual',
-      word: 'подтверждено',
-      detail: `вручную, ${manual.by.name}`,
+      word: manual.by_agent ? 'подтверждено агентом' : 'подтверждено',
+      detail: manual.by_agent ? manual.by.name : `вручную, ${manual.by.name}`,
       reason: manual.basis === 'pair' ? 'Осмотренная пара' : 'Отчёт о выполнении',
       date: dateOf(manual.recorded_at),
     }
@@ -87,8 +87,8 @@ export function confirmation(facts: PlacementFacts, evidence: readonly Evidence[
     return {
       level: 'confirmed_earlier',
       word: 'подтверждено',
-      detail: 'ранее вручную',
-      reason: `Тот же файл OnlyFans, подтверждён ${formatDate(earlier.confirmed_on, today)}`,
+      detail: earlier.by_agent ? 'ранее агентом' : 'ранее вручную',
+      reason: `Тот же файл платформы, подтверждён ${formatDate(earlier.confirmed_on, today)}`,
       date: earlier.confirmed_on,
     }
   }

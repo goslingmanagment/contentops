@@ -2585,7 +2585,6 @@ export const placements = pgTable("placements", {
 	check("placements_occurrence_kind_check", sql`occurrence_kind = ANY (ARRAY['post'::text, 'vault_member'::text, 'manual'::text])`),
 	check("placements_event_precision_check", sql`event_precision = ANY (ARRAY['exact'::text, 'day'::text, 'unknown'::text])`),
 	check("placements_occurred_source_check", sql`occurred_source = ANY (ARRAY['hub'::text, 'km'::text, 'import'::text])`),
-	check("placements_surface_source_check", sql`surface_source = ANY (ARRAY['hub'::text, 'km_mark'::text, 'km'::text, 'plan'::text, 'import'::text])`),
 	check("placements_views_check", sql`views >= 0`),
 	check("placements_likes_check", sql`likes >= 0`),
 	check("placements_origin_check", sql`origin = ANY (ARRAY['plan'::text, 'hub'::text, 'manual'::text, 'import'::text])`),
@@ -2593,6 +2592,7 @@ export const placements = pgTable("placements", {
 	check("placements_out_of_catalog", sql`(NOT out_of_catalog) OR (item_id IS NULL)`),
 	check("placements_time", sql`(planned_at IS NOT NULL) OR (occurred_at IS NOT NULL) OR (event_precision = 'unknown'::text)`),
 	check("placements_occurred_source", sql`(occurred_at IS NULL) OR (occurred_source IS NOT NULL)`),
+	check("placements_surface_source_check", sql`surface_source = ANY (ARRAY['hub'::text, 'km_mark'::text, 'km'::text, 'plan'::text, 'import'::text, 'hub_hint'::text])`),
 ]);
 
 export const hubPostAttachments = pgTable("hub_post_attachments", {

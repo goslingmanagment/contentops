@@ -28,6 +28,7 @@ import {
   type ReadDatasetOptions,
 } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
+import { autoMatch } from './match/auto'
 import {
   HubFormatError,
   knownPosts,
@@ -565,6 +566,8 @@ export interface HubSyncOptions {
   client: HubClientFactory
   /** Rows per request (default Hub's 200). */
   pageSize?: number
+  /** `false` — the poll alone, without matching (tests of the mirror). */
+  match?: boolean
 }
 
 export function hubSyncHandler(options: HubSyncOptions): WorkHandler {
@@ -632,6 +635,14 @@ export function hubSyncHandler(options: HubSyncOptions): WorkHandler {
           break
       }
       const outcome: RunOutcome = { ...result.outcome, blockers: [...run.blockers].sort() }
+      // Matching of the page after every poll while «Автосверка» is on (SPEC §7, §8).
+      const matched =
+        options.match === false
+          ? null
+          : await autoMatch(db, page.accountId, {
+              requestId: `work:${work.id}:${work.fenceGeneration}:match`,
+              workId: work.id,
+            })
       return {
         report: {
           dataset,
@@ -643,6 +654,7 @@ export function hubSyncHandler(options: HubSyncOptions): WorkHandler {
           ...result.counts,
           blockers: outcome.blockers,
           hub_succeeded_at: outcome.hubSucceededAt ?? null,
+          match: matched,
         },
         // The boundary moves with the finish of the work, only for the holder of the lease.
         commit: (tx) =>

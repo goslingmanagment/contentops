@@ -10,6 +10,7 @@ import { sql } from 'drizzle-orm'
 import { instantOrNull, requireActor } from '../commands'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { startMatching } from '../hub/match/auto'
 import { type HubPageState, hubPageStates } from '../hub/views'
 import { cloudSources, hasCredentials, type SourceRow } from '../intake/source-client'
 import type { Services } from '../services'
@@ -380,6 +381,11 @@ export function integrationHandlers({
             now[SWITCH_LABEL[name]] = WORD(value)
             // Works paused by this switch go on where it is on now (schema §9.2).
             if (value) await resumeSwitch(tx, target.key)
+            // «Автосверка» on for the first time: the history pass of the page and the start of
+            // matching (SPEC §7); a repeat finds the same work.
+            if (value && name === 'auto_match' && target.modelId && target.accountId) {
+              await startMatching(tx, { modelId: target.modelId, accountId: target.accountId })
+            }
           }
           await logAction(tx, {
             modelId: entry.scope.modelId,

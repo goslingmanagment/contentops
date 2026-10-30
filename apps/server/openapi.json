@@ -7905,6 +7905,7 @@
           "unknown",
           "not_found_in_walk",
           "not_published",
+          "history_candidate",
           "blocked_second_person",
           "cancelled",
           "outside_catalog"

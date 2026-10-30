@@ -8,7 +8,7 @@ import { type SurfaceVerdict, summarizePage } from '@contentops/contracts/page-s
 import { isInPlanLevel, isPlacedLevel } from '@contentops/contracts/placement'
 import { vaultAlbumName } from '@contentops/contracts/vault-album'
 import { publicIdOf } from '../catalog/ids'
-import type { RowRecord } from './records'
+import type { PlacementRecord, RowRecord } from './records'
 import { surfaceOfDb } from './records'
 import { evaluatePlacementRecord, evaluateRow, type PlanState } from './state'
 
@@ -23,7 +23,26 @@ export interface PairSurfaces {
   item_id: ItemId
   item_uid: string
   account: string
-  surfaces: (SurfaceVerdict & { row: RowRecord | null })[]
+  surfaces: (SurfaceVerdict & { row: RowRecord | null; placements: PlacementRecord[] })[]
+}
+
+/**
+ * Views of a surface (SPEC §8.1): the sum over its placements from Hub, the date of the latest;
+ * no placement with data — `null`, «нет данных», never 0.
+ */
+export function statsOf(
+  placements: readonly PlacementRecord[],
+): { views: number; on: string; caption: string | null } | null {
+  const known = placements.filter((placement) => placement.views !== null && placement.stats_at)
+  if (known.length === 0) return null
+  return {
+    views: known.reduce((sum, placement) => sum + Number(placement.views), 0),
+    on: known
+      .map((placement) => (placement.stats_at as string).slice(0, 10))
+      .sort()
+      .at(-1) as string,
+    caption: placements.find((placement) => placement.caption)?.caption ?? null,
+  }
 }
 
 export function collectPairs(state: PlanState, onlyItem: string | null = null): PairSurfaces[] {
@@ -35,10 +54,11 @@ export function collectPairs(state: PlanState, onlyItem: string | null = null): 
     surface: SurfaceVerdict['surface'],
     verdict: PlacementVerdict,
     row: RowRecord | null,
+    placements: PlacementRecord[],
   ) => {
     const key = `${uid}|${account}`
     const pair = pairs.get(key) ?? { item_id: id, item_uid: uid, account, surfaces: [] }
-    pair.surfaces.push({ surface, verdict, row })
+    pair.surfaces.push({ surface, verdict, row, placements })
     pairs.set(key, pair)
   }
   for (const row of state.rows) {
@@ -51,6 +71,7 @@ export function collectPairs(state: PlanState, onlyItem: string | null = null): 
       surfaceOfDb(row.surface),
       evaluateRow(state, row),
       row,
+      state.placements.filter((placement) => placement.plan_row_id === row.id),
     )
   }
   for (const placement of state.placements) {
@@ -63,6 +84,7 @@ export function collectPairs(state: PlanState, onlyItem: string | null = null): 
       surfaceOfDb(placement.surface),
       evaluatePlacementRecord(state, placement),
       null,
+      [placement],
     )
   }
   return [...pairs.values()]
@@ -72,7 +94,11 @@ export function summaryOf(pair: PairSurfaces): PageSummaryEntry {
   const hasFypVersion = pair.surfaces.some(
     (surface) => surface.row?.uniq_variant_no != null && !surface.row.cancelled_at,
   )
-  return summarizePage(pair.item_id, pair.account, pair.surfaces, { hasFypVersion })
+  const stats = statsOf(pair.surfaces.flatMap((surface) => surface.placements))
+  return summarizePage(pair.item_id, pair.account, pair.surfaces, {
+    hasFypVersion,
+    stats: stats ? { views: stats.views, on: stats.on } : null,
+  })
 }
 
 /** The second index resource: the summary of every pair with facts. */
@@ -164,9 +190,12 @@ export function itemPages(state: PlanState, entry: CatalogEntry, uid: string): I
         plan_row_id: surface.row?.id ?? null,
         album:
           surface.row?.album_name ?? (surface.surface === 'vault' ? vaultAlbumName(entry) : null),
-        caption: null,
-        views: null,
-        stats_on: null,
+        caption:
+          statsOf(surface.placements)?.caption ??
+          surface.placements.find((one) => one.caption)?.caption ??
+          null,
+        views: statsOf(surface.placements)?.views ?? null,
+        stats_on: statsOf(surface.placements)?.on ?? null,
       })),
       action: actionFor(entry, account.platform, surfaces),
     }

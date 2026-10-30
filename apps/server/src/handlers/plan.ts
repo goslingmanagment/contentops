@@ -92,13 +92,17 @@ export function planHandlers(services: Services): HandlerRegistry {
     }
   }
 
-  /** Before stage 5 every page and surface but Fansly stories and mass messages confirms by hand. */
+  /**
+   * «Отметить и подтвердить» only where matching does not work for the page and surface (SPEC
+   * §7): the vault, stories and mass messages of OnlyFans, a page with Hub off or not set up;
+   * never Fansly stories and mass messages.
+   */
   function confirmable(state: PlanState, row: RowRecord): boolean {
     return (
       markButtonKind(
         row.platform,
         surfaceOfDb(row.surface),
-        hubCoverage(state, row.account).state,
+        hubCoverage(state, row.account, row.surface).state,
       ) === 'mark_confirm'
     )
   }

@@ -20,6 +20,7 @@ import { sql } from 'drizzle-orm'
 import { catalogEntries } from '../catalog/entries'
 import { publicIdOf } from '../catalog/ids'
 import { instant } from '../commands'
+import { checkModel, unplannedOn } from '../hub/check/cases'
 import type { DownloadItem } from '../media/downloads'
 import { planWarnings, slotOrder } from './checks'
 import {
@@ -232,7 +233,7 @@ export async function rowView(
     mark_button: markButtonKind(
       page?.platform ?? row.platform,
       surfaceOfDb(row.surface),
-      hubCoverage(state, row.account).state,
+      hubCoverage(state, row.account, row.surface).state,
     ),
     created_by: actorRef(state.people, row.created_by),
     created_at: row.created_at,
@@ -464,6 +465,7 @@ export async function dayView(
     ),
   }))
   const norms = normsOf(state)
+  const check = await checkModel(context.q, state)
   const step = views.filter(
     (view) =>
       !view.cancelled && (NEEDS_STEP.has(view.verdict.level) || view.verdict.sign === 'turn'),
@@ -476,8 +478,8 @@ export async function dayView(
       account: account.code,
       assignee: personRef(state.people, account.usual_assignee),
       integration: hubLine(context, account.code, account.label),
-      // Hub posts without a plan are found from stage 5 on.
-      unplanned_posts: 0,
+      // «Пост без плана» of the page on this day (SPEC §7, DESIGN §4.11).
+      unplanned_posts: unplannedOn(check, account.code, date),
     })),
     rows: views,
     gaps: gapsOf(state, norms, [date]),

@@ -49,6 +49,7 @@ export const PlacementLevelSchema = z.enum([
   'unknown',
   'not_found_in_walk',
   'not_published',
+  'history_candidate',
   'blocked_second_person',
   'cancelled',
   'outside_catalog',
@@ -57,10 +58,20 @@ export type PlacementLevel = z.infer<typeof PlacementLevelSchema>
 
 /** Hub's view of a page: whether it sees all posts, and since when. */
 export const HubCoverageSchema = z.object({
-  state: z.enum(['complete', 'partial', 'off', 'unset', 'down']),
+  /**
+   * `complete` — Hub proves it sees every post (entry E7); `unproven` — Hub works and matching
+   * is on, but there is no proof of coverage of posts: no «не вышло», after the window «не
+   * удалось проверить» (SPEC §7).
+   */
+  state: z.enum(['complete', 'unproven', 'partial', 'off', 'unset', 'down']),
   since: InstantSchema.nullable(),
   /** First day Hub captured posts of the page: «Hub видит Fansly 1 с 19.01.2025». */
   visible_from: LocalDateSchema.nullable(),
+  /**
+   * Why Hub cannot conclude, in the server's words when the state alone does not say it: «Hub
+   * не обновлял посты с 18:32», «Hub обходил альбом «PPV» 23.09 03:08».
+   */
+  reason: z.string().nullable().optional(),
 })
 export type HubCoverage = z.infer<typeof HubCoverageSchema>
 
@@ -167,8 +178,18 @@ export const EvidenceSchema = z.discriminatedUnion('kind', [
     kind: z.literal('manual_confirm'),
     by: PersonNameSchema,
     basis: z.enum(['pair', 'report']),
+    /** An agent confirmed it: «подтверждено агентом» (SPEC §11.1). */
+    by_agent: z.boolean().optional(),
   }),
-  z.object({ ...evidenceBase, kind: z.literal('manual_earlier'), confirmed_on: LocalDateSchema }),
+  z.object({
+    ...evidenceBase,
+    kind: z.literal('manual_earlier'),
+    confirmed_on: LocalDateSchema,
+    /** The pair was confirmed by an agent: «ранее агентом». */
+    by_agent: z.boolean().optional(),
+  }),
+  /** A single match of the page's history without plan (SPEC §7): a grey caption, no ◆. */
+  z.object({ ...evidenceBase, kind: z.literal('hub_history'), post_at: InstantSchema }),
   z.object({
     ...evidenceBase,
     kind: z.literal('manual_reject'),

@@ -52,8 +52,9 @@ export const SERVER_ROUTES: ServerRoutes = {
     'addContractor',
     'updateContractor',
   ],
-  // План и задачи (4а): «Сверить» — этап 5, его область `check` идёт в заглушку.
+  // План и задачи (4а); «Сверить» — этап 5.
   plan: 'all',
+  check: 'all',
   journal: 'all',
   // Каталог (2а); скачивания, кадры мастера, обложка и версии фупа — медиаконвейер (2б).
   objects: [
