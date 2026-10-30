@@ -1,0 +1,112 @@
+// pnpm dev:server — PostgreSQL 18 in Docker, migrations, bootstrap with the example models
+// and the server in watch mode on 127.0.0.1:3000. `pnpm dev` (Vite) proxies `/api` to it.
+// Sign in as `dmitriy` with the password below. Data stays in the container between runs;
+// `docker rm -f contentops-dev-pg` starts from scratch.
+import { execFileSync, spawn } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
+
+const ROOT = new URL('../../..', import.meta.url).pathname
+const CONTAINER = 'contentops-dev-pg'
+const IMAGE = 'postgres:18.6'
+const PORT = process.env.DEV_PG_PORT ?? '54329'
+const OWNER_PASSWORD = process.env.CONTENTOPS_OWNER_PASSWORD ?? 'contentops-dev'
+const url = (user, password) =>
+  `postgres://${user}:${password}@127.0.0.1:${PORT}/contentops`
+
+function docker(...args) {
+  return execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
+function containerState() {
+  try {
+    return docker('inspect', '-f', '{{.State.Running}}', CONTAINER).trim()
+  } catch {
+    return 'missing'
+  }
+}
+
+function psql(sql, database = 'postgres') {
+  return docker('exec', CONTAINER, 'psql', '-U', 'postgres', '-d', database, '-qtAc', sql).trim()
+}
+
+async function waitReady() {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    try {
+      psql('SELECT 1')
+      return
+    } catch {
+      await delay(500)
+    }
+  }
+  throw new Error(`${CONTAINER} did not become ready`)
+}
+
+function node(script, args, env) {
+  execFileSync(process.execPath, [script, ...args], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, ...env },
+  })
+}
+
+const state = containerState()
+if (state === 'missing') {
+  docker(
+    'run',
+    '-d',
+    '--name',
+    CONTAINER,
+    '-e',
+    'POSTGRES_PASSWORD=dev',
+    '-p',
+    `127.0.0.1:${PORT}:5432`,
+    IMAGE,
+  )
+} else if (state !== 'true') {
+  docker('start', CONTAINER)
+}
+await waitReady()
+
+// The host script's part (SPEC §12.1): both roles and the database owned by the migrate role.
+for (const [role, password] of [
+  ['contentops_migrate', 'dev-migrate'],
+  ['contentops_app', 'dev-app'],
+]) {
+  if (psql(`SELECT 1 FROM pg_roles WHERE rolname = '${role}'`) !== '1') {
+    psql(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`)
+  }
+}
+if (psql(`SELECT 1 FROM pg_database WHERE datname = 'contentops'`) !== '1') {
+  psql('CREATE DATABASE contentops OWNER contentops_migrate')
+}
+
+const cli = join(ROOT, 'packages/db/src/cli.ts')
+node(cli, ['migrate'], { DATABASE_URL: url('contentops_migrate', 'dev-migrate') })
+node(cli, ['bootstrap', join(ROOT, 'packages/db/bootstrap.example.json')], {
+  DATABASE_URL: url('contentops_app', 'dev-app'),
+  CONTENTOPS_OWNER_PASSWORD: OWNER_PASSWORD,
+})
+
+const storage = join(tmpdir(), 'contentops-dev')
+for (const dir of ['data', 'derived', 'tmp']) mkdirSync(join(storage, dir), { recursive: true })
+
+console.log(`\nContentOps dev: http://localhost:5173 after \`pnpm dev\` · dmitriy / ${OWNER_PASSWORD}\n`)
+const server = spawn('pnpm', ['--filter', '@contentops/server', 'dev'], {
+  cwd: ROOT,
+  stdio: 'inherit',
+  env: {
+    ...process.env,
+    ROLE: 'web',
+    DATABASE_URL: url('contentops_app', 'dev-app'),
+    DATA_ROOT: join(storage, 'data'),
+    DERIVED_ROOT: join(storage, 'derived'),
+    TMP_ROOT: join(storage, 'tmp'),
+    PUBLIC_URL: 'http://localhost:5173',
+    LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',
+  },
+})
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.kill(signal))
+server.on('exit', (code) => process.exit(code ?? 0))

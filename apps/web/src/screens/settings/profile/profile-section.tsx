@@ -6,8 +6,9 @@ import { modelNamesOf } from '../shared/model-names'
 import { NameRow } from './name-row'
 import { PasswordRow } from './password-row'
 import { SessionsSection } from './sessions-section'
+import { SkinRow } from './skin-row'
 
-/** «Профиль и сессии» (DESIGN §4.19): имя, пароль, свои сессии, «Выйти везде». Видят все. */
+/** «Профиль и сессии» (DESIGN §4.19): имя, пароль, вид, свои сессии, «Выйти везде». Видят все. */
 export function ProfileSection() {
   const session = useSession()
   const models = useModels()
@@ -27,6 +28,7 @@ export function ProfileSection() {
           <span className="text-muted-foreground">{person ? ROLE_LABEL[person.role] : null}</span>
         </SettingsRow>
         <PasswordRow />
+        {session.data ? <SkinRow skin={session.data.ui_skin} /> : null}
       </SettingsSection>
       <SessionsSection />
     </SettingsPage>

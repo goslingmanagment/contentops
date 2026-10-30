@@ -6,9 +6,9 @@ import {
   type ModelCode,
 } from '@contentops/contracts'
 
-/** `hub:lora-of` → `hub`: вид интеграции из её ID. */
+/** `hub.lora-of` (у заглушки `hub:lora-of`) → `hub`: вид интеграции из её ID. */
 function kindOf(line: IntegrationLine): string {
-  return line.integration_id.split(':')[0] ?? line.integration_id
+  return line.integration_id.split(/[.:]/)[0] ?? line.integration_id
 }
 
 /**

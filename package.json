@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @contentops/web dev",
+    "dev:server": "node apps/server/scripts/dev-stack.mjs",
     "build": "pnpm --filter @contentops/web build",
     "typecheck": "pnpm -r --parallel typecheck",
     "check": "pnpm typecheck && biome check apps packages && pnpm -r test",

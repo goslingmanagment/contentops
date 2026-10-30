@@ -8,7 +8,7 @@ import { checkVersion } from '../commands'
 import type { ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
-import type { Snapshot } from '../journal/describe'
+import { orderedFields, type Snapshot } from '../journal/describe'
 import type { Services } from '../services'
 
 /**
@@ -190,8 +190,8 @@ export function normHandlers({ db, command }: Services): HandlerRegistry {
             subjectKind: 'accounts',
             subjectId: row.id,
             subjectLabel: row.title,
-            before: normSnapshot(before, beforeAssignee),
-            after: normSnapshot(body, assignee),
+            before: orderedFields(normSnapshot(before, beforeAssignee)),
+            after: orderedFields(normSnapshot(body, assignee)),
           })
           return normOf(updated)
         }),

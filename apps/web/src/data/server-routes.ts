@@ -9,7 +9,40 @@ type ServerRoutes = { [Area in keyof ApiRoutes]?: 'all' | readonly (keyof ApiRou
  * отвечает заглушка (`@contentops/mock-api`); в сборке продукта заглушки нет и все запросы
  * идут на сервер.
  */
-export const SERVER_ROUTES: ServerRoutes = {}
+export const SERVER_ROUTES: ServerRoutes = {
+  auth: 'all',
+  admin: [
+    'me',
+    'models',
+    'people',
+    'agents',
+    'issueToken',
+    'revokeToken',
+    'integrations',
+    'updateIntegration',
+    'thresholds',
+    'updateThreshold',
+    'removeThreshold',
+  ],
+  settings: [
+    'addPerson',
+    'updatePerson',
+    'revokePersonSessions',
+    'revokeAccess',
+    'modelPeople',
+    'personGrants',
+    'mySessions',
+    'revokeMySession',
+    'updateProfile',
+    'changePassword',
+    'addModel',
+    'addAccount',
+    'connectIntegration',
+    'ai',
+  ],
+  plan: ['norm', 'updateNorm'],
+  journal: 'all',
+}
 
 const onServer = new Set<Route>(
   Object.entries(SERVER_ROUTES).flatMap(([area, names]) => {

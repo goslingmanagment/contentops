@@ -65,6 +65,11 @@ const WORDING: Record<string, Wording> = {
     rest: '{subject}',
     noun: 'изменение интеграции',
   },
+  'settings.connectIntegration': {
+    verb: 'настроил',
+    rest: '{subject}',
+    noun: 'настройка интеграции',
+  },
   'admin.updateThreshold': { verb: 'задал', rest: 'порог {subject}', noun: 'изменение порога' },
   'admin.removeThreshold': { verb: 'убрал', rest: 'порог {subject}', noun: 'удаление порога' },
   'principal.reset_password': { verb: 'сбросил', rest: 'пароль: {subject}', noun: 'сброс пароля' },
@@ -108,10 +113,20 @@ export interface LogRow {
   result: JournalEvent['result']
 }
 
-function snapshot(value: unknown): Snapshot {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([key, item]) =>
+/**
+ * Field → value of a `before`/`after` document: an object, or `[field, value]` pairs where the
+ * order matters (jsonb sorts object keys): «Фуп · вт» before «Фуп · чт».
+ */
+function snapshot(value: unknown): Map<string, string> {
+  const entries: [string, unknown][] = Array.isArray(value)
+    ? value.filter(
+        (pair): pair is [string, unknown] => Array.isArray(pair) && typeof pair[0] === 'string',
+      )
+    : typeof value === 'object' && value !== null
+      ? Object.entries(value)
+      : []
+  return new Map(
+    entries.flatMap(([key, item]): [string, string][] =>
       typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean'
         ? [[key, String(item)]]
         : [],
@@ -119,14 +134,19 @@ function snapshot(value: unknown): Snapshot {
   )
 }
 
+/** A snapshot in its own order, for `before`/`after` of an `action` row. */
+export function orderedFields(fields: Snapshot): [string, string][] {
+  return Object.entries(fields)
+}
+
 /** «было → стало» of the fields that differ; a new object has «—» before. */
 export function changesOf(before: unknown, after: unknown): JournalEvent['changes'] {
   const was = snapshot(before)
   const now = snapshot(after)
-  const fields = [...new Set([...Object.keys(was), ...Object.keys(now)])]
+  const fields = [...new Set([...now.keys(), ...was.keys()])]
   return fields.flatMap((field) => {
-    const left = was[field] ?? '—'
-    const right = now[field] ?? '—'
+    const left = was.get(field) ?? '—'
+    const right = now.get(field) ?? '—'
     return left === right ? [] : [{ field, before: left, after: right }]
   })
 }

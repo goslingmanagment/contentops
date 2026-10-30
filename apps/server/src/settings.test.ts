@@ -149,12 +149,12 @@ describe('switches and thresholds', () => {
     const hub = async () =>
       (await get('/api/v1/admin/integrations'))
         .json()
-        .items.find((i: { id: string }) => i.id === 'hub:lora-9')
+        .items.find((i: { id: string }) => i.id === 'hub.lora-9')
     expect((await hub()).state).toBe('off')
     expect((await hub()).line.text).toBe('Hub выключен для Fansly 9 — отметки работают')
     const on = await call(server.app, {
       method: 'PATCH',
-      url: '/api/v1/admin/integrations/hub:lora-9',
+      url: '/api/v1/admin/integrations/hub.lora-9',
       as: owner,
       key: newKey(),
       body: { switches: { receive: true } },
@@ -164,8 +164,23 @@ describe('switches and thresholds', () => {
     expect(
       (await get('/api/v1/admin/integrations'))
         .json()
-        .items.find((i: { id: string }) => i.id === 'hub:lora-1').state,
+        .items.find((i: { id: string }) => i.id === 'hub.lora-1').state,
     ).toBe('unset')
+  })
+
+  it('«Настроить» gives Hub its page code; keys stay in the environment', async () => {
+    const connect = (integration: string, body: object) =>
+      call(server.app, {
+        method: 'POST',
+        url: `/api/v1/admin/integrations/${encodeURIComponent(integration)}:connect`,
+        as: owner,
+        key: newKey(),
+        body,
+      })
+    const hub = await connect('hub.lora-1', { hub_page: 'lora-1' })
+    expect(hub.statusCode).toBe(200)
+    expect(hub.json()).toMatchObject({ id: 'hub.lora-1', state: 'off' })
+    expect((await connect('fyper', { key: 'secret' })).statusCode).toBe(400)
   })
 
   it('the row for everything is set by version; an exception is created and removed', async () => {
