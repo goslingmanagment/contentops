@@ -1,3 +1,10 @@
+export {
+  COPY_LIST_FILE,
+  type CopyFile,
+  CopyList,
+  type CopyListEntry,
+  parseCopyList,
+} from './copy-list.ts'
 export { findIdMentions, type IdMention } from './ids.ts'
 export { apiToLocalPath, LocalPathIndex, localCopyPath } from './local-path.ts'
 export { parseLegacyName } from './name.ts'

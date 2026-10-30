@@ -1,6 +1,6 @@
 <#
-Registers the Windows scheduled tasks of the pilot VM on winpc (SPEC 12.2), both SYSTEM, at
-startup and every 5 minutes, Windows PowerShell 5.1; scripts are copied to
+Registers the Windows scheduled tasks of the pilot VM on winpc (SPEC 12.2), all SYSTEM; the
+first two at startup and every 5 minutes in Windows PowerShell 5.1; scripts are copied to
 C:\vm\contentops\ops\ and run from there, logs in C:\vm\contentops\logs\.
 
 - ContentOps-Watchdog: /healthz, VM restart after 3 failures. Registered DISABLED unless
@@ -11,6 +11,9 @@ C:\vm\contentops\ops\ and run from there, logs in C:\vm\contentops\logs\.
   C:\vm\contentops\host\space.json. Always enabled. The folder is shared as contentops-host,
   read-only for PC\contentops-ro only (the account of the ydisk-ro share); the VM mounts it
   at /mnt/host (ops/vm/setup-host-share.sh). Nothing is ever shared from the Yandex copy here.
+- ContentOps-CopyList: on demand only (no trigger), PowerShell 7. Lists the Yandex copy,
+  metadata only, to C:\vm\contentops\host\ydisk-copy-list.jsonl (ydisk-copy-list.ps1); the
+  operator refreshes it before each import batch: Start-ScheduledTask ContentOps-CopyList.
 
 Re-running replaces the tasks and keeps the share. Run elevated on winpc, e.g. from the Mac:
   scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/
@@ -32,7 +35,7 @@ $shareName = 'contentops-host'
 $shareUser = "$env:COMPUTERNAME\contentops-ro"
 
 New-Item -ItemType Directory -Force -Path $opsDir, $logDir, $hostDir | Out-Null
-foreach ($name in 'ContentOps-Watchdog.ps1', 'ContentOps-Space.ps1') {
+foreach ($name in 'ContentOps-Watchdog.ps1', 'ContentOps-Space.ps1', 'ydisk-copy-list.ps1') {
   $src = Join-Path $PSScriptRoot $name
   $dst = Join-Path $opsDir $name
   if ((Resolve-Path $src).Path -ne $dst) { Copy-Item -Force $src $dst }
@@ -70,7 +73,19 @@ Register-Every5Min 'ContentOps-Space' 'ContentOps-Space.ps1' '' `
 Enable-ScheduledTask -TaskName 'ContentOps-Space' | Out-Null
 Start-ScheduledTask -TaskName 'ContentOps-Space'
 
-foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space') {
+# The copy list runs when the operator starts it (before an import batch), never by itself.
+$pwsh = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+if (-not (Test-Path $pwsh)) { throw "PowerShell 7 is needed for ContentOps-CopyList: $pwsh" }
+$copyListAction = New-ScheduledTaskAction -Execute $pwsh `
+  -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$(Join-Path $opsDir 'ydisk-copy-list.ps1')`""
+$onDemand = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+  -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+Register-ScheduledTask -TaskName 'ContentOps-CopyList' -Action $copyListAction -Principal $principal `
+  -Settings $onDemand -Force `
+  -Description 'ContentOps: metadata-only list of the Yandex copy for the import, on demand (ops/winpc)' | Out-Null
+Enable-ScheduledTask -TaskName 'ContentOps-CopyList' | Out-Null
+
+foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space', 'ContentOps-CopyList') {
   "{0}: {1}" -f $name, (Get-ScheduledTask -TaskName $name).State
 }
 "{0}: {1} -> {2}" -f $shareName, (Get-SmbShare -Name $shareName).Path, $shareUser
