@@ -122,6 +122,7 @@ setup_swap() {
     cp -p /etc/fstab "/etc/fstab.bak-$(date +%Y%m%d-%H%M%S)"
     printf '%s none swap sw 0 0\n' "$SWAP_FILE" >>/etc/fstab
     echo "fstab: added $SWAP_FILE"
+    systemctl daemon-reload
   fi
   swapon --show=NAME --noheadings | grep -qx "$SWAP_FILE" || swapon "$SWAP_FILE"
   swapon --show
