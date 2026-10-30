@@ -124,6 +124,26 @@ const WORDING: Record<string, Wording> = {
   'settings.updateTag': { verb: 'изменил', rest: 'тег {subject}', noun: 'правка тега' },
   'settings.mergeTag': { verb: 'слил', rest: 'тег {subject}', noun: 'слияние тегов' },
   'fixtures.seed': { verb: 'завёл', rest: '{subject} (фикстура)', noun: 'фикстура' },
+  // Promo (stage 4в): `{subject}` is «PRM-015»; contractors by name.
+  'promo.create': { verb: 'завёл', rest: 'подборку {subject}', noun: 'новая подборка' },
+  'promo.add': { verb: 'добавил', rest: 'материалы в {subject}', noun: 'добавление в промо' },
+  'promo.remove': { verb: 'убрал', rest: 'материалы из {subject}', noun: 'удаление из промо' },
+  'promo.prepareHandoff': {
+    verb: 'начал',
+    rest: 'готовить передачу {subject}',
+    noun: 'подготовка передачи',
+  },
+  'promo.markSent': { verb: 'отметил', rest: 'передачу {subject}', noun: '«Передано»' },
+  'settings.addContractor': {
+    verb: 'добавил',
+    rest: 'подрядчика {subject}',
+    noun: 'добавление подрядчика',
+  },
+  'settings.updateContractor': {
+    verb: 'изменил',
+    rest: 'формат подрядчика {subject}',
+    noun: 'формат подрядчика',
+  },
 }
 
 /** Why an object is in «Недавние»: «правка разметки», «подтверждение разметки». */

@@ -58,6 +58,16 @@ export const AddAccountCommandSchema = z.object({
 })
 export type AddAccountCommand = z.infer<typeof AddAccountCommandSchema>
 
+/** «Добавить подрядчика»: a recipient of promo handoffs in the context of one model. */
+export const AddContractorCommandSchema = z.object({
+  name: z.string().trim().min(1, 'Нужно имя'),
+  /** Code of the promo channel; `null` — any. */
+  channel: z.string().nullable(),
+  contact: z.string().trim().nullable(),
+  format: ContractorFormatSchema,
+})
+export type AddContractorCommand = z.infer<typeof AddContractorCommandSchema>
+
 export const UpdateContractorCommandSchema = z.object({ format: ContractorFormatSchema })
 export type UpdateContractorCommand = z.infer<typeof UpdateContractorCommandSchema>
 

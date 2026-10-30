@@ -7,11 +7,6 @@ import { queryKeys } from './query-keys'
 /** Передача, которая готовится, опрашивается, пока видна (DESIGN §3.13, п. 8). */
 const PREPARING_POLL_MS = 1_500
 
-/** Свои ключи промо под общим префиксом модели: смена модели сбрасывает и их. */
-const promoKeys = {
-  contractors: (model: ModelCode) => [...queryKeys.model(model), 'promo-contractors'] as const,
-}
-
 interface WithHandoffs {
   handoffs: readonly { state: string }[]
 }
@@ -66,7 +61,7 @@ export function usePromoHandoffs(model: ModelCode) {
 export function usePromoContractors(model: ModelCode) {
   const api = useApi()
   return useQuery({
-    queryKey: promoKeys.contractors(model),
+    queryKey: queryKeys.promoContractors(model),
     queryFn: ({ signal }) => api.promo.contractors({ params: { model }, signal }),
     select: (page) => page.items,
     staleTime: Number.POSITIVE_INFINITY,

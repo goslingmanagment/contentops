@@ -2,7 +2,7 @@ import { Button } from '@contentops/ui/components/button'
 import { SettingsSectionSkeleton } from '@contentops/ui/components/settings-section'
 import { ErrorLine } from '@contentops/ui/components/state-lines'
 import { PlusIcon } from 'lucide-react'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useModels } from '@/data/session'
 import { SettingsPage } from '../settings-layout'
 import { useIsOwner } from '../shared/use-is-owner'
@@ -38,9 +38,11 @@ export function ModelsSection() {
       ) : null}
       {models.isPending ? <SettingsSectionSkeleton rows={5} /> : null}
       {models.data?.map((model) => (
-        <ModelPagesSection key={model.code} model={model} />
+        <Fragment key={model.code}>
+          <ModelPagesSection model={model} />
+          {owner ? <ContractorsSection model={model} /> : null}
+        </Fragment>
       ))}
-      {owner && models.data?.[0] ? <ContractorsSection model={models.data[0].code} /> : null}
       {owner ? <AddModelDialog open={adding} onOpenChange={setAdding} /> : null}
     </SettingsPage>
   )

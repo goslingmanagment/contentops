@@ -130,9 +130,30 @@ export function buildAgents(): Agent[] {
 
 export function buildContractors(): Contractor[] {
   return [
-    { id: 'c-garanteam', name: 'GaranTTeam Social', channels: ['instagram'], format: 'compact' },
-    { id: 'c-coraline', name: 'Coraline Red', channels: ['gif'], format: 'compact' },
-    { id: 'c-truehelper', name: 'True Helper', channels: ['sfs'], format: 'compact' },
+    {
+      id: 'c-garanteam',
+      name: 'GaranTTeam Social',
+      channel: 'instagram',
+      contact: null,
+      format: 'upload',
+      version: 1,
+    },
+    {
+      id: 'c-coraline',
+      name: 'Coraline Red',
+      channel: 'gif',
+      contact: null,
+      format: 'upload',
+      version: 1,
+    },
+    {
+      id: 'c-truehelper',
+      name: 'True Helper',
+      channel: 'sfs',
+      contact: null,
+      format: 'master',
+      version: 1,
+    },
   ]
 }
 

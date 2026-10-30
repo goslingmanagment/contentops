@@ -338,6 +338,36 @@
           "consent"
         ]
       },
+      "AddContractorCommandInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "format": {
+            "$ref": "#/components/schemas/ContractorFormatInput"
+          }
+        },
+        "required": [
+          "name",
+          "channel",
+          "contact",
+          "format"
+        ]
+      },
       "AddModelCommandInput": {
         "type": "object",
         "properties": {
@@ -1357,7 +1387,7 @@
               "additionalProperties": false
             }
           },
-          "unfiled": {
+          "materials": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CollectionMember"
@@ -1367,7 +1397,7 @@
         "required": [
           "channel",
           "collections",
-          "unfiled"
+          "materials"
         ],
         "additionalProperties": false
       },
@@ -1812,36 +1842,49 @@
           "name": {
             "type": "string"
           },
-          "channels": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contact": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "format": {
             "$ref": "#/components/schemas/ContractorFormat"
+          },
+          "version": {
+            "$ref": "#/components/schemas/RecordVersion"
           }
         },
         "required": [
           "id",
           "name",
-          "channels",
-          "format"
+          "channel",
+          "contact",
+          "format",
+          "version"
         ],
         "additionalProperties": false
       },
       "ContractorFormat": {
         "type": "string",
         "enum": [
-          "compact",
-          "masters"
+          "upload",
+          "master",
+          "compat"
         ]
       },
       "ContractorFormatInput": {
         "type": "string",
         "enum": [
-          "compact",
-          "masters"
+          "upload",
+          "master",
+          "compat"
         ]
       },
       "CopyState": {
@@ -3129,6 +3172,7 @@
           "undo_expired",
           "case_resolved",
           "handoff_not_ready",
+          "handoff_replaced",
           "number_not_issued",
           "item_in_use"
         ]
@@ -3420,6 +3464,16 @@
           "contractor_name": {
             "type": "string"
           },
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContractorFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "state": {
             "$ref": "#/components/schemas/HandoffState"
           },
@@ -3515,6 +3569,7 @@
           "collection_id",
           "contractor_id",
           "contractor_name",
+          "format",
           "state",
           "progress",
           "video_count",
@@ -18184,38 +18239,40 @@
         }
       }
     },
-    "/api/v1/admin/contractors": {
-      "get": {
-        "operationId": "settings.contractors",
+    "/api/v1/admin/models/{model}/contractors": {
+      "post": {
+        "operationId": "settings.addContractor",
         "tags": [
           "settings"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddContractorCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
         "responses": {
-          "200": {
+          "201": {
             "description": "Default Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Contractor"
-                      }
-                    },
-                    "next_cursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "items",
-                    "next_cursor"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/components/schemas/Contractor"
                 }
               }
             }
@@ -18233,7 +18290,7 @@
         }
       }
     },
-    "/api/v1/admin/contractors/{contractor}": {
+    "/api/v1/admin/models/{model}/contractors/{contractor}": {
       "patch": {
         "operationId": "settings.updateContractor",
         "tags": [
@@ -18250,6 +18307,15 @@
           }
         },
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
           {
             "schema": {
               "type": "string",

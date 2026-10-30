@@ -66,7 +66,7 @@ const APPEND_ONLY = [
   'placement_evidence',
 ]
 /** Rows that are updated but never deleted by the app role. */
-const NO_DELETE = ['blobs']
+const NO_DELETE = ['blobs', 'promo_deliveries']
 /** Columns that never change (`forbid_change`). */
 const FIXED_COLUMNS: Record<string, string[]> = {
   accounts: ['model_id', 'id'],
@@ -84,6 +84,7 @@ const FIXED_COLUMNS: Record<string, string[]> = {
   blobs: ['sha256', 'byte_size', 'ext', 'media_kind', 'storage_key'],
   chronology_entries: ['model_id', 'id', 'item_id', 'asset_version_id'],
   content_items: ['model_id', 'id', 'type', 'number'],
+  contractors: ['model_id', 'id'],
   custom_order_messages: ['model_id', 'id', 'order_id'],
   custom_order_revisions: ['model_id', 'id', 'order_id'],
   custom_orders: ['model_id', 'id'],
@@ -152,6 +153,20 @@ const FIXED_COLUMNS: Record<string, string[]> = {
   ppv_releases: ['model_id', 'id', 'account_id', 'item_id', 'item_type'],
   principal_grants: ['model_id', 'id', 'principal_id'],
   promo_channels: ['model_id', 'id'],
+  promo_deliveries: [
+    'model_id',
+    'id',
+    'package_item_id',
+    'package_item_type',
+    'channel_id',
+    'contractor_id',
+    'format',
+    'manifest_id',
+    'origin',
+    'corrects_id',
+    'prepared_at',
+    'prepared_by',
+  ],
   provenance: [
     'model_id',
     'id',
@@ -224,6 +239,7 @@ const FIXED_COLUMNS: Record<string, string[]> = {
 }
 /** Columns written once, NULL → value (`set_once`). */
 const SET_ONCE_COLUMNS: Record<string, string[]> = {
+  promo_deliveries: ['receipt_id'],
   rendition_generations: ['master_sha256', 'bound_at'],
   source_revisions: [
     'source_sha256',

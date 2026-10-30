@@ -238,13 +238,14 @@ export function promoMemberName(
   collectionId: string,
   index: number,
   total: number,
-  source: { id: string; role: NameRole; ordinal: number | null },
+  source: { id: string; role: NameRole; ordinal: number | null; uniq?: number | null },
   ext: string,
 ): string {
   const width = total > 99 ? 3 : 2
   const order = String(index).padStart(width, '0')
-  const role =
-    source.role === 'master'
+  const role = source.uniq
+    ? `-u${source.uniq}`
+    : source.role === 'master'
       ? ''
       : `-${source.role}${source.ordinal ? ordinalToken(source.ordinal) : ''}`
   return `${collectionId}_${order}_${source.id}${role}.${normalizeExt(ext)}`

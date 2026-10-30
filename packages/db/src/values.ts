@@ -694,6 +694,22 @@ export type MarkKind = (typeof markKinds)[number]
 export const cancelReasons = ['late', 'replaced', 'paused', 'second_person'] as const
 export type CancelReason = (typeof cancelReasons)[number]
 
+// ---------------------------------------------------------------------------
+// Promo (schema §3.8; SPEC §7.1)
+// ---------------------------------------------------------------------------
+
+/** One format field of a contractor: «для заливки», «мастер», «совместимая для монтажа». */
+export const contractorFormats = ['upload', 'master', 'compat'] as const
+export type ContractorFormat = (typeof contractorFormats)[number]
+
+/** `preparing → prepared → sent`; «не собралось» is the failed export work of a preparing one. */
+export const promoDeliveryStates = ['preparing', 'prepared', 'sent'] as const
+export type PromoDeliveryState = (typeof promoDeliveryStates)[number]
+
+/** A past pack recorded by import is `import`: sent without date and author (SPEC §6.3). */
+export const promoDeliveryOrigins = ['product', 'import'] as const
+export type PromoDeliveryOrigin = (typeof promoDeliveryOrigins)[number]
+
 /** Codes of `RAISE` in the migration functions. */
 export const dbErrorCodes = {
   journalContextMissing: 'CO001',
@@ -705,7 +721,8 @@ export const dbErrorCodes = {
   /**
    * A transition the schema forbids: reopening an accepted draft, cancelling a started
    * operation; an order part mark without its deliveries, closing an order before every part
-   * or with an open revision, any change of a final order, a retraction of a retraction.
+   * or with an open revision, any change of a final order, a retraction of a retraction; a
+   * promo handoff going back to `preparing` or sent without being prepared.
    */
   transitionRefused: 'CO005',
   /** A private tag of another model. */

@@ -48,9 +48,7 @@ function defaultContractor(
   contractors: readonly Contractor[],
 ): string | null {
   const last = collection.handoffs.at(-1)?.contractor_id
-  const forChannel = contractors.find((contractor) =>
-    contractor.channels.includes(collection.channel),
-  )
+  const forChannel = contractors.find((contractor) => contractor.channel === collection.channel)
   return collection.contractor_id ?? last ?? forChannel?.id ?? contractors[0]?.id ?? null
 }
 

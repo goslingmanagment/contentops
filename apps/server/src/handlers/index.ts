@@ -11,6 +11,7 @@ import { mediaRouteHandlers } from './media'
 import { modelHandlers } from './models'
 import { normHandlers } from './norm'
 import { peopleHandlers } from './people'
+import { promoHandlers } from './promo'
 import { systemHandlers } from './system'
 import { tagHandlers } from './tags'
 import { thresholdHandlers } from './thresholds'
@@ -48,5 +49,6 @@ export function createHandlers(services: Services): HandlerRegistry {
     tagHandlers(services),
     mediaRouteHandlers(services),
     inboxHandlers(services),
+    promoHandlers(services),
   )
 }

@@ -4,24 +4,35 @@ import {
   InstantSchema,
   LocalDateSchema,
   ProgressSchema,
+  RecordVersionSchema,
   StatusWordSchema,
   ThumbRefSchema,
 } from './common'
 import { ItemIdSchema } from './item-type'
 
-export const ContractorFormatSchema = z.enum(['compact', 'masters'])
+/**
+ * The one format field of a contractor (SPEC §7.1, решение владельца 30.10.2026): «для
+ * заливки» — the platform copy and picked frames, «мастер», «совместимая для монтажа» (H.264).
+ */
+export const ContractorFormatSchema = z.enum(['upload', 'master', 'compat'])
 export type ContractorFormat = z.infer<typeof ContractorFormatSchema>
 
 export const CONTRACTOR_FORMAT_LABEL: Record<ContractorFormat, string> = {
-  compact: 'компактные файлы для публикации',
-  masters: 'мастера для монтажа',
+  upload: 'для заливки',
+  master: 'мастер',
+  compat: 'совместимая для монтажа',
 }
 
+/** A recipient without sign-in, in the context of one model. */
 export const ContractorSchema = z.object({
   id: z.string(),
   name: z.string(),
-  channels: z.array(z.string()),
+  /** Code of the channel the contractor usually works with; `null` — any. */
+  channel: z.string().nullable(),
+  contact: z.string().nullable(),
   format: ContractorFormatSchema,
+  /** The format changes with `If-Match` (Настройки › Модели и страницы). */
+  version: RecordVersionSchema,
 })
 export type Contractor = z.infer<typeof ContractorSchema>
 
@@ -69,6 +80,8 @@ export const HandoffSchema = z.object({
   collection_id: ItemIdSchema,
   contractor_id: z.string(),
   contractor_name: z.string(),
+  /** The format the handoff was prepared in; `null` for a past pack recorded by import. */
+  format: ContractorFormatSchema.nullable(),
   state: HandoffStateSchema,
   progress: ProgressSchema.nullable(),
   video_count: z.int().nonnegative(),
@@ -126,6 +139,11 @@ export type HandoffOverlap = z.infer<typeof HandoffOverlapSchema>
 export const ChannelContentsSchema = z.object({
   channel: PromoChannelSchema,
   collections: z.array(PromoCollectionSchema.omit({ members: true })),
-  unfiled: z.array(CollectionMemberSchema),
+  /**
+   * Every material of the channel's collections, once per file, newest added first (DESIGN
+   * §4.17 «ниже — все материалы канала по дням добавления»): a selection here becomes a new
+   * collection or joins an existing one.
+   */
+  materials: z.array(CollectionMemberSchema),
 })
 export type ChannelContents = z.infer<typeof ChannelContentsSchema>

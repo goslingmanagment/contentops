@@ -14,6 +14,7 @@ import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
 import type { ModelScope } from '../context'
+import { handoffsOf } from '../promo/views'
 import { catalogEntries, rawPurposeOf, renditionUrl, thumbRatio } from './entries'
 import {
   type DbItemType,
@@ -493,7 +494,13 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
       action: null,
     })),
     order: null,
-    handoffs: [],
+    handoffs:
+      item.type === 'PRM'
+        ? (await handoffsOf(q, model, { packages: [item.id] })).map(({ id, status }) => ({
+            id,
+            status,
+          }))
+        : [],
     receipts: [],
     ready_for_ppv: false,
     frame_check: null,

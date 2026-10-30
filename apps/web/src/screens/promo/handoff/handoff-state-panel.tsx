@@ -5,7 +5,6 @@ import { PanelFrame, type PanelFrameWidth } from '@contentops/ui/components/pane
 import { DownloadIcon, PlusIcon, RotateCcwIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useDeliverDownload } from '@/actions/use-deliver-download'
-import { usePromoContractors } from '@/data/promo'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { HandoffStatus } from '../shared/handoff-status'
 import { mediaComposition, memberRefOf } from '../shared/promo-text'
@@ -42,9 +41,8 @@ export function HandoffStatePanel({
   const model = useCurrentModel().code
   const actions = usePromoActions()
   const deliver = useDeliverDownload()
-  const format = usePromoContractors(model).data?.find(
-    (contractor) => contractor.id === handoff.contractor_id,
-  )?.format
+  // A prepared handoff keeps its own format, whatever the contractor has now (SPEC §7.1).
+  const format = handoff.format
 
   const download = () => {
     if (handoff.zip_name && handoff.zip_url) {

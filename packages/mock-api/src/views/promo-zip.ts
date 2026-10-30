@@ -77,8 +77,8 @@ export function promoManifestHead(
   format: ContractorFormat | null,
   rows = 3,
 ): string[] {
-  const profile = format ?? 'compact'
-  const header = 'prm,order,file_name,source_id,role,version,master_sha256,profile,size_bytes'
+  const profile = format ?? 'upload'
+  const header = 'prm,order,file_name,source_id,role,version,master_sha256,format,size_bytes'
   const lines = members
     .slice(0, rows)
     .map((member, index) =>
@@ -90,7 +90,7 @@ export function promoManifestHead(
         `${member.handle.role}${member.handle.ordinal ? ordinalToken(member.handle.ordinal) : ''}`,
         member.version,
         sampleSha256(`${member.source}/${member.name}`),
-        `${profile}@1`,
+        profile,
         member.size_bytes,
       ].join(','),
     )

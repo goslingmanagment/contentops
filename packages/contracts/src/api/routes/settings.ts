@@ -2,6 +2,7 @@ import {
   AddAccountCommandSchema,
   AddAgentCommandSchema,
   AddAiServiceCommandSchema,
+  AddContractorCommandSchema,
   AddModelCommandSchema,
   AddPersonCommandSchema,
   ChangePasswordCommandSchema,
@@ -128,16 +129,20 @@ export const settingsRoutes = {
     response: ModelSchema,
     success: 201,
   }),
-  contractors: defineRoute({
-    method: 'GET',
-    path: '/api/v1/admin/contractors',
-    response: pageSchema(ContractorSchema),
+  /** Contractors are read by everyone with the model: `promo.contractors`. */
+  addContractor: defineRoute({
+    method: 'POST',
+    path: '/api/v1/admin/models/{model}/contractors',
+    body: AddContractorCommandSchema,
+    response: ContractorSchema,
+    success: 201,
   }),
   updateContractor: defineRoute({
     method: 'PATCH',
-    path: '/api/v1/admin/contractors/{contractor}',
+    path: '/api/v1/admin/models/{model}/contractors/{contractor}',
     body: UpdateContractorCommandSchema,
     response: ContractorSchema,
+    versioned: true,
   }),
   updateTag: defineRoute({
     method: 'PATCH',
