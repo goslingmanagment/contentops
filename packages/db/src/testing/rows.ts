@@ -13,6 +13,8 @@ export type Factory = (
   client: pg.ClientBase,
   modelId: string,
   testing?: readonly string[],
+  /** The table that will point at this row: a target of a type copy gets the right type. */
+  forTable?: string,
 ) => Promise<Row>
 
 let sequence = 0
@@ -105,6 +107,18 @@ export async function newBlob(
     storage_key: `blobs/sha256/${hex.slice(0, 2)}/${hex.slice(2, 4)}/${hex}`,
   })
   return sha256
+}
+
+/** A PPV bundle row of `content_items` (not inserted). */
+function newPpv(modelId: string): Row {
+  return {
+    model_id: modelId,
+    type: 'PPV',
+    ppv_kind: 'bundle',
+    number: nextNumber(),
+    origin: 'manual',
+    has_second_person: false,
+  }
 }
 
 async function idOf(
@@ -205,8 +219,9 @@ export const FACTORIES: Record<string, Factory> = {
     }
     return row
   },
-  /** A CUS: an order delivery points at one through the type copy. */
-  content_items: async (client, modelId, testing = []) => {
+  /** A CUS: an order delivery points at one through the type copy; a release needs a PPV. */
+  content_items: async (client, modelId, testing = [], forTable) => {
+    if (forTable === 'ppv_releases') return newPpv(modelId)
     const row: Row = { model_id: modelId, type: 'CUS', number: nextNumber(), origin: 'manual' }
     if (testing.includes('promo_channel_id')) {
       row.type = 'PRM'
@@ -326,7 +341,7 @@ export const FACTORIES: Record<string, Factory> = {
     locale: 'en',
     source: 'human',
   }),
-  web_uploads: async (client, modelId) => ({
+  web_uploads: async (client, modelId, testing = []) => ({
     model_id: modelId,
     upload_id: tag(),
     principal_id: await newPrincipal(client),
@@ -334,6 +349,9 @@ export const FACTORIES: Record<string, Factory> = {
     declared_kind: 'other',
     size_expected: 1,
     tmp_key: `inbox/web/${tag()}`,
+    ...(testing.includes('plan_row_id')
+      ? { plan_row_id: await idOf(client, 'posting_plan_rows', modelId) }
+      : {}),
   }),
   inbox_drafts: async (client, modelId, testing = []) => {
     const row: Row = {
@@ -381,13 +399,16 @@ export const FACTORIES: Record<string, Factory> = {
     kind: 'legacy_unparsed',
     dedup_key: tag(),
   }),
-  download_receipts: async (client, modelId) => ({
+  download_receipts: async (client, modelId, testing = []) => ({
     model_id: modelId,
     principal_id: await newPrincipal(client),
     kind: 'master',
     manifest_id: await idOf(client, 'asset_manifests', modelId),
     meta_stripped: true,
     entry_count: 1,
+    ...(testing.includes('plan_row_id')
+      ? { plan_row_id: await idOf(client, 'posting_plan_rows', modelId) }
+      : {}),
   }),
   download_receipt_entries: async (client, modelId) => {
     const version = await make(client, 'asset_versions', modelId)
@@ -463,5 +484,184 @@ export const FACTORIES: Record<string, Factory> = {
       requested_at: new Date().toISOString(),
       fixed_delivery_id: fixed ? fixed.id : null,
     }
+  },
+
+  // 0005_legacy_placements
+  /** A pending claim; with a `resolved_*` column — resolved to that one target. */
+  legacy_claims: async (client, modelId, testing = []) => {
+    const row: Row = {
+      model_id: modelId,
+      source_object_id: await idOf(client, 'source_objects', modelId),
+      parser_version: 'v1',
+      claim_key: `name:${tag()}:0`,
+      raw_fragment: 'used2',
+      claim_kind: 'used',
+      parse_work_id: await idOf(client, 'work_operations', modelId),
+    }
+    if (testing.includes('source_revision_id')) {
+      row.source_revision_id = await idOf(client, 'source_revisions', modelId)
+    }
+    if (testing.includes('superseded_by_id')) {
+      row.resolution = 'ignored'
+      row.superseded_by_id = await idOf(client, 'legacy_claims', modelId)
+      return row
+    }
+    const targets: Record<string, string> = {
+      resolved_item_id: 'content_items',
+      resolved_alias_id: 'aliases',
+      resolved_evidence_id: 'placement_evidence',
+      resolved_order_id: 'custom_orders',
+    }
+    const target = Object.keys(targets).find((column) => testing.includes(column))
+    if (target) {
+      row[target] = await idOf(client, targets[target] ?? '', modelId)
+    } else if (testing.includes('resolved_version_id') || testing.includes('resolved_asset_id')) {
+      const version = await make(client, 'asset_versions', modelId)
+      row.resolved_asset_id = version.asset_id
+      row.resolved_version_id = version.id
+    } else {
+      return row
+    }
+    row.resolution = 'resolved'
+    row.resolved_at = new Date().toISOString()
+    return row
+  },
+  legacy_number_claims: async (client, modelId, testing = []) => {
+    const row: Row = {
+      model_id: modelId,
+      type: 'PPV',
+      claimed_number: 32,
+      source_object_id: await idOf(client, 'source_objects', modelId),
+      claim_id: await idOf(client, 'legacy_claims', modelId),
+    }
+    if (testing.includes('registry_claim_id')) {
+      row.registry_claim_id = await idOf(client, 'legacy_claims', modelId)
+    }
+    if (testing.includes('target_item_id')) {
+      row.target_item_id = await idOf(client, 'content_items', modelId)
+    }
+    return row
+  },
+  /** A manual placement of a CUS on a Fansly wall; with `plan_row_id` — of a plan row. */
+  placements: async (client, modelId, testing = []) => {
+    const surface = await make(client, 'surfaces', modelId)
+    const row: Row = {
+      model_id: modelId,
+      account_id: surface.account_id,
+      surface_id: surface.id,
+      occurrence_kind: 'manual',
+      manual_key: `test:${tag()}`,
+      item_id: await idOf(client, 'content_items', modelId),
+      item_type: 'CUS',
+      occurred_at: new Date().toISOString(),
+      occurred_source: 'km',
+      surface_source: 'km',
+      origin: 'manual',
+    }
+    if (testing.includes('plan_row_id')) {
+      row.plan_row_id = await idOf(client, 'posting_plan_rows', modelId)
+    }
+    return row
+  },
+  placement_assets: async (client, modelId, testing = []) => {
+    const version = await make(client, 'asset_versions', modelId)
+    const row: Row = {
+      model_id: modelId,
+      placement_id: await idOf(client, 'placements', modelId),
+      asset_id: version.asset_id,
+      asset_version_id: version.id,
+      position: 1,
+    }
+    if (testing.includes('receipt_entry_id')) {
+      row.receipt_entry_id = await idOf(client, 'download_receipt_entries', modelId)
+      row.match_strength = 'exact'
+    }
+    return row
+  },
+  /** A manual confirmation; with `corrects_id` — its retraction, on the same placement. */
+  placement_evidence: async (client, modelId, testing = []) => {
+    const placementId = await idOf(client, 'placements', modelId)
+    const row: Row = {
+      model_id: modelId,
+      placement_id: placementId,
+      source: 'manual',
+      kind: 'manual_confirm',
+      strength: 'exact',
+      payload: { basis: 'execution_report' },
+      dedup_key: `manual:${tag()}`,
+    }
+    if (testing.includes('matched_version_id') || testing.includes('matched_asset_id')) {
+      const version = await make(client, 'asset_versions', modelId)
+      row.matched_asset_id = version.asset_id
+      row.matched_version_id = version.id
+    }
+    if (testing.includes('legacy_claim_id')) {
+      Object.assign(row, {
+        source: 'import',
+        kind: 'legacy_claim',
+        strength: 'claim',
+        legacy_claim_id: await idOf(client, 'legacy_claims', modelId),
+      })
+    }
+    if (testing.includes('corrects_id')) {
+      const confirmed = await insert(client, 'placement_evidence', { ...row, dedup_key: tag() })
+      Object.assign(row, { kind: 'retract', strength: null, corrects_id: confirmed.id })
+    }
+    return row
+  },
+
+  // 0006_plan
+  ppv_releases: async (client, modelId) => ({
+    model_id: modelId,
+    account_id: await idOf(client, 'accounts', modelId),
+    item_id: (await insert(client, 'content_items', newPpv(modelId))).id,
+    release_date: '2026-09-24',
+  }),
+  /**
+   * A row of a CUS on a Fansly wall with its composition; the testing columns add a mark, a
+   * release (the release's page and object), a montage wait or an assignee.
+   */
+  posting_plan_rows: async (client, modelId, testing = []) => {
+    const row: Row = {
+      model_id: modelId,
+      slot_date: '2026-09-22',
+      slot_time: '20:00',
+      manifest_id: await idOf(client, 'asset_manifests', modelId),
+    }
+    if (testing.includes('release_id')) {
+      const release = await make(client, 'ppv_releases', modelId)
+      const surface = await insert(client, 'surfaces', {
+        model_id: modelId,
+        account_id: release.account_id,
+        kind: 'wall',
+      })
+      Object.assign(row, {
+        item_id: release.item_id,
+        account_id: release.account_id,
+        surface_id: surface.id,
+        release_id: release.id,
+        release_surface_kind: 'wall',
+      })
+    } else {
+      const surface = await make(client, 'surfaces', modelId)
+      Object.assign(row, {
+        item_id: await idOf(client, 'content_items', modelId),
+        account_id: surface.account_id,
+        surface_id: surface.id,
+      })
+    }
+    if (testing.includes('marked_manifest_id')) {
+      Object.assign(row, {
+        marked_at: new Date().toISOString(),
+        marked_by: await newPrincipal(client),
+        mark_kind: 'posted',
+        marked_manifest_id: row.manifest_id,
+      })
+    }
+    if (testing.includes('input_manifest_id')) {
+      row.expected_type = 'FYP'
+      row.input_manifest_id = await idOf(client, 'asset_manifests', modelId)
+    }
+    return row
   },
 }

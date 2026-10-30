@@ -101,6 +101,7 @@ CREATE TABLE public.web_uploads (
     error text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     completed_at timestamp with time zone,
+    plan_row_id uuid,
     CONSTRAINT web_uploads_bytes_received_check CHECK ((bytes_received >= 0)),
     CONSTRAINT web_uploads_declared_kind_check CHECK ((declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text]))),
     CONSTRAINT web_uploads_progress CHECK ((bytes_received <= size_expected)),
@@ -386,6 +387,25 @@ END
 $$;
 
 ALTER FUNCTION public.check_tag_scope() OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.content_item_second_person_late() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE posting_plan_rows r
+     SET cancelled_at = now(),
+         cancelled_by = nullif(current_setting('app.actor_id', true), '')::uuid,
+         cancel_reason = 'second_person',
+         row_version = r.row_version + 1
+    FROM accounts a
+   WHERE r.model_id = NEW.model_id AND r.item_id = NEW.id
+     AND r.marked_at IS NULL AND r.cancelled_at IS NULL
+     AND a.model_id = r.model_id AND a.id = r.account_id AND a.platform = 'onlyfans';
+  RETURN NULL;
+END
+$$;
+
+ALTER FUNCTION public.content_item_second_person_late() OWNER TO contentops_migrate;
 
 CREATE FUNCTION public.custom_order_delivery_lock() RETURNS trigger
     LANGUAGE plpgsql
@@ -720,6 +740,88 @@ END
 $$;
 
 ALTER FUNCTION public.log_row_change() OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.posting_plan_row_second_person() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  page_platform text;
+  flag boolean;
+BEGIN
+  IF NEW.item_id IS NULL OR NEW.cancelled_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND NEW.item_id IS NOT DISTINCT FROM OLD.item_id
+     AND NEW.manifest_id IS NOT DISTINCT FROM OLD.manifest_id
+     AND NEW.account_id = OLD.account_id THEN
+    RETURN NEW;
+  END IF;
+  SELECT platform INTO page_platform FROM accounts
+   WHERE model_id = NEW.model_id AND id = NEW.account_id;
+  IF page_platform IS DISTINCT FROM 'onlyfans' THEN
+    RETURN NEW;
+  END IF;
+  SELECT has_second_person INTO flag FROM content_items
+   WHERE model_id = NEW.model_id AND id = NEW.item_id
+     FOR SHARE;
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+  IF flag IS NULL THEN
+    RAISE EXCEPTION 'item %: second person not checked, OnlyFans waits for the answer', NEW.item_id
+      USING ERRCODE = 'CO007', DETAIL = 'unchecked';
+  ELSIF flag THEN
+    RAISE EXCEPTION 'item %: second person in frame never goes to OnlyFans', NEW.item_id
+      USING ERRCODE = 'CO007', DETAIL = 'second_person';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.posting_plan_row_second_person() OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.posting_plan_row_slot() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  expected timestamptz;
+  release_account uuid;
+  kind text;
+BEGIN
+  IF NEW.slot_tz IS NULL THEN
+    SELECT timezone INTO NEW.slot_tz FROM models WHERE id = NEW.model_id;
+  END IF;
+  expected := (NEW.slot_date + coalesce(NEW.slot_time, time '00:00')) AT TIME ZONE NEW.slot_tz;
+  IF NEW.slot_at IS NULL
+     OR (TG_OP = 'UPDATE' AND NEW.slot_at IS NOT DISTINCT FROM OLD.slot_at) THEN
+    NEW.slot_at := expected;
+  ELSIF NEW.slot_at <> expected THEN
+    RAISE EXCEPTION 'plan row %: slot_at % is not % % in %',
+      NEW.id, NEW.slot_at, NEW.slot_date, NEW.slot_time, NEW.slot_tz
+      USING ERRCODE = 'CO005';
+  END IF;
+  IF NEW.release_id IS NOT NULL THEN
+    SELECT account_id INTO release_account FROM ppv_releases
+     WHERE model_id = NEW.model_id AND id = NEW.release_id;
+    -- An unknown release is left to the FK.
+    IF FOUND AND release_account <> NEW.account_id THEN
+      RAISE EXCEPTION 'plan row %: the release % belongs to another page', NEW.id, NEW.release_id
+        USING ERRCODE = 'CO005';
+    END IF;
+    SELECT s.kind INTO kind FROM surfaces s
+     WHERE s.model_id = NEW.model_id AND s.account_id = NEW.account_id AND s.id = NEW.surface_id;
+    IF FOUND AND kind IS DISTINCT FROM NEW.release_surface_kind THEN
+      RAISE EXCEPTION 'plan row %: release surface % is not the row''s %',
+        NEW.id, NEW.release_surface_kind, kind
+        USING ERRCODE = 'CO005';
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.posting_plan_row_slot() OWNER TO contentops_migrate;
 
 CREATE FUNCTION public.public_item_id(item_type text, item_number integer) RETURNS text
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
@@ -1325,6 +1427,7 @@ CREATE TABLE public.download_receipts (
     entry_count integer NOT NULL,
     corrects_id uuid,
     issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    plan_row_id uuid,
     CONSTRAINT download_receipts_entry_count_check CHECK ((entry_count > 0)),
     CONSTRAINT download_receipts_kind_check CHECK ((kind = ANY (ARRAY['master'::text, 'platform'::text, 'edit'::text, 'promo'::text])))
 );
@@ -1415,6 +1518,67 @@ CREATE TABLE public.inbox_groups (
 
 ALTER TABLE public.inbox_groups OWNER TO contentops_migrate;
 
+CREATE TABLE public.legacy_claims (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source_object_id uuid NOT NULL,
+    source_revision_id uuid,
+    parser_version text NOT NULL,
+    claim_key text NOT NULL,
+    raw_fragment text NOT NULL,
+    claim_kind text NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    parse_work_id uuid NOT NULL,
+    resolution text DEFAULT 'pending'::text NOT NULL,
+    superseded_by_id uuid,
+    resolved_item_id uuid,
+    resolved_asset_id uuid,
+    resolved_version_id uuid,
+    resolved_alias_id uuid,
+    resolved_evidence_id uuid,
+    resolved_order_id uuid,
+    resolved_at timestamp with time zone,
+    resolved_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT legacy_claims_claim_kind_check CHECK ((claim_kind = ANY (ARRAY['number'::text, 'used'::text, 'posted'::text, 'date'::text, 'role'::text, 'registry_row'::text, 'duration'::text, 'unknown'::text]))),
+    CONSTRAINT legacy_claims_not_self CHECK ((superseded_by_id <> id)),
+    CONSTRAINT legacy_claims_resolution_check CHECK ((resolution = ANY (ARRAY['pending'::text, 'resolved'::text, 'ignored'::text]))),
+    CONSTRAINT legacy_claims_resolved CHECK (
+CASE
+    WHEN (resolution = 'resolved'::text) THEN ((num_nonnulls(resolved_item_id, resolved_version_id, resolved_alias_id, resolved_evidence_id, resolved_order_id) = 1) AND (resolved_at IS NOT NULL))
+    ELSE (num_nonnulls(resolved_item_id, resolved_version_id, resolved_alias_id, resolved_evidence_id, resolved_order_id, resolved_at, resolved_by) = 0)
+END),
+    CONSTRAINT legacy_claims_resolved_version CHECK (((resolved_asset_id IS NULL) = (resolved_version_id IS NULL))),
+    CONSTRAINT legacy_claims_superseded CHECK (((superseded_by_id IS NULL) OR (resolution = 'ignored'::text)))
+);
+
+ALTER TABLE public.legacy_claims OWNER TO contentops_migrate;
+
+CREATE TABLE public.legacy_number_claims (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    type text NOT NULL,
+    claimed_number integer NOT NULL,
+    source_object_id uuid NOT NULL,
+    claim_id uuid NOT NULL,
+    registry_claim_id uuid,
+    decision text,
+    assigned_number integer,
+    target_item_id uuid,
+    decided_at timestamp with time zone,
+    decided_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT legacy_number_claims_assigned_range CHECK (((assigned_number >= 1) AND (assigned_number <= 999999))),
+    CONSTRAINT legacy_number_claims_decided CHECK (((decision IS NULL) = (decided_at IS NULL))),
+    CONSTRAINT legacy_number_claims_decision_check CHECK ((decision = ANY (ARRAY['keep'::text, 'renumber'::text, 'typo'::text, 'unclear'::text]))),
+    CONSTRAINT legacy_number_claims_number_range CHECK (((claimed_number >= 1) AND (claimed_number <= 999999))),
+    CONSTRAINT legacy_number_claims_type_check CHECK ((type = ANY (ARRAY['PPV'::text, 'SET'::text, 'SXT'::text, 'CUS'::text, 'FYP'::text, 'LIFE'::text, 'RAW'::text, 'PRM'::text])))
+);
+
+ALTER TABLE public.legacy_number_claims OWNER TO contentops_migrate;
+
 CREATE TABLE public.master_checks (
     id uuid DEFAULT uuidv7() NOT NULL,
     source_sha256 bytea NOT NULL,
@@ -1475,6 +1639,102 @@ CREATE TABLE public.pipeline_versions (
 
 ALTER TABLE public.pipeline_versions OWNER TO contentops_migrate;
 
+CREATE TABLE public.placement_assets (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    placement_id uuid NOT NULL,
+    asset_id uuid NOT NULL,
+    asset_version_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    match_strength text DEFAULT 'none'::text NOT NULL,
+    matched_media_ref text,
+    receipt_entry_id uuid,
+    bound_at timestamp with time zone DEFAULT now() NOT NULL,
+    bound_by uuid,
+    CONSTRAINT placement_assets_match_strength_check CHECK ((match_strength = ANY (ARRAY['none'::text, 'candidate'::text, 'exact'::text]))),
+    CONSTRAINT placement_assets_position_check CHECK (("position" >= 1))
+);
+
+ALTER TABLE public.placement_assets OWNER TO contentops_migrate;
+
+CREATE TABLE public.placement_evidence (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    placement_id uuid NOT NULL,
+    source text NOT NULL,
+    kind text NOT NULL,
+    strength text,
+    hub_observation_id uuid,
+    external_ref text,
+    matched_asset_id uuid,
+    matched_version_id uuid,
+    legacy_claim_id uuid,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    event_at timestamp with time zone,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    recorded_by uuid,
+    corrects_id uuid,
+    dedup_key text NOT NULL,
+    CONSTRAINT placement_evidence_kind_check CHECK ((kind = ANY (ARRAY['observed'::text, 'manual_confirm'::text, 'reused_pair'::text, 'manual_reject'::text, 'legacy_claim'::text, 'outside_catalog'::text, 'retract'::text]))),
+    CONSTRAINT placement_evidence_matched_version CHECK (((matched_asset_id IS NULL) = (matched_version_id IS NULL))),
+    CONSTRAINT placement_evidence_not_self CHECK ((corrects_id <> id)),
+    CONSTRAINT placement_evidence_retract CHECK (((kind <> 'retract'::text) OR (corrects_id IS NOT NULL))),
+    CONSTRAINT placement_evidence_source_check CHECK ((source = ANY (ARRAY['hub'::text, 'manual'::text, 'import'::text]))),
+    CONSTRAINT placement_evidence_strength_check CHECK ((strength = ANY (ARRAY['claim'::text, 'candidate'::text, 'exact'::text]))),
+    CONSTRAINT placement_evidence_triple CHECK (
+CASE kind
+    WHEN 'observed'::text THEN ((source = 'hub'::text) AND (hub_observation_id IS NOT NULL) AND (strength IS NOT NULL) AND (strength <> 'claim'::text))
+    WHEN 'manual_confirm'::text THEN ((source = 'manual'::text) AND (strength IS NOT NULL) AND (strength = 'exact'::text))
+    WHEN 'reused_pair'::text THEN ((source = 'manual'::text) AND (strength IS NOT NULL) AND (strength = 'exact'::text))
+    WHEN 'legacy_claim'::text THEN ((source = 'import'::text) AND (strength IS NOT NULL) AND (strength = 'claim'::text) AND (legacy_claim_id IS NOT NULL))
+    ELSE ((source = 'manual'::text) AND (strength IS NULL))
+END)
+);
+
+ALTER TABLE public.placement_evidence OWNER TO contentops_migrate;
+
+CREATE TABLE public.placements (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid NOT NULL,
+    surface_id uuid NOT NULL,
+    occurrence_kind text NOT NULL,
+    external_post_ref text,
+    external_album_ref text,
+    external_media_ref text,
+    manual_key text,
+    item_id uuid,
+    item_type text,
+    planned_at timestamp with time zone,
+    occurred_at timestamp with time zone,
+    event_precision text DEFAULT 'exact'::text NOT NULL,
+    occurred_source text,
+    surface_source text NOT NULL,
+    caption text,
+    views bigint,
+    likes bigint,
+    stats_at timestamp with time zone,
+    out_of_catalog boolean DEFAULT false NOT NULL,
+    origin text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    row_version bigint DEFAULT 1 NOT NULL,
+    plan_row_id uuid,
+    CONSTRAINT placements_event_precision_check CHECK ((event_precision = ANY (ARRAY['exact'::text, 'day'::text, 'unknown'::text]))),
+    CONSTRAINT placements_item_type CHECK (((item_id IS NULL) = (item_type IS NULL))),
+    CONSTRAINT placements_likes_check CHECK ((likes >= 0)),
+    CONSTRAINT placements_occurred_source CHECK (((occurred_at IS NULL) OR (occurred_source IS NOT NULL))),
+    CONSTRAINT placements_occurred_source_check CHECK ((occurred_source = ANY (ARRAY['hub'::text, 'km'::text, 'import'::text]))),
+    CONSTRAINT placements_occurrence_kind_check CHECK ((occurrence_kind = ANY (ARRAY['post'::text, 'vault_member'::text, 'manual'::text]))),
+    CONSTRAINT placements_origin_check CHECK ((origin = ANY (ARRAY['plan'::text, 'hub'::text, 'manual'::text, 'import'::text]))),
+    CONSTRAINT placements_out_of_catalog CHECK (((NOT out_of_catalog) OR (item_id IS NULL))),
+    CONSTRAINT placements_surface_source_check CHECK ((surface_source = ANY (ARRAY['hub'::text, 'km_mark'::text, 'km'::text, 'plan'::text, 'import'::text]))),
+    CONSTRAINT placements_time CHECK (((planned_at IS NOT NULL) OR (occurred_at IS NOT NULL) OR (event_precision = 'unknown'::text))),
+    CONSTRAINT placements_views_check CHECK ((views >= 0))
+);
+
+ALTER TABLE public.placements OWNER TO contentops_migrate;
+
 CREATE TABLE public.platform_texts (
     model_id uuid NOT NULL,
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -1521,6 +1781,81 @@ CREATE TABLE public.policy_settings (
 );
 
 ALTER TABLE public.policy_settings OWNER TO contentops_migrate;
+
+CREATE TABLE public.posting_plan_rows (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    item_id uuid,
+    account_id uuid NOT NULL,
+    surface_id uuid NOT NULL,
+    slot_date date NOT NULL,
+    slot_time time without time zone,
+    slot_tz text NOT NULL,
+    slot_at timestamp with time zone NOT NULL,
+    assignee_id uuid,
+    release_id uuid,
+    release_surface_kind text,
+    manifest_id uuid,
+    marked_manifest_id uuid,
+    expected_type text,
+    expected_role text,
+    input_manifest_id uuid,
+    marked_by uuid,
+    marked_at timestamp with time zone,
+    mark_kind text,
+    stated_occurred_at timestamp with time zone,
+    requires_new_upload boolean DEFAULT false NOT NULL,
+    caption text,
+    tier_refs text[],
+    price_mills bigint,
+    repost boolean DEFAULT false NOT NULL,
+    album_name text,
+    cancelled_at timestamp with time zone,
+    cancelled_by uuid,
+    cancel_reason text,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT posting_plan_rows_cancel CHECK (((cancelled_at IS NOT NULL) OR ((cancelled_by IS NULL) AND (cancel_reason IS NULL)))),
+    CONSTRAINT posting_plan_rows_cancel_reason_check CHECK ((cancel_reason = ANY (ARRAY['late'::text, 'replaced'::text, 'paused'::text, 'second_person'::text]))),
+    CONSTRAINT posting_plan_rows_expected_role CHECK ((expected_role = 'teaser'::text)),
+    CONSTRAINT posting_plan_rows_expected_type_check CHECK ((expected_type = ANY (ARRAY['FYP'::text, 'PPV'::text]))),
+    CONSTRAINT posting_plan_rows_inputs CHECK (((input_manifest_id IS NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL))),
+    CONSTRAINT posting_plan_rows_mark CHECK (
+CASE
+    WHEN (marked_at IS NULL) THEN (num_nonnulls(marked_by, mark_kind, marked_manifest_id, stated_occurred_at) = 0)
+    ELSE (num_nulls(marked_by, mark_kind, marked_manifest_id, manifest_id) = 0)
+END),
+    CONSTRAINT posting_plan_rows_mark_kind_check CHECK ((mark_kind = ANY (ARRAY['posted'::text, 'scheduled'::text]))),
+    CONSTRAINT posting_plan_rows_marked_cancelled CHECK (((marked_at IS NULL) OR (cancelled_at IS NULL))),
+    CONSTRAINT posting_plan_rows_object CHECK (((item_id IS NOT NULL) OR (expected_type IS NOT NULL))),
+    CONSTRAINT posting_plan_rows_price CHECK ((price_mills >= 0)),
+    CONSTRAINT posting_plan_rows_release_item CHECK (((release_id IS NULL) OR (item_id IS NOT NULL))),
+    CONSTRAINT posting_plan_rows_release_kind CHECK (((release_id IS NULL) = (release_surface_kind IS NULL))),
+    CONSTRAINT posting_plan_rows_release_surface_kind_check CHECK ((release_surface_kind = ANY (ARRAY['wall'::text, 'story'::text, 'vault'::text, 'mass_dm'::text]))),
+    CONSTRAINT posting_plan_rows_ships CHECK (((manifest_id IS NOT NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL)))
+);
+
+ALTER TABLE public.posting_plan_rows OWNER TO contentops_migrate;
+
+CREATE TABLE public.ppv_releases (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid NOT NULL,
+    item_id uuid NOT NULL,
+    item_type text DEFAULT 'PPV'::text NOT NULL,
+    release_date date NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    cancelled_at timestamp with time zone,
+    cancelled_by uuid,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT ppv_releases_cancelled CHECK (((cancelled_by IS NULL) OR (cancelled_at IS NOT NULL))),
+    CONSTRAINT ppv_releases_item_type_check CHECK ((item_type = 'PPV'::text))
+);
+
+ALTER TABLE public.ppv_releases OWNER TO contentops_migrate;
 
 CREATE TABLE public.principal_grants (
     model_id uuid NOT NULL,
@@ -1895,6 +2230,18 @@ ALTER TABLE ONLY public.item_tags
 ALTER TABLE ONLY public.item_tags
     ADD CONSTRAINT item_tags_pkey PRIMARY KEY (model_id, item_id, tag_id);
 
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_key UNIQUE (model_id, source_object_id, parser_version, claim_key);
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.legacy_number_claims
+    ADD CONSTRAINT legacy_number_claims_claim UNIQUE (model_id, claim_id);
+
+ALTER TABLE ONLY public.legacy_number_claims
+    ADD CONSTRAINT legacy_number_claims_pkey PRIMARY KEY (model_id, id);
+
 ALTER TABLE ONLY public.master_checks
     ADD CONSTRAINT master_checks_attempt UNIQUE (source_sha256, recipe_digest, work_id, attempt);
 
@@ -1910,6 +2257,30 @@ ALTER TABLE ONLY public.models
 ALTER TABLE ONLY public.pipeline_versions
     ADD CONSTRAINT pipeline_versions_pkey PRIMARY KEY (version);
 
+ALTER TABLE ONLY public.placement_assets
+    ADD CONSTRAINT placement_assets_model_id_id_key UNIQUE (model_id, id);
+
+ALTER TABLE ONLY public.placement_assets
+    ADD CONSTRAINT placement_assets_pkey PRIMARY KEY (model_id, placement_id, asset_version_id);
+
+ALTER TABLE ONLY public.placement_assets
+    ADD CONSTRAINT placement_assets_position UNIQUE (model_id, placement_id, "position");
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_corrects_once UNIQUE (corrects_id);
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_dedup UNIQUE (model_id, placement_id, source, dedup_key);
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_model_id_placement_id_id_key UNIQUE (model_id, placement_id, id);
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.placements
+    ADD CONSTRAINT placements_pkey PRIMARY KEY (model_id, id);
+
 ALTER TABLE ONLY public.platform_texts
     ADD CONSTRAINT platform_texts_pkey PRIMARY KEY (model_id, id);
 
@@ -1921,6 +2292,15 @@ ALTER TABLE ONLY public.policy_settings
 
 ALTER TABLE ONLY public.policy_settings
     ADD CONSTRAINT policy_settings_scope UNIQUE NULLS NOT DISTINCT (model_id, account_id, item_type, key);
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.ppv_releases
+    ADD CONSTRAINT ppv_releases_model_id_id_item_id_key UNIQUE (model_id, id, item_id);
+
+ALTER TABLE ONLY public.ppv_releases
+    ADD CONSTRAINT ppv_releases_pkey PRIMARY KEY (model_id, id);
 
 ALTER TABLE ONLY public.principal_grants
     ADD CONSTRAINT principal_grants_pkey PRIMARY KEY (model_id, id);
@@ -2092,6 +2472,8 @@ CREATE UNIQUE INDEX download_receipts_corrects ON public.download_receipts USING
 
 CREATE INDEX download_receipts_issued ON public.download_receipts USING btree (model_id, issued_at DESC);
 
+CREATE INDEX download_receipts_plan_row ON public.download_receipts USING btree (model_id, plan_row_id) WHERE (plan_row_id IS NOT NULL);
+
 CREATE UNIQUE INDEX inbox_draft_candidates_chosen ON public.inbox_draft_candidates USING btree (model_id, draft_id, kind) WHERE chosen;
 
 CREATE INDEX inbox_drafts_blocked ON public.inbox_drafts USING btree (model_id, blocked_reason) WHERE (blocked_reason IS NOT NULL);
@@ -2118,9 +2500,45 @@ CREATE UNIQUE INDEX item_memberships_one_owner ON public.item_memberships USING 
 
 CREATE INDEX item_tags_tag ON public.item_tags USING btree (model_id, tag_id);
 
+CREATE INDEX legacy_claims_pending ON public.legacy_claims USING btree (model_id, claim_kind, created_at) WHERE (resolution = 'pending'::text);
+
+CREATE INDEX legacy_claims_source ON public.legacy_claims USING btree (model_id, source_object_id);
+
+CREATE INDEX legacy_number_claims_number ON public.legacy_number_claims USING btree (model_id, type, claimed_number);
+
 CREATE INDEX master_checks_master ON public.master_checks USING btree (master_sha256);
 
 CREATE UNIQUE INDEX pipeline_versions_one_current ON public.pipeline_versions USING btree (is_current) WHERE is_current;
+
+CREATE INDEX placement_assets_version ON public.placement_assets USING btree (model_id, asset_version_id);
+
+CREATE INDEX placement_evidence_placement ON public.placement_evidence USING btree (model_id, placement_id, recorded_at);
+
+CREATE INDEX placements_item ON public.placements USING btree (model_id, item_id, occurred_at DESC);
+
+CREATE UNIQUE INDEX placements_manual_key ON public.placements USING btree (model_id, surface_id, manual_key) WHERE (manual_key IS NOT NULL);
+
+CREATE INDEX placements_page ON public.placements USING btree (model_id, account_id, surface_id, occurred_at DESC);
+
+CREATE INDEX placements_plan_row ON public.placements USING btree (model_id, plan_row_id) WHERE (plan_row_id IS NOT NULL);
+
+CREATE UNIQUE INDEX placements_post ON public.placements USING btree (model_id, surface_id, external_post_ref) WHERE (external_post_ref IS NOT NULL);
+
+CREATE INDEX placements_unbound ON public.placements USING btree (model_id, created_at) WHERE ((item_id IS NULL) AND (NOT out_of_catalog));
+
+CREATE UNIQUE INDEX placements_vault_member ON public.placements USING btree (model_id, surface_id, external_album_ref, external_media_ref) WHERE (external_media_ref IS NOT NULL);
+
+CREATE INDEX posting_plan_rows_item ON public.posting_plan_rows USING btree (model_id, item_id, slot_at DESC);
+
+CREATE INDEX posting_plan_rows_open ON public.posting_plan_rows USING btree (model_id, slot_at) WHERE ((marked_at IS NULL) AND (cancelled_at IS NULL));
+
+CREATE INDEX posting_plan_rows_page ON public.posting_plan_rows USING btree (model_id, account_id, slot_at);
+
+CREATE UNIQUE INDEX posting_plan_rows_release_surface ON public.posting_plan_rows USING btree (model_id, release_id, release_surface_kind) WHERE ((release_id IS NOT NULL) AND (cancelled_at IS NULL));
+
+CREATE INDEX posting_plan_rows_tasks ON public.posting_plan_rows USING btree (model_id, assignee_id, slot_date);
+
+CREATE INDEX ppv_releases_page ON public.ppv_releases USING btree (model_id, account_id, release_date DESC);
 
 CREATE UNIQUE INDEX principal_grants_live_key ON public.principal_grants USING btree (principal_id, model_id) WHERE (revoked_at IS NULL);
 
@@ -2204,6 +2622,8 @@ CREATE TRIGGER content_items_fixed BEFORE UPDATE ON public.content_items FOR EAC
 
 CREATE TRIGGER content_items_journal AFTER INSERT OR DELETE OR UPDATE ON public.content_items FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
+CREATE TRIGGER content_items_second_person_late AFTER UPDATE OF has_second_person ON public.content_items FOR EACH ROW WHEN (((new.has_second_person IS TRUE) AND (old.has_second_person IS NOT TRUE))) EXECUTE FUNCTION public.content_item_second_person_late();
+
 CREATE TRIGGER custom_order_deliveries_append_only BEFORE DELETE OR UPDATE ON public.custom_order_deliveries FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
 CREATE TRIGGER custom_order_deliveries_lock BEFORE INSERT ON public.custom_order_deliveries FOR EACH ROW EXECUTE FUNCTION public.custom_order_delivery_lock();
@@ -2260,9 +2680,27 @@ CREATE TRIGGER item_tags_journal AFTER INSERT OR DELETE OR UPDATE ON public.item
 
 CREATE TRIGGER item_tags_tag_scope BEFORE INSERT ON public.item_tags FOR EACH ROW EXECUTE FUNCTION public.check_tag_scope();
 
+CREATE TRIGGER legacy_claims_fixed BEFORE UPDATE ON public.legacy_claims FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_object_id', 'source_revision_id', 'parser_version', 'claim_key', 'raw_fragment', 'claim_kind');
+
+CREATE TRIGGER legacy_claims_journal AFTER INSERT OR DELETE OR UPDATE ON public.legacy_claims FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER legacy_number_claims_fixed BEFORE UPDATE ON public.legacy_number_claims FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'type', 'claimed_number', 'source_object_id', 'claim_id');
+
+CREATE TRIGGER legacy_number_claims_journal AFTER INSERT OR DELETE OR UPDATE ON public.legacy_number_claims FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
 CREATE TRIGGER models_journal AFTER INSERT OR DELETE OR UPDATE ON public.models FOR EACH ROW EXECUTE FUNCTION public.log_row_change('id');
 
 CREATE TRIGGER pipeline_versions_fixed BEFORE UPDATE ON public.pipeline_versions FOR EACH ROW EXECUTE FUNCTION public.forbid_change('version', 'ffmpeg', 'svtav1', 'libvips', 'sharp', 'phash_algo', 'master_recipe', 'rendition_recipes', 'recipe_digests');
+
+CREATE TRIGGER placement_assets_fixed BEFORE UPDATE ON public.placement_assets FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'placement_id', 'asset_id', 'asset_version_id');
+
+CREATE TRIGGER placement_assets_journal AFTER INSERT OR DELETE OR UPDATE ON public.placement_assets FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER placement_evidence_append_only BEFORE DELETE OR UPDATE ON public.placement_evidence FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE TRIGGER placements_fixed BEFORE UPDATE ON public.placements FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'account_id', 'surface_id');
+
+CREATE TRIGGER placements_journal AFTER INSERT OR DELETE OR UPDATE ON public.placements FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
 CREATE TRIGGER platform_texts_fixed BEFORE UPDATE ON public.platform_texts FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'item_id', 'platform', 'account_id', 'locale', 'variant_no');
 
@@ -2271,6 +2709,18 @@ CREATE TRIGGER platform_texts_journal AFTER INSERT OR DELETE OR UPDATE ON public
 CREATE TRIGGER policy_settings_fixed BEFORE UPDATE ON public.policy_settings FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'account_id', 'item_type', 'key');
 
 CREATE TRIGGER policy_settings_journal AFTER INSERT OR DELETE OR UPDATE ON public.policy_settings FOR EACH ROW EXECUTE FUNCTION public.log_row_change('id');
+
+CREATE TRIGGER posting_plan_rows_fixed BEFORE UPDATE ON public.posting_plan_rows FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'release_id', 'release_surface_kind', 'created_at', 'created_by');
+
+CREATE TRIGGER posting_plan_rows_journal AFTER INSERT OR DELETE OR UPDATE ON public.posting_plan_rows FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER posting_plan_rows_second_person BEFORE INSERT OR UPDATE OF item_id, manifest_id, account_id ON public.posting_plan_rows FOR EACH ROW EXECUTE FUNCTION public.posting_plan_row_second_person();
+
+CREATE TRIGGER posting_plan_rows_slot BEFORE INSERT OR UPDATE OF slot_date, slot_time, slot_tz, slot_at, release_id, account_id, surface_id ON public.posting_plan_rows FOR EACH ROW EXECUTE FUNCTION public.posting_plan_row_slot();
+
+CREATE TRIGGER ppv_releases_fixed BEFORE UPDATE ON public.ppv_releases FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'account_id', 'item_id', 'item_type');
+
+CREATE TRIGGER ppv_releases_journal AFTER INSERT OR DELETE OR UPDATE ON public.ppv_releases FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
 CREATE TRIGGER principal_grants_fixed BEFORE UPDATE ON public.principal_grants FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'principal_id');
 
@@ -2531,6 +2981,9 @@ ALTER TABLE ONLY public.download_receipts
     ADD CONSTRAINT download_receipts_model_id_manifest_id_fkey FOREIGN KEY (model_id, manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.download_receipts
+    ADD CONSTRAINT download_receipts_model_id_plan_row_id_fkey FOREIGN KEY (model_id, plan_row_id) REFERENCES public.posting_plan_rows(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.download_receipts
     ADD CONSTRAINT download_receipts_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.id_counters
@@ -2626,8 +3079,98 @@ ALTER TABLE ONLY public.item_tags
 ALTER TABLE ONLY public.item_tags
     ADD CONSTRAINT item_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_parse_work_id_fkey FOREIGN KEY (model_id, parse_work_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_resolved_alias_id_fkey FOREIGN KEY (model_id, resolved_alias_id) REFERENCES public.aliases(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_resolved_asset_id_resolved_version__fkey FOREIGN KEY (model_id, resolved_asset_id, resolved_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_resolved_evidence_id_fkey FOREIGN KEY (model_id, resolved_evidence_id) REFERENCES public.placement_evidence(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_resolved_item_id_fkey FOREIGN KEY (model_id, resolved_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_resolved_order_id_fkey FOREIGN KEY (model_id, resolved_order_id) REFERENCES public.custom_orders(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_source_object_id_fkey FOREIGN KEY (model_id, source_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_source_revision_id_fkey FOREIGN KEY (model_id, source_revision_id) REFERENCES public.source_revisions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_model_id_superseded_by_id_fkey FOREIGN KEY (model_id, superseded_by_id) REFERENCES public.legacy_claims(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_claims
+    ADD CONSTRAINT legacy_claims_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_number_claims
+    ADD CONSTRAINT legacy_number_claims_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_number_claims
+    ADD CONSTRAINT legacy_number_claims_model_id_claim_id_fkey FOREIGN KEY (model_id, claim_id) REFERENCES public.legacy_claims(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_number_claims
+    ADD CONSTRAINT legacy_number_claims_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_number_claims
+    ADD CONSTRAINT legacy_number_claims_model_id_registry_claim_id_fkey FOREIGN KEY (model_id, registry_claim_id) REFERENCES public.legacy_claims(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_number_claims
+    ADD CONSTRAINT legacy_number_claims_model_id_source_object_id_fkey FOREIGN KEY (model_id, source_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.legacy_number_claims
+    ADD CONSTRAINT legacy_number_claims_model_id_target_item_id_fkey FOREIGN KEY (model_id, target_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.master_checks
     ADD CONSTRAINT master_checks_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.work_operations(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_assets
+    ADD CONSTRAINT placement_assets_bound_by_fkey FOREIGN KEY (bound_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_assets
+    ADD CONSTRAINT placement_assets_model_id_asset_id_asset_version_id_fkey FOREIGN KEY (model_id, asset_id, asset_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_assets
+    ADD CONSTRAINT placement_assets_model_id_placement_id_fkey FOREIGN KEY (model_id, placement_id) REFERENCES public.placements(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_assets
+    ADD CONSTRAINT placement_assets_model_id_receipt_entry_id_fkey FOREIGN KEY (model_id, receipt_entry_id) REFERENCES public.download_receipt_entries(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_model_id_legacy_claim_id_fkey FOREIGN KEY (model_id, legacy_claim_id) REFERENCES public.legacy_claims(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_model_id_matched_asset_id_matched_versi_fkey FOREIGN KEY (model_id, matched_asset_id, matched_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_model_id_placement_id_corrects_id_fkey FOREIGN KEY (model_id, placement_id, corrects_id) REFERENCES public.placement_evidence(model_id, placement_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_model_id_placement_id_fkey FOREIGN KEY (model_id, placement_id) REFERENCES public.placements(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_recorded_by_fkey FOREIGN KEY (recorded_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placements
+    ADD CONSTRAINT placements_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placements
+    ADD CONSTRAINT placements_model_id_account_id_surface_id_fkey FOREIGN KEY (model_id, account_id, surface_id) REFERENCES public.surfaces(model_id, account_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placements
+    ADD CONSTRAINT placements_model_id_item_id_item_type_fkey FOREIGN KEY (model_id, item_id, item_type) REFERENCES public.content_items(model_id, id, type) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placements
+    ADD CONSTRAINT placements_model_id_plan_row_id_fkey FOREIGN KEY (model_id, plan_row_id) REFERENCES public.posting_plan_rows(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.platform_texts
     ADD CONSTRAINT platform_texts_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
@@ -2649,6 +3192,48 @@ ALTER TABLE ONLY public.policy_settings
 
 ALTER TABLE ONLY public.policy_settings
     ADD CONSTRAINT policy_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_cancelled_by_fkey FOREIGN KEY (cancelled_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_marked_by_fkey FOREIGN KEY (marked_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_model_id_account_id_surface_id_fkey FOREIGN KEY (model_id, account_id, surface_id) REFERENCES public.surfaces(model_id, account_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_model_id_input_manifest_id_fkey FOREIGN KEY (model_id, input_manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_model_id_manifest_id_fkey FOREIGN KEY (model_id, manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_model_id_marked_manifest_id_fkey FOREIGN KEY (model_id, marked_manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_model_id_release_id_item_id_fkey FOREIGN KEY (model_id, release_id, item_id) REFERENCES public.ppv_releases(model_id, id, item_id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.ppv_releases
+    ADD CONSTRAINT ppv_releases_cancelled_by_fkey FOREIGN KEY (cancelled_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.ppv_releases
+    ADD CONSTRAINT ppv_releases_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.ppv_releases
+    ADD CONSTRAINT ppv_releases_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.ppv_releases
+    ADD CONSTRAINT ppv_releases_model_id_item_id_item_type_fkey FOREIGN KEY (model_id, item_id, item_type) REFERENCES public.content_items(model_id, id, type) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.principal_grants
     ADD CONSTRAINT principal_grants_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
@@ -2754,6 +3339,9 @@ ALTER TABLE ONLY public.tags
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.web_uploads
+    ADD CONSTRAINT web_uploads_model_id_plan_row_id_fkey FOREIGN KEY (model_id, plan_row_id) REFERENCES public.posting_plan_rows(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.web_uploads
     ADD CONSTRAINT web_uploads_model_id_target_item_id_fkey FOREIGN KEY (model_id, target_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
@@ -2866,15 +3454,29 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_draft_candidates TO cont
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_groups TO contentops_app;
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.legacy_claims TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.legacy_number_claims TO contentops_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.master_checks TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.models TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.pipeline_versions TO contentops_app;
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.placement_assets TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.placement_evidence TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.placements TO contentops_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.platform_texts TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.policy_settings TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.posting_plan_rows TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.ppv_releases TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.principal_grants TO contentops_app;
 
