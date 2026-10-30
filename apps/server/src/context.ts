@@ -178,11 +178,21 @@ export class NotModified {
 }
 
 /**
+ * Whether `If-None-Match` names the tag — weak comparison (RFC 9110 §13.1.2): nginx marks the
+ * ETag of a gzipped answer weak (`W/"…"`), and the browser sends that form back.
+ */
+export function noneMatchNames(header: string | null, etag: string): boolean {
+  if (!header) return false
+  const opaque = (tag: string) => tag.trim().replace(/^W\//, '')
+  return header.split(',').some((tag) => tag.trim() === '*' || opaque(tag) === opaque(etag))
+}
+
+/**
  * A whole resource with a content ETag (SPEC §12.0): 304 when `If-None-Match` names the
  * same content, otherwise the answer with its `ETag`.
  */
 export function withContentTag<T>(ctx: RequestContext, etag: string, answer: T): T | NotModified {
-  if (ctx.ifNoneMatch === etag) return new NotModified(etag)
+  if (noneMatchNames(ctx.ifNoneMatch, etag)) return new NotModified(etag)
   ctx.setHeader(HEADER.etag, etag)
   return answer
 }
