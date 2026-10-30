@@ -177,7 +177,7 @@ describe('copies on request', () => {
   it('the compatible copy goes to the exports folder and is not kept as a rendition', async () => {
     const ready = await settle(await download('PPV-074', { kind: 'compat', strip_metadata: false }))
     const { accel, path } = await fetchFile(ready.download_url)
-    expect(accel).toMatch(/^\/_accel\/tmp\/exports\/[0-9a-f-]+\/compat\//)
+    expect(accel).toMatch(/^\/_accel\/tmp\/exports\/[0-9a-f-]+\/1\/compat\/compatible\.mp4$/)
     expect((await probeVideo(path)).video).toMatchObject({ codec: 'h264', pixFmt: 'yuv420p' })
   })
 
