@@ -1,5 +1,4 @@
 import type { UpdateDraftCommand } from '@contentops/contracts/commands/inbox'
-import type { LegacyReview } from '@contentops/contracts/domain/legacy'
 import { logAction, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { checkVersion, isUuid } from '../commands'
@@ -63,48 +62,6 @@ async function writeFields(tx: Tx, modelId: string, id: string, body: UpdateDraf
     UPDATE inbox_groups
        SET ${sql.join(sets, sql`, `)}, updated_at = now(), row_version = row_version + 1
      WHERE model_id = ${modelId}::uuid AND id = ${id}::uuid`)
-}
-
-/** «Разбор старого»: the legacy pass of stage 3 fills it; before that it lists open cases. */
-async function legacyReview(services: Services, modelId: string): Promise<LegacyReview> {
-  const { rows } = await services.db.execute<{
-    id: string
-    kind: string
-    details: { root?: string; title?: string; fragment?: string } | null
-  }>(sql`
-    SELECT id, kind, details FROM review_cases
-     WHERE model_id = ${modelId}::uuid AND state = 'open'
-       AND kind IN ('cross_model_duplicate', 'unreadable_input')
-     ORDER BY created_at`)
-  return {
-    progress: {
-      processed_folders: 0,
-      total_folders: 0,
-      old_names: 0,
-      unresolved: rows.length,
-      roots: [],
-      stalled: null,
-    },
-    labels: [],
-    disputes: rows.map((row) => ({
-      id: row.id,
-      kind: row.kind === 'cross_model_duplicate' ? 'cross_model' : 'archive_broken',
-      root: row.details?.root ?? '',
-      title:
-        row.details?.title ??
-        (row.kind === 'cross_model_duplicate'
-          ? 'Такой файл есть у другой модели'
-          : 'Архив не читается'),
-      fragment: row.details?.fragment ?? null,
-      thumbs: [],
-      label: null,
-      folders: [],
-      proposal: null,
-      options: [],
-      postponed: null,
-      resolved: null,
-    })),
-  }
 }
 
 export function inboxHandlers(services: Services): HandlerRegistry {
@@ -339,9 +296,6 @@ export function inboxHandlers(services: Services): HandlerRegistry {
         }),
 
       upload: ({ body, ctx }) => createUpload(services, ctx, body),
-    },
-    legacy: {
-      get: ({ ctx }) => legacyReview(services, modelOf(ctx).id),
     },
   }
 }
