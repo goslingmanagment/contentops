@@ -164,8 +164,8 @@ export function DisputeGroups({ disputes, labels }: DisputeGroupsProps) {
                       open={openRows.includes(dispute.id)}
                       pending={actions.resolving}
                       onToggle={() => setOpenRows((current) => toggle(current, dispute.id))}
-                      onChoose={(option, folders, row) => {
-                        actions.resolve(dispute.id, option.key, dispute.title, folders)
+                      onChoose={(option, folders, row, extra) => {
+                        actions.resolve(dispute.id, option.key, dispute.title, folders, extra)
                         focusNextCase(row)
                       }}
                     />

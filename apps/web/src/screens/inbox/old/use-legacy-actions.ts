@@ -7,7 +7,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { useActionToast } from '@/actions/action-toast-context'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
-import { useInboxCommands } from '@/data/inbox'
+import { type DisputeAnswer, useInboxCommands } from '@/data/inbox'
 import { queryKeys } from '@/data/query-keys'
 import { useCurrentModel } from '@/shell/model/model-context'
 
@@ -27,6 +27,8 @@ interface ResolveVariables {
   title: string
   /** «Номер занят»: имя папки → вариант. */
   folders?: Readonly<Record<string, string>>
+  /** Причина или тип и номер у вариантов со словами. */
+  extra?: DisputeAnswer
 }
 
 /** Сколько «Меток из имени» решено по карточке: для полоски после «Сохранить». */
@@ -48,8 +50,8 @@ export function useLegacyActions() {
 
   const resolve = useIntentMutation<ResolveVariables, LegacyReview>({
     failed: 'Не сохранилось',
-    run: ({ dispute, option, folders }, key) =>
-      commands.resolveDispute(dispute, option, key, folders),
+    run: ({ dispute, option, folders, extra }, key) =>
+      commands.resolveDispute(dispute, option, key, folders, extra),
     invalidates: () => [queryKeys.inbox(model, 'active')],
     onSuccess: (review, { dispute, option, title }) => {
       put(review)
@@ -103,7 +105,8 @@ export function useLegacyActions() {
       option: string,
       title: string,
       folders?: Readonly<Record<string, string>>,
-    ) => resolve.start({ dispute, option, title, folders }),
+      extra?: DisputeAnswer,
+    ) => resolve.start({ dispute, option, title, folders, extra }),
     resolving: resolve.isPending || bindByLabels.isPending,
     bindByLabels: (disputes: readonly Dispute[]) => bindByLabels.start(disputes),
     saveLabels: (labels: readonly { label: string; target: LabelTarget | null }[]) =>

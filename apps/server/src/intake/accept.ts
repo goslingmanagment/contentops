@@ -8,6 +8,7 @@ import { issueNumber } from '../catalog/numbers'
 import { logItemAction, touchItem } from '../catalog/writes'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
+import { materializeClaims } from '../legacy/materialize'
 import { handleOf } from '../media/downloads'
 import { lockBlobForReference } from '../media/storage-ops'
 import { markDeliveredParts } from '../orders/writes'
@@ -600,6 +601,12 @@ export async function acceptGroup(
     UPDATE inbox_groups SET closed_at = coalesce(closed_at, now()), updated_at = now(),
            row_version = row_version + 1
      WHERE model_id = ${model.id}::uuid AND id = ${group.id}::uuid`)
+
+  // Claims of the old names on these files and their folders may become placements now
+  // (SPEC §6.3): only those whose label the КМ confirmed for a page.
+  await materializeClaims(tx, model.id, actor.id, {
+    objectIds: drafts.flatMap((draft) => (draft.source_object_id ? [draft.source_object_id] : [])),
+  })
 
   const publicId = publicIdOf(item.type, item.number)
   await logItemAction(tx, model, item, {

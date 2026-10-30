@@ -23,17 +23,26 @@ export const LegacyProgressSchema = z.object({
 })
 export type LegacyProgress = z.infer<typeof LegacyProgressSchema>
 
-/** Where an old label points: one page, several pages or «номер поста дня». */
+/**
+ * Where an old label points: one page, several pages, «номер поста дня» or «страница
+ * неизвестна» — the claims of such a label stay claims and make no placement (SPEC §6.3).
+ */
 export const LabelTargetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('accounts'), accounts: z.array(AccountCodeSchema).min(1) }),
   z.object({ kind: z.literal('post_number') }),
+  z.object({ kind: z.literal('unknown') }),
 ])
 export type LabelTarget = z.infer<typeof LabelTargetSchema>
 
 export const LabelMappingSchema = z.object({
   label: z.string(),
   examples: z.array(z.object({ name: z.string(), thumb: ThumbRefSchema })),
+  /** Confirmed by the КМ; `null` — not yet: the claims of the label wait. */
   target: LabelTargetSchema.nullable(),
+  /** What the rule of SPEC §6.3 proposes (`used3` → the third Fansly page); preselected. */
+  proposed: LabelTargetSchema.nullable().optional(),
+  /** Names with this label. */
+  count: z.int().nonnegative().optional(),
 })
 export type LabelMapping = z.infer<typeof LabelMappingSchema>
 
@@ -47,6 +56,8 @@ export const DisputeKindSchema = z.enum([
   'cross_model',
   'archive_broken',
   'foreign_archive',
+  'unparsed',
+  'smm_pack',
 ])
 export type DisputeKind = z.infer<typeof DisputeKindSchema>
 
@@ -60,11 +71,18 @@ export const DISPUTE_KIND_LABEL: Record<DisputeKind, string> = {
   cross_model: 'Межмодельный дубль',
   archive_broken: 'Неполный архив',
   foreign_archive: 'Архив другой модели',
+  unparsed: 'Неразобранное имя',
+  smm_pack: 'Пак подрядчику',
 }
 
 export const DisputeOptionSchema = z.object({
   key: z.string(),
   label: z.string(),
+  /**
+   * The option needs words before it is sent: `reason` — why («Игнорировать…», «Резерв по
+   * находке…»), `type_number` — the type and the number of the object («Задать тип и номер…»).
+   */
+  input: z.enum(['reason', 'type_number']).nullable().optional(),
 })
 export type DisputeOption = z.infer<typeof DisputeOptionSchema>
 

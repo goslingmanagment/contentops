@@ -34,6 +34,13 @@ export function useInboxList(model: ModelCode, view: InboxView = 'active') {
 }
 
 /** «Разбор старого»: ход по корням, метки и спорное. */
+/** Слова к решению спорного: причина или тип и номер (DisputeOption.input). */
+export interface DisputeAnswer {
+  reason?: string
+  type?: ItemType
+  number?: number
+}
+
 export function useLegacyReview(model: ModelCode) {
   const api = useApi()
   return useQuery({
@@ -215,10 +222,11 @@ export function useInboxCommands(model: ModelCode) {
         option: string,
         key: string,
         folders?: Readonly<Record<string, string>>,
+        extra?: DisputeAnswer,
       ) =>
         api.legacy.resolve({
           params: { model, dispute },
-          body: folders ? { option, folders: { ...folders } } : { option },
+          body: { option, ...(folders ? { folders: { ...folders } } : {}), ...extra },
           idempotencyKey: key,
         }),
       saveLabels: (labels: readonly { label: string; target: LabelTarget | null }[], key: string) =>

@@ -1,7 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import {
   type Db,
   enqueueWork,
@@ -10,68 +7,18 @@ import {
   WorkRunner,
   withActorTx,
 } from '@contentops/db'
-import type { LegacyListingEntry } from '@contentops/legacy'
-import type { FakeTree } from '@contentops/sources/testing'
 import { sql } from 'drizzle-orm'
 import { vi } from 'vitest'
 import { enqueueFreeze } from '../intake/freeze'
 import { scanHandler } from '../intake/scan'
 import type { IntakeHarness, WorkOutcome } from '../intake/testing'
-import { writeZip } from '../media/zip'
 import { createWorkGate } from '../work-gate'
 import { enqueueImport, type ImportMode, importParseHandler } from './parse'
 import { snapshotOf } from './snapshot'
 
-/**
- * A fictional old disk on the fake Yandex Disk (PLAN этап 3: fictional names in the shapes of
- * the real ones), its snapshot through the real `scan:freeze` and the import works.
- */
+export { plantDisk, zipOf } from './fixture-disk'
 
-/** A stored ZIP of members with fixed bytes, as an archive of the old disk. */
-export async function zipOf(members: Record<string, Buffer>): Promise<Buffer> {
-  const dir = await mkdtemp(join(tmpdir(), 'legacy-zip-'))
-  try {
-    const files = await Promise.all(
-      Object.entries(members).map(async ([name, bytes], n) => {
-        const path = join(dir, String(n))
-        await writeFile(path, bytes)
-        return { name, path }
-      }),
-    )
-    await writeZip(join(dir, 'out.zip'), files)
-    return await readFile(join(dir, 'out.zip'))
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-}
-
-const relative = (path: string) => path.replace(/^disk:\//, '')
-
-/**
- * Plants a listing under `root`: folders, files of their size (equal md5 of the listing — equal
- * bytes), upload and shot times; `bytes` replaces the content of a path (archives).
- */
-export function plantDisk(
-  tree: FakeTree,
-  root: string,
-  listing: readonly LegacyListingEntry[],
-  bytes: Record<string, Buffer> = {},
-): void {
-  for (const entry of listing) {
-    const path = `${root}/${relative(entry.path)}`
-    if (entry.isDir) {
-      tree.addFolder(path)
-      continue
-    }
-    const given = bytes[relative(entry.path)]
-    const size = entry.size ?? 1000
-    const content = given ?? (entry.md5 ? Buffer.alloc(size, entry.md5) : size)
-    tree.addFile(path, content, {
-      ...(entry.createdAt ? { created: new Date(entry.createdAt) } : {}),
-      ...(entry.shotAt ? { shotAt: new Date(entry.shotAt) } : {}),
-    })
-  }
-}
+/** The snapshot of a fictional old disk through the real `scan:freeze` and the import works. */
 
 async function runOne(
   db: Db,

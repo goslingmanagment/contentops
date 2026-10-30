@@ -17,6 +17,7 @@ import { Thumb } from '@contentops/ui/components/thumb'
 import { useMemo, useState } from 'react'
 
 const POST_NUMBER = 'post'
+const UNKNOWN = 'unknown'
 
 interface TargetOption {
   value: string
@@ -46,14 +47,18 @@ function targetOptions(accounts: readonly Account[]): TargetOption[] {
     ...single,
     ...together,
     { value: POST_NUMBER, label: 'номер поста дня', target: { kind: 'post_number' } },
+    { value: UNKNOWN, label: 'страница неизвестна', target: { kind: 'unknown' } },
   ]
 }
 
-function optionValueOf(target: LabelTarget | null): string | undefined {
+function optionValueOf(target: LabelTarget | null | undefined): string | undefined {
   if (!target) {
     return undefined
   }
-  return target.kind === 'post_number' ? POST_NUMBER : target.accounts.join(',')
+  if (target.kind === 'post_number') {
+    return POST_NUMBER
+  }
+  return target.kind === 'unknown' ? UNKNOWN : target.accounts.join(',')
 }
 
 interface LabelMapCardProps {
@@ -66,14 +71,17 @@ interface LabelMapCardProps {
 /**
  * Разовая карточка «Метки старых имён → страницы» (DESIGN §4.9): метка, примеры файлов,
  * выбор страницы, «Сохранить». Видна, пока хоть одна метка без страницы; до сохранения
- * метки из имён ждут, размещений нет. Строками стоят только метки без страницы, уже
+ * метки из имён ждут, размещений нет. Сначала выбрано то, что предлагает правило SPEC §6.3
+ * (`used3` → Fansly 3): КМ проверяет по примерам и сохраняет. Строками стоят только метки без страницы, уже
  * сопоставленные свёрнуты в одну строку «ещё 5 меток сопоставлены · изменить» — карточка
  * не занимает первый экран, и «Спорное» видно сразу.
  */
 export function LabelMapCard({ labels, accounts, saving, onSave }: LabelMapCardProps) {
   const options = useMemo(() => targetOptions(accounts), [accounts])
   const [chosen, setChosen] = useState<Record<string, string | undefined>>(() =>
-    Object.fromEntries(labels.map((label) => [label.label, optionValueOf(label.target)])),
+    Object.fromEntries(
+      labels.map((label) => [label.label, optionValueOf(label.target ?? label.proposed)]),
+    ),
   )
   const [showMapped, setShowMapped] = useState(false)
   const missing = labels.filter((label) => !chosen[label.label]).length

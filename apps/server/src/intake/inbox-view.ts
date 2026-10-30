@@ -13,6 +13,7 @@ import type { Queryable, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant, instantOrNull } from '../commands'
 import { ApiProblem } from '../errors'
+import { openDisputeCount } from '../legacy/review'
 import { frameChoices } from './frames'
 import { sourceThumbPath } from './source-thumbs'
 
@@ -630,18 +631,16 @@ export async function inboxList(
     filter === 'active'
       ? items.filter((item) => ['decision', 'error', 'ready'].includes(item.state.kind)).length
       : (await inboxList(q, model, 'active')).count
-  const { rows } = await q.execute<{ at: string | null; disputes: number }>(sql`
+  const { rows } = await q.execute<{ at: string | null }>(sql`
     SELECT (SELECT max(w.finished_at) FROM work_operations w
-             WHERE w.model_id = ${modelId}::uuid AND w.kind = 'scan' AND w.state = 'succeeded') AS at,
-           (SELECT count(*)::int FROM review_cases c
-             WHERE c.model_id = ${modelId}::uuid AND c.state = 'open'
-               AND c.kind IN ('legacy_unparsed', 'unreadable_input', 'cross_model_duplicate')) AS disputes`)
+             WHERE w.model_id = ${modelId}::uuid AND w.kind = 'scan' AND w.state = 'succeeded') AS at`)
   return {
     items,
     next_cursor: null,
     count,
     disk_checked_at: instantOrNull(rows[0]?.at),
-    legacy_disputes: rows[0]?.disputes ?? 0,
+    // «Разбор старого · 38»: what a person still decides there (DESIGN §4.9).
+    legacy_disputes: await openDisputeCount(q, modelId),
   }
 }
 

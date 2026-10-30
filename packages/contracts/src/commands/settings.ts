@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { IntegrationSwitchesSchema } from '../domain/integrations'
+import { ItemTypeSchema } from '../domain/item-type'
 import { LabelTargetSchema, VaultAlbumEvidenceSchema } from '../domain/legacy'
 import { ThresholdSchema, ThresholdScopeSchema } from '../domain/system'
 
@@ -50,6 +51,11 @@ export const ResolveDisputeCommandSchema = z.object({
   option: z.string(),
   /** «Номер занят», выбор у каждой папки: имя папки → вариант (`keep`, `new_number`…). */
   folders: z.record(z.string(), z.string()).optional(),
+  /** Option with `input: reason`: why («не наш файл», «альбом vault SXT-010»). */
+  reason: z.string().trim().min(1).max(500).optional(),
+  /** Option with `input: type_number`: what the old name is. */
+  type: ItemTypeSchema.optional(),
+  number: z.int().min(1).max(999_999).optional(),
 })
 export type ResolveDisputeCommand = z.infer<typeof ResolveDisputeCommandSchema>
 

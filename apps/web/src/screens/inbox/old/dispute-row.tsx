@@ -6,6 +6,8 @@ import { Thumb } from '@contentops/ui/components/thumb'
 import { cn } from '@contentops/ui/lib/utils'
 import { ChevronDownIcon } from 'lucide-react'
 import { type KeyboardEvent, useRef, useState } from 'react'
+import type { DisputeAnswer } from '@/data/inbox'
+import { DisputeAnswerForm } from './dispute-answer'
 import { choiceByDigit, type DisputeChoices, disputeChoices } from './dispute-choices'
 import { type FolderChoice, FolderChoices, proposedChoice, sameChoice } from './folder-choices'
 import { BY_LABELS_OPTION, FOLDERS_OPTION } from './use-legacy-actions'
@@ -18,7 +20,12 @@ interface DisputeRowProps {
   pending: boolean
   onToggle: () => void
   /** Решение; `row` — строка, от которой фокус пойдёт к следующему нерешённому случаю. */
-  onChoose: (option: DisputeOption, folders: FolderChoice | undefined, row: HTMLElement) => void
+  onChoose: (
+    option: DisputeOption,
+    folders: FolderChoice | undefined,
+    row: HTMLElement,
+    extra?: DisputeAnswer,
+  ) => void
 }
 
 /**
@@ -37,10 +44,20 @@ export function DisputeRow({ dispute, open, pending, onToggle, onChoose }: Dispu
   const proposed = proposedChoice(dispute.folders)
   const [folderChoice, setFolderChoice] = useState<FolderChoice>(proposed)
   const changed = byFolder && !sameChoice(folderChoice, proposed)
+  // Вариант со словами («Игнорировать…», «Задать тип и номер…»): сначала форма в строке.
+  const [asking, setAsking] = useState<DisputeOption | null>(null)
 
-  const choose = (option: DisputeOption, folders?: FolderChoice) => {
+  const choose = (option: DisputeOption, folders?: FolderChoice, extra?: DisputeAnswer) => {
+    if (option.input && !extra) {
+      setAsking(option)
+      if (!open) {
+        onToggle()
+      }
+      return
+    }
+    setAsking(null)
     if (rowRef.current) {
-      onChoose(option, folders, rowRef.current)
+      onChoose(option, folders, rowRef.current, extra)
     }
   }
   // Главное решение раскрытой «Номер занят»: предложение как есть или выбор у папок.
@@ -157,6 +174,14 @@ export function DisputeRow({ dispute, open, pending, onToggle, onChoose }: Dispu
         <div className="flex flex-col gap-2 pb-3 pl-27">
           {dispute.proposal && dispute.kind !== 'label_from_name' ? (
             <p className="text-sm">{dispute.proposal}</p>
+          ) : null}
+          {asking ? (
+            <DisputeAnswerForm
+              option={asking}
+              pending={pending}
+              onSubmit={(answer) => choose(asking, undefined, answer)}
+              onCancel={() => setAsking(null)}
+            />
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {choices.others.map((option) => (
