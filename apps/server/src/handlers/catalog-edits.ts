@@ -14,6 +14,7 @@ import {
 import { findItem, type ItemRow, modelOf, publicIdOfRow } from '../catalog/ids'
 import { addLink, confirmLink, removeLink } from '../catalog/links'
 import { changeTags, confirmMarkup, updateField } from '../catalog/markup-writes'
+import { changeType, extractShoot, mergeRaw, removeItem, restoreItem } from '../catalog/structure'
 import { checkItemVersion, lockItem, logItemAction, touchItem } from '../catalog/writes'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
@@ -120,6 +121,29 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
         onItem({ ctx, body: null, id: params.id }, (tx, model, item) =>
           removeLink(tx, model, item, params.link),
         ),
+      changeType: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx.model)
+          const item = await lockItem(tx, model, params.id)
+          await checkItemVersion(tx, ctx, item)
+          return { item_id: await changeType(tx, model, item, body.type, actor) }
+        }),
+      remove: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx.model)
+          const item = await lockItem(tx, model, params.id)
+          await checkItemVersion(tx, ctx, item)
+          await removeItem(tx, model, item, actor)
+          return { ok: true as const }
+        }),
+      restore: ({ params, ctx }) =>
+        command({ ctx, body: null }, async (tx) => {
+          const model = modelOf(ctx.model)
+          const item = await findItem(tx, model, params.id, { lock: true, withTombstones: true })
+          await setJournalItem(tx, item.id)
+          await restoreItem(tx, model, item)
+          return itemDetail(tx, model, params.id)
+        }),
     },
     objectFiles: {
       reorder: ({ params, body, ctx }) =>
@@ -139,6 +163,16 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
         onItem({ ctx, body, id: params.id }, async (tx, model, item) => {
           await checkItemVersion(tx, ctx, item)
           await removeFiles(tx, model, item, body.keys)
+        }),
+      merge: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => ({
+          item_id: await mergeRaw(tx, modelOf(ctx.model), params.id, body.into, ctx, actor),
+        })),
+      extractShoot: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx.model)
+          const item = await lockItem(tx, model, params.id)
+          return { item_id: await extractShoot(tx, model, item, body.keys, actor) }
         }),
       setPurpose: ({ params, body, ctx }) =>
         onItem({ ctx, body, id: params.id }, async (tx, model, item) => {

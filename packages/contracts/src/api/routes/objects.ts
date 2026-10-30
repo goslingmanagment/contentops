@@ -173,4 +173,10 @@ export const objectRoutes = {
     response: OkSchema,
     versioned: true,
   }),
+  /** «Вернуть» a deleted object: the tombstone goes, the number stays (SPEC §4.1). */
+  restore: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/i/{id}:restore',
+    response: ItemDetailSchema,
+  }),
 }

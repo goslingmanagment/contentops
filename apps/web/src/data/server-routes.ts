@@ -71,6 +71,7 @@ export const SERVER_ROUTES: ServerRoutes = {
     'makePpv',
     'changeType',
     'remove',
+    'restore',
   ],
   objectFiles: [
     'reorder',
