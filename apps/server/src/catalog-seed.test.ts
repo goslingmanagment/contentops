@@ -29,5 +29,8 @@ it('fills a believable catalog once', async () => {
     url: '/api/v1/lora/i/PPV-073',
     headers: { cookie: `co_session=${owner}` },
   })
-  expect(detail.json().entry).toMatchObject({ title: 'Вечеринка, блёстки, диван', has_teaser: true })
+  expect(detail.json().entry).toMatchObject({
+    title: 'Вечеринка, блёстки, диван',
+    has_teaser: true,
+  })
 })
