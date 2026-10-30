@@ -14,11 +14,8 @@ export const planDaySearchSchema = z.object({
 })
 export type PlanDaySearch = z.infer<typeof planDaySearchSchema>
 
-/** Неделя: второй вид `?variant=pages` (DESIGN §9.1), страница второго вида — `page`. */
-export const planWeekSearchSchema = z.object({
-  variant: z.enum(['pages']).optional().catch(undefined),
-  page: AccountCodeSchema.optional().catch(undefined),
-})
+/** Неделя: своих параметров нет. */
+export const planWeekSearchSchema = z.object({})
 export type PlanWeekSearch = z.infer<typeof planWeekSearchSchema>
 
 /** «Сверить»: `?show=done`, `?show=not-ours`; чипы «Страница ▾» и «Неделя ▾» — `page`, `week`. */

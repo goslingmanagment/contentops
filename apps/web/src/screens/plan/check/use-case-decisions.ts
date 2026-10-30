@@ -7,7 +7,6 @@ import {
   type ModelCode,
   type PostSurface,
   SURFACE_LABEL,
-  type UploadCheckResult,
 } from '@contentops/contracts'
 import { useCallback, useMemo, useState } from 'react'
 import { useActionToast } from '@/actions/action-toast-context'
@@ -18,8 +17,8 @@ import type { CaseAction } from './case-kinds'
 import { caseLabel } from './case-text'
 
 /**
- * Решения по случаю (DESIGN §4.15, §3.8): «Это оно», «Не то», «Привязать…», «Не наше» и
- * «Проверить заливку». Каждое — сразу, без «Вы уверены?», с полоской и «Отменить». Строка
+ * Решения по случаю (DESIGN §4.15, §3.8): «Это оно», «Не то», «Привязать…» и «Не наше».
+ * Каждое — сразу, без «Вы уверены?», с полоской и «Отменить». Строка
  * сереет только после ответа заглушки, фокус уходит на следующий случай.
  */
 
@@ -34,7 +33,7 @@ interface UndoRequest {
   label: string
 }
 
-/** Что в пути у случая: решение, «Проверить заливку» или отмена из «Решённых». */
+/** Что в пути у случая: решение или отмена из «Решённых». */
 export type PendingAction = CaseAction | 'undo'
 
 export interface PendingDecision {
@@ -117,9 +116,6 @@ export function useCaseDecisions(model: ModelCode, { view, onSettled }: Decision
   const toast = useActionToast()
   const sync = useCheckSync(model)
   const [pending, setPending] = useState<PendingDecision | null>(null)
-  const [uploadChecks, setUploadChecks] = useState<ReadonlyMap<string, UploadCheckResult>>(
-    () => new Map(),
-  )
   const [reopened, setReopened] = useState<ReadonlySet<string>>(() => new Set())
 
   const settle = useCallback(
@@ -160,40 +156,24 @@ export function useCaseDecisions(model: ModelCode, { view, onSettled }: Decision
     },
   })
 
-  const checkUpload = useIntentMutation<string, UploadCheckResult>({
-    failed: 'Не отправилось',
-    run: (caseId, key) =>
-      api.check.checkUpload({ params: { model, case: caseId }, idempotencyKey: key }),
-    onSuccess: (result, caseId) => {
-      setUploadChecks((current) => new Map(current).set(caseId, result))
-      toast.show({ message: result.text })
-    },
-  })
-
-  const busy = decide.isPending || checkUpload.isPending || undo.isPending
+  const busy = decide.isPending || undo.isPending
 
   return useMemo(
     () => ({
       /** Что сейчас в пути; после ответа или отказа — `null`. */
       pending: busy ? pending : null,
-      /** Ответы на «Проверить заливку» по случаю: «В очереди · проверим за сутки». */
-      uploadChecks,
       /** Случаи, которые вернули в разбор из «Решённых» и «Не наше»: строка там сереет. */
       reopened,
       decide: (decision: Decision) => {
         setPending({ caseId: decision.entry.id, action: pendingAction(decision) })
         decide.start(decision)
       },
-      checkUpload: (caseId: string) => {
-        setPending({ caseId, action: 'check-upload' })
-        checkUpload.start(caseId)
-      },
       undo: (caseId: string, label: string) => {
         setPending({ caseId, action: 'undo' })
         undo.start({ caseId, label })
       },
     }),
-    [busy, checkUpload.start, decide.start, pending, reopened, undo.start, uploadChecks],
+    [busy, decide.start, pending, reopened, undo.start],
   )
 }
 

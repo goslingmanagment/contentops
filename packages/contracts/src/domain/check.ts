@@ -116,7 +116,7 @@ export type UnverifiedSummary = z.infer<typeof UnverifiedSummarySchema>
 
 /**
  * A row inside «Hub не смог проверить» (`GET …/reconcile/unverified`): nothing to do, it is
- * shown only on «Почему». `case_id` is set where «Проверить заливку» applies (vault).
+ * shown only on «Почему». `case_id` links the row to its case, if there is one.
  */
 export const UnverifiedRowSchema = z.object({
   id: z.string(),
@@ -157,9 +157,3 @@ export const CaseBatchResultSchema = z.object({
   ),
 })
 export type CaseBatchResult = z.infer<typeof CaseBatchResultSchema>
-
-export const UploadCheckResultSchema = z.object({
-  state: z.enum(['queued', 'limit']),
-  text: z.string(),
-})
-export type UploadCheckResult = z.infer<typeof UploadCheckResultSchema>

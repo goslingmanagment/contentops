@@ -139,7 +139,7 @@ export function buildPastWeeks(context: WeekContext, pools: HistoryPools): Built
         assignee: PERSON.diana,
         mark: scheduled(date),
         evidence: [exact(item, 'lora-1', date, '03:00', '03:03')],
-        stats: { views: 400 + offset * 37, likes: 30 + offset, on: '2026-09-22' },
+        stats: { views: 400 + offset * 37, on: '2026-09-22' },
       })
     }
     push({
@@ -162,7 +162,7 @@ export function buildPastWeeks(context: WeekContext, pools: HistoryPools): Built
       assignee: PERSON.diana,
       mark: scheduled(date),
       evidence: sharedFypEvidence(context, shared, date),
-      stats: { views: 700 + offset * 41, likes: 44 + offset, on: '2026-09-22' },
+      stats: { views: 700 + offset * 41, on: '2026-09-22' },
     })
     push({
       date,

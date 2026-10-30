@@ -6,7 +6,6 @@ import { itemTypeOf } from '../domain/item-type'
 import type { MarkupField } from '../domain/markup'
 import type { ProvenanceLink } from '../domain/provenance'
 import { synthesizeFiles, synthesizeFrames, synthesizeMarkup } from './item-files'
-import { applyObjectPageStates } from './lora-object-records'
 import { PERSON } from './people'
 import type { ItemRecord } from './world-types'
 
@@ -199,5 +198,4 @@ export function applyDetailedRecords(records: Map<ItemId, ItemRecord>) {
     const record = records.get(id)
     if (record) patch(record)
   }
-  applyObjectPageStates(records)
 }

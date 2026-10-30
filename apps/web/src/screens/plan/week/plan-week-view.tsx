@@ -1,5 +1,5 @@
 import { type AccountCode, type IsoWeek, mskDate, weekStart } from '@contentops/contracts'
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { getRouteApi } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useClock } from '@/data/api-session'
 import { usePlanWeek, useWeekNorms } from '@/data/plan'
@@ -33,7 +33,6 @@ const routeApi = getRouteApi('/_shell/$model/plan/w/$week')
 export function PlanWeekView({ week }: { week: IsoWeek }) {
   const model = useCurrentModel()
   const search = routeApi.useSearch()
-  const navigate = useNavigate({ from: '/$model/plan/w/$week' })
   const access = usePlanAccess()
   const today = mskDate(useClock().now())
   const plan = usePlanWeek(model.code, week)
@@ -59,8 +58,6 @@ export function PlanWeekView({ week }: { week: IsoWeek }) {
     clearSelection: selection.clear,
     canAct: access.canAct,
   })
-  const pagesVariant = search.variant === 'pages'
-  const page = model.accounts.find((account) => account.code === search.page) ?? model.accounts[0]
 
   const openEmpty = (account: AccountCode) => {
     if (data) {
@@ -117,7 +114,7 @@ export function PlanWeekView({ week }: { week: IsoWeek }) {
         search={search}
         drawerOpen={drawer !== null}
         onToggleDrawer={() => {
-          const first = page?.code ?? model.accounts[0]?.code
+          const first = model.accounts[0]?.code
           if (drawer) {
             setDrawer(null)
           } else if (first) {
@@ -137,18 +134,6 @@ export function PlanWeekView({ week }: { week: IsoWeek }) {
             selectedKeys={selection.selectedKeys}
             canAct={access.canAct}
             handlers={handlers}
-            pagesVariant={
-              pagesVariant && page
-                ? {
-                    page,
-                    onPageChange: (code) =>
-                      void navigate({
-                        search: (previous) => ({ ...previous, page: code }),
-                        replace: true,
-                      }),
-                  }
-                : null
-            }
           />
           {drawer ? (
             <WeekDrawerSlot

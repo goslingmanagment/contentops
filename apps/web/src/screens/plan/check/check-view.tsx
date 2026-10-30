@@ -114,7 +114,6 @@ export function CheckView({ search, onSearchChange, caseId, onCaseChange }: Chec
     canDecide,
     decisions,
     select,
-    canCheckUpload: queue.canCheckUpload,
   })
 
   const selected = queue.cases.find((entry) => entry.id === selectedId) ?? null
@@ -143,7 +142,6 @@ export function CheckView({ search, onSearchChange, caseId, onCaseChange }: Chec
       today={today}
       selected={isSelected}
       compact={selected !== null}
-      uploadCheck={decisions.uploadChecks.get(entry.id)}
       pending={decisions.pending?.caseId === entry.id ? decisions.pending.action : null}
       canDecide={canDecide}
       menu={menuFor(entry)}
@@ -189,7 +187,6 @@ export function CheckView({ search, onSearchChange, caseId, onCaseChange }: Chec
             ours={selected.item_id ? catalog?.get(selected.item_id) : undefined}
             today={today}
             canDecide={canDecide}
-            canCheckUpload={queue.canCheckUpload(selected.account)}
             decisions={decisions}
             focusSearch={focusSearch}
             menu={menuFor(selected)}
@@ -263,11 +260,7 @@ export function CheckView({ search, onSearchChange, caseId, onCaseChange }: Chec
             unverified={{
               toggle: queue.toggleUnverified,
               toggleReason: queue.toggleReason,
-              uploadChecks: decisions.uploadChecks,
-              onCheckUpload: canDecide ? decisions.checkUpload : null,
-              canCheckUpload: queue.canCheckUpload,
               pageLabel: (account) => accountByCode(account)?.label ?? account,
-              pendingCaseId: decisions.pending?.caseId ?? null,
             }}
             onResetFilter={() => onSearchChange({ show: search.show })}
             emptyText={

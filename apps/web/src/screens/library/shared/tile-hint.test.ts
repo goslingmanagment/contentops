@@ -31,7 +31,6 @@ function summary(patch: Partial<PageSummaryEntry>): PageSummaryEntry {
     planned_on: [],
     has_fyp_version: false,
     views: null,
-    likes: null,
     stats_on: null,
     ...patch,
   }
@@ -59,7 +58,7 @@ describe('ответ под плиткой (DESIGN §4.2)', () => {
   it('«Лучше зашёл на ▾» — число просмотров', () => {
     const views = { kind: 'views', account: fansly2, today: TODAY } as const
     expect(tileHintText(views, [summary({ views: 12480 })])).toBe(formatNumber(12480))
-    expect(tileHintText(views, undefined)).toBe('нет просмотров')
+    expect(tileHintText(views, undefined)).toBe('нет данных')
   })
 })
 

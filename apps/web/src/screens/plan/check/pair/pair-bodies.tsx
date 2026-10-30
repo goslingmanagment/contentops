@@ -116,37 +116,21 @@ export function VariantsBody({
 }
 
 /**
- * vault: «в альбоме нет файла» или «старый файл в альбоме» → «Проверить заливку» (с лимитом
- * Hub) и «Залить заново» — окно «В план» для новой заливки.
+ * vault: «в альбоме нет файла» или «старый файл в альбоме» → «Залить заново» — окно «В план»
+ * для новой заливки; альбом Hub проверит сам при следующем обходе.
  */
 export function VaultBody(props: CaseBodyProps) {
-  const { canDecide, pending, uploadCheck, onCheckUpload, onReupload } = props
+  const { canDecide, pending, onReupload } = props
   return (
     <>
       <Pair {...props} />
       {canDecide ? (
         <div className="flex flex-col gap-2">
           <PanelMain>
-            {uploadCheck || !onCheckUpload ? null : (
-              <Button
-                pending={pending === 'check-upload'}
-                disabled={pending !== null && pending !== 'check-upload'}
-                onClick={onCheckUpload}
-              >
-                Проверить заливку
-              </Button>
-            )}
-            <Button
-              variant={onCheckUpload ? 'outline' : 'default'}
-              disabled={pending !== null}
-              onClick={onReupload}
-            >
+            <Button disabled={pending !== null} onClick={onReupload}>
               Залить заново
             </Button>
           </PanelMain>
-          {uploadCheck ? (
-            <p className="text-base text-muted-foreground">{uploadCheck.text}</p>
-          ) : null}
         </div>
       ) : null}
     </>

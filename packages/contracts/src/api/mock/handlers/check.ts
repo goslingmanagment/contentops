@@ -19,9 +19,6 @@ import { placementsChanged } from './model-records'
 
 /** «Сверить» decisions (DESIGN §4.15): «Это оно», «Не то», «Привязать…», «Не наше». */
 
-/** Hub allows 60 album checks a day (DESIGN §2.5). */
-const UPLOAD_CHECKS_PER_DAY = 60
-
 /**
  * `?demo=conflict` (DESIGN §3.10, §3.3): пока человек смотрел на пару, её решил другой. Его
  * ответ записан минутой раньше — пара подтверждена, пост без плана отмечен «Не наше».
@@ -188,14 +185,6 @@ export function checkHandlers(): BoundRoute[] {
         item_id: itemId,
       })
       return resolution(facts, track)
-    }),
-    bind(checkRoutes.checkUpload, 'staff', (context) => {
-      trackOf(context.facts(), context.params.case)
-      if (context.state.upload_checks_today >= UPLOAD_CHECKS_PER_DAY) {
-        return { state: 'limit', text: 'Лимит Hub на сегодня — проверим завтра' }
-      }
-      context.state.upload_checks_today += 1
-      return { state: 'queued', text: 'В очереди · проверим за сутки' }
     }),
     bind(checkRoutes.confirmUnambiguous, 'staff', (context) => {
       const facts = context.facts()

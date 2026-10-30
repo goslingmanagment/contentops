@@ -279,7 +279,6 @@ export const PageSummaryEntrySchema = z.object({
   /** FYP: a unique version for this page exists. */
   has_fyp_version: z.boolean(),
   views: z.int().nonnegative().nullable(),
-  likes: z.int().nonnegative().nullable(),
   stats_on: LocalDateSchema.nullable(),
 })
 export type PageSummaryEntry = z.infer<typeof PageSummaryEntrySchema>

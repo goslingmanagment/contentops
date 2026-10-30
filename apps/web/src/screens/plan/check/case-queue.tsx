@@ -1,4 +1,4 @@
-import type { CheckCase, LocalDate, UnverifiedRow, UploadCheckResult } from '@contentops/contracts'
+import type { CheckCase, LocalDate, UnverifiedRow } from '@contentops/contracts'
 import { EmptyState } from '@contentops/ui/components/state-lines'
 import { VirtualList } from '@contentops/ui/components/virtual-list'
 import { hasModifierKey, isTypingTarget } from '@contentops/ui/lib/platform'
@@ -34,14 +34,8 @@ export function pickOne(next: ReadonlySet<string>, current: string | null): stri
 export interface UnverifiedHandlers {
   toggle: () => void
   toggleReason: (reason: string) => void
-  uploadChecks: ReadonlyMap<string, UploadCheckResult>
-  /** `null` — кнопки нет («только чтение»). */
-  onCheckUpload: ((caseId: string) => void) | null
-  /** Hub страницы может проверить заливку: у выключенного и не настроенного — нет. */
-  canCheckUpload: (account: UnverifiedRow['account']) => boolean
   /** «OF Free»: строки разных страниц стоят в одной группе причины. */
   pageLabel: (account: UnverifiedRow['account']) => string
-  pendingCaseId: string | null
 }
 
 interface CaseQueueProps {
@@ -165,16 +159,5 @@ function UnverifiedRowItem({
   today: LocalDate
   unverified: UnverifiedHandlers
 }) {
-  const caseId = row.case_id
-  const onCheckUpload = unverified.canCheckUpload(row.account) ? unverified.onCheckUpload : null
-  return (
-    <UnverifiedRowView
-      row={row}
-      pageLabel={unverified.pageLabel(row.account)}
-      today={today}
-      uploadCheck={caseId ? unverified.uploadChecks.get(caseId) : undefined}
-      onCheckUpload={caseId && onCheckUpload ? () => onCheckUpload(caseId) : null}
-      pending={caseId !== null && unverified.pendingCaseId === caseId}
-    />
-  )
+  return <UnverifiedRowView row={row} pageLabel={unverified.pageLabel(row.account)} today={today} />
 }

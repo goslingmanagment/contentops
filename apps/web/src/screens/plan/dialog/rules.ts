@@ -24,9 +24,9 @@ const TYPE_SURFACES: Record<ItemType, readonly SurfaceKind[]> = {
   ppv: ['wall', 'vault', 'story', 'dm'],
   fyp: ['fyp'],
   custom: ['vault', 'dm'],
-  set: ['wall', 'story'],
+  set: ['wall'],
   sexting: ['vault', 'dm'],
-  life: ['wall', 'vault', 'story'],
+  life: ['wall', 'vault'],
   raw: [],
   promo: [],
 }

@@ -24,12 +24,7 @@ export const OldNameSchema = z.object({
 })
 export type OldName = z.infer<typeof OldNameSchema>
 
-export const PlacementActionSchema = z.enum([
-  'Сверить',
-  'Проверить заливку',
-  'Залить сейчас',
-  'В план',
-])
+export const PlacementActionSchema = z.enum(['Сверить', 'Залить сейчас', 'В план'])
 export type PlacementAction = z.infer<typeof PlacementActionSchema>
 
 /** One surface of one page in the panel «Где залито · Fansly 3». */
@@ -41,7 +36,6 @@ export const SurfacePlacementSchema = z.object({
   album: z.string().nullable(),
   caption: z.string().nullable(),
   views: z.int().nonnegative().nullable(),
-  likes: z.int().nonnegative().nullable(),
   stats_on: LocalDateSchema.nullable(),
 })
 export type SurfacePlacement = z.infer<typeof SurfacePlacementSchema>
@@ -50,7 +44,7 @@ export const ItemPagePlacementSchema = z.object({
   account: AccountCodeSchema,
   summary: PageSummaryEntrySchema,
   surfaces: z.array(SurfacePlacementSchema),
-  /** The one button of the case: «Сверить», «Проверить заливку», «Залить сейчас» or «В план». */
+  /** The one button of the case: «Сверить», «Залить сейчас» or «В план». */
   action: PlacementActionSchema.nullable(),
 })
 export type ItemPagePlacement = z.infer<typeof ItemPagePlacementSchema>

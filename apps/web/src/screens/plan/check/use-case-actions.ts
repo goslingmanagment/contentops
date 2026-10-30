@@ -11,21 +11,13 @@ interface CaseActionsOptions {
   decisions: CaseDecisions
   /** Открыть случай в панели; `withSearch` — сразу поиск по каталогу («Привязать…»). */
   select: (caseId: string, withSearch?: boolean) => void
-  /** Hub страницы может проверить заливку. */
-  canCheckUpload: (account: Account['code']) => boolean
 }
 
 /**
  * Что делает каждая кнопка случая (DESIGN §4.15): одна таблица для строки, клавиш `1`
  * `2` `3`, меню «⋯» и правого клика — без развилок по экрану.
  */
-export function useCaseActions({
-  accounts,
-  canDecide,
-  decisions,
-  select,
-  canCheckUpload,
-}: CaseActionsOptions) {
+export function useCaseActions({ accounts, canDecide, decisions, select }: CaseActionsOptions) {
   const act = useMemo((): Record<CaseAction, (entry: CheckCase) => void> => {
     const evidenceOf = (entry: CheckCase) => entry.posts[0]?.evidence_id ?? null
     return {
@@ -37,11 +29,8 @@ export function useCaseActions({
       review: (entry) => select(entry.id),
       bind: (entry) => select(entry.id, true),
       outside: (entry) => decisions.decide({ action: 'outside', entry }),
-      // Выключенный или не настроенный Hub проверить не может: клавиша `1` ничего не шлёт.
-      'check-upload': (entry) =>
-        canCheckUpload(entry.account) ? decisions.checkUpload(entry.id) : undefined,
     }
-  }, [canCheckUpload, decisions, select])
+  }, [decisions, select])
 
   const accountOf = useCallback(
     (entry: CheckCase) => accounts.find((account) => account.code === entry.account),
@@ -52,10 +41,9 @@ export function useCaseActions({
     (entry: CheckCase): ItemMenuModel =>
       caseMenu(entry, accountOf(entry), canDecide, {
         onReview: () => act.review(entry),
-        onCheckUpload: canCheckUpload(entry.account) ? () => act['check-upload'](entry) : null,
         onOutside: () => act.outside(entry),
       }),
-    [accountOf, act, canCheckUpload, canDecide],
+    [accountOf, act, canDecide],
   )
 
   return { act, accountOf, menuFor }

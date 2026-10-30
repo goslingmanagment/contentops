@@ -4,6 +4,7 @@ import {
   formatNumber,
   type IntegrationView,
   type ItemPagePlacement,
+  isPlacedLevel,
   type PlacementLevel,
   SURFACE_LABEL,
   type SurfacePlacement,
@@ -35,9 +36,9 @@ function useHubTrouble(account: string): IntegrationView | undefined {
 
 /**
  * «Где залито · Fansly 3» в панели (DESIGN §4.4): строка на поверхность со словом и
- * датой, три факта предложениями, альбом vault, подпись с платформы и просмотры, серые
- * заметки. Одна кнопка по случаю: «Сверить», «Проверить заливку», «Залить сейчас» или
- * «В план»; пока строка плана этой страницы не отмечена — «Скачать» и «Отметить залитым».
+ * датой, три факта предложениями, альбом vault, подпись с платформы и просмотры (Fansly;
+ * нет их — «нет данных»), серые заметки. Одна кнопка по случаю: «Сверить», «Залить сейчас»
+ * или «В план»; пока строка плана этой страницы не отмечена — «Скачать» и «Отметить залитым».
  */
 export function PageDetail({ page }: { page: ItemPagePlacement }) {
   const { model, openPage } = useObjectPage()
@@ -69,6 +70,7 @@ export function PageDetail({ page }: { page: ItemPagePlacement }) {
             <SurfaceRow
               key={`${surface.surface}-${surface.plan_row_id ?? ''}`}
               surface={surface}
+              fansly={account?.platform === 'fansly'}
               asOf={asOf}
             />
           ))}
@@ -79,7 +81,14 @@ export function PageDetail({ page }: { page: ItemPagePlacement }) {
   )
 }
 
-function SurfaceRow({ surface, asOf }: { surface: SurfacePlacement; asOf: string | null }) {
+interface SurfaceRowProps {
+  surface: SurfacePlacement
+  /** Просмотры по файлу Hub собирает только у Fansly. */
+  fansly: boolean
+  asOf: string | null
+}
+
+function SurfaceRow({ surface, fansly, asOf }: SurfaceRowProps) {
   const today = useToday()
   const { verdict } = surface
   const facts = [verdict.facts.plan, verdict.facts.mark, verdict.facts.hub].filter(
@@ -112,9 +121,10 @@ function SurfaceRow({ surface, asOf }: { surface: SurfacePlacement; asOf: string
         ) : null}
         {surface.views !== null && surface.stats_on ? (
           <p className="text-muted-foreground tabular-nums">
-            {formatNumber(surface.views)} просмотров · {formatNumber(surface.likes ?? 0)} ♥ на{' '}
-            {formatDate(surface.stats_on, today)}
+            {formatNumber(surface.views)} просмотров на {formatDate(surface.stats_on, today)}
           </p>
+        ) : fansly && isPlacedLevel(verdict.level) ? (
+          <p className="text-muted-foreground">Просмотры: нет данных</p>
         ) : null}
         {verdict.notes.map((note) => (
           <p key={note} className="text-ink-3">
@@ -175,8 +185,6 @@ function PageAction({ page }: { page: ItemPagePlacement }) {
   }
   const run: Record<NonNullable<ItemPagePlacement['action']>, () => void> = {
     Сверить: () => void navigate({ to: '/$model/plan/check', params: { model: model.code } }),
-    'Проверить заливку': () =>
-      void navigate({ to: '/$model/plan/check', params: { model: model.code } }),
     'Залить сейчас': () => upload.uploadNow(account),
     'В план': () => openPlanDialog([detail.entry.id]),
   }

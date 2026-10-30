@@ -4,7 +4,6 @@ import {
   type LocalDate,
   SURFACE_LABEL,
   type UnverifiedRow,
-  type UploadCheckResult,
 } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { Skeleton } from '@contentops/ui/components/skeleton'
@@ -16,7 +15,7 @@ import { CaseThumb } from './case-thumb'
 /**
  * «Hub не смог проверить 38 — делать ничего не нужно · Почему» (DESIGN §4.15): одна серая
  * строка внизу очереди; по «Почему» — группы по причине с числом, внутри строки без
- * действий, у vault — «Проверить заливку».
+ * действий.
  */
 
 interface UnverifiedLineProps {
@@ -71,22 +70,10 @@ interface UnverifiedRowViewProps {
   row: UnverifiedRow
   pageLabel: string
   today: LocalDate
-  /** Ответ на «Проверить заливку», если уже спрашивали. */
-  uploadCheck: UploadCheckResult | undefined
-  /** `null` — кнопки нет: строка не vault или человек только смотрит. */
-  onCheckUpload: (() => void) | null
-  pending: boolean
 }
 
 /** Строка «не проверено» 44: наша миниатюра, название, страница, где и когда; серое слово справа. */
-export function UnverifiedRowView({
-  row,
-  pageLabel,
-  today,
-  uploadCheck,
-  onCheckUpload,
-  pending,
-}: UnverifiedRowViewProps) {
+export function UnverifiedRowView({ row, pageLabel, today }: UnverifiedRowViewProps) {
   const where = `${pageLabel} · ${SURFACE_LABEL[row.surface]}`
   const subtitle = row.slot ? `${where} · ${momentLabel(row.slot, today)}` : where
   return (
@@ -99,15 +86,7 @@ export function UnverifiedRowView({
         </p>
         <p className="truncate text-ink-3 text-xs tabular-nums">{subtitle}</p>
       </div>
-      {uploadCheck ? (
-        <span className="shrink-0 text-muted-foreground text-sm">{uploadCheck.text}</span>
-      ) : onCheckUpload ? (
-        <Button variant="outline" size="sm" pending={pending} onClick={onCheckUpload}>
-          Проверить заливку
-        </Button>
-      ) : (
-        <span className="shrink-0 text-muted-foreground text-sm">не проверено</span>
-      )}
+      <span className="shrink-0 text-muted-foreground text-sm">не проверено</span>
     </div>
   )
 }

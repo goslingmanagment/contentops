@@ -1,10 +1,4 @@
-import type {
-  CatalogEntry,
-  CheckCase,
-  LocalDate,
-  Platform,
-  UploadCheckResult,
-} from '@contentops/contracts'
+import type { CatalogEntry, CheckCase, LocalDate, Platform } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { ItemContextMenu, type ItemMenuModel } from '@contentops/ui/components/item-menu'
 import { StopRowClick } from '@contentops/ui/components/stop-row-click'
@@ -28,8 +22,6 @@ interface CaseRowProps {
    * и название не прячется даже на 1280.
    */
   compact: boolean
-  /** Ответ на «Проверить заливку»: «В очереди · проверим за сутки» встаёт под словом. */
-  uploadCheck: UploadCheckResult | undefined
   /** Действие в пути: его кнопка показывает «…» (DESIGN §3.8). */
   pending: PendingAction | null
   /** Кнопок нет у «только чтение». */
@@ -51,7 +43,6 @@ export function CaseRow({
   today,
   selected,
   compact,
-  uploadCheck,
   pending,
   canDecide,
   menu,
@@ -77,7 +68,7 @@ export function CaseRow({
         </div>
         <CaseStatus
           verdict={entry.verdict}
-          fact={open ? (uploadCheck?.text ?? caseFact(entry, ours)) : entry.verdict.detail}
+          fact={open ? caseFact(entry, ours) : entry.verdict.detail}
           action={
             open && canDecide
               ? { label: 'Разобрать', onSelect: () => onAction('review') }

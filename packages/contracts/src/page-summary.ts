@@ -16,7 +16,6 @@ export interface SurfaceVerdict {
 
 export interface PageStats {
   views: number
-  likes: number
   on: string
 }
 
@@ -88,7 +87,6 @@ export function summarizePage(
     ),
     has_fyp_version: options.hasFypVersion ?? false,
     views: stats?.views ?? null,
-    likes: stats?.likes ?? null,
     stats_on: stats?.on ?? null,
   }
 }
