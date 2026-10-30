@@ -165,8 +165,9 @@ export async function rowView(
         ? publicIdOf(row.item_type, row.item_number)
         : null
   const page = state.view.accounts.find((account) => account.code === row.account)
-  const hub = hubView(context.publish, state, row)
-  const verdict = rowVerdict(evaluateRow(state, row, { copy, hasNewerVersion: hasNewer }), hub)
+  const base = evaluateRow(state, row, { copy, hasNewerVersion: hasNewer })
+  const hub = hubView(context.publish, state, row, base.level)
+  const verdict = rowVerdict(base, hub)
   const open = !row.marked_at && !row.cancelled_at
   return {
     id: row.id,

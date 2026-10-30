@@ -596,6 +596,40 @@ describe('«Подготовить 12» and «Отправить 12»', () => {
   })
 })
 
+describe('a row that already went out', () => {
+  it('offers neither «Подготовить» nor «Отправить» once its placement is confirmed', async () => {
+    const row = await put({ item_id: 'SET-074', date: day(15), time: '19:00' })
+    expect(row.hub?.can_prepare).toBe(true)
+    // The placement of the row confirmed exactly (a pair a person confirmed), no KM mark.
+    await withActorTx(
+      db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test.confirm', requestId: randomUUID() },
+      async (tx) => {
+        const { rows } = await tx.execute<{ id: string }>(sql`
+          INSERT INTO placements (model_id, account_id, surface_id, occurrence_kind, manual_key,
+                                  item_id, item_type, plan_row_id, planned_at, occurred_at,
+                                  occurred_source, surface_source, origin)
+          SELECT r.model_id, r.account_id, r.surface_id, 'manual', ${`test:${row.id}`}, r.item_id,
+                 i.type, r.id, r.slot_at, r.slot_at, 'km', 'plan', 'manual'
+            FROM posting_plan_rows r JOIN content_items i ON i.model_id = r.model_id AND i.id = r.item_id
+           WHERE r.id = ${row.id}::uuid
+          RETURNING id`)
+        await tx.execute(sql`
+          INSERT INTO placement_evidence (model_id, placement_id, source, kind, strength, payload,
+                                          dedup_key)
+          VALUES (${lora1.modelId}::uuid, ${rows[0]?.id}::uuid, 'manual', 'manual_confirm', 'exact',
+                  '{"basis": "inspected_pair"}'::jsonb, ${`manual:${randomUUID()}`})`)
+      },
+    )
+    const out = await rowOf(row.id)
+    expect(out.verdict.sign).toBe('done')
+    expect(out.hub).toMatchObject({ can_prepare: false, can_send: false })
+    const refused = await command(row.id, 'prepare')
+    expect(refused.statusCode).toBe(422)
+    expect(refused.json().message).toContain('уже вышла')
+  })
+})
+
 describe('cancel', () => {
   it('ContentOps takes its own publication off before the hand-off', async () => {
     const row = await putStory(day(6), '12:00')

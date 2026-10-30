@@ -11,9 +11,9 @@ import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { enqueueRowWork } from '../hub/publish'
 import { kindRule, replaceable } from '../hub/publish-rules'
-import { hubView } from '../plan/publication-view'
+import { hubView, isConfirmedLevel } from '../plan/publication-view'
 import { type RowRecord, rowById } from '../plan/records'
-import { loadState } from '../plan/state'
+import { evaluateRow, loadState, type PlanState } from '../plan/state'
 import { rowView, viewContext } from '../plan/views'
 import { logRow } from '../plan/writes'
 import type { Services } from '../services'
@@ -144,9 +144,22 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
     }
     await assertPublishing(tx, model, row)
     assertNotSent(row)
+    const state = await loadState(tx, model)
+    assertNotOut(state, row)
     await queue(tx, model, row, 'prepare', { principalId: actor.id }, requestId)
-    await logRow(tx, await loadState(tx, model), row, { Публикация: WORD.prepare })
+    await logRow(tx, state, row, { Публикация: WORD.prepare })
     return row
+  }
+
+  /** A row whose placement is already confirmed (by Hub or a person) went out: no second time. */
+  function assertNotOut(state: PlanState, row: RowRecord) {
+    const current = state.rows.find((candidate) => candidate.id === row.id) ?? row
+    if (isConfirmedLevel(evaluateRow(state, current).level)) {
+      throw new ApiProblem(
+        'publication_refused',
+        'Строка уже вышла: размещение подтверждено — публиковать заново нечего',
+      )
+    }
   }
 
   /** Agents prepare, people send (SPEC §11.1): the server refuses a token here. */
@@ -187,6 +200,8 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
         blocking ? publicationCheck(blocking).text : 'Hub не пропускает черновик',
       )
     }
+    const state = await loadState(tx, model)
+    assertNotOut(state, row)
     if (version !== row.hub_version) {
       throw new ApiProblem(
         'version_mismatch',
@@ -197,7 +212,7 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
       )
     }
     await queue(tx, model, row, 'send', { principalId: actor.id, version }, requestId)
-    await logRow(tx, await loadState(tx, model), row, { Публикация: WORD.send })
+    await logRow(tx, state, row, { Публикация: WORD.send })
     return row
   }
 

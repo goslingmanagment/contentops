@@ -1,5 +1,5 @@
 import type { Integration } from '@contentops/contracts/domain/integrations'
-import type { PlacementVerdict } from '@contentops/contracts/domain/placement'
+import type { PlacementLevel, PlacementVerdict } from '@contentops/contracts/domain/placement'
 import type { PlanHub, PublicationState, RowPublication } from '@contentops/contracts/domain/plan'
 import { formatStamp, pastVerb } from '@contentops/contracts/format'
 import {
@@ -150,8 +150,33 @@ function publicationOf(state: PlanState, row: RowRecord): RowPublication | null 
   }
 }
 
-/** The Hub part of the row; `null` — the page publishes by hand and the row never went to Hub. */
-export function hubView(context: PublishContext, state: PlanState, row: RowRecord): PlanHub | null {
+/**
+ * Rows that already went out: an exact (Hub) or a person's confirmation of their placement —
+ * there is nothing to prepare or send (DESIGN §4.11: «кнопок нет»).
+ */
+const CONFIRMED_LEVELS: ReadonlySet<PlacementLevel> = new Set<PlacementLevel>([
+  'confirmed_exact',
+  'confirmed_hub_unmarked',
+  'confirmed_manual',
+  'confirmed_earlier',
+  'confirmed_reupload',
+])
+
+export function isConfirmedLevel(level: PlacementLevel): boolean {
+  return CONFIRMED_LEVELS.has(level)
+}
+
+/**
+ * The Hub part of the row; `null` — the page publishes by hand and the row never went to Hub.
+ * `level` is the row's own verdict: a row already confirmed offers neither «Подготовить» nor
+ * «Отправить».
+ */
+export function hubView(
+  context: PublishContext,
+  state: PlanState,
+  row: RowRecord,
+  level?: PlacementLevel,
+): PlanHub | null {
   const enabled = context.enabled.get(row.account) ?? false
   const publication = publicationOf(state, row)
   const work = context.works.get(row.id)
@@ -170,7 +195,11 @@ export function hubView(context: PublishContext, state: PlanState, row: RowRecor
       : work?.state === 'failed' || work?.state === 'cancelled'
         ? (work.error ?? 'Не получилось')
         : null
-  const open = !row.cancelled_at && !row.marked_at && row.manifest_id !== null
+  const open =
+    !row.cancelled_at &&
+    !row.marked_at &&
+    row.manifest_id !== null &&
+    (level === undefined || !isConfirmedLevel(level))
   const free = enabled && pending === null
   return {
     enabled,
