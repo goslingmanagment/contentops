@@ -17,6 +17,7 @@ import { afterFetch } from './fetch'
 import { bindFrame, frameByDownloadName } from './frames'
 import { mediaKindOf } from './grouping'
 import { ITEM_TO_DB_TYPE } from './inbox-view'
+import { expectedKind, montageFrom, planRow, rowWaits, rowWords, substituteRow } from './row-upload'
 import { DECLARED_KIND, uploadDir } from './tus'
 
 /**
@@ -228,10 +229,12 @@ async function makeDraft(
   groupId: string,
   planned: Planned,
   targetId: string | null,
+  forRow = false,
 ): Promise<string> {
   const bytes = shaBytes(planned.sha)
-  // With a target the uploaded bytes are the master, checked by their hash (SPEC §9.2).
-  const master = targetId !== null
+  // With a target (an object or a plan row) the uploaded bytes are the master, checked by
+  // their hash (SPEC §9.2).
+  const master = targetId !== null || forRow
   const { rows } = await tx.execute<{ id: string }>(sql`
     INSERT INTO inbox_drafts (
       model_id, group_id, web_upload_id, origin, state, byte_size, path, source_sha256,
@@ -255,9 +258,7 @@ export async function createUpload(
   const actor = requireActor(ctx)
   const model = ctx.model
   if (!model) throw new ApiProblem('not_found', 'Такой модели нет')
-  if (body.target?.kind === 'plan_row') {
-    throw new ApiProblem('not_implemented', 'Монтаж для строки плана — вместе с планом (этап 4а)')
-  }
+  const rowId = body.target?.kind === 'plan_row' ? body.target.row_id : null
   const ids = body.files.map((file) => file.upload_id)
   if (new Set(ids).size !== ids.length) {
     throw new ApiProblem('invalid_request', 'Одна загрузка названа дважды')
@@ -265,6 +266,18 @@ export async function createUpload(
   const media = body.files.map(mediaOf)
   const itemId = body.target?.kind === 'item' ? body.target.item_id : null
   if (itemId) checkTarget(body.kind, await findItem(services.db, model, itemId), media)
+  if (rowId) {
+    const row = await planRow(services.db, model, rowId)
+    if (expectedKind(row) !== body.kind) {
+      throw blocked(
+        'wrong_target',
+        `Строка ждёт ${rowWords(row).split(' · ')[0]?.replace('ждёт ', '')}`,
+      )
+    }
+    if (media.length !== 1 || media[0] !== 'video') {
+      throw blocked('wrong_files', 'Монтаж для строки — один видеофайл')
+    }
+  }
 
   // Bytes first, each upload on its own: a blob, then `verified` with its hash.
   const rows = await loadUploads(services.db, model, ids)
@@ -292,6 +305,7 @@ export async function createUpload(
         })
       }
     }
+    if (rowId) return uploadForRow(tx, model, actor, rowId, body, planned, ids[0] as string)
     const target = itemId ? await findItem(tx, model, itemId) : null
     await tx.execute(sql`
       UPDATE web_uploads
@@ -397,4 +411,109 @@ export async function createUpload(
     }).catch(() => undefined)
   }
   return result
+}
+
+/**
+ * The montage for a plan row (SPEC §6.1, §7): a new FYP or PPV accepted «при загрузке» from
+ * the row's sources, or the teaser of the row's PPV, then put into the row. A row that no
+ * longer waits makes it a question ◆ «Подставить монтаж в строку?» in «Приехало».
+ */
+async function uploadForRow(
+  tx: Tx,
+  model: ModelScope,
+  actor: Actor,
+  rowId: string,
+  body: CreateUploadCommand,
+  planned: readonly Planned[],
+  key: string,
+): Promise<UploadResult> {
+  const row = await planRow(tx, model, rowId, true)
+  const teaser = row.expected_role === 'teaser' && row.item_id !== null
+  const type = teaser ? null : (row.expected_type ?? 'FYP')
+  await tx.execute(sql`
+    UPDATE web_uploads
+       SET state = 'registered', declared_kind = ${DECLARED_KIND[body.kind]},
+           target_item_id = ${teaser ? row.item_id : null}::uuid, plan_row_id = ${row.id}::uuid
+     WHERE model_id = ${model.id}::uuid
+       AND id = ANY (${sql.param(planned.map((item) => item.row.id))}::uuid[])`)
+  const groupId = await makeGroup(tx, model.id, key, type, planned.length)
+  const waits = rowWaits(row)
+  await tx.execute(sql`
+    UPDATE inbox_groups
+       SET proposed_title = ${row.input_title},
+           proposed_ppv_kind = ${type === 'PPV' ? 'bundle' : null},
+           evidence = evidence || ${JSON.stringify({
+             plan_row_id: row.id,
+             montage_from: row.input_item_id,
+             was: rowWords(row, true),
+             now: rowWords(row, waits),
+           })}::jsonb
+     WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
+  const drafts: string[] = []
+  for (const item of planned) {
+    const draftId = await makeDraft(tx, model.id, groupId, item, teaser ? row.item_id : null, true)
+    drafts.push(draftId)
+    await enqueueWork(tx, {
+      modelId: model.id,
+      kind: 'derive_video',
+      workKey: `derive:${item.sha}:${draftId}`,
+      inputSha256: shaBytes(item.sha),
+      draftId,
+      priority: 10,
+    })
+  }
+  if (!waits) {
+    await tx.execute(sql`
+      UPDATE inbox_drafts SET blocked_reason = 'row_changed', updated_at = now(),
+             row_version = row_version + 1
+       WHERE model_id = ${model.id}::uuid AND id = ANY (${sql.param(drafts)}::uuid[])`)
+    await logAction(tx, {
+      modelId: model.id,
+      action: 'upload.inbox',
+      subjectKind: 'inbox_groups',
+      subjectId: groupId,
+      subjectLabel: UPLOADED,
+      after: { Файлов: String(planned.length), Куда: 'Приехало · Подставить монтаж в строку?' },
+    })
+    return { group_id: groupId, placed: 'inbox', item_id: null, decision: 'substitute_montage' }
+  }
+  const accepted = await acceptRowMontage(tx, model, actor, groupId, row)
+  return { group_id: groupId, placed: 'attached', item_id: accepted, decision: null }
+}
+
+/** Accepts the montage group of a row and puts the object into the row. */
+export async function acceptRowMontage(
+  tx: Tx,
+  model: ModelScope,
+  actor: Actor,
+  groupId: string,
+  row: {
+    id: string
+    item_id: string | null
+    expected_role: string | null
+    input_item_id: string | null
+  },
+  substitute = true,
+): Promise<string> {
+  const teaser = row.expected_role === 'teaser' && row.item_id !== null
+  let extend: AcceptOptions['extend'] = null
+  if (teaser) {
+    const { rows } = await tx.execute<{ public_id: string }>(sql`
+      SELECT public_item_id(type, number) AS public_id FROM content_items
+       WHERE model_id = ${model.id}::uuid AND id = ${row.item_id}::uuid`)
+    extend = { item_id: rows[0]?.public_id as string, role: 'teaser' }
+  }
+  const accepted = await acceptGroup(tx, model, actor, groupId, {
+    as: 'default',
+    how: 'upload',
+    extend,
+  })
+  const { rows } = await tx.execute<{ id: string }>(sql`
+    SELECT applied_item_id AS id FROM inbox_drafts
+     WHERE model_id = ${model.id}::uuid AND group_id = ${groupId}::uuid AND applied_item_id IS NOT NULL
+     LIMIT 1`)
+  const itemId = rows[0]?.id as string
+  if (!teaser) await montageFrom(tx, model, itemId, row.input_item_id, actor)
+  if (substitute) await substituteRow(tx, model, actor, row.id, itemId)
+  return accepted.item_id
 }

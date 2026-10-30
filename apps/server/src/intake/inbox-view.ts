@@ -44,7 +44,14 @@ interface GroupRow extends Record<string, unknown> {
   id: string
   group_key: string
   grouping: values.Grouping
-  evidence: { root?: string | null; path?: string; day?: string } | null
+  evidence: {
+    root?: string | null
+    path?: string
+    day?: string
+    plan_row_id?: string
+    was?: string
+    now?: string
+  } | null
   proposed_type: values.ContentType | null
   proposed_title: string | null
   proposed_description: string | null
@@ -158,6 +165,7 @@ const DECISION: Partial<Record<values.DraftBlockedReason, InboxGroup['state']>> 
   id_collision: { kind: 'decision', decision: 'number_taken' },
   cross_model_dup: { kind: 'decision', decision: 'cross_model' },
   which_frame: { kind: 'decision', decision: 'which_frame' },
+  row_changed: { kind: 'decision', decision: 'substitute_montage' },
 }
 
 /** The stage of a draft that is still being prepared (DESIGN §5.3). */
@@ -402,7 +410,13 @@ function view(
       order_id: group.custom_order_id,
       shot_on: null,
     },
-    hints: extras.hints,
+    hints:
+      state.kind === 'decision' && state.decision === 'substitute_montage' && group.evidence?.was
+        ? [
+            ...extras.hints,
+            { kind: 'row_change', was: group.evidence.was, now: group.evidence.now ?? '' },
+          ]
+        : extras.hints,
     files: drafts.map((draft, index) => fileOf(model, draft, index)),
     candidates: extras.candidates,
     archive_entries: null,

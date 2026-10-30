@@ -76,7 +76,6 @@ export function UploadProvider({ enabled, children }: { enabled: boolean; childr
   const [screenTarget, setScreenTargetState] = useState<UploadTarget | null>(null)
   const routeTarget = useRouteTarget()
   const model = useParams({ strict: false }).model
-  const mockApi = useMockApi()
   /** Файлы пачек, пока их байты не на сервере; передачи tus по записи лотка. */
   const files = useRef(new Map<string, File>())
   const transfers = useRef(new Map<string, TusUpload>())
@@ -135,8 +134,8 @@ export function UploadProvider({ enabled, children }: { enabled: boolean; childr
       type: 'add-batch',
       batch: { id: newIdempotencyKey(), model, kind: form.kind, target },
       files: entries,
-      // Строка плана в разработке живёт в заглушке: туда и команда, байты не нужны.
-      transport: mockApi && target?.kind === 'plan-row' ? 'simulated' : 'tus',
+      // План на сервере (4а): монтаж для строки идёт тем же tus, что и остальные файлы.
+      transport: 'tus',
     })
     setDialog(null)
   }
