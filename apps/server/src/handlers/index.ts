@@ -3,6 +3,7 @@ import type { Services } from '../services'
 import { agentHandlers } from './agents'
 import { authHandlers } from './auth'
 import { catalogHandlers } from './catalog'
+import { catalogEditHandlers } from './catalog-edits'
 import { integrationHandlers } from './integrations'
 import { journalHandlers } from './journal'
 import { modelHandlers } from './models'
@@ -41,6 +42,7 @@ export function createHandlers(services: Services): HandlerRegistry {
     thresholdHandlers(services),
     systemHandlers(services),
     catalogHandlers(services),
+    catalogEditHandlers(services),
     tagHandlers(services),
   )
 }

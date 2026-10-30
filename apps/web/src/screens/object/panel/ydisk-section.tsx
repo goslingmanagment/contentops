@@ -27,20 +27,24 @@ export function YdiskSection() {
       integration.state !== 'working',
   )
   const oldNames = detail.ydisk.old_names
+  // Объект без исходной папки (сделан в ContentOps) и без старых имён: секции нечего показать.
+  if (!detail.ydisk.path && oldNames.length === 0) return null
 
   return (
     <InfoSection title="На Я.Диске">
       <p className="break-all font-mono text-muted-foreground text-xs">{detail.ydisk.path}</p>
       {disk ? <IntegrationPhrase line={disk.line} wrap /> : null}
-      <a
-        href={detail.ydisk.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 self-start text-primary-ink text-sm hover:underline"
-      >
-        Открыть на Я.Диске
-        <ExternalLinkIcon className="size-3.5" />
-      </a>
+      {detail.ydisk.url ? (
+        <a
+          href={detail.ydisk.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 self-start text-primary-ink text-sm hover:underline"
+        >
+          Открыть на Я.Диске
+          <ExternalLinkIcon className="size-3.5" />
+        </a>
+      ) : null}
       {oldNames.length > 0 ? (
         <div className="flex flex-col gap-1.5">
           <button
