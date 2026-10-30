@@ -19,10 +19,10 @@ Re-running replaces the tasks and keeps the share. Run elevated on winpc, e.g. f
   scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/
   ssh winpc 'pwsh -NoProfile -File C:\vm\contentops\ops\register-tasks.ps1 -Enable'
 
-Sets the critical-error pause of the VM: a full C: or E: pauses it, and the pause does not
-expire for a week (Hyper-V default: off after 30 min, which the watchdog would start again -
-a loop of hard power-offs of the only database). If Hyper-V refuses it on a running VM, the
-script says so: set it with the VM off.
+Sets the critical-error pause of the VM: a full C: or E: pauses it for 24 h, the Hyper-V
+maximum (1441 min and more is refused with 0x80041008), instead of the default 30 min, after
+which the VM is turned off; the watchdog keeps it off below 50 GB free. Applies to a running
+VM; if Hyper-V refuses, the script prints a FIX line.
 
 Ends with a read-only report of the host settings SPEC 12.2 relies on.
 ASCII only.
@@ -96,7 +96,7 @@ foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space', 'ContentOps-CopyLis
 "{0}: {1} -> {2}" -f $shareName, (Get-SmbShare -Name $shareName).Path, $shareUser
 
 # Full host disk: pause, not off after 30 min (SPEC 12.2); minutes.
-$criticalPauseMin = 7 * 24 * 60
+$criticalPauseMin = 24 * 60
 $vm = Get-VM -Name $vmName
 if ("$($vm.AutomaticCriticalErrorAction)" -ne 'Pause' -or $vm.AutomaticCriticalErrorActionTimeout -ne $criticalPauseMin) {
   try {

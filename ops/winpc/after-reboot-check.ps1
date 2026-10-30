@@ -102,7 +102,7 @@ if ($null -eq $vm) {
   $hb = Get-VMIntegrationService -VMName $VmName -Name 'Heartbeat' -ErrorAction SilentlyContinue
   if ($hb -and "$($hb.PrimaryStatusDescription)" -eq 'OK') { Row 'ok' 'vm' 'guest heartbeat' 'OK' } else { Row 'warn' 'vm' 'guest heartbeat' ("{0}" -f $hb.PrimaryStatusDescription) }
   # A full C: or E: pauses the VM; the pause must not turn it off after 30 min (SPEC 12.2).
-  if ("$($vm.AutomaticCriticalErrorAction)" -eq 'Pause' -and $vm.AutomaticCriticalErrorActionTimeout -ge 10080) {
+  if ("$($vm.AutomaticCriticalErrorAction)" -eq 'Pause' -and $vm.AutomaticCriticalErrorActionTimeout -ge 1440) {
     Row 'ok' 'vm' 'critical-error pause' ('{0} min' -f $vm.AutomaticCriticalErrorActionTimeout)
   } else {
     Row 'FAIL' 'vm' 'critical-error pause' ('{0}, {1} min (register-tasks.ps1)' -f $vm.AutomaticCriticalErrorAction, $vm.AutomaticCriticalErrorActionTimeout)
