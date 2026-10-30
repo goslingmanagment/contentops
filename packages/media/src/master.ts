@@ -30,6 +30,7 @@ import {
   ptsDrift,
   type SourceCheck,
   type SourceVerdict,
+  shownFramesPromised,
   truncated,
 } from './verify.ts'
 
@@ -578,7 +579,14 @@ export async function createMaster(options: MasterOptions): Promise<MasterResult
     const failed = new Set<MasterVerdict>()
     if (encoderErrors.lines.some((l) => /^Svt\[error\]/.test(l))) failed.add('encode_failed')
     if (report.resultErrors.count > 0) failed.add('result_decode_errors')
-    if (truncated(srcFrames, probe.video.nbFrames)) failed.add('source_truncated')
+    report.promisedFrames = await shownFramesPromised(
+      paths,
+      options.source,
+      probe.video.nbFrames,
+      srcFrames,
+      signal,
+    )
+    if (truncated(srcFrames, report.promisedFrames)) failed.add('source_truncated')
     if (sourceErrors.count > 0) failed.add('source_decode_errors')
     if (srcFrames !== dstFrames) failed.add('frame_mismatch')
     else {

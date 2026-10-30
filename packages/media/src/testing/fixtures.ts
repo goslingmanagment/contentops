@@ -24,6 +24,7 @@ export const FIXTURE_NAMES = [
   'truncated',
   'corrupt',
   'unreadable',
+  'editList',
   'apac',
   'apacOnly',
   'adpcm',
@@ -50,6 +51,7 @@ const FILE: Record<FixtureName, string> = {
   truncated: 'truncated.mp4',
   corrupt: 'corrupt.mov',
   unreadable: 'unreadable.mov',
+  editList: 'edit-list.mov',
   apac: 'apac.mov',
   apacOnly: 'apac-only.mov',
   adpcm: 'adpcm.mov',
@@ -60,7 +62,7 @@ const FILE: Record<FixtureName, string> = {
 }
 
 /** Bump with any change below: it re-keys the cache. */
-const GENERATOR_VERSION = 4
+const GENERATOR_VERSION = 5
 
 /** Neutral fixture metadata (no real place: the zero point). */
 export const FIXTURE_TAGS = {
@@ -124,6 +126,7 @@ export async function ensureFixtures(
       g.truncated(),
       g.corrupt(),
       g.unreadable(),
+      g.editList(),
       g.apac(),
       g.apacOnly(),
       g.adpcm(),
@@ -282,6 +285,32 @@ class Generator {
     ])
     await rm(land)
     await padToBitrate(this.out('vertical'), 1, 16e6)
+  }
+
+  /**
+   * A cut copy with an edit list: the pre-roll from the keyframe stays in the file as discarded
+   * packets (`D`), so `nb_frames` is 60 and a decoder shows 45 — as CapCut exports do.
+   */
+  async editList() {
+    const full = join(this.dir, 'edit-list-full.mov')
+    await this.ff([
+      ...PATTERN('320x180', 30, 2),
+      ...TONE(500, 2),
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-b:v',
+      '400k',
+      '-g',
+      '60',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      full,
+    ])
+    await this.ff(['-ss', '0.5', '-i', full, '-c', 'copy', this.out('editList')])
   }
 
   async lowrate() {
