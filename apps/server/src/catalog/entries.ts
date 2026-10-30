@@ -25,6 +25,8 @@ interface IndexRow extends Record<string, unknown> {
   tags: string[]
   markup_state: CatalogEntry['markup']
   cover_media: 'video' | 'image' | null
+  /** Active `thumb640` generation of the cover's master. */
+  cover_thumb: string | null
   cover_width: number | null
   cover_height: number | null
   duration_ms: number | null
@@ -77,7 +79,16 @@ export function thumbRatio(
 const PHOTO_TYPES = new Set<ItemType>(['ppv', 'custom', 'set', 'sexting', 'life', 'raw', 'promo'])
 const VIDEO_TYPES = new Set<ItemType>(['sexting', 'life', 'raw', 'promo'])
 
-function entryOf(row: IndexRow): CatalogEntry {
+/** Address of a rendition file of the model (SPEC §11.2). */
+export function renditionUrl(
+  model: ModelScope,
+  generation: string | null,
+  name: string,
+): string | null {
+  return generation ? `/api/v1/${model.code}/g/${generation}/${name}` : null
+}
+
+function entryOf(row: IndexRow, model: ModelScope): CatalogEntry {
   const type = itemTypeOfDb(row.type)
   const id = publicIdOf(row.type, row.number)
   return {
@@ -87,7 +98,11 @@ function entryOf(row: IndexRow): CatalogEntry {
     title_en: row.title_en,
     tags: row.tags,
     markup: row.markup_state,
-    cover: { key: id, ratio: thumbRatio(row.cover_media, row.cover_width, row.cover_height) },
+    cover: {
+      key: id,
+      ratio: thumbRatio(row.cover_media, row.cover_width, row.cover_height),
+      url: renditionUrl(model, row.cover_thumb, 'thumb-640.webp'),
+    },
     duration_s: row.duration_ms ? Math.round(row.duration_ms / 1000) : null,
     photo_count: PHOTO_TYPES.has(type) ? (row.photo_count ?? 0) : null,
     video_count: VIDEO_TYPES.has(type) ? (row.video_count ?? 0) : null,
@@ -125,6 +140,7 @@ export async function catalogEntries(
   const { rows } = await q.execute<IndexRow & { created_at: string }>(sql`
     SELECT c.item_id, c.type, c.number, c.title, c.title_en, c.tags, c.markup_state,
            cover.media_kind AS cover_media, c.cover_width, c.cover_height,
+           c.cover_thumb640_generation_id AS cover_thumb,
            c.duration_ms::float8 AS duration_ms, c.photo_count, c.video_count,
            c.version_count, c.has_teaser, c.size_bytes::float8 AS size_bytes,
            (c.arrived_at AT TIME ZONE 'Europe/Moscow')::date::text AS arrived_on,
@@ -140,7 +156,11 @@ export async function catalogEntries(
       ) cover ON true
      WHERE c.model_id = ${model.id}::uuid ${where}
      ${tail}`)
-  return rows.map((row) => ({ ...entryOf(row), uid: row.item_id, created_at: row.created_at }))
+  return rows.map((row) => ({
+    ...entryOf(row, model),
+    uid: row.item_id,
+    created_at: row.created_at,
+  }))
 }
 
 /** The ETag of a whole resource is the hash of its content (SPEC §12.0). */

@@ -21,6 +21,8 @@ export interface FileCover {
   kind: CoverKind
   family: CoverFamily
   frame?: number
+  /** Настоящая миниатюра файла или кадра, когда она собрана. */
+  src?: string
 }
 
 export function objectFamily(id: ItemId): CoverFamily {
@@ -36,17 +38,23 @@ export function coverOfThumb(ref: ThumbRef, fallback: ItemId): FileCover {
   const owner = subject.item_id ?? fallback
   const kind = itemTypeOf(owner)
   const frame = FRAME_PART.exec(subject.part ?? '')?.[1]
+  const src = ref.url ?? undefined
   if (frame !== undefined) {
-    return { seed: owner, kind, family: objectFamily(owner), frame: Number(frame) }
+    return { seed: owner, kind, family: objectFamily(owner), frame: Number(frame), src }
   }
   const seed = subject.part === null ? owner : ref.key
-  return { seed, kind, family: objectFamily(owner) }
+  return { seed, kind, family: objectFamily(owner), src }
 }
 
 /** Мастер — это обложка объекта; остальные файлы — свои сцены в том же семействе. */
 export function fileCover(entry: CatalogEntry, file: ItemFile): FileCover {
   if (file.role === 'master' || file.role === 'montage') {
-    return { seed: entry.id, kind: entry.type, family: objectFamily(entry.id) }
+    return {
+      seed: entry.id,
+      kind: entry.type,
+      family: objectFamily(entry.id),
+      src: file.thumb.url ?? undefined,
+    }
   }
   return coverOfThumb(file.thumb, entry.id)
 }

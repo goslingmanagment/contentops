@@ -41,6 +41,7 @@ export function PreviewTile({
         kind={cover.kind}
         family={cover.family}
         frame={cover.frame}
+        src={cover.src}
         aspect="9:16"
         durationSeconds={durationSeconds}
         className={cn('transition-opacity duration-120', dimmed && 'opacity-55')}

@@ -21,6 +21,8 @@ export interface ItemCover {
   /** То же числом для малой ячейки мозаики: значок и «109». */
   count?: MosaicCount
   versionCount?: number
+  /** Настоящая миниатюра обложки, когда она собрана. */
+  src?: string
 }
 
 function countOf(entry: CatalogEntry): MosaicCount | undefined {
@@ -43,6 +45,7 @@ export function itemCover(entry: CatalogEntry): ItemCover {
     countLabel: duration === undefined ? compositionLabel(entry) : undefined,
     count: duration === undefined ? countOf(entry) : undefined,
     versionCount: entry.version_count,
+    src: entry.cover.url ?? undefined,
   }
 }
 

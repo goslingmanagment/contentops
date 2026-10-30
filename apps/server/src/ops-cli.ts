@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm'
 import { loadConfig } from './config'
 import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
+import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
 
 /**
@@ -16,11 +17,14 @@ import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs
  * `verify-blobs` puts a run for the `worker` role and, with `--wait`, prints its report.
  * `purge-blobs` removes the unreferenced blobs a finished report lists; each one is checked
  * again under its row lock before and after the file goes. Without `--yes` it only lists.
+ * `stage` and `render` are test runs before intake (`media/test-runs.ts`).
  */
 
 const USAGE = `usage:
   ops.js verify-blobs [--wait]
-  ops.js purge-blobs --report <work id> [--yes]`
+  ops.js purge-blobs --report <work id> [--yes]
+  ops.js stage <file> --model <code>       (test runs before stage 3)
+  ops.js render <sha256> --model <code> [--keep-metadata]`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
@@ -48,9 +52,16 @@ async function waitFor(
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
     args: rest,
-    options: { wait: { type: 'boolean' }, report: { type: 'string' }, yes: { type: 'boolean' } },
+    options: {
+      wait: { type: 'boolean' },
+      report: { type: 'string' },
+      yes: { type: 'boolean' },
+      model: { type: 'string' },
+      'keep-metadata': { type: 'boolean' },
+    },
+    allowPositionals: true,
   })
   const config = loadConfig({ ...process.env, ROLE: 'worker' })
   const pool = createPool(config.DATABASE_URL as string, { max: 2, applicationName: 'ops' })
@@ -96,6 +107,22 @@ async function main(argv: string[]): Promise<number> {
         )
       }
       out({ outcomes })
+      return 0
+    }
+    if (command === 'stage' || command === 'render') {
+      const store = new BlobStore({
+        dataRoot: config.DATA_ROOT as string,
+        derivedRoot: config.DERIVED_ROOT as string,
+        tmpRoot: config.TMP_ROOT as string,
+      })
+      const model = values.model
+      const target = positionals[0]
+      if (!model || !target) throw new Error(USAGE)
+      const out =
+        command === 'stage'
+          ? await stageForTest(db, store, model, target)
+          : await renderForTest(db, model, target, values['keep-metadata'] !== true)
+      out && process.stdout.write(`${JSON.stringify(out, null, 2)}\n`)
       return 0
     }
     process.stderr.write(`${USAGE}\n`)

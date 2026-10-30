@@ -82,6 +82,7 @@ export function FileTile({
           kind={cover.kind}
           family={cover.family}
           frame={cover.frame}
+          src={cover.src}
           aspect={aspect}
           mediaAspect={mediaAspect}
           durationSeconds={state?.kind === 'processing' ? undefined : durationSeconds}

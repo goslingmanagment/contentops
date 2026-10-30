@@ -50,6 +50,11 @@ export type ActorRef = z.infer<typeof ActorRefSchema>
 export const ThumbRefSchema = z.object({
   key: z.string().min(1),
   ratio: z.enum(['3:4', '9:16', '16:9', '1:1']),
+  /**
+   * The real thumbnail: `/api/v1/<model>/g/<generation>/thumb-640.webp` (SPEC §9.3, §11.2);
+   * absent or `null` while it is not built — the screen draws the synthetic cover.
+   */
+  url: z.string().nullable().optional(),
 })
 export type ThumbRef = z.infer<typeof ThumbRefSchema>
 
