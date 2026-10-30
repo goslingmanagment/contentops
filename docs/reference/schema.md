@@ -617,7 +617,10 @@ DISTINCT `WHERE stream_key IS NOT NULL AND state IN ('pending','running','retry_
 **`legacy_claims`** — разобранные сведения старых имён (§6.3). `id`, `model_id`,
 `source_object_id`, `source_revision_id?`, `parser_version`, `claim_key`,
 `raw_fragment` (`used3_04.08.26`, `[Set-002]`, `X.X.X`), `claim_kind` (`number |
-used | posted | date | role | registry_row | duration | unknown`), `payload jsonb`,
+used | posted | date | role | registry_row | duration | title | tag | origin | unknown`;
+`title` — хвост имени кастома и описание в имени папки, `tag` — `optional/`, `extra/`,
+`нюды/`, BG, вендор, `origin` — улики `IMG_*`, `copy_*`, `lv_0_*`, `PMR*`, `кастом_<ник>`;
+добавлены 30.10.2026 с парсером `packages/legacy`), `payload jsonb`,
 `parse_work_id`, `resolution` (`pending | resolved | ignored`), `superseded_by_id?`
 (незакрытая заявка прежней версии правил становится `ignored` со ссылкой на преемника,
 заявки не удваиваются), `resolved_item_id?`,

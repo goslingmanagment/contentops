@@ -1,0 +1,19 @@
+{
+  "name": "@contentops/legacy",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Parser of the old Yandex Disk names, the PPV registry and the import dry-run report (SPEC §6.3–6.4); pure, no database.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
+}
