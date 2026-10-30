@@ -79,8 +79,14 @@ const EnvSchema = z.object({
   /** Who may set `X-Forwarded-*` and `X-Request-Id`: `loopback`, addresses or CIDRs. */
   TRUSTED_PROXY: commaList(z.string()).default(['loopback']),
 
+  /**
+   * Tokens of the cloud sources are read by the name in `sources.credentials_ref` (SPEC §8):
+   * `YDISK_TOKEN`, `DROPBOX_REFRESH_TOKEN` with `DROPBOX_APP_KEY` (+ `DROPBOX_APP_SECRET`).
+   */
   YDISK_TOKEN: z.string().optional(),
-  DROPBOX_TOKEN: z.string().optional(),
+  DROPBOX_REFRESH_TOKEN: z.string().optional(),
+  DROPBOX_APP_KEY: z.string().optional(),
+  DROPBOX_APP_SECRET: z.string().optional(),
   HUB_BASE_URL: z.url().optional(),
   HUB_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
