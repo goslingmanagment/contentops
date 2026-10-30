@@ -65,6 +65,7 @@ function required(value: string | undefined, name: string): string {
 async function runWeb(config: Config, logger: Logger): Promise<void> {
   const pool = createPool(required(config.DATABASE_URL, 'DATABASE_URL'), {
     applicationName: 'web',
+    onIdleError: (error) => logger.warn({ err: error }, 'idle database connection lost'),
   })
   // `/healthz`: web answers, the database takes a query as the app role (SPEC §12.2), the
   // storage roots carry their volume marks.
@@ -209,6 +210,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
   const pool = createPool(required(config.DATABASE_URL, 'DATABASE_URL'), {
     max: 5,
     applicationName: role,
+    onIdleError: (error) => logger.warn({ err: error }, 'idle database connection lost'),
   })
   const db = createDb(pool)
   const log = (line: string, error?: unknown) =>

@@ -20,11 +20,16 @@ export interface PoolOptions {
   applicationName?: string
   idleTimeoutMillis?: number
   connectionTimeoutMillis?: number
+  /**
+   * An idle connection died (database restart, `DROP DATABASE … FORCE`): node-postgres drops it
+   * from the pool and emits `error`; without a listener that error would end the process.
+   */
+  onIdleError?: (error: Error) => void
 }
 
 /** node-postgres pool; every session works in UTC (SPEC §12.1). */
 export function createPool(url: string, options: PoolOptions = {}): pg.Pool {
-  return new pg.Pool({
+  const pool = new pg.Pool({
     connectionString: url,
     max: options.max ?? 10,
     application_name: options.applicationName ?? 'contentops',
@@ -32,6 +37,8 @@ export function createPool(url: string, options: PoolOptions = {}): pg.Pool {
     connectionTimeoutMillis: options.connectionTimeoutMillis ?? 10_000,
     options: '-c TimeZone=UTC',
   })
+  pool.on('error', options.onIdleError ?? (() => {}))
+  return pool
 }
 
 export function createDb(pool: pg.Pool): Db {
