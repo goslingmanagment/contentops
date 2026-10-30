@@ -66,7 +66,7 @@ CREATE TABLE public.inbox_drafts (
     CONSTRAINT inbox_drafts_accept_applied CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (applied_item_id IS NOT NULL))),
     CONSTRAINT inbox_drafts_accept_verified CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (master_verified_at IS NOT NULL))),
     CONSTRAINT inbox_drafts_alias_target CHECK (((outcome <> 'alias'::text) OR (duplicate_of_version_id IS NOT NULL))),
-    CONSTRAINT inbox_drafts_blocked_reason_check CHECK ((blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text]))),
+    CONSTRAINT inbox_drafts_blocked_reason_check CHECK ((blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text]))),
     CONSTRAINT inbox_drafts_byte_size_check CHECK ((byte_size >= 0)),
     CONSTRAINT inbox_drafts_md5_check CHECK ((octet_length(md5) = 16)),
     CONSTRAINT inbox_drafts_one_input CHECK ((num_nonnulls(source_revision_id, web_upload_id, from_version_id) = 1)),

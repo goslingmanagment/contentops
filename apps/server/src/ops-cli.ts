@@ -1,6 +1,8 @@
+import { rm } from 'node:fs/promises'
 import { hostname } from 'node:os'
+import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { createDb, createPool, type Db } from '@contentops/db'
+import { createDb, createPool, type Db, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { loadConfig } from './config'
 import { enqueueFreeze, freezeRegister } from './intake/freeze'
@@ -107,8 +109,14 @@ async function main(argv: string[]): Promise<number> {
         throw new Error('the report is not a finished verify-blobs run')
       }
       const listed = run.report.unreferenced
+      const uploads = run.report.abandoned_uploads ?? []
       if (!values.yes) {
-        out({ would_remove: listed.length, bytes: run.report.unreferenced_bytes, blobs: listed })
+        out({
+          would_remove: listed.length,
+          bytes: run.report.unreferenced_bytes,
+          blobs: listed,
+          abandoned_uploads: uploads,
+        })
         return 0
       }
       const store = new BlobStore({
@@ -125,7 +133,37 @@ async function main(argv: string[]): Promise<number> {
           `owner:${hostname()}:${process.pid}`,
         )
       }
-      out({ outcomes })
+      // Abandoned web uploads (SPEC §9.1): checked again under the row — never one that
+      // became a blob since the report — then the tus folder goes and the upload is `abandoned`.
+      const removedUploads: string[] = []
+      for (const upload of uploads) {
+        const gone = await withActorTx(
+          db,
+          {
+            actor: SYSTEM_ACTOR('owner purge'),
+            action: 'upload.purge',
+            requestId: `purge:${values.report}:${upload.upload_id}`,
+          },
+          async (tx) => {
+            const { rows: live } = await tx.execute<{ id: string }>(sql`
+              SELECT id FROM web_uploads
+               WHERE model_id = ${upload.model_id}::uuid AND upload_id = ${upload.upload_id}
+                 AND sha256 IS NULL AND state <> 'registered'
+               FOR UPDATE`)
+            if (!live[0]) return false
+            await rm(dirname(join(config.DATA_ROOT as string, upload.key)), {
+              recursive: true,
+              force: true,
+            })
+            await tx.execute(sql`
+              UPDATE web_uploads SET state = 'abandoned', error = coalesce(error, 'удалено командой владельца')
+               WHERE id = ${live[0].id}::uuid`)
+            return true
+          },
+        )
+        if (gone) removedUploads.push(upload.upload_id)
+      }
+      out({ outcomes, abandoned_uploads_removed: removedUploads })
       return 0
     }
     if (command === 'freeze') {

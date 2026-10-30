@@ -1,6 +1,7 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createCatalogItems } from '../testing/catalog-factory'
@@ -73,6 +74,71 @@ async function blobExists(hex: string) {
     sql`SELECT count(*)::int AS n FROM blobs WHERE sha256 = decode(${hex}, 'hex')`,
   )
   return (rows[0]?.n ?? 0) > 0
+}
+
+/** Handles of the files of a set: `ed02`, `raw01`. */
+async function handles(number: number) {
+  const { rows } = await server.db.execute<{ handle: string }>(sql`
+    SELECT m.role || lpad(m.ordinal::text, 2, '0') AS handle FROM item_memberships m
+      JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id
+     WHERE i.type = 'SET' AND i.number = ${number} AND m.removed_at IS NULL
+     ORDER BY m.role, m.ordinal`)
+  return rows.map((row) => row.handle)
+}
+
+/** A sealed download of one file of an object under `name` (a receipt, schema §3.5). */
+async function issued(type: string, number: number, role: string, ordinal: number, name: string) {
+  await withActorTx(
+    server.db,
+    { actor: SYSTEM_ACTOR('test'), action: 'test.download', requestId: randomUUID() },
+    async (tx) => {
+      const { rows } = await tx.execute<{
+        model_id: string
+        item_id: string
+        membership_id: string
+        asset_id: string
+        version_id: string
+        master: Buffer
+        bytes: string
+      }>(sql`
+        SELECT i.model_id, i.id AS item_id, m.id AS membership_id, a.id AS asset_id,
+               a.current_version_id AS version_id, v.master_sha256 AS master, b.byte_size AS bytes
+          FROM content_items i
+          JOIN item_memberships m ON m.model_id = i.model_id AND m.item_id = i.id
+          JOIN assets a ON a.model_id = m.model_id AND a.id = m.asset_id
+          JOIN asset_versions v ON v.model_id = a.model_id AND v.id = a.current_version_id
+          JOIN blobs b ON b.sha256 = v.master_sha256
+         WHERE i.type = ${type} AND i.number = ${number} AND m.role = ${role}
+           AND m.ordinal = ${ordinal}`)
+      const row = rows[0]
+      if (!row) throw new Error('no such file')
+      const { rows: people } = await tx.execute<{ id: string }>(
+        sql`SELECT id FROM principals LIMIT 1`,
+      )
+      const manifest = randomUUID()
+      const receipt = randomUUID()
+      await tx.execute(sql`
+        INSERT INTO asset_manifests (model_id, id, purpose, origin_item_id, entry_count)
+        VALUES (${row.model_id}::uuid, ${manifest}::uuid, 'download', ${row.item_id}::uuid, 1)`)
+      await tx.execute(sql`
+        INSERT INTO asset_manifest_entries (model_id, manifest_id, position, item_id, membership_id,
+                                            asset_id, asset_version_id, handle_snapshot)
+        VALUES (${row.model_id}::uuid, ${manifest}::uuid, 1, ${row.item_id}::uuid,
+                ${row.membership_id}::uuid, ${row.asset_id}::uuid, ${row.version_id}::uuid,
+                ${`${role}${String(ordinal).padStart(2, '0')}`})`)
+      await tx.execute(sql`
+        INSERT INTO download_receipts (model_id, id, principal_id, kind, manifest_id, meta_stripped,
+                                       entry_count)
+        VALUES (${row.model_id}::uuid, ${receipt}::uuid, ${people[0]?.id}::uuid, 'master',
+                ${manifest}::uuid, false, 1)`)
+      await tx.execute(sql`
+        INSERT INTO download_receipt_entries (model_id, receipt_id, position, asset_id,
+                                              asset_version_id, issued_master, file_name,
+                                              output_sha256, byte_size)
+        VALUES (${row.model_id}::uuid, ${receipt}::uuid, 1, ${row.asset_id}::uuid,
+                ${row.version_id}::uuid, true, ${name}, ${row.master}, ${Number(row.bytes)})`)
+    },
+  )
 }
 
 const command = (as: string, body: object, key = newKey()) =>
@@ -318,34 +384,73 @@ describe('POST /{model}/uploads', () => {
     expect(works.map((work) => work.kind)).toEqual(['derive_video'])
   })
 
-  it('processed frames of a set join it as its `ed` files', async () => {
-    const one = randomBytes(5_000)
-    const two = randomBytes(6_000)
-    const first = await tusUpload(server.app, {
+  it('a processed frame finds its source frame by the name it was downloaded under', async () => {
+    // The download of `raw02` (a receipt, naming §6) named it like this.
+    await issued('SET', 74, 'raw', 2, 'SET-074_kukhnya_raw02.HEIC')
+    const bytes = randomBytes(5_000)
+    const uploadId = await tusUpload(server.app, {
       model: 'lora',
       as: owner,
-      name: 'frame-1.jpg',
-      bytes: one,
-      kind: 'frames',
-    })
-    const second = await tusUpload(server.app, {
-      model: 'lora',
-      as: owner,
-      name: 'frame-2.jpg',
-      bytes: two,
+      name: 'SET-074_kukhnya_raw02.jpg',
+      bytes,
       kind: 'frames',
     })
     const answer = await command(owner, {
       kind: 'frames',
       target: { kind: 'item', item_id: 'SET-074' },
-      files: [file(first, 'frame-1.jpg', one, 'photo'), file(second, 'frame-2.jpg', two, 'photo')],
+      files: [file(uploadId, 'SET-074_kukhnya_raw02.jpg', bytes, 'photo')],
     })
-    expect(answer.json()).toMatchObject({ placed: 'attached', item_id: 'SET-074' })
-    const { rows } = await server.db.execute<{ handle: string }>(sql`
-      SELECT m.role || lpad(m.ordinal::text, 2, '0') AS handle FROM item_memberships m
-        JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id
-       WHERE i.type = 'SET' AND i.number = 74 ORDER BY m.role, m.ordinal`)
-    expect(rows.map((row) => row.handle)).toEqual(['ed01', 'ed02', 'raw01', 'raw02'])
+    expect(answer.json()).toMatchObject({ placed: 'attached', item_id: 'SET-074', decision: null })
+    expect(await handles(74)).toEqual(['ed02', 'raw01', 'raw02'])
+    const { rows } = await server.db.execute<{ parent: string }>(sql`
+      SELECT pm.role || lpad(pm.ordinal::text, 2, '0') AS parent
+        FROM provenance p
+        JOIN asset_versions pv ON pv.model_id = p.model_id AND pv.id = p.parent_version_id
+        JOIN item_memberships pm ON pm.model_id = pv.model_id AND pm.asset_id = pv.asset_id
+       WHERE p.relation = 'processed_from'
+         AND p.child_version_id = (SELECT v.id FROM asset_versions v
+                                    WHERE v.master_sha256 = decode(${sha(bytes)}, 'hex'))`)
+    expect(rows).toEqual([{ parent: 'raw02' }])
+  })
+
+  it('an unknown name asks «К какому кадру?» in «Приехало»; the answer accepts it', async () => {
+    const bytes = randomBytes(6_000)
+    const uploadId = await tusUpload(server.app, {
+      model: 'lora',
+      as: owner,
+      name: 'IMG_9999.jpg',
+      bytes,
+      kind: 'frames',
+    })
+    const answer = await command(owner, {
+      kind: 'frames',
+      target: { kind: 'item', item_id: 'SET-074' },
+      files: [file(uploadId, 'IMG_9999.jpg', bytes, 'photo')],
+    })
+    expect(answer.json()).toMatchObject({ placed: 'inbox', item_id: null, decision: 'which_frame' })
+    const group = answer.json().group_id as string
+    const view = await call(server.app, {
+      method: 'GET',
+      url: `/api/v1/lora/inbox/groups/${group}`,
+      as: owner,
+    })
+    expect(view.json().state).toEqual({ kind: 'decision', decision: 'which_frame' })
+    const choices = view.json().frame_choices
+    expect(choices.frames.map((frame: { key: string }) => frame.key)).toEqual(['raw01', 'raw02'])
+    const decided = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${group}:decide`,
+      as: owner,
+      key: newKey(),
+      body: { decision: 'which_frame', file_key: choices.file_key, frame: 'raw01' },
+    })
+    expect(decided.statusCode).toBe(200)
+    expect(decided.json().state).toMatchObject({
+      kind: 'accepted',
+      item_id: 'SET-074',
+      how: 'upload',
+    })
+    expect(await handles(74)).toEqual(['ed01', 'ed02', 'raw01', 'raw02'])
   })
 
   it('refuses what does not fit the target before touching the bytes; a plan row waits for 4а', async () => {

@@ -14,6 +14,7 @@ import { registerBlob, StorageBusyError } from '../media/storage-ops'
 import type { Services } from '../services'
 import { type AcceptOptions, acceptGroup } from './accept'
 import { afterFetch } from './fetch'
+import { bindFrame, frameByDownloadName } from './frames'
 import { mediaKindOf } from './grouping'
 import { ITEM_TO_DB_TYPE } from './inbox-view'
 import { DECLARED_KIND, uploadDir } from './tus'
@@ -339,6 +340,40 @@ export async function createUpload(
         priority: 10,
       })
     }
+    // Processed frames of a set find their source frames by download name (SPEC §6.1);
+    // the rest wait in «Приехало» as ◆ «К какому кадру?».
+    const unknown: string[] = []
+    if (body.kind === 'frames' && target.type === 'SET') {
+      for (const [index, item] of planned.entries()) {
+        const draftId = drafts[index] as string
+        const match = await frameByDownloadName(tx, model.id, target.id, item.row.client_filename)
+        if (match) await bindFrame(tx, model.id, draftId, match.ordinal)
+        else unknown.push(draftId)
+      }
+    }
+    if (unknown.length > 0) {
+      const waiting = await makeGroup(tx, model.id, `${ids[0]}:frames`, 'SET', unknown.length)
+      await tx.execute(sql`
+        UPDATE inbox_drafts SET group_id = ${waiting}::uuid, blocked_reason = 'which_frame',
+               state = 'ready', updated_at = now(), row_version = row_version + 1
+         WHERE model_id = ${model.id}::uuid AND id = ANY (${sql.param(unknown)}::uuid[])`)
+      await logAction(tx, {
+        modelId: model.id,
+        action: 'upload.inbox',
+        subjectKind: 'inbox_groups',
+        subjectId: waiting,
+        subjectLabel: UPLOADED,
+        after: { Файлов: String(unknown.length), Куда: 'Приехало · К какому кадру?' },
+      })
+      if (unknown.length === planned.length) {
+        return {
+          group_id: waiting,
+          placed: 'inbox' as const,
+          item_id: null,
+          decision: 'which_frame' as const,
+        }
+      }
+    }
     const accepted = await acceptGroup(
       tx,
       model,
@@ -350,7 +385,7 @@ export async function createUpload(
       group_id: groupId,
       placed: 'attached' as const,
       item_id: accepted.item_id,
-      decision: null,
+      decision: unknown.length > 0 ? ('which_frame' as const) : null,
     }
   })
 

@@ -1,6 +1,6 @@
 import type { AcceptCommand } from '@contentops/contracts/commands/inbox'
 import type { AcceptResult } from '@contentops/contracts/domain/inbox'
-import { setJournalItem, type Tx, type values } from '@contentops/db'
+import { setJournalItem, type Tx, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { findItem, type ItemRow, publicIdOf } from '../catalog/ids'
 import { tagIds } from '../catalog/markup-writes'
@@ -184,7 +184,43 @@ function appendRole(type: DbType, draft: DraftRow, extend: AcceptCommand['extend
   }
 }
 
+const { rolesByType } = values
 const ORDINAL_ROLES = new Set<Role>(['pic', 'raw', 'ed', 'clip'])
+
+function rolesFits(type: DbType, role: Role): boolean {
+  return (rolesByType[type] as readonly Role[]).includes(role)
+}
+
+/** The owned membership `role<ordinal>` of an object: live asset, or the handle is taken. */
+async function ownedAsset(tx: Tx, modelId: string, itemId: string, role: Role, ordinal: number) {
+  const { rows } = await tx.execute<{ asset_id: string; removed: boolean }>(sql`
+    SELECT asset_id, removed_at IS NOT NULL AS removed FROM item_memberships
+     WHERE model_id = ${modelId}::uuid AND item_id = ${itemId}::uuid AND kind = 'owned'
+       AND role = ${role} AND ordinal = ${ordinal} AND variant_no = 0`)
+  const row = rows[0]
+  if (!row) return null
+  return { live: row.removed ? null : row.asset_id, taken: true }
+}
+
+/** «Обработанный кадр ← исходный» (provenance `processed_from`): `ed07` from `raw07`. */
+async function processedFrom(
+  tx: Tx,
+  modelId: string,
+  itemId: string,
+  ordinal: number,
+  childVersionId: string,
+  actor: Actor,
+) {
+  await tx.execute(sql`
+    INSERT INTO provenance (model_id, relation, child_version_id, parent_version_id, basis, created_by)
+    SELECT m.model_id, 'processed_from', ${childVersionId}::uuid, a.current_version_id,
+           'processed_frame', ${actor.id}::uuid
+      FROM item_memberships m
+      JOIN assets a ON a.model_id = m.model_id AND a.id = m.asset_id
+     WHERE m.model_id = ${modelId}::uuid AND m.item_id = ${itemId}::uuid AND m.kind = 'owned'
+       AND m.role = 'raw' AND m.ordinal = ${ordinal} AND m.removed_at IS NULL
+    ON CONFLICT DO NOTHING`)
+}
 
 interface ItemRef {
   id: string
@@ -472,24 +508,43 @@ export async function acceptGroup(
   const created: CreatedFile[] = []
   for (const draft of drafts) {
     const media: values.MediaKind = draft.media_kind ?? 'image'
+    // A role the draft already carries (a processed frame bound to its source) wins when it
+    // fits the type of the object.
+    const proposed =
+      !roles && draft.proposed_role && rolesFits(type, draft.proposed_role)
+        ? draft.proposed_role
+        : null
     const role = roles
       ? (roles.get(draft.id) as Role)
-      : (options.role ?? appendRole(type, draft, options.extend))
+      : (proposed ?? options.role ?? appendRole(type, draft, options.extend))
+    // `ed07` is the processed version of `raw07` (naming §3): the same number, and a second
+    // processed version of that frame is a new version of the same file.
+    const bound = role === 'ed' && draft.proposed_ordinal !== null ? draft.proposed_ordinal : null
+    const sameFrame = bound !== null ? await ownedAsset(tx, model.id, item.id, 'ed', bound) : null
     // New bytes of a file that is already here: a new version of that file.
     const existing =
       draft.target_asset_id ??
+      sameFrame?.live ??
       (target && (role === 'master' || role === 'teaser')
         ? await singleRoleAsset(tx, model.id, item.id, role)
         : null)
     if (existing) {
       const written = await writeVersion(tx, model.id, draft, actor, { assetId: existing })
       await writeAliases(tx, model.id, draft, written.assetId, actor)
+      if (bound !== null)
+        await processedFrom(tx, model.id, item.id, bound, written.versionId, actor)
       created.push({ draftId: draft.id, ...written, membershipId: null, handle: role, media })
       continue
     }
-    const ordinal = ORDINAL_ROLES.has(role) ? (ordinals.get(role) ?? 0) + 1 : null
-    if (ordinal !== null) ordinals.set(role, ordinal)
+    // A handle is never reused (schema §4): a removed `ed07` sends the file to the next number.
+    const ordinal = !ORDINAL_ROLES.has(role)
+      ? null
+      : bound !== null && !sameFrame?.taken
+        ? bound
+        : (ordinals.get(role) ?? 0) + 1
+    if (ordinal !== null) ordinals.set(role, Math.max(ordinals.get(role) ?? 0, ordinal))
     const written = await writeVersion(tx, model.id, draft, actor, { itemId: item.id, media })
+    if (bound !== null) await processedFrom(tx, model.id, item.id, bound, written.versionId, actor)
     const membershipId = await addMembership(
       tx,
       model.id,

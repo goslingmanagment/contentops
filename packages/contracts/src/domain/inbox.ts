@@ -32,6 +32,8 @@ export const DecisionKindSchema = z.enum([
   'substitute_montage',
   /** A readable archive with several shoots inside: accepted by its folders, not as one. */
   'split_archive',
+  /** A processed frame whose download name is unknown: which frame of the set it is. */
+  'which_frame',
 ])
 export type DecisionKind = z.infer<typeof DecisionKindSchema>
 
@@ -43,6 +45,7 @@ export const DECISION_LABEL: Record<DecisionKind, string> = {
   cross_model: 'Такой файл есть у другой модели',
   substitute_montage: 'Подставить монтаж в строку?',
   split_archive: 'Разделить архив?',
+  which_frame: 'К какому кадру?',
 }
 
 /** ▲ «ошибка». */
@@ -187,6 +190,26 @@ export const InboxGroupSchema = z.object({
   candidates: z.array(OrderCandidateSchema),
   /** Groups under the drafts of a readable archive, shown as a table of contents. */
   archive_entries: z.int().nonnegative().nullable(),
+  /**
+   * ◆ «К какому кадру?» (SPEC §6.1): the file being matched and the frames of the set,
+   * similar by pHash first. Absent for every other state.
+   */
+  frame_choices: z
+    .object({
+      file_key: z.string(),
+      frames: z.array(
+        z.object({
+          /** Handle of the source frame: `raw07`. */
+          key: z.string(),
+          label: z.string(),
+          thumb: ThumbRefSchema,
+          /** Close by pHash: shown first. */
+          similar: z.boolean(),
+        }),
+      ),
+    })
+    .nullable()
+    .optional(),
   /**
    * The object a web upload with a target was meant for, or the object the pack extends:
    * «Загрузить заново» after ▲ goes to the same object.
