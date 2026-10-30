@@ -16,7 +16,8 @@ export function TitleField({ fieldKey = 'title', label = 'Название' }: T
   const { canAct } = useObjectPage()
   const field = useMarkupField(fieldKey)
   const save = useFieldSave(fieldKey)
-  const [editing, setEditing] = useState(false)
+  // Версия поля, с которой начата правка: чужое изменение за это время — конфликт, не перезапись.
+  const [editing, setEditing] = useState<{ base: number } | null>(null)
   const value = field?.field.key === fieldKey ? field.field.value : ''
 
   return (
@@ -33,10 +34,10 @@ export function TitleField({ fieldKey = 'title', label = 'Название' }: T
             labelId={labelId}
             initial={value}
             onFinish={(next) => {
-              setEditing(false)
+              setEditing(null)
               const trimmed = next?.trim()
               if (trimmed && trimmed !== value) {
-                save.save({ key: fieldKey, value: trimmed })
+                save.save({ key: fieldKey, value: trimmed }, editing.base)
               }
             }}
           />
@@ -45,7 +46,7 @@ export function TitleField({ fieldKey = 'title', label = 'Название' }: T
             type="button"
             disabled={!canAct}
             aria-labelledby={labelId}
-            onClick={() => setEditing(true)}
+            onClick={() => setEditing({ base: field?.version ?? 1 })}
             className="-mx-2 min-h-9 rounded-lg px-2 text-left transition-colors duration-120 enabled:hover:bg-accent"
           >
             {value || <span className="text-ink-3">не заполнено</span>}
