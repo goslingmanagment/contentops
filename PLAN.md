@@ -599,7 +599,11 @@ OnlyFans (чтения в Hub уже идут) и stories OnlyFans (дорожн
 пороги `hub_candidate_tolerance` 30, `hub_wait_window` 8, `hub_not_out_window` 24,
 `hub_vault_recheck` 7, `hub_ad_markers` страниц и выключатели «Получать данные» и «Автосверка».
 Открыто: V1 (человек) и после неё `hub_exact_duration_ms` 200; недели приёмки на Fansly 1–3 и
-lora-of — живой постинг; ключ ContentOps в Hub; `top_media` для истории до 22.10.
+lora-of — живой постинг; ключ ContentOps в Hub; `top_media` для истории до 22.10. Доработки Hub к неделе
+lora-of сделаны 30.10.2026 (Hub #934, #935): в `raw_media` OnlyFans — время создания и размеры кадра
+(байтов OnlyFans не отдаёт: `size` всегда 0), `vault_media` по страницам OnlyFans выдаётся агенту
+(lora-of — 5 300 строк, lora-vip-of — 1 137); `vault_inventory_unproven` снимется, когда суточный обход
+vault OnlyFans пройдёт целиком (сейчас 5 вызовов в день — решение владельца о кредитах).
 
 ### 5б. Публикация через Hub
 
