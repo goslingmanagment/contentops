@@ -81,14 +81,43 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
   await app.listen({ host: config.HOST, port: config.PORT })
 }
 
-/** One-shot role of the stack: applies migrations under the advisory lock and exits 0. */
+/** The database is not there yet: its name, its port or its startup (SQLSTATE 57P03). */
+const NOT_UP_YET = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET', '57P03'])
+const MIGRATE_WAIT_MS = 90_000
+
+function notUpYet(error: unknown): boolean {
+  for (let current = error; current instanceof Error; current = current.cause) {
+    const code = (current as { code?: unknown }).code
+    if (typeof code === 'string' && NOT_UP_YET.has(code)) return true
+  }
+  return false
+}
+
+/**
+ * One-shot role of the stack: applies migrations under the advisory lock and exits 0.
+ * `docker compose restart` starts it together with `db`, so it waits up to 90 s for the
+ * database to come up; a failed migration is never retried.
+ */
 async function runMigrate(config: Config, logger: Logger): Promise<void> {
-  const result = await runMigrations({
-    databaseUrl: required(config.MIGRATE_DATABASE_URL, 'MIGRATE_DATABASE_URL'),
-    appliedBy: `migrate@${hostname()}`,
-    ...(config.MIGRATIONS_DIR ? { migrationsDir: config.MIGRATIONS_DIR } : {}),
-    log: (line) => logger.info(line),
-  })
+  const migrate = () =>
+    runMigrations({
+      databaseUrl: required(config.MIGRATE_DATABASE_URL, 'MIGRATE_DATABASE_URL'),
+      appliedBy: `migrate@${hostname()}`,
+      ...(config.MIGRATIONS_DIR ? { migrationsDir: config.MIGRATIONS_DIR } : {}),
+      log: (line) => logger.info(line),
+    })
+  const deadline = Date.now() + MIGRATE_WAIT_MS
+  let result: Awaited<ReturnType<typeof migrate>>
+  for (;;) {
+    try {
+      result = await migrate()
+      break
+    } catch (error) {
+      if (!notUpYet(error) || Date.now() > deadline) throw error
+      logger.info({ err: error }, 'database is not up yet, waiting')
+      await new Promise((resolve) => setTimeout(resolve, 2_000))
+    }
+  }
   logger.info(
     { version: result.version, applied: result.applied.map((file) => file.version) },
     result.applied.length > 0 ? 'migrations applied' : 'schema is up to date',
