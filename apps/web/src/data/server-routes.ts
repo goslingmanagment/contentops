@@ -49,6 +49,8 @@ export const SERVER_ROUTES: ServerRoutes = {
     'pauseQueue',
     'updateTag',
     'mergeTag',
+    'addContractor',
+    'updateContractor',
   ],
   plan: ['norm', 'updateNorm'],
   journal: 'all',
@@ -111,6 +113,8 @@ export const SERVER_ROUTES: ServerRoutes = {
     'retry',
     'restore',
   ],
+  // Промо (4в): папки каналов, подборки, передачи и подрядчики.
+  promo: 'all',
   legacy: ['get'],
 }
 

@@ -113,6 +113,16 @@ export interface DownloadPlan {
   /** Several files go as one ZIP under this name. */
   zipName: string | null
   files: PlannedFile[]
+  /** A promo handoff (SPEC §7.1): its own manifest, `manifest.csv` in the ZIP, the handoff row. */
+  promo?: PromoIssue
+}
+
+/** What the export of a promo handoff needs beyond a download. */
+export interface PromoIssue {
+  deliveryId: string
+  /** The sealed composition of the handoff: the receipt points at it. */
+  manifestId: string
+  format: 'upload' | 'master' | 'compat'
 }
 
 const RECEIPT_KIND: Record<DownloadKind, DownloadPlan['receiptKind']> = {
@@ -232,7 +242,7 @@ function nameOf(input: PlanInput, pick: Choice, ext: string): string {
 }
 
 /** The extension the issued file will have: copies are mp4, a stripped HEIC becomes jpg. */
-function issuedExt(kind: DownloadKind, file: FileRow, strip: boolean): string {
+export function issuedExt(kind: DownloadKind, file: FileRow, strip: boolean): string {
   if (file.media_kind === 'video') {
     if (kind === 'platform' || kind === 'teaser' || kind === 'fan' || kind === 'compat')
       return 'mp4'
@@ -240,6 +250,73 @@ function issuedExt(kind: DownloadKind, file: FileRow, strip: boolean): string {
   }
   if (strip && !['jpg', 'png'].includes(file.ext)) return 'jpg'
   return file.ext
+}
+
+/**
+ * Where the bytes of one file of an issue come from, enqueuing the copy it needs: a ready
+ * platform copy is reused, a missing one is built by `render` (cached for the next issue), a
+ * compatible copy by `render_compat` into the exports folder (not kept); otherwise the master,
+ * stripped into the exports folder when asked.
+ */
+export async function supplyOf(
+  tx: Tx,
+  input: {
+    modelId: string
+    kind: DownloadKind
+    strip: boolean
+    digests: PipelineDigests
+    file: FileRow
+    /** Unique per issued file: `<receipt>/<position>`. */
+    compatKey: string
+    /** The manager waits: ahead of everything planned in advance (SPEC §12.0). */
+    priority: number
+  },
+): Promise<Supply> {
+  const { file, strip } = input
+  const copy = input.kind === 'platform' || input.kind === 'teaser' || input.kind === 'fan'
+  if (copy && file.media_kind === 'video') {
+    const digest = strip ? input.digests.platformStripped : input.digests.platform
+    const ready = await readyGeneration(tx, {
+      kind: 'platform',
+      recipeDigest: digest,
+      metaStripped: strip,
+      masterSha256: file.master,
+      inputSha256: file.master,
+    })
+    const artifact = ready ? await platformArtifact(tx, ready.id) : null
+    if (artifact) return { kind: 'artifact', ...artifact }
+    const { work } = await enqueueWork(tx, {
+      modelId: input.modelId,
+      kind: 'render',
+      workKey: renderKey(shaHex(file.master), digest),
+      inputSha256: file.master,
+      assetVersionId: file.version_id,
+      scope: strip ? 'stripped' : 'kept',
+      recipeDigest: digest,
+      priority: input.priority,
+    })
+    // A copy that failed before is tried again for a new issue.
+    if (work.state === 'failed') {
+      await tx.execute(sql`
+        UPDATE work_operations SET state = 'retry_wait', attempt_no = 0, next_attempt_at = now(),
+               finished_at = NULL, failure_kind = NULL, error_code = NULL, error_text = NULL
+         WHERE id = ${work.id}::uuid`)
+    }
+    return { kind: 'render', workId: work.id, digest, stripped: strip }
+  }
+  if (input.kind === 'compat' && file.media_kind === 'video') {
+    const { work } = await enqueueWork(tx, {
+      modelId: input.modelId,
+      kind: 'render_compat',
+      workKey: compatKey(input.compatKey),
+      inputSha256: file.master,
+      assetVersionId: file.version_id,
+      scope: strip ? 'stripped' : 'kept',
+      priority: input.priority,
+    })
+    return { kind: 'compat', workId: work.id }
+  }
+  return strip ? { kind: 'strip' } : { kind: 'master' }
 }
 
 /**
@@ -256,57 +333,15 @@ export async function planDownload(tx: Tx, input: PlanInput): Promise<DownloadPl
   const files: PlannedFile[] = []
   for (const [index, pick] of picks.entries()) {
     const file = pick.file
-    const copy = input.kind === 'platform' || input.kind === 'teaser' || input.kind === 'fan'
-    let supply: Supply
-    if (copy && file.media_kind === 'video') {
-      const digest = strip ? input.digests.platformStripped : input.digests.platform
-      const ready = await readyGeneration(tx, {
-        kind: 'platform',
-        recipeDigest: digest,
-        metaStripped: strip,
-        masterSha256: file.master,
-        inputSha256: file.master,
-      })
-      const artifact = ready ? await platformArtifact(tx, ready.id) : null
-      if (artifact) {
-        supply = { kind: 'artifact', ...artifact }
-      } else {
-        const { work } = await enqueueWork(tx, {
-          modelId: input.modelId,
-          kind: 'render',
-          workKey: renderKey(shaHex(file.master), digest),
-          inputSha256: file.master,
-          assetVersionId: file.version_id,
-          scope: strip ? 'stripped' : 'kept',
-          recipeDigest: digest,
-          // The manager waits: ahead of everything planned in advance (SPEC §12.0).
-          priority: 1_000_000,
-        })
-        // A copy that failed before is tried again for a new download.
-        if (work.state === 'failed') {
-          await tx.execute(sql`
-            UPDATE work_operations SET state = 'retry_wait', attempt_no = 0, next_attempt_at = now(),
-                   finished_at = NULL, failure_kind = NULL, error_code = NULL, error_text = NULL
-             WHERE id = ${work.id}::uuid`)
-        }
-        supply = { kind: 'render', workId: work.id, digest, stripped: strip }
-      }
-    } else if (input.kind === 'compat' && file.media_kind === 'video') {
-      const { work } = await enqueueWork(tx, {
-        modelId: input.modelId,
-        kind: 'render_compat',
-        workKey: compatKey(`${receiptId}/${index + 1}`),
-        inputSha256: file.master,
-        assetVersionId: file.version_id,
-        scope: strip ? 'stripped' : 'kept',
-        priority: 1_000_000,
-      })
-      supply = { kind: 'compat', workId: work.id }
-    } else if (strip) {
-      supply = { kind: 'strip' }
-    } else {
-      supply = { kind: 'master' }
-    }
+    const supply = await supplyOf(tx, {
+      modelId: input.modelId,
+      kind: input.kind,
+      strip,
+      digests: input.digests,
+      file,
+      compatKey: `${receiptId}/${index + 1}`,
+      priority: 1_000_000,
+    })
     files.push({
       position: index + 1,
       name: nameOf(input, pick, issuedExt(input.kind, file, strip)),
@@ -431,21 +466,9 @@ export async function sealReceipt(
   issued: IssuedFile[],
   zipKey: string | null,
 ): Promise<void> {
-  const manifestId = randomUUID()
-  await tx.execute(sql`
-    INSERT INTO asset_manifests (model_id, id, purpose, origin_item_id, entry_count, created_by)
-    VALUES (${plan.modelId}::uuid, ${manifestId}::uuid, 'download', ${plan.itemId}::uuid,
-            ${issued.length}, ${plan.principalId}::uuid)`)
-  for (const entry of issued) {
-    await tx.execute(sql`
-      INSERT INTO asset_manifest_entries (model_id, manifest_id, position, item_id, membership_id,
-                                          asset_id, asset_version_id, handle_snapshot,
-                                          selected_snapshot, life_use_snapshot)
-      VALUES (${plan.modelId}::uuid, ${manifestId}::uuid, ${entry.position}, ${plan.itemId}::uuid,
-              ${entry.file.membership_id}::uuid, ${entry.file.asset_id}::uuid,
-              ${entry.file.version_id}::uuid, ${entry.handle}, ${entry.file.selected},
-              ${entry.file.life_use})`)
-  }
+  // A promo handoff sealed its composition when it was prepared: the receipt points at it.
+  const manifestId = plan.promo?.manifestId ?? randomUUID()
+  if (!plan.promo) await sealDownloadManifest(tx, plan, issued, manifestId)
   await tx.execute(sql`
     INSERT INTO download_receipts (model_id, id, principal_id, kind, manifest_id,
                                    account_code_snapshot, slot_date_snapshot, meta_stripped, zip_key,
@@ -464,6 +487,28 @@ export async function sealReceipt(
               ${entry.artifactId}::uuid, ${entry.issuedMaster}, ${entry.exportKey}, ${entry.name},
               ${Buffer.from(entry.sha256, 'hex')}, ${entry.bytes}, ${entry.durationMs},
               ${entry.width}, ${entry.height})`)
+  }
+}
+
+async function sealDownloadManifest(
+  tx: Tx,
+  plan: DownloadPlan,
+  issued: IssuedFile[],
+  manifestId: string,
+): Promise<void> {
+  await tx.execute(sql`
+    INSERT INTO asset_manifests (model_id, id, purpose, origin_item_id, entry_count, created_by)
+    VALUES (${plan.modelId}::uuid, ${manifestId}::uuid, 'download', ${plan.itemId}::uuid,
+            ${issued.length}, ${plan.principalId}::uuid)`)
+  for (const entry of issued) {
+    await tx.execute(sql`
+      INSERT INTO asset_manifest_entries (model_id, manifest_id, position, item_id, membership_id,
+                                          asset_id, asset_version_id, handle_snapshot,
+                                          selected_snapshot, life_use_snapshot)
+      VALUES (${plan.modelId}::uuid, ${manifestId}::uuid, ${entry.position}, ${plan.itemId}::uuid,
+              ${entry.file.membership_id}::uuid, ${entry.file.asset_id}::uuid,
+              ${entry.file.version_id}::uuid, ${entry.handle}, ${entry.file.selected},
+              ${entry.file.life_use})`)
   }
 }
 

@@ -2,8 +2,9 @@ import {
   CONTRACTOR_FORMAT_LABEL,
   type Contractor,
   ContractorFormatSchema,
-  type ModelCode,
+  type Model,
 } from '@contentops/contracts'
+import { Button } from '@contentops/ui/components/button'
 import {
   Select,
   SelectContent,
@@ -12,46 +13,61 @@ import {
   SelectValue,
 } from '@contentops/ui/components/select'
 import { SettingsRow, SettingsSection } from '@contentops/ui/components/settings-section'
-import { useId } from 'react'
+import { PlusIcon } from 'lucide-react'
+import { useId, useState } from 'react'
 import { useActionToast } from '@/actions/action-toast-context'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
 import { useApi } from '@/data/api-session'
-import { usePromoChannels } from '@/data/promo'
+import { usePromoChannels, usePromoContractors } from '@/data/promo'
 import { queryKeys } from '@/data/query-keys'
-import { useContractors } from '@/data/settings'
-
-/** Короткие подписи в поле: полная «компактные файлы для публикации» в нём не помещается. */
-const FORMAT_CHOICE: Record<Contractor['format'], string> = {
-  compact: 'компактные',
-  masters: 'мастера для монтажа',
-}
+import { AddContractorDialog } from './add-contractor-dialog'
 
 /**
- * Подрядчики промо с форматом передачи: компактные файлы или мастера для монтажа. Каналы
- * подписаны именами каналов модели, у которой они открыты.
+ * Подрядчики промо модели с одним полем формата (DESIGN §4.19, SPEC §7.1): «для заливки»,
+ * «мастер» или «совместимая для монтажа»; формат подставляется в следующую передачу.
+ * Канал — тот, с которым подрядчик обычно работает.
  */
-export function ContractorsSection({ model }: { model: ModelCode }) {
-  const contractors = useContractors()
-  const channels = usePromoChannels(model)
-  if (!contractors.data) {
-    return null
-  }
-  const channelName = (id: string) =>
-    channels.data?.find((channel) => channel.id === id)?.name ?? id
+export function ContractorsSection({ model }: { model: Model }) {
+  const contractors = usePromoContractors(model.code)
+  const channels = usePromoChannels(model.code)
+  const [adding, setAdding] = useState(false)
+  const channelName = (id: string | null) =>
+    id === null ? 'любой канал' : (channels.data?.find((channel) => channel.id === id)?.name ?? id)
   return (
-    <SettingsSection title="Подрядчики промо">
-      {contractors.data.map((contractor) => (
+    <SettingsSection
+      title={`Подрядчики промо · ${model.name}`}
+      aside={
+        <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+          <PlusIcon />
+          Добавить подрядчика
+        </Button>
+      }
+    >
+      {contractors.data?.length === 0 ? (
+        <p className="py-3 text-ink-3 text-sm">Подрядчиков пока нет</p>
+      ) : null}
+      {contractors.data?.map((contractor) => (
         <ContractorRow
           key={contractor.id}
+          model={model}
           contractor={contractor}
-          channels={contractor.channels.map(channelName).join(', ')}
+          detail={[channelName(contractor.channel), contractor.contact].filter(Boolean).join(' · ')}
         />
       ))}
+      <AddContractorDialog model={model} open={adding} onOpenChange={setAdding} />
     </SettingsSection>
   )
 }
 
-function ContractorRow({ contractor, channels }: { contractor: Contractor; channels: string }) {
+function ContractorRow({
+  model,
+  contractor,
+  detail,
+}: {
+  model: Model
+  contractor: Contractor
+  detail: string
+}) {
   const api = useApi()
   const toast = useActionToast()
   const labelId = useId()
@@ -59,18 +75,19 @@ function ContractorRow({ contractor, channels }: { contractor: Contractor; chann
     failed: 'Формат не сохранился',
     run: (format, key) =>
       api.settings.updateContractor({
-        params: { contractor: contractor.id },
+        params: { model: model.code, contractor: contractor.id },
         body: { format },
+        ifMatch: contractor.version,
         idempotencyKey: key,
       }),
-    invalidates: () => [queryKeys.contractors()],
+    invalidates: () => [queryKeys.promoContractors(model.code)],
     onSuccess: (saved) =>
       toast.show({
         message: `Сохранено · ${saved.name} · ${CONTRACTOR_FORMAT_LABEL[saved.format]}`,
       }),
   })
   return (
-    <SettingsRow label={<span id={labelId}>{contractor.name}</span>} detail={channels}>
+    <SettingsRow label={<span id={labelId}>{contractor.name}</span>} detail={detail}>
       <Select
         value={contractor.format}
         disabled={update.isPending}
@@ -81,13 +98,13 @@ function ContractorRow({ contractor, channels }: { contractor: Contractor; chann
           }
         }}
       >
-        <SelectTrigger aria-labelledby={labelId} className="w-56">
+        <SelectTrigger aria-labelledby={labelId} className="w-64">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           {ContractorFormatSchema.options.map((format) => (
             <SelectItem key={format} value={format}>
-              {FORMAT_CHOICE[format]}
+              {CONTRACTOR_FORMAT_LABEL[format]}
             </SelectItem>
           ))}
         </SelectContent>

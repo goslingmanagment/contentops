@@ -67,6 +67,7 @@ export function handoffView(
     collection_id: handoff.collection_id,
     contractor_id: handoff.contractor_id,
     contractor_name: contractorName(world, handoff.contractor_id),
+    format: world.contractors.find((c) => c.id === handoff.contractor_id)?.format ?? null,
     state: handoff.state,
     progress: handoff.progress,
     video_count: handoff.video_count,
@@ -184,10 +185,23 @@ export function channelContents(
       return rest
     })
   const given = handedOut(world, model)
-  const unfiled = (model.promo_unfiled.get(channelId) ?? []).map((member) =>
-    withHanded(member, given),
-  )
-  return { channel, collections, unfiled }
+  // Every material of the channel once, the newest addition first: the pack without a
+  // collection and the collections' files (DESIGN §4.17).
+  const seen = new Set<string>()
+  const materials = [
+    ...(model.promo_unfiled.get(channelId) ?? []),
+    ...[...model.collections.values()]
+      .filter((record) => record.channel === channelId)
+      .flatMap((record) => record.members),
+  ]
+    .filter((member) => {
+      if (seen.has(memberKey(member))) return false
+      seen.add(memberKey(member))
+      return true
+    })
+    .sort((left, right) => right.added_on.localeCompare(left.added_on))
+    .map((member) => withHanded(member, given))
+  return { channel, collections, materials }
 }
 
 /** Materials of a collection with «передавали» filled in from sent handoffs. */

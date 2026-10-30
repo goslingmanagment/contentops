@@ -29,6 +29,8 @@ export const ERROR_CODES = [
   'undo_expired',
   'case_resolved',
   'handoff_not_ready',
+  /** A handoff was prepared again: the newer preparation replaced it. */
+  'handoff_replaced',
   'number_not_issued',
   /** Type change or removal while plan rows, placements, deliveries or promo point at it. */
   'item_in_use',
@@ -60,6 +62,7 @@ export const HTTP_STATUS_BY_CODE: Record<ErrorCode, number> = {
   undo_expired: 422,
   case_resolved: 422,
   handoff_not_ready: 422,
+  handoff_replaced: 422,
   number_not_issued: 422,
   item_in_use: 422,
 }

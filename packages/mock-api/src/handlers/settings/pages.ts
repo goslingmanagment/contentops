@@ -9,7 +9,6 @@ import { smallModel } from '../../fixtures/world'
 import type { ModelWorld } from '../../fixtures/world-types'
 import { type BoundRoute, bind } from '../../handler'
 import type { MockState } from '../../state'
-import { wholeList } from '../../views/paginate'
 import { actorSays } from '../actor-says'
 import { logSettingsChange } from './settings-log'
 
@@ -131,7 +130,22 @@ export function pagesHandlers(): BoundRoute[] {
       return world.model
     }),
 
-    bind(settingsRoutes.contractors, 'staff', ({ state }) => wholeList(state.world.contractors)),
+    bind(settingsRoutes.addContractor, 'owner', ({ state, body, log }) => {
+      const contractor = {
+        id: `c-${state.world.contractors.length + 1}`,
+        name: body.name,
+        channel: body.channel,
+        contact: body.contact,
+        format: body.format,
+        version: 1,
+      }
+      state.world.contractors.push(contractor)
+      logSettingsChange(log, state.principal.models, {
+        action: 'contractor.add',
+        phrase: `${actorSays(state, 'добавил')} подрядчика ${contractor.name}`,
+      })
+      return contractor
+    }),
 
     bind(settingsRoutes.updateContractor, 'owner', ({ state, params, body, log }) => {
       const contractor = state.world.contractors.find(
@@ -140,6 +154,7 @@ export function pagesHandlers(): BoundRoute[] {
       if (!contractor) throw notFound('Такого подрядчика нет')
       const before = contractor.format
       contractor.format = body.format
+      contractor.version += 1
       logSettingsChange(log, state.principal.models, {
         action: 'contractor.update',
         phrase: `${actorSays(state, 'изменил')} формат подрядчика ${contractor.name}`,

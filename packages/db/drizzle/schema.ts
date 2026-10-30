@@ -145,8 +145,9 @@ export const workOperations = pgTable("work_operations", {
 	index("work_operations_draft").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.draftId.asc().nullsLast().op("uuid_ops")).where(sql`(draft_id IS NOT NULL)`),
 	index("work_operations_due").using("btree", table.nextAttemptAt.asc().nullsLast().op("int4_ops"), table.priority.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['pending'::text, 'retry_wait'::text]))`),
 	index("work_operations_lease").using("btree", table.leaseUntil.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = 'running'::text)`),
+	index("work_operations_manifest").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.manifestId.asc().nullsLast().op("uuid_ops")).where(sql`(manifest_id IS NOT NULL)`),
 	index("work_operations_output").using("btree", table.outputSha256.asc().nullsLast().op("bytea_ops")).where(sql`(output_sha256 IS NOT NULL)`),
-	uniqueIndex("work_operations_stream_key").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("text_ops"), table.streamKey.asc().nullsLast().op("text_ops")).where(sql`((stream_key IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])))`),
+	uniqueIndex("work_operations_stream_key").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops"), table.streamKey.asc().nullsLast().op("text_ops")).where(sql`((stream_key IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])))`),
 	foreignKey({
 			columns: [table.modelId],
 			foreignColumns: [models.id],
@@ -949,6 +950,41 @@ export const ppvReleases = pgTable("ppv_releases", {
 	unique("ppv_releases_model_id_id_item_id_key").on(table.id, table.itemId, table.modelId),
 	check("ppv_releases_item_type_check", sql`item_type = 'PPV'::text`),
 	check("ppv_releases_cancelled", sql`(cancelled_by IS NULL) OR (cancelled_at IS NOT NULL)`),
+]);
+
+export const contractors = pgTable("contractors", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	name: text().notNull(),
+	contact: text(),
+	channelId: uuid("channel_id"),
+	format: text().default('upload').notNull(),
+	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.modelId],
+			foreignColumns: [models.id],
+			name: "contractors_model_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [principals.id],
+			name: "contractors_created_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.channelId],
+			foreignColumns: [promoChannels.id, promoChannels.modelId],
+			name: "contractors_model_id_channel_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "contractors_pkey"}),
+	unique("contractors_name").on(table.modelId, table.name),
+	check("contractors_name_filled", sql`btrim(name) <> ''::text`),
+	check("contractors_format_check", sql`format = ANY (ARRAY['upload'::text, 'master'::text, 'compat'::text])`),
 ]);
 
 export const chronologyEntries = pgTable("chronology_entries", {
@@ -1924,6 +1960,93 @@ export const inboxGroups = pgTable("inbox_groups", {
 	check("inbox_groups_proposed_purpose_check", sql`proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text])`),
 ]);
 
+export const promoDeliveries = pgTable("promo_deliveries", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	packageItemId: uuid("package_item_id").notNull(),
+	packageItemType: text("package_item_type").default('PRM').notNull(),
+	channelId: uuid("channel_id").notNull(),
+	contractorId: uuid("contractor_id").notNull(),
+	format: text(),
+	manifestId: uuid("manifest_id").notNull(),
+	receiptId: uuid("receipt_id"),
+	state: text().default('preparing').notNull(),
+	preparedAt: timestamp("prepared_at", { withTimezone: true, mode: 'string' }),
+	preparedBy: uuid("prepared_by"),
+	sentAt: timestamp("sent_at", { withTimezone: true, mode: 'string' }),
+	sentBy: uuid("sent_by"),
+	recipientNote: text("recipient_note"),
+	summary: jsonb().default({}).notNull(),
+	origin: text().default('product').notNull(),
+	correctsId: uuid("corrects_id"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("promo_deliveries_contractor").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.contractorId.asc().nullsLast().op("uuid_ops")).where(sql`(state = 'sent'::text)`),
+	index("promo_deliveries_created").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("promo_deliveries_package").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.packageItemId.asc().nullsLast().op("uuid_ops"), table.createdAt.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.preparedBy],
+			foreignColumns: [principals.id],
+			name: "promo_deliveries_prepared_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.sentBy],
+			foreignColumns: [principals.id],
+			name: "promo_deliveries_sent_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.packageItemId, table.packageItemType],
+			foreignColumns: [contentItems.id, contentItems.modelId, contentItems.type],
+			name: "promo_deliveries_package_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.channelId],
+			foreignColumns: [promoChannels.id, promoChannels.modelId],
+			name: "promo_deliveries_model_id_channel_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.contractorId],
+			foreignColumns: [contractors.id, contractors.modelId],
+			name: "promo_deliveries_model_id_contractor_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.manifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "promo_deliveries_model_id_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.receiptId],
+			foreignColumns: [downloadReceipts.id, downloadReceipts.modelId],
+			name: "promo_deliveries_model_id_receipt_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.correctsId],
+			foreignColumns: [table.id, table.modelId],
+			name: "promo_deliveries_model_id_corrects_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "promo_deliveries_pkey"}),
+	unique("promo_deliveries_manifest").on(table.manifestId, table.modelId),
+	unique("promo_deliveries_corrects_once").on(table.correctsId),
+	check("promo_deliveries_package_item_type_check", sql`package_item_type = 'PRM'::text`),
+	check("promo_deliveries_format_check", sql`format = ANY (ARRAY['upload'::text, 'master'::text, 'compat'::text])`),
+	check("promo_deliveries_state_check", sql`state = ANY (ARRAY['preparing'::text, 'prepared'::text, 'sent'::text])`),
+	check("promo_deliveries_origin_check", sql`origin = ANY (ARRAY['product'::text, 'import'::text])`),
+	check("promo_deliveries_sent", sql`CHECK (
+CASE origin
+    WHEN 'import'::text THEN ((state = 'sent'::text) AND (sent_at IS NULL) AND (sent_by IS NULL))
+    ELSE ((format IS NOT NULL) AND ((state = 'sent'::text) = ((sent_at IS NOT NULL) AND (sent_by IS NOT NULL))))
+END)`),
+	check("promo_deliveries_prepared", sql`CHECK (
+CASE origin
+    WHEN 'import'::text THEN (num_nonnulls(format, prepared_at, prepared_by, receipt_id, corrects_id) = 0)
+    ELSE ((prepared_at IS NOT NULL) AND (prepared_by IS NOT NULL) AND ((state = 'preparing'::text) = (receipt_id IS NULL)))
+END)`),
+	check("promo_deliveries_not_self", sql`corrects_id <> id`),
+]);
+
 export const sourceRevisions = pgTable("source_revisions", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -2110,6 +2233,7 @@ export const contentItems = pgTable("content_items", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+	defaultContractorId: uuid("default_contractor_id"),
 }, (table): PgTableExtraConfigValue[] => [
 	index("content_items_live_type").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.type.asc().nullsLast().op("uuid_ops")).where(sql`(deleted_at IS NULL)`),
 	index("content_items_search").using("gin", table.searchTsv.asc().nullsLast().op("tsvector_ops")),
@@ -2151,6 +2275,11 @@ export const contentItems = pgTable("content_items", {
 			foreignColumns: [itemMemberships.id, itemMemberships.itemId, itemMemberships.modelId],
 			name: "content_items_cover_fkey"
 		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.defaultContractorId],
+			foreignColumns: [contractors.id, contractors.modelId],
+			name: "content_items_model_id_default_contractor_id_fkey"
+		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "content_items_pkey"}),
 	unique("content_items_number").on(table.modelId, table.number, table.type),
 	unique("content_items_created_from_group").on(table.createdFromGroupId, table.modelId),
@@ -2166,6 +2295,7 @@ export const contentItems = pgTable("content_items", {
 	check("content_items_promo_channel", sql`(type = 'PRM'::text) = (promo_channel_id IS NOT NULL)`),
 	check("content_items_name_in_media", sql`(name_in_media IS NULL) OR (type = 'CUS'::text)`),
 	check("content_items_merged_deleted", sql`(merged_into_item_id IS NULL) OR (deleted_at IS NOT NULL)`),
+	check("content_items_default_contractor", sql`(default_contractor_id IS NULL) OR (type = 'PRM'::text)`),
 ]);
 
 export const placements = pgTable("placements", {

@@ -30,8 +30,8 @@ const NO_MEMBERS: readonly CollectionMember[] = []
 
 /**
  * Канал промо `/<модель>/library/promo/<канал>` (DESIGN §4.17): сверху подборки PRM
- * папками, ниже «Без подборки» — материалы по дням. Выбор без подборки можно сразу
- * подготовить к передаче: сначала заводится новая подборка.
+ * папками, ниже — все материалы канала по дням добавления, каждый файл один раз. Выбор
+ * можно сразу подготовить к передаче: сначала заводится новая подборка (SPEC §7.1).
  */
 export function PromoChannelScreen() {
   const { channel: channelId } = routeApi.useParams()
@@ -45,9 +45,9 @@ export function PromoChannelScreen() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const contents = query.data
-  const unfiled = contents?.unfiled ?? NO_MEMBERS
-  const days = useMemo(() => unfiledDays(unfiled), [unfiled])
-  const selection = useMemberSelection(`channel:${channelId}`, unfiled)
+  const materials = contents?.materials ?? NO_MEMBERS
+  const days = useMemo(() => unfiledDays(materials), [materials])
+  const selection = useMemberSelection(`channel:${channelId}`, materials)
   const hasData = contents !== undefined
 
   useKeyboardShortcut({ code: 'Escape', enabled: selection.selected.length > 0 }, selection.clear)
@@ -68,7 +68,7 @@ export function PromoChannelScreen() {
   const menu = usePromoMenu()
 
   const notFound = query.error instanceof ApiError && query.error.status === 404
-  const empty = contents && contents.collections.length === 0 && unfiled.length === 0
+  const empty = contents && contents.collections.length === 0 && materials.length === 0
 
   // Экран-сущность из адреса, которой нет: общий 404 на всё поле (DESIGN §3.10).
   if (notFound) {
@@ -115,11 +115,11 @@ export function PromoChannelScreen() {
           <CollectionFolders channel={channelId} collections={contents.collections} />
         ) : null}
         {days.length > 0 ? (
-          <section aria-label="Без подборки" className="mt-7 flex flex-col gap-2">
+          <section aria-label="Материалы канала" className="mt-7 flex flex-col gap-2">
             <h2 className="flex items-baseline gap-2 text-lg">
-              Без подборки
+              Материалы канала
               <span className="font-normal text-ink-3 text-sm tabular-nums">
-                {filesWord(unfiled.length)}
+                {filesWord(materials.length)}
               </span>
             </h2>
             <UnfiledGrid

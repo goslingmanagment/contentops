@@ -7,7 +7,7 @@ export interface UnfiledDay {
   members: CollectionMember[]
 }
 
-/** «Без подборки» по дням добавления, новые дни сверху (DESIGN §4.17). */
+/** Материалы канала по дням добавления, новые дни сверху (DESIGN §4.17). */
 export function unfiledDays(members: readonly CollectionMember[]): UnfiledDay[] {
   const byDate = new Map<LocalDate, CollectionMember[]>()
   for (const member of members) {

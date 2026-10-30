@@ -219,13 +219,18 @@ export const FACTORIES: Record<string, Factory> = {
     }
     return row
   },
-  /** A CUS: an order delivery points at one through the type copy; a release needs a PPV. */
+  /** A CUS: an order delivery points at one through the type copy; a release needs a PPV; a
+   * promo handoff a PRM. */
   content_items: async (client, modelId, testing = [], forTable) => {
     if (forTable === 'ppv_releases') return newPpv(modelId)
+    if (forTable === 'promo_deliveries') testing = [...testing, 'promo_channel_id']
     const row: Row = { model_id: modelId, type: 'CUS', number: nextNumber(), origin: 'manual' }
-    if (testing.includes('promo_channel_id')) {
+    if (testing.includes('promo_channel_id') || testing.includes('default_contractor_id')) {
       row.type = 'PRM'
       row.promo_channel_id = await idOf(client, 'promo_channels', modelId)
+    }
+    if (testing.includes('default_contractor_id')) {
+      row.default_contractor_id = await idOf(client, 'contractors', modelId)
     }
     if (testing.includes('merged_into_item_id')) row.deleted_at = new Date().toISOString()
     return row
@@ -661,6 +666,44 @@ export const FACTORIES: Record<string, Factory> = {
     if (testing.includes('input_manifest_id')) {
       row.expected_type = 'FYP'
       row.input_manifest_id = await idOf(client, 'asset_manifests', modelId)
+    }
+    return row
+  },
+  // 0007_promo
+  contractors: async (client, modelId, testing = []) => ({
+    model_id: modelId,
+    name: `подрядчик ${tag()}`,
+    format: 'upload',
+    channel_id: testing.includes('channel_id')
+      ? await idOf(client, 'promo_channels', modelId)
+      : null,
+  }),
+  /** A handoff being prepared; with `receipt_id` — prepared; with `corrects_id` — a redo. */
+  promo_deliveries: async (client, modelId, testing = []) => {
+    const pkg = await make(client, 'content_items', modelId, ['promo_channel_id'])
+    const row: Row = {
+      model_id: modelId,
+      package_item_id: pkg.id,
+      channel_id: pkg.promo_channel_id,
+      contractor_id: await idOf(client, 'contractors', modelId),
+      format: 'upload',
+      manifest_id: await idOf(client, 'asset_manifests', modelId),
+      state: 'preparing',
+      prepared_at: new Date().toISOString(),
+      prepared_by: await newPrincipal(client),
+    }
+    if (testing.includes('receipt_id')) {
+      row.state = 'prepared'
+      row.receipt_id = await idOf(client, 'download_receipts', modelId)
+    }
+    if (testing.includes('corrects_id')) {
+      const first = await insert(client, 'promo_deliveries', {
+        ...row,
+        state: 'preparing',
+        receipt_id: null,
+      })
+      row.manifest_id = await idOf(client, 'asset_manifests', modelId)
+      row.corrects_id = first.id
     }
     return row
   },

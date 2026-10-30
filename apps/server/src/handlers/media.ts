@@ -209,6 +209,7 @@ interface WorkRowView extends Record<string, unknown> {
 function operationKind(row: WorkRowView): OperationKind {
   switch (row.kind) {
     case 'export': {
+      if (row.checkpoint?.plan?.promo) return 'handoff'
       const kind = row.checkpoint?.plan?.kind
       if (kind === 'compat') return 'compat_copy'
       if (kind === 'platform' || kind === 'teaser' || kind === 'fan') return 'platform_copy'

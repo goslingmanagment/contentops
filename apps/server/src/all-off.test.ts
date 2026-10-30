@@ -1,16 +1,20 @@
 import { IntegrationViewSchema } from '@contentops/contracts/api/responses'
 import { ThresholdSchema } from '@contentops/contracts/domain/system'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { WorkRunner } from '@contentops/db'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { createMediaEnv } from './media/pipeline'
 import { shaBytes } from './media/storage'
 import { registerBlob } from './media/storage-ops'
 import { tempFile } from './media/testing'
+import { exportHandler } from './media/work/export'
 import { createCatalogItems } from './testing/catalog-factory'
 import { call, newKey, OWNER, signIn, type TestServer, testServer } from './testing/server'
 
 /**
  * PLAN 1а: the base scenario «всё выключено» — every switch off and no integration secret in
- * the environment. Steps are added as functions arrive (2а–2в, 4а: upload, accept, find,
- * download, put in the plan, mark by hand); the whole path passes when stage 4 closes.
+ * the environment. Steps are added as functions arrive (2а–2в, 4а, 4в: upload, accept, find,
+ * download, put in the plan, mark by hand, hand promo over); the whole path passes when
+ * stage 4 closes.
  */
 
 let server: TestServer
@@ -154,5 +158,92 @@ describe('«всё выключено»', () => {
     expect(bytes.statusCode).toBe(200)
     expect(bytes.headers['x-accel-redirect']).toMatch(/^\/_accel\/blobs\/sha256\//)
     expect(bytes.headers['content-disposition']).toContain('PPV-900_skachat-integratsii_master')
+  })
+
+  it('hands a promo collection over: link, prepare, ZIP, «Передано»', async () => {
+    const contractor = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/admin/models/lora/contractors',
+      as: owner,
+      key: newKey(),
+      body: { name: 'Подрядчик', channel: 'reddit', contact: null, format: 'master' },
+    })
+    expect(contractor.statusCode).toBe(201)
+    const collection = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/promo/collections:add',
+      as: owner,
+      key: newKey(),
+      body: {
+        channel: 'reddit',
+        collection: 'new',
+        title: 'Без интеграций',
+        members: [{ item_id: 'PPV-900', file_key: 'master' }],
+      },
+    })
+    expect(collection.json()).toMatchObject({ id: 'PRM-001', video_count: 1 })
+    const started = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/promo/collections/PRM-001/handoffs',
+      as: owner,
+      key: newKey(),
+      body: {
+        contractor_id: contractor.json().id,
+        strip_metadata: false,
+        exclude_already_handed: true,
+        members: null,
+      },
+    })
+    expect(started.statusCode).toBe(202)
+    const env = await createMediaEnv({
+      db: server.db,
+      store: server.store,
+      lp: 1,
+      owner: 'worker:all-off',
+      log: () => {},
+      versions: {
+        ffmpeg: 'n8.1.2-test',
+        ffprobe: 'n8.1.2-test',
+        svtav1: 'v4.2.0-test',
+        libvips: '8.16.1',
+        sharp: '0.34.2',
+        libheif: null,
+        libde265: null,
+        libwebp: null,
+        phash: 'sharp-phash@2.2.0',
+      },
+      activate: false,
+    })
+    const runner = new WorkRunner({
+      db: server.db,
+      role: 'worker',
+      handlers: { export: exportHandler(env) },
+      pollMs: 20,
+    })
+    runner.start()
+    const handoff = await vi
+      .waitFor(
+        async () => {
+          const view = await call(server.app, {
+            method: 'GET',
+            url: '/api/v1/lora/promo/collections/PRM-001',
+            as: owner,
+          })
+          const found = view.json().handoffs[0]
+          if (found?.state !== 'prepared') throw new Error(found?.state)
+          return found
+        },
+        { timeout: 10_000, interval: 50 },
+      )
+      .finally(() => runner.stop())
+    const zip = await call(server.app, { method: 'GET', url: handoff.zip_url, as: owner })
+    expect(zip.statusCode).toBe(200)
+    const sent = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/promo/collections/PRM-001/handoffs/${handoff.id}:mark-sent`,
+      as: owner,
+      key: newKey(),
+    })
+    expect(sent.json()).toMatchObject({ state: 'sent', status: { word: 'передано' } })
   })
 })

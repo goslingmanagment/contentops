@@ -115,6 +115,11 @@ const LISTS: Record<string, readonly string[]> = {
   posting_plan_rows_expected_type_check: v.montageTypes,
   posting_plan_rows_mark_kind_check: v.markKinds,
   posting_plan_rows_cancel_reason_check: v.cancelReasons,
+  // 0007_promo
+  contractors_format_check: v.contractorFormats,
+  promo_deliveries_format_check: v.contractorFormats,
+  promo_deliveries_state_check: v.promoDeliveryStates,
+  promo_deliveries_origin_check: v.promoDeliveryOrigins,
 }
 
 let pool: pg.Pool
