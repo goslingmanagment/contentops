@@ -43,12 +43,17 @@ export const QueueSchema = z.object({
 })
 export type Queue = z.infer<typeof QueueSchema>
 
+/**
+ * A disk of the space card and «Состояние». On the pilot the numbers come from Windows (the
+ * VM disks grow, SPEC §12.2); `null` — «нет данных»: the host has not reported for 15 min.
+ */
 export const DiskSchema = z.object({
   name: z.string(),
-  free_bytes: z.int().nonnegative(),
-  total_bytes: z.int().positive(),
+  free_bytes: z.int().nonnegative().nullable(),
+  total_bytes: z.int().positive().nullable(),
   warn_below_bytes: z.int().nonnegative(),
   stop_below_bytes: z.int().nonnegative(),
+  measured_at: InstantSchema.nullable(),
 })
 export type Disk = z.infer<typeof DiskSchema>
 
@@ -62,13 +67,16 @@ export const SystemStateSchema = z.object({
     last_full_at: InstantSchema.nullable(),
     last_dump_at: InstantSchema.nullable(),
   }),
-  hub_latency: z.object({
-    typical_hours: z.number(),
-    max_hours: z.number(),
-    wait_window_hours: z.number(),
-    /** Present when Hub is slower than the «ждём» window. */
-    warning: z.string().nullable(),
-  }),
+  /** `null` until ContentOps reads Hub (stage 5). */
+  hub_latency: z
+    .object({
+      typical_hours: z.number(),
+      max_hours: z.number(),
+      wait_window_hours: z.number(),
+      /** Present when Hub is slower than the «ждём» window. */
+      warning: z.string().nullable(),
+    })
+    .nullable(),
   storage_findings: z.array(z.string()),
   ai_spend: z.string().nullable(),
   cross_model_duplicates: z.int().nonnegative().nullable(),

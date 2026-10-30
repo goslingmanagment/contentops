@@ -22,28 +22,30 @@ export function ChecksSection({ state }: { state: SystemState }) {
 
   return (
     <SettingsSection title="Проверки">
-      <SettingsRow
-        label="Hub"
-        detail={`обычно видит пост за ${hoursWord(latency.typical_hours)}, бывает до ${hoursWord(latency.max_hours)}`}
-      >
-        {latency.warning ? (
-          <span className="inline-flex items-center gap-2 text-attention-ink text-sm">
-            <StatusSign kind="turn" />
-            {latency.warning}
-            {owner ? (
-              <Button
-                variant="link"
-                size="sm"
-                onClick={() =>
-                  void navigate({ to: '/settings/$tab', params: { tab: 'thresholds' } })
-                }
-              >
-                Пороги
-              </Button>
-            ) : null}
-          </span>
-        ) : null}
-      </SettingsRow>
+      {latency ? (
+        <SettingsRow
+          label="Hub"
+          detail={`обычно видит пост за ${hoursWord(latency.typical_hours)}, бывает до ${hoursWord(latency.max_hours)}`}
+        >
+          {latency.warning ? (
+            <span className="inline-flex items-center gap-2 text-attention-ink text-sm">
+              <StatusSign kind="turn" />
+              {latency.warning}
+              {owner ? (
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() =>
+                    void navigate({ to: '/settings/$tab', params: { tab: 'thresholds' } })
+                  }
+                >
+                  Пороги
+                </Button>
+              ) : null}
+            </span>
+          ) : null}
+        </SettingsRow>
+      ) : null}
       <SettingsRow
         label="Проверка хранилища"
         detail={findings.length > 0 ? findings.join(' · ') : undefined}

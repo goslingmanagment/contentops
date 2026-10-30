@@ -2,8 +2,9 @@
 ContentOps-Watchdog (SPEC 12.2). Runs as SYSTEM every 5 minutes from the scheduled task
 registered by register-tasks.ps1.
 
-- Checks https://contentops.tail1d911a.ts.net/healthz (tailscale serve in the VM; the app
-  proxy listens on loopback only). 200 = healthy, anything else = failure.
+- Checks http://contentops.tail1d911a.ts.net/healthz (tailscale serve in the VM, HTTP while
+  tailnet HTTPS certificates are off; the app proxy listens on loopback only). 200 = healthy,
+  anything else = failure. With HTTPS on, pass -HealthUrl https://... (register-tasks.ps1).
 - A failure is not counted while the VM is Running but Tailscale on this PC is down:
   restarting the VM would not help and would kill long encodes.
 - After 3 failures in a row: VM Running -> graceful guest shutdown (forced off after
@@ -16,7 +17,7 @@ Windows PowerShell 5.1 compatible, ASCII only.
 #>
 param(
   [string]$VmName = 'contentops',
-  [string]$HealthUrl = 'https://contentops.tail1d911a.ts.net/healthz',
+  [string]$HealthUrl = 'http://contentops.tail1d911a.ts.net/healthz',
   [int]$FailuresBeforeRestart = 3,
   [int]$MinMinutesBetweenRestarts = 60,
   [int]$ShutdownTimeoutSec = 180,

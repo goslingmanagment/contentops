@@ -120,6 +120,7 @@ export function buildSystemState(): SystemState {
         total_bytes: 1000 * GB,
         warn_below_bytes: 200 * GB,
         stop_below_bytes: 100 * GB,
+        measured_at: '2026-09-22T11:15:00Z',
       },
       {
         name: 'E:',
@@ -127,6 +128,7 @@ export function buildSystemState(): SystemState {
         total_bytes: 2000 * GB,
         warn_below_bytes: 200 * GB,
         stop_below_bytes: 100 * GB,
+        measured_at: '2026-09-22T11:15:00Z',
       },
     ],
     backup: { text: 'Бэкапа нет (пилот)', last_full_at: null, last_dump_at: null },

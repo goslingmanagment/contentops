@@ -11,27 +11,33 @@ interface SpaceSectionProps {
 }
 
 /** Полоса диска: синяя, янтарная ниже порога предупреждения, красная ниже остановки забора. */
-function toneOf(disk: Disk): string {
-  if (disk.free_bytes <= disk.stop_below_bytes) {
+function toneOf(free: number, disk: Disk): string {
+  if (free <= disk.stop_below_bytes) {
     return '[&>[data-slot=progress-indicator]]:bg-destructive'
   }
-  if (disk.free_bytes <= disk.warn_below_bytes) {
+  if (free <= disk.warn_below_bytes) {
     return '[&>[data-slot=progress-indicator]]:bg-attention'
   }
   return ''
 }
 
 function DiskBar({ disk }: { disk: Disk }) {
-  const used = 1 - disk.free_bytes / disk.total_bytes
+  const free = disk.free_bytes
+  const total = disk.total_bytes
+  if (free === null || total === null) {
+    // Хост давно не присылал место: число не выдумывается (§12.2).
+    return <span className="text-muted-foreground">нет данных</span>
+  }
+  const used = 1 - free / total
   return (
     <span className="flex w-72 flex-col gap-1.5">
       <span className="text-right text-sm tabular-nums">
-        свободно {formatBytes(disk.free_bytes)} из {formatBytes(disk.total_bytes)}
+        свободно {formatBytes(free)} из {formatBytes(total)}
       </span>
       <Progress
         aria-label={`Занято на ${disk.name}`}
         value={used * 100}
-        className={cn('h-1.5', toneOf(disk))}
+        className={cn('h-1.5', toneOf(free, disk))}
       />
     </span>
   )

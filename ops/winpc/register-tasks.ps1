@@ -1,46 +1,79 @@
 <#
-Registers the Windows scheduled task ContentOps-Watchdog on winpc (SPEC 12.2): SYSTEM, at
-startup and every 5 minutes, Windows PowerShell 5.1. Copies ContentOps-Watchdog.ps1 to
-C:\vm\contentops\ops\ and runs it from there; log in C:\vm\contentops\logs\.
+Registers the Windows scheduled tasks of the pilot VM on winpc (SPEC 12.2), both SYSTEM, at
+startup and every 5 minutes, Windows PowerShell 5.1; scripts are copied to
+C:\vm\contentops\ops\ and run from there, logs in C:\vm\contentops\logs\.
 
-The task is registered DISABLED unless -Enable is given: until the app answers /healthz the
-watchdog would restart the VM every hour. The deploy enables it (-Enable). Re-running replaces
-the task. Run elevated on winpc, e.g. from the Mac:
+- ContentOps-Watchdog: /healthz, VM restart after 3 failures. Registered DISABLED unless
+  -Enable is given: until the app answers /healthz it would restart the VM every hour. The
+  deploy enables it (-Enable). -HealthUrl overrides the checked address (https once tailnet
+  HTTPS certificates are on).
+- ContentOps-Space: free space of C: and E: as Windows sees it, to
+  C:\vm\contentops\host\space.json. Always enabled. The folder is shared as contentops-host,
+  read-only for PC\contentops-ro only (the account of the ydisk-ro share); the VM mounts it
+  at /mnt/host (ops/vm/setup-host-share.sh). Nothing is ever shared from the Yandex copy here.
+
+Re-running replaces the tasks and keeps the share. Run elevated on winpc, e.g. from the Mac:
   scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/
-  ssh winpc 'pwsh -NoProfile -File C:\vm\contentops\ops\register-tasks.ps1'
+  ssh winpc 'pwsh -NoProfile -File C:\vm\contentops\ops\register-tasks.ps1 -Enable'
 
 Ends with a read-only report of the host settings SPEC 12.2 relies on.
 ASCII only.
 #>
-param([switch]$Enable)
+param(
+  [switch]$Enable,
+  [string]$HealthUrl = 'http://contentops.tail1d911a.ts.net/healthz'
+)
 $ErrorActionPreference = 'Stop'
-$taskName = 'ContentOps-Watchdog'
 $vmName = 'contentops'
 $opsDir = 'C:\vm\contentops\ops'
 $logDir = 'C:\vm\contentops\logs'
+$hostDir = 'C:\vm\contentops\host'
+$shareName = 'contentops-host'
+$shareUser = "$env:COMPUTERNAME\contentops-ro"
 
-New-Item -ItemType Directory -Force -Path $opsDir, $logDir | Out-Null
-$src = Join-Path $PSScriptRoot 'ContentOps-Watchdog.ps1'
-$dst = Join-Path $opsDir 'ContentOps-Watchdog.ps1'
-if ((Resolve-Path $src).Path -ne $dst) { Copy-Item -Force $src $dst }
+New-Item -ItemType Directory -Force -Path $opsDir, $logDir, $hostDir | Out-Null
+foreach ($name in 'ContentOps-Watchdog.ps1', 'ContentOps-Space.ps1') {
+  $src = Join-Path $PSScriptRoot $name
+  $dst = Join-Path $opsDir $name
+  if ((Resolve-Path $src).Path -ne $dst) { Copy-Item -Force $src $dst }
+}
 
-$action = New-ScheduledTaskAction `
-  -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
-  -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$dst`""
-$atStartup = New-ScheduledTaskTrigger -AtStartup
-$every5Min = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
-  -RepetitionInterval (New-TimeSpan -Minutes 5)
+# The VM reads space.json over the internal network: read-only, one account, like ydisk-ro.
+& icacls $hostDir /grant "$($shareUser):(OI)(CI)RX" | Out-Null
+if (-not (Get-SmbShare -Name $shareName -ErrorAction SilentlyContinue)) {
+  New-SmbShare -Name $shareName -Path $hostDir -ReadAccess $shareUser `
+    -FolderEnumerationMode AccessBased -CachingMode None | Out-Null
+}
+
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
   -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
 
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $atStartup, $every5Min `
-  -Principal $principal -Settings $settings -Force `
-  -Description 'ContentOps: /healthz every 5 min, VM restart after 3 failures, at most hourly (ops/winpc)' |
-  Out-Null
-if ($Enable) { Enable-ScheduledTask -TaskName $taskName | Out-Null }
-else { Disable-ScheduledTask -TaskName $taskName | Out-Null }
-"{0}: {1}" -f $taskName, (Get-ScheduledTask -TaskName $taskName).State
+function Register-Every5Min([string]$TaskName, [string]$Script, [string]$Arguments, [string]$Description) {
+  $action = New-ScheduledTaskAction `
+    -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$(Join-Path $opsDir $Script)`" $Arguments"
+  $atStartup = New-ScheduledTaskTrigger -AtStartup
+  $every5Min = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5)
+  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $atStartup, $every5Min `
+    -Principal $principal -Settings $settings -Force -Description $Description | Out-Null
+}
+
+Register-Every5Min 'ContentOps-Watchdog' 'ContentOps-Watchdog.ps1' "-HealthUrl `"$HealthUrl`"" `
+  'ContentOps: /healthz every 5 min, VM restart after 3 failures, at most hourly (ops/winpc)'
+if ($Enable) { Enable-ScheduledTask -TaskName 'ContentOps-Watchdog' | Out-Null }
+else { Disable-ScheduledTask -TaskName 'ContentOps-Watchdog' | Out-Null }
+
+Register-Every5Min 'ContentOps-Space' 'ContentOps-Space.ps1' '' `
+  'ContentOps: free space of C: and E: for the VM, every 5 min (ops/winpc)'
+Enable-ScheduledTask -TaskName 'ContentOps-Space' | Out-Null
+Start-ScheduledTask -TaskName 'ContentOps-Space'
+
+foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space') {
+  "{0}: {1}" -f $name, (Get-ScheduledTask -TaskName $name).State
+}
+"{0}: {1} -> {2}" -f $shareName, (Get-SmbShare -Name $shareName).Path, $shareUser
 
 # Host settings SPEC 12.2 relies on (report only, nothing is changed here).
 $vm = Get-VM -Name $vmName

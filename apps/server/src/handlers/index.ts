@@ -7,6 +7,7 @@ import { journalHandlers } from './journal'
 import { modelHandlers } from './models'
 import { normHandlers } from './norm'
 import { peopleHandlers } from './people'
+import { systemHandlers } from './system'
 import { thresholdHandlers } from './thresholds'
 
 /** Several registries into one; a route answered twice is a mistake caught at start. */
@@ -36,5 +37,6 @@ export function createHandlers(services: Services): HandlerRegistry {
     journalHandlers(services),
     integrationHandlers(services),
     thresholdHandlers(services),
+    systemHandlers(services),
   )
 }

@@ -78,14 +78,57 @@
 
 ## Вход для людей — `tailscale serve`
 
-- `sudo tailscale serve --bg --https=443 http://127.0.0.1:8080` в ВМ: HTTPS на
-  `https://contentops.tail1d911a.ts.net` → nginx стека (порт 8080 только на loopback).
-  `--bg` — настройка переживает перезагрузку; проверка — `tailscale serve status`. Funnel
-  (публичный доступ) не включать. До выкатки стека адрес отвечает 502.
-- 30.10 ещё не включено: в tailnet выключены HTTPS-сертификаты (`Serve is not enabled on
-  your tailnet`). Включает владелец: админка Tailscale → DNS → HTTPS Certificates → Enable
-  (имя машины с сертификатом навсегда попадает в публичный журнал сертификатов), затем
-  команда выше в ВМ.
+- Сейчас HTTP: `sudo tailscale serve --bg --http=80 http://127.0.0.1:8080` в ВМ —
+  `http://contentops.tail1d911a.ts.net` → nginx стека (порт 8080 только на loopback), только
+  внутри tailnet. `--bg` — настройка переживает перезагрузку; проверка — `tailscale serve
+  status`. Funnel (публичный доступ) не включать.
+- HTTPS ждёт владельца: в tailnet выключены HTTPS-сертификаты (`Serve is not enabled on your
+  tailnet`). Включает владелец: админка Tailscale → DNS → HTTPS Certificates → Enable (имя
+  машины с сертификатом навсегда попадает в публичный журнал сертификатов). Затем в ВМ
+  `sudo tailscale serve --bg --https=443 http://127.0.0.1:8080`, `sudo tailscale serve --http=80
+  off`, в `/opt/contentops/.env` — `PUBLIC_URL=https://…` (cookie станут `Secure`),
+  `ops/up.sh`, и сторож на новый адрес: `register-tasks.ps1 -Enable -HealthUrl
+  https://contentops.tail1d911a.ts.net/healthz`.
+
+## Стек и выкатка
+
+- Стек — один Compose (SPEC §12.1): `db` (PostgreSQL 18.6), одноразовый `migrate`, `web`,
+  `worker`, `worker-video`, `worker-image` (пять из одного образа) и `proxy` (nginx с
+  интерфейсом). Снаружи открыт только `127.0.0.1:8080`. Логи — stdout, ротацию делает Docker
+  (`local`, 20m×5, `/etc/docker/daemon.json`): `docker compose logs -f web`.
+- Ставится из тега в `/opt/contentops` (владелец `dmitriy`, только чтение: правок там нет,
+  агентов и тестовых стеков в ВМ нет):
+  `cd /opt/contentops && git fetch --tags && git checkout --detach vX.Y.Z && ops/up.sh`.
+  `ops/up.sh` проверяет `.env` (0600) и монтирования, собирает образ, ждёт `/healthz`.
+  Повтор безопасен; `migrate` повторно ничего не меняет.
+- `.env` — `/opt/contentops/.env` (0600, все переменные — `.env.example`); пароли БД в нём
+  же. Первый пароль владельца — только `/etc/contentops/owner-initial-password` (root, 0600).
+- Начальные данные (модели, страницы, счётчики, владелец) — один раз командой bootstrap,
+  повтор ничего не меняет:
+  `docker compose run --rm -T -e CONTENTOPS_OWNER_PASSWORD -v /etc/contentops/bootstrap.json:/bootstrap.json:ro web node dist/db.js bootstrap /bootstrap.json`.
+  Сброс пароля человека — `node dist/db.js reset-password <логин>` тем же способом.
+- Без диска E: (или любого из `REQUIRE_HOST_MOUNTS`) `ops/up.sh` поднимает `db`, `web` и
+  `proxy`, а воркеры — нет; `/healthz` красный с `volumes`. Проверка в контейнере — файл-метка
+  `.contentops-volume` в корне хранилища: её пишет `ops/up.sh` после `mountpoint -q`; без
+  диска корень — пустая неизменяемая папка, метки там нет, и воркер ждёт, ничего не беря.
+- Перезагрузка ВМ: контейнеры поднимает Docker сам (`restart: unless-stopped`), `migrate`
+  не повторяется. После правки `.env` или нового тега — снова `ops/up.sh`.
+- Воркеры — с пониженным приоритетом (`nice`, вес CPU) и квотой (`VIDEO_CPUS=11`,
+  `IMAGE_CPUS=4` из 16): ядро всегда остаётся `web`. При нехватке памяти первыми гибнут
+  воркеры (`oom_score_adj`), `db` — последней.
+- База до тега `schema-freeze` — тестовая; с этапа 3 — единственная настоящая: `docker
+  compose down -v` и удаление `/srv/db` после этого запрещены.
+
+## Место с Windows
+
+- Задача `ContentOps-Space` (SYSTEM, при загрузке и каждые 5 мин) пишет свободное и полное
+  место C: и E: в `C:\vm\contentops\host\space.json`. Папка — общая `contentops-host`, только
+  чтение и только для `PC\contentops-ro` (тот же вход, что у `ydisk-ro`; в копию Я.Диска
+  ничего не пишется). В ВМ — `/mnt/host` (cifs `ro`, automount, `ops/vm/setup-host-share.sh`),
+  в контейнер `web` — `/host` только для чтения.
+- Отчёт старше 15 мин на экране — «нет данных». Пороги пилота — предупреждение 200 ГБ,
+  остановка забора 100 ГБ (`.env`: `SPACE_WARN_GB`, `SPACE_STOP_GB`). Журнал ошибок задачи —
+  `C:\vm\contentops\logs\space.log`.
 
 ## Перезагрузки, питание, память
 
@@ -110,18 +153,20 @@
 ## Сторож `ContentOps-Watchdog`
 
 - Задача Windows (SYSTEM, при загрузке и каждые 5 мин) запускает
-  `C:\vm\contentops\ops\ContentOps-Watchdog.ps1`; ставит её `ops/winpc/register-tasks.ps1`
-  (копирует скрипт туда же и печатает проверку настроек хоста):
-  `scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/`, затем
-  `ssh winpc 'pwsh -NoProfile -File C:\vm\contentops\ops\register-tasks.ps1'`.
-- Проверяет `https://contentops.tail1d911a.ts.net/healthz`. После трёх неудач подряд —
+  `C:\vm\contentops\ops\ContentOps-Watchdog.ps1`; ставит её вместе с `ContentOps-Space`
+  `ops/winpc/register-tasks.ps1` (копирует скрипты туда же и печатает проверку настроек
+  хоста): `scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/`, затем
+  `ssh winpc 'pwsh -NoProfile -File C:\vm\contentops\ops\register-tasks.ps1 -Enable'`.
+- Проверяет `http://contentops.tail1d911a.ts.net/healthz` (после включения HTTPS — адрес
+  `-HealthUrl` при регистрации). После трёх неудач подряд —
   штатное выключение гостя (через 3 мин — принудительное) и старт, не чаще раза в час;
   выключенную ВМ включает. Пауза, сохранённое или «критическое» состояние (например,
   кончилось место на C:) — только запись в журнал. Пока на самом ПК не работает Tailscale,
   неудачи не считаются: перезапуск ВМ не помог бы, а долгое кодирование оборвал бы.
 - Журнал — `C:\vm\contentops\logs\watchdog.log`, счётчик — `watchdog-state.json` рядом.
-- **Сейчас задача выключена**: приложения ещё нет, и сторож перезапускал бы ВМ раз в час.
-  Включает выкатка (`register-tasks.ps1 -Enable`). На время работ с ВМ руками —
-  `Disable-ScheduledTask ContentOps-Watchdog`, иначе он включит выключенную ВМ.
+- Включает выкатка (`register-tasks.ps1 -Enable`; без `-Enable` задача регистрируется
+  выключенной). На время работ с ВМ руками — `Disable-ScheduledTask ContentOps-Watchdog`,
+  иначе он включит выключенную ВМ. Без диска E: `/healthz` красный, и перезапуск ВМ не
+  поможет: на это время сторожа выключить.
 - Проверено 30.10: запуск от SYSTEM (имя в tailnet находится, неудача засчитана), штатный
   перезапуск — гость выключился за 6 с, диски смонтировались сами.

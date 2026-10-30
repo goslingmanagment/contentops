@@ -134,6 +134,38 @@ export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
   derive_image: 'image',
 }
 
+/**
+ * Queues of «Настройки › Состояние» (DESIGN §4.19): забор с диска, превью, сжатие, кадры,
+ * копии. Hub, backup and the storage check sit in no queue: they have their own blocks.
+ */
+export const workQueues = ['fetch', 'preview', 'compress', 'frames', 'copies'] as const
+export type WorkQueue = (typeof workQueues)[number]
+
+export const workKindQueue: Readonly<Record<WorkKind, WorkQueue | null>> = {
+  scan: 'fetch',
+  fetch: 'fetch',
+  hash: 'fetch',
+  unpack_archive: 'fetch',
+  import_parse: 'fetch',
+  register: 'fetch',
+  propose: 'fetch',
+  export: 'copies',
+  hub_sync: null,
+  hub_history: null,
+  hub_publish: null,
+  annotate: 'frames',
+  verify_blobs: null,
+  backup: null,
+  derive_video: 'preview',
+  encode_master: 'compress',
+  verify_master: 'compress',
+  render: 'copies',
+  uniq_render: 'copies',
+  render_compat: 'copies',
+  extract_frame: 'frames',
+  derive_image: 'preview',
+}
+
 export const workStates = [
   'pending',
   'running',
@@ -188,6 +220,24 @@ export const thresholdKeys = [
 ] as const
 export type ThresholdKey = (typeof thresholdKeys)[number]
 
+/** The kill switch whose area a kind works in (SPEC §8); checked before every attempt. */
+export const workKindSwitch: Readonly<Partial<Record<WorkKind, KillSwitchKey>>> = {
+  scan: 'ydisk.scan',
+  fetch: 'ydisk.scan',
+  hub_sync: 'hub.receive',
+  hub_history: 'hub.receive',
+  hub_publish: 'hub.publish',
+}
+
+/**
+ * Queue switch `queue.<queue>` (SPEC §8: media processing can be paused). Unlike a kill
+ * switch it is on by default — the core runs without settings; only an explicit global
+ * `false` («Пауза» of the owner) holds the queue.
+ */
+export function queueSwitchKey(queue: WorkQueue): `queue.${WorkQueue}` {
+  return `queue.${queue}`
+}
+
 export function isKillSwitchKey(key: string): boolean {
   return (
     (killSwitchKeys as readonly string[]).includes(key) ||
@@ -196,7 +246,11 @@ export function isKillSwitchKey(key: string): boolean {
 }
 
 export function isPolicyKey(key: string): boolean {
-  return isKillSwitchKey(key) || (thresholdKeys as readonly string[]).includes(key)
+  return (
+    isKillSwitchKey(key) ||
+    (thresholdKeys as readonly string[]).includes(key) ||
+    workQueues.some((queue) => key === queueSwitchKey(queue))
+  )
 }
 
 /** Codes of `RAISE` in the migration functions. */
