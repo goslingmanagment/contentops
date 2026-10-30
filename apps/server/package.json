@@ -32,6 +32,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@contentops/cli": "workspace:*",
     "@types/node": "^24.13.6",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
