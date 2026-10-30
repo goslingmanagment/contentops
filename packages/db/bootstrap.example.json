@@ -1,0 +1,79 @@
+{
+  "models": [
+    {
+      "code": "lora",
+      "title": "Лора",
+      "title_genitive": "Лоры",
+      "timezone": "Europe/Moscow",
+      "accounts": [
+        { "code": "lora-1", "platform": "fansly", "title": "Fansly 1", "handle": "LoraVie", "hub_page_ref": "lora-1" },
+        { "code": "lora-2", "platform": "fansly", "title": "Fansly 2", "handle": "LoraViex", "hub_page_ref": "lora-2" },
+        { "code": "lora-3", "platform": "fansly", "title": "Fansly 3", "handle": "LoraViexx", "hub_page_ref": "lora-3" },
+        { "code": "lora-vip-of", "platform": "onlyfans", "title": "OF VIP", "handle": "loravievip", "hub_page_ref": "lora-vip-of" },
+        { "code": "lora-of", "platform": "onlyfans", "title": "OF Free", "handle": "loravie", "hub_page_ref": "lora-of" }
+      ],
+      "promo_channels": [
+        { "code": "instagram", "title": "Instagram" },
+        { "code": "reddit", "title": "Reddit" },
+        { "code": "twitter", "title": "Twitter" },
+        { "code": "youtube", "title": "YouTube" },
+        { "code": "gif-sites", "title": "Гиф-сайты" },
+        { "code": "sfs", "title": "SFS" }
+      ],
+      "id_counters": {
+        "PPV": { "next_number": 1, "legacy": true },
+        "SET": { "next_number": 1, "legacy": true },
+        "SXT": { "next_number": 1, "legacy": true },
+        "CUS": { "next_number": 1, "legacy": true },
+        "FYP": { "next_number": 1, "legacy": true },
+        "LIFE": { "next_number": 1, "legacy": true },
+        "RAW": { "next_number": 1, "legacy": true },
+        "PRM": { "next_number": 1, "legacy": true }
+      }
+    },
+    {
+      "code": "lilly",
+      "title": "Lily",
+      "title_genitive": "Lily",
+      "accounts": [
+        { "code": "lilly-1", "platform": "fansly", "title": "Fansly 1", "handle": "WetLillys" },
+        { "code": "lilly-2", "platform": "fansly", "title": "Fansly 2", "handle": "WetLili" }
+      ],
+      "id_counters": {
+        "PPV": { "next_number": 1, "legacy": true },
+        "SET": { "next_number": 1, "legacy": true },
+        "SXT": { "next_number": 1, "legacy": true },
+        "CUS": { "next_number": 1, "legacy": true },
+        "FYP": { "next_number": 1, "legacy": true },
+        "LIFE": { "next_number": 1, "legacy": true },
+        "RAW": { "next_number": 1, "legacy": true },
+        "PRM": { "next_number": 1, "legacy": true }
+      }
+    },
+    {
+      "code": "ari",
+      "title": "Ари",
+      "title_genitive": "Ари",
+      "accounts": [
+        { "code": "ari-1", "platform": "fansly", "title": "Fansly 1", "handle": "itsaribae", "hub_page_ref": "ari-1" },
+        { "code": "ari-2", "platform": "fansly", "title": "Fansly 2", "handle": "itsaribaex" }
+      ],
+      "id_counters": {
+        "PPV": { "next_number": 1, "legacy": true },
+        "SET": { "next_number": 1, "legacy": true },
+        "SXT": { "next_number": 1, "legacy": false },
+        "CUS": { "next_number": 1, "legacy": true },
+        "FYP": { "next_number": 1, "legacy": true },
+        "LIFE": { "next_number": 1, "legacy": true },
+        "RAW": { "next_number": 1, "legacy": true },
+        "PRM": { "next_number": 1, "legacy": false }
+      }
+    }
+  ],
+  "owner": {
+    "login": "dmitriy",
+    "display_name": "Дмитрий",
+    "gender": "m",
+    "password_env": "CONTENTOPS_OWNER_PASSWORD"
+  }
+}

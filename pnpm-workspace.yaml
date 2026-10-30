@@ -1,5 +1,10 @@
 packages:
   - apps/*
   - packages/*
+# Install scripts stay off: esbuild ships its binary as an optional dependency,
+# and the native extras of ssh2 (cpu-features) and protobufjs are not used.
 allowBuilds:
+  cpu-features: false
   esbuild: false
+  protobufjs: false
+  ssh2: false
