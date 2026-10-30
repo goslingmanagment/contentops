@@ -112,10 +112,13 @@
   Повтор безопасен; `migrate` повторно ничего не меняет.
 - `.env` — `/opt/contentops/.env` (0600, все переменные — `.env.example`); пароли БД в нём
   же. Первый пароль владельца — только `/etc/contentops/owner-initial-password` (root, 0600).
-- Начальные данные (модели, страницы, счётчики, владелец) — один раз командой bootstrap,
+- Начальные данные (модели, страницы, счётчики, общий словарь тегов, владелец; образец —
+  `packages/db/bootstrap.example.json`) — один раз командой bootstrap,
   повтор ничего не меняет:
   `docker compose run --rm -T -e CONTENTOPS_OWNER_PASSWORD -v /etc/contentops/bootstrap.json:/bootstrap.json:ro web node dist/db.js bootstrap /bootstrap.json`.
   Сброс пароля человека — `node dist/db.js reset-password <логин>` тем же способом.
+- Пробный каталог для прогонов до этапа 3 (вымышленный, около 100 объектов Лоры; модель с
+  объектами не трогает): `docker compose run --rm -T web node dist/seed.js lora`.
 - Без диска E: (или любого из `REQUIRE_HOST_MOUNTS`) `ops/up.sh` поднимает `db`, `web` и
   `proxy`, а воркеры — нет; `/healthz` красный с `volumes`. Проверка в контейнере — файл-метка
   `.contentops-volume` в корне хранилища: её пишет `ops/up.sh` после `mountpoint -q`; без

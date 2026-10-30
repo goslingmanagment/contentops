@@ -1,6 +1,7 @@
 import { IntegrationViewSchema } from '@contentops/contracts/api/responses'
 import { ThresholdSchema } from '@contentops/contracts/domain/system'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { createCatalogItems } from './testing/catalog-factory'
 import { call, newKey, OWNER, signIn, type TestServer, testServer } from './testing/server'
 
 /**
@@ -77,5 +78,39 @@ describe('«всё выключено»', () => {
     })
     expect(response.statusCode).toBe(200)
     expect(response.json().version).toBe(version + 1)
+  })
+
+  it('finds an object: resolve, search and the object page', async () => {
+    // Until acceptance (2в) objects come from the fixture factory, as acceptance leaves them.
+    await createCatalogItems(server.db, 'lora', [
+      {
+        type: 'ppv',
+        number: 73,
+        title: 'Вечеринка, блёстки, диван',
+        tags: ['dance'],
+        files: [{ role: 'master' }, { role: 'teaser' }],
+      },
+    ])
+    const resolve = await call(server.app, {
+      method: 'GET',
+      url: `/api/v1/lora/resolve?q=${encodeURIComponent('ппв 73')}`,
+      as: owner,
+    })
+    expect(resolve.json().item_id).toBe('PPV-073')
+    const search = await call(server.app, {
+      method: 'GET',
+      url: `/api/v1/lora/search?q=${encodeURIComponent('вечеринка')}`,
+      as: owner,
+    })
+    expect(search.json().groups).toEqual([{ type: 'ppv', item_ids: ['PPV-073'], total: 1 }])
+    const index = await call(server.app, { method: 'GET', url: '/api/v1/lora/index', as: owner })
+    expect(index.json().items.map((entry: { id: string }) => entry.id)).toEqual(['PPV-073'])
+    const page = await call(server.app, { method: 'GET', url: '/api/v1/lora/i/PPV-073', as: owner })
+    expect(page.statusCode).toBe(200)
+    expect(
+      page
+        .json()
+        .pages.every((entry: { summary: { word: string } }) => entry.summary.word === 'не видели'),
+    ).toBe(true)
   })
 })

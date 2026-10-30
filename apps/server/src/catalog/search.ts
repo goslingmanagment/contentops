@@ -47,12 +47,42 @@ async function oldNumberHolders(
   return rows.map((row) => ({ uid: row.uid, id: publicIdOf(row.type, row.number) }))
 }
 
+/** A file's old address `SET-069/raw01` (naming §3): the object that owns that file now. */
+async function subHandleOwner(q: Queryable, model: ModelScope, query: string) {
+  const { rows } = await q.execute<{ type: string; number: number }>(sql`
+    SELECT i.type, i.number
+      FROM aliases a
+      JOIN item_memberships im ON im.model_id = a.model_id AND im.asset_id = a.asset_id
+                              AND im.kind = 'owned' AND im.removed_at IS NULL
+      JOIN content_items i ON i.model_id = im.model_id AND i.id = im.item_id
+     WHERE a.model_id = ${model.id}::uuid AND a.kind = 'sub_handle'
+       AND a.value_norm = lower(normalize(${query.trim()}, NFC)) AND i.deleted_at IS NULL
+     LIMIT 1`)
+  const row = rows[0]
+  return row ? publicIdOf(row.type, row.number) : null
+}
+
+const SUB_HANDLE = /^\s*([^/\s]+)\s*\/\s*([a-z]+\d*)\s*$/i
+
 /** `resolve(model, "ппв 73")`: the current object and the objects that had this old number. */
 export async function resolveQuery(
   q: Queryable,
   model: ModelScope,
   query: string,
 ): Promise<ResolveResult> {
+  const sub = SUB_HANDLE.exec(query)
+  const subId = sub ? parseIdQuery(sub[1] ?? '') : null
+  if (sub && subId) {
+    const owner =
+      (await subHandleOwner(q, model, query)) ?? (await resolveQuery(q, model, subId)).item_id
+    return {
+      query,
+      item_id: owner,
+      parsed: owner ? `${query.trim()} → ${owner}` : null,
+      old_number: null,
+      section: null,
+    }
+  }
   const id = parseIdQuery(query)
   if (!id)
     return { query, item_id: null, parsed: null, old_number: null, section: sectionOfQuery(query) }
@@ -101,7 +131,10 @@ export async function searchCatalog(
   const hits = new Map<string, SearchRank>()
   const timeline: TimelineHit[] = []
 
-  if (parsed.id) {
+  if (SUB_HANDLE.test(query) && resolve.item_id) {
+    const owner = entries.find((entry) => entry.id === resolve.item_id)
+    if (owner) hits.set(owner.uid, SEARCH_RANK.id)
+  } else if (parsed.id) {
     const holders = new Set(resolve.old_number?.items ?? [])
     if (resolve.item_id) holders.add(resolve.item_id)
     for (const entry of entries) {

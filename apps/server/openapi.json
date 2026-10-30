@@ -3095,7 +3095,8 @@
           "undo_expired",
           "case_resolved",
           "handoff_not_ready",
-          "number_not_issued"
+          "number_not_issued",
+          "item_in_use"
         ]
       },
       "ExtendRoleInput": {
@@ -12536,6 +12537,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ItemCreated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/i/{id}:restore": {
+      "post": {
+        "operationId": "objects.restore",
+        "tags": [
+          "objects"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemDetail"
                 }
               }
             }

@@ -30,6 +30,8 @@ export const ERROR_CODES = [
   'case_resolved',
   'handoff_not_ready',
   'number_not_issued',
+  /** Type change or removal while plan rows, placements, deliveries or promo point at it. */
+  'item_in_use',
 ] as const
 
 export const ErrorCodeSchema = z.enum(ERROR_CODES)
@@ -59,6 +61,7 @@ export const HTTP_STATUS_BY_CODE: Record<ErrorCode, number> = {
   case_resolved: 422,
   handoff_not_ready: 422,
   number_not_issued: 422,
+  item_in_use: 422,
 }
 
 /** One format for every error. */

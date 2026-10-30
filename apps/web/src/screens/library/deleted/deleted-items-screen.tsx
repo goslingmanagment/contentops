@@ -4,9 +4,12 @@ import { ListRowSkeleton } from '@contentops/ui/components/skeletons'
 import { EmptyState, ErrorLine } from '@contentops/ui/components/state-lines'
 import { Thumb } from '@contentops/ui/components/thumb'
 import { UiLink } from '@contentops/ui/components/ui-link'
+import { useActionToast } from '@/actions/action-toast-context'
+import { useIntentMutation } from '@/actions/use-intent-mutation'
 import { useHref } from '@/app/use-href'
-import { useToday } from '@/data/api-session'
+import { useApi, useToday } from '@/data/api-session'
 import { useDeletedItems } from '@/data/catalog'
+import { queryKeys } from '@/data/query-keys'
 import { itemCoverById } from '@/lib/item-cover'
 import { FieldLayout } from '@/shell/field/field-layout'
 import { useCurrentModel } from '@/shell/model/model-context'
@@ -20,10 +23,29 @@ function stateText(item: DeletedItem, today: LocalDate): string {
     : `Удалён ${day} · ${item.deleted_by}`
 }
 
+/** «Вернуть»: удалённый (не слитый) объект возвращается с тем же номером (SPEC §4.1). */
+function useRestore() {
+  const api = useApi()
+  const toast = useActionToast()
+  const model = useCurrentModel().code
+  return useIntentMutation<DeletedItem, unknown>({
+    failed: 'Не вернулось',
+    run: (item, idempotencyKey) =>
+      api.objects.restore({ params: { model, id: item.item_id }, idempotencyKey }),
+    invalidates: (item) => [
+      queryKeys.deleted(model),
+      queryKeys.catalogIndex(model),
+      queryKeys.item(model, item.item_id),
+    ],
+    onSuccess: (_, item) => toast.show({ message: `${item.item_id} вернулся в библиотеку` }),
+  })
+}
+
 function DeletedRow({ item }: { item: DeletedItem }) {
   const today = useToday()
   const model = useCurrentModel().code
   const href = useHref()
+  const restore = useRestore()
   const linkClass = 'shrink-0 text-primary-ink text-sm hover:underline'
   return (
     <li className="flex h-13 items-center gap-3 rounded-lg px-2">
@@ -48,7 +70,16 @@ function DeletedRow({ item }: { item: DeletedItem }) {
           >
             Открыть {item.merged_into}
           </UiLink>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            className={linkClass}
+            disabled={restore.isPending}
+            onClick={() => restore.start(item)}
+          >
+            Вернуть
+          </button>
+        )}
         <UiLink
           href={href({ to: '/$model/journal', params: { model }, search: { item: item.item_id } })}
           className={linkClass}
@@ -62,7 +93,8 @@ function DeletedRow({ item }: { item: DeletedItem }) {
 
 /**
  * «Удалённые объекты» `/<модель>/library/deleted` (корень › «⋯»): что удалили или слили,
- * кто и когда; у слитого — переход к объекту, куда он влит, у всех — журнал объекта.
+ * кто и когда; у слитого — переход к объекту, куда он влит, у удалённого — «Вернуть», у всех —
+ * журнал объекта.
  */
 export function DeletedItemsScreen() {
   const model = useCurrentModel().code
