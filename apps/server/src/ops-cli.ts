@@ -12,6 +12,7 @@ import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
+import { opsAgent, opsSwitch } from './ops-owner'
 import { smokeSetup } from './smoke/setup'
 
 /**
@@ -48,6 +49,13 @@ import { smokeSetup } from './smoke/setup'
  * contractor and the smoke agent; `--token` prints a new token of the agent once:
  *
  *   docker compose exec -T worker node dist/ops.js smoke-setup [--token]
+ *
+ * What «Агенты и токены» and «Интеграции» do, from the VM shell (`ops-owner.ts`): an agent
+ * (manager or reader) by its name with its models and, with `--token`, a new token printed
+ * once; the switches of an integration by its id:
+ *
+ *   docker compose exec -T worker node dist/ops.js agent <name> --role manager --models lora [--token]
+ *   docker compose exec -T worker node dist/ops.js switch ydisk.lora scan=on
  */
 
 const USAGE = `usage:
@@ -59,7 +67,9 @@ const USAGE = `usage:
   ops.js freeze-export <model> [YYYY-MM-DD]
   ops.js import-report <model> [plan|reconcile|<work id>]   (Markdown, out of git)
   ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)
-  ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)`
+  ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
+  ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
+  ops.js switch <integration> <switch>=on|off ...   (ydisk.lora scan=on, agents enabled=on)`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
@@ -104,6 +114,8 @@ async function main(argv: string[]): Promise<number> {
       model: { type: 'string' },
       'keep-metadata': { type: 'boolean' },
       token: { type: 'boolean' },
+      role: { type: 'string' },
+      models: { type: 'string' },
     },
     allowPositionals: true,
   })
@@ -221,6 +233,32 @@ async function main(argv: string[]): Promise<number> {
         )
       }
       out(result)
+      return 0
+    }
+    if (command === 'agent') {
+      const [name] = positionals
+      if (!name || !values.role || !values.models) throw new Error(USAGE)
+      const result = await opsAgent(db, {
+        name,
+        role: values.role,
+        models: values.models
+          .split(',')
+          .map((code) => code.trim())
+          .filter(Boolean),
+        token: values.token === true,
+      })
+      if (!result.agents_enabled) {
+        process.stderr.write(
+          'agent: «Агенты» are off: the token is refused until `ops.js switch agents enabled=on`\n',
+        )
+      }
+      out(result)
+      return 0
+    }
+    if (command === 'switch') {
+      const [integration, ...pairs] = positionals
+      if (!integration || pairs.length === 0) throw new Error(USAGE)
+      out({ integration, switches: await opsSwitch(db, integration, pairs) })
       return 0
     }
     if (command === 'hub-history') {

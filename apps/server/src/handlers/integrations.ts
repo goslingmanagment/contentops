@@ -5,7 +5,7 @@ import {
   type IntegrationSwitches,
 } from '@contentops/contracts/domain/integrations'
 import { describeIntegration } from '@contentops/contracts/integration-line'
-import { logAction, type Queryable, resumeSwitch } from '@contentops/db'
+import { logAction, type Queryable, resumeSwitch, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instantOrNull, requireActor } from '../commands'
 import { ApiProblem } from '../errors'
@@ -326,6 +326,82 @@ export async function integrationViews(
 
 const WORD = (on: boolean) => (on ? 'включено' : 'выключено')
 
+/**
+ * Sets switches of one integration (DESIGN §4.19) with the journal row «было → стало»: the
+ * owner's «Интеграции» and `ops.js switch` in the VM shell (`ops/README.md`). Turning one on
+ * releases the works it held; «Автосверка» on starts the page's matching (SPEC §7).
+ */
+export async function applySwitches(
+  tx: Tx,
+  by: { models: readonly string[]; actorId: string | null },
+  integrationId: string,
+  switches: Partial<Record<SwitchName, boolean | undefined>>,
+): Promise<Entry> {
+  const entry = (await entries(tx, by.models)).find(
+    (candidate) => candidate.integration.id === integrationId,
+  )
+  if (!entry) throw new ApiProblem('not_found', 'Такой интеграции нет')
+  const targets = targetsOf(entry)
+  const asked = Object.entries(switches).filter(
+    (pair): pair is [SwitchName, boolean] => pair[1] !== undefined,
+  )
+  const missing = asked.filter(([name]) => !targets[name]).map(([name]) => name)
+  if (asked.length === 0 || missing.length > 0) {
+    throw new ApiProblem('invalid_request', 'Здесь нет такого выключателя', {
+      switches: missing,
+    })
+  }
+  const before = await policies(tx)
+  const was: Record<string, string> = {}
+  const now: Record<string, string> = {}
+  for (const [name, value] of asked) {
+    const target = targets[name] as SwitchTarget
+    was[SWITCH_LABEL[name]] = WORD(switchState(before, target).on)
+    await tx.execute(sql`
+      INSERT INTO policy_settings (model_id, account_id, key, value, updated_by)
+      VALUES (${target.modelId}::uuid, ${target.accountId}::uuid, ${target.key},
+              ${JSON.stringify(value)}::jsonb, ${by.actorId}::uuid)
+      ON CONFLICT ON CONSTRAINT policy_settings_scope DO UPDATE
+         SET value = excluded.value, updated_at = now(), updated_by = excluded.updated_by,
+             row_version = policy_settings.row_version + 1`)
+    now[SWITCH_LABEL[name]] = WORD(value)
+    // Works paused by this switch go on where it is on now (schema §9.2).
+    if (value) await resumeSwitch(tx, target.key)
+    // «Автосверка» on for the first time: the history pass of the page and the start of
+    // matching (SPEC §7); a repeat finds the same work.
+    if (value && name === 'auto_match' && target.modelId && target.accountId) {
+      await startMatching(tx, { modelId: target.modelId, accountId: target.accountId })
+    }
+  }
+  await logAction(tx, {
+    modelId: entry.scope.modelId,
+    subjectKind: 'integration',
+    subjectLabel: subjectOf(entry),
+    before: was,
+    after: now,
+  })
+  return entry
+}
+
+/** On or off of every switch of an integration, as «Интеграции» shows them. */
+export async function switchesOf(
+  q: Queryable,
+  models: readonly string[],
+  integrationId: string,
+): Promise<Partial<Record<SwitchName, boolean>>> {
+  const entry = (await entries(q, models)).find(
+    (candidate) => candidate.integration.id === integrationId,
+  )
+  if (!entry) throw new ApiProblem('not_found', 'Такой интеграции нет')
+  const rows = await policies(q)
+  return Object.fromEntries(
+    (Object.entries(targetsOf(entry)) as [SwitchName, SwitchTarget][]).map(([name, target]) => [
+      name,
+      switchState(rows, target).on,
+    ]),
+  )
+}
+
 export function integrationHandlers({
   db,
   command,
@@ -351,49 +427,12 @@ export function integrationHandlers({
 
       updateIntegration: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
-          const entry = (await entries(tx, actor.models)).find(
-            (candidate) => candidate.integration.id === params.integration,
+          const entry = await applySwitches(
+            tx,
+            { models: actor.models, actorId: actor.id },
+            params.integration,
+            body.switches,
           )
-          if (!entry) throw new ApiProblem('not_found', 'Такой интеграции нет')
-          const targets = targetsOf(entry)
-          const asked = Object.entries(body.switches).filter(
-            (pair): pair is [SwitchName, boolean] => pair[1] !== undefined,
-          )
-          const missing = asked.filter(([name]) => !targets[name]).map(([name]) => name)
-          if (asked.length === 0 || missing.length > 0) {
-            throw new ApiProblem('invalid_request', 'Здесь нет такого выключателя', {
-              switches: missing,
-            })
-          }
-          const before = await policies(tx)
-          const was: Record<string, string> = {}
-          const now: Record<string, string> = {}
-          for (const [name, value] of asked) {
-            const target = targets[name] as SwitchTarget
-            was[SWITCH_LABEL[name]] = WORD(switchState(before, target).on)
-            await tx.execute(sql`
-              INSERT INTO policy_settings (model_id, account_id, key, value, updated_by)
-              VALUES (${target.modelId}::uuid, ${target.accountId}::uuid, ${target.key},
-                      ${JSON.stringify(value)}::jsonb, ${actor.id}::uuid)
-              ON CONFLICT ON CONSTRAINT policy_settings_scope DO UPDATE
-                 SET value = excluded.value, updated_at = now(), updated_by = excluded.updated_by,
-                     row_version = policy_settings.row_version + 1`)
-            now[SWITCH_LABEL[name]] = WORD(value)
-            // Works paused by this switch go on where it is on now (schema §9.2).
-            if (value) await resumeSwitch(tx, target.key)
-            // «Автосверка» on for the first time: the history pass of the page and the start of
-            // matching (SPEC §7); a repeat finds the same work.
-            if (value && name === 'auto_match' && target.modelId && target.accountId) {
-              await startMatching(tx, { modelId: target.modelId, accountId: target.accountId })
-            }
-          }
-          await logAction(tx, {
-            modelId: entry.scope.modelId,
-            subjectKind: 'integration',
-            subjectLabel: subjectOf(entry),
-            before: was,
-            after: now,
-          })
           return view(entry, await policies(tx), await contextOf(tx), new Date().toISOString())
         }),
     },
