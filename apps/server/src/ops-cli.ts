@@ -12,7 +12,7 @@ import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
-import { opsAgent, opsSwitch } from './ops-owner'
+import { opsAgent, opsPolicy, opsSwitch } from './ops-owner'
 import { smokeSetup } from './smoke/setup'
 
 /**
@@ -56,6 +56,12 @@ import { smokeSetup } from './smoke/setup'
  *
  *   docker compose exec -T worker node dist/ops.js agent <name> --role manager --models lora [--token]
  *   docker compose exec -T worker node dist/ops.js switch ydisk.lora scan=on
+ *
+ * A value of «Пороги» by its key, and the settings without a screen (`hub_ad_markers` of a page,
+ * `import_batch_scope` of a model); `off` — not set:
+ *
+ *   docker compose exec -T worker node dist/ops.js policy hub_candidate_tolerance 30
+ *   docker compose exec -T worker node dist/ops.js policy hub_ad_markers '{"tags":["#ads"]}' --page lora-1
  */
 
 const USAGE = `usage:
@@ -69,7 +75,8 @@ const USAGE = `usage:
   ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
   ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
-  ops.js switch <integration> <switch>=on|off ...   (ydisk.lora scan=on, agents enabled=on)`
+  ops.js switch <integration> <switch>=on|off ...   (ydisk.lora scan=on, agents enabled=on)
+  ops.js policy <key> <json|off> [--model <m>] [--page <p>] [--type PPV]   (thresholds, hub_ad_markers…)`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
@@ -116,6 +123,8 @@ async function main(argv: string[]): Promise<number> {
       token: { type: 'boolean' },
       role: { type: 'string' },
       models: { type: 'string' },
+      page: { type: 'string' },
+      type: { type: 'string' },
     },
     allowPositionals: true,
   })
@@ -259,6 +268,20 @@ async function main(argv: string[]): Promise<number> {
       const [integration, ...pairs] = positionals
       if (!integration || pairs.length === 0) throw new Error(USAGE)
       out({ integration, switches: await opsSwitch(db, integration, pairs) })
+      return 0
+    }
+    if (command === 'policy') {
+      const [key, value] = positionals
+      if (!key || value === undefined) throw new Error(USAGE)
+      out(
+        await opsPolicy(db, {
+          key,
+          value,
+          model: values.model,
+          page: values.page,
+          type: values.type,
+        }),
+      )
       return 0
     }
     if (command === 'hub-history') {

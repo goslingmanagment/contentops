@@ -164,7 +164,10 @@
   --models lora`, с `--token` — новый токен один раз в stdout (прежние токены агента
   отзываются); выключатели по коду интеграции — `ops.js switch ydisk.lora scan=on`, `ops.js
   switch agents enabled=on`, `ops.js switch hub.lora-1 receive=off`. Токен печатается
-  только в stdout: сразу в файл, не на экран.
+  только в stdout: сразу в файл, не на экран. Пороги по ключам схемы и настройки без экрана
+  (метки рекламы страницы, партия импорта) — `ops.js policy hub_candidate_tolerance 30`,
+  `ops.js policy hub_ad_markers '{"tags":["#ads"],"own_handles":["loravie"]}' --page lora-1`,
+  `ops.js policy import_batch_scope '[…]' --model lora`; `off` — не задано (функция выключена).
 - Без диска E: (или любого из `REQUIRE_HOST_MOUNTS`) `ops/up.sh` поднимает `db`, `web` и
   `proxy`, а воркеры — нет; `/healthz` красный с `volumes`. Проверка в контейнере — файл-метка
   `.contentops-volume` в корне хранилища: её пишет `ops/up.sh` после `mountpoint -q`; без
