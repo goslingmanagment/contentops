@@ -407,6 +407,12 @@ describe('WorkRunner', () => {
   it('saves checkpoints and commits domain writes with the work in the journal', async () => {
     const { modelId } = await newModel()
     const { work: row } = await enqueueWork(db, { modelId, kind: 'fetch', workKey: 'fetch:cp' })
+    // The output of a work holds its blob: the blob is registered first (FK on `blobs`).
+    await pool.query(
+      `INSERT INTO blobs (sha256, byte_size, mime, ext, media_kind, storage_key)
+       VALUES ($1, 1, 'video/mp4', 'mp4', 'video', 'blobs/sha256/07/07/fetch-cp.mp4')`,
+      [Buffer.alloc(32, 7)],
+    )
     runner('worker', {
       fetch: async ({ checkpoint }) => {
         await checkpoint({

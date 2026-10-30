@@ -1,42 +1,173 @@
-import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createTestDatabase, type TestDatabase } from './testing/index.ts'
+import { factory, insert, journalContext, newModel } from './testing/rows.ts'
 import { dbErrorCodes } from './values.ts'
 
 /**
  * Structural rules over pg_catalog (schema §1 p. 1, §9.2, §9.4). They hold for every later
- * migration: a new table must be classified here, a new composite FK needs a row factory.
+ * migration: a new table must be classified here, a new composite FK needs a row factory
+ * (`testing/rows.ts`).
  */
 
-/** Tables without `model_id`: no content of a model in them. */
-const GLOBAL_TABLES = ['api_tokens', 'models', 'principals', 'schema_migrations', 'sessions']
-/** Tables where `model_id` may be empty (system-wide rows); their key is `id`. */
+/** Tables without `model_id`: no content of a model in them (people, bytes, derivatives). */
+const GLOBAL_TABLES = [
+  'api_tokens',
+  'blob_phashes',
+  'blob_probes',
+  'blobs',
+  'master_checks',
+  'models',
+  'pipeline_versions',
+  'principals',
+  'rendition_artifacts',
+  'rendition_generations',
+  'schema_migrations',
+  'sessions',
+  'storage_operations',
+]
+/** Tables where `model_id` may be empty (system-wide rows, shared tags); their key is `id`. */
 const OPTIONAL_MODEL_TABLES = [
   'action_log',
   'idempotency_keys',
   'policy_settings',
+  'tags',
   'work_operations',
 ]
-/** Mutable tables without the journal trigger: their journal is typed events (schema §9.3). */
+/**
+ * Mutable tables without the journal trigger: their journal is typed events (schema §9.3) —
+ * work, people and tokens, and the global technical tables that workers write.
+ */
 const NO_JOURNAL = [
   'api_tokens',
+  'blob_phashes',
+  'blob_probes',
+  'blobs',
   'idempotency_keys',
+  'master_checks',
+  'pipeline_versions',
   'principals',
+  'rendition_artifacts',
+  'rendition_generations',
   'schema_migrations',
   'sessions',
+  'storage_operations',
   'work_operations',
 ]
-/** Append-only tables: `forbid_update_delete()` and no UPDATE/DELETE for the app role. */
-const APPEND_ONLY = ['action_log']
+/** Append-only tables (schema §9.4): `forbid_update_delete()` and no UPDATE/DELETE for the app. */
+const APPEND_ONLY = [
+  'action_log',
+  'asset_manifest_entries',
+  'asset_manifests',
+  'asset_versions',
+  'download_receipt_entries',
+  'download_receipts',
+]
+/** Rows that are updated but never deleted by the app role. */
+const NO_DELETE = ['blobs']
 /** Columns that never change (`forbid_change`). */
 const FIXED_COLUMNS: Record<string, string[]> = {
   accounts: ['model_id', 'id'],
+  aliases: ['model_id', 'id', 'kind', 'value_raw'],
+  annotation_fields: ['model_id', 'id', 'field'],
+  assets: [
+    'model_id',
+    'id',
+    'created_in_item_id',
+    'media_kind',
+    'variant_kind',
+    'variant_no',
+    'uniq_level',
+  ],
+  blobs: ['sha256', 'byte_size', 'ext', 'media_kind', 'storage_key'],
+  chronology_entries: ['model_id', 'id', 'item_id', 'asset_version_id'],
+  content_items: ['model_id', 'id', 'type', 'number'],
   id_counters: ['model_id', 'type'],
+  inbox_draft_candidates: [
+    'model_id',
+    'id',
+    'draft_id',
+    'kind',
+    'order_id',
+    'item_id',
+    'version_id',
+  ],
+  inbox_drafts: [
+    'model_id',
+    'id',
+    'source_revision_id',
+    'web_upload_id',
+    'from_version_id',
+    'origin',
+  ],
+  inbox_groups: ['model_id', 'id', 'source_id', 'group_key'],
+  item_memberships: ['model_id', 'id', 'item_id', 'item_type', 'asset_id', 'variant_no', 'kind'],
+  item_tags: ['model_id', 'item_id', 'tag_id', 'id'],
+  pipeline_versions: [
+    'version',
+    'ffmpeg',
+    'svtav1',
+    'libvips',
+    'sharp',
+    'phash_algo',
+    'master_recipe',
+    'rendition_recipes',
+    'recipe_digests',
+  ],
+  platform_texts: ['model_id', 'id', 'item_id', 'platform', 'account_id', 'locale', 'variant_no'],
   policy_settings: ['model_id', 'account_id', 'item_type', 'key'],
   principal_grants: ['model_id', 'id', 'principal_id'],
   promo_channels: ['model_id', 'id'],
+  provenance: [
+    'model_id',
+    'id',
+    'relation',
+    'child_item_id',
+    'child_version_id',
+    'parent_item_id',
+    'parent_version_id',
+  ],
+  rendition_artifacts: ['id', 'generation_id', 'name', 'output_sha256', 'storage_key'],
+  rendition_generations: [
+    'id',
+    'kind',
+    'recipe_digest',
+    'meta_stripped',
+    'input_kind',
+    'input_sha256',
+  ],
+  review_cases: ['model_id', 'id', 'kind', 'dedup_key'],
+  source_objects: [
+    'model_id',
+    'id',
+    'source_id',
+    'resource_id',
+    'upload_id',
+    'archive_revision_id',
+    'archive_entry_no',
+  ],
+  source_paths: ['model_id', 'id', 'source_object_id', 'path_raw', 'name'],
+  source_revisions: [
+    'model_id',
+    'id',
+    'source_object_id',
+    'sequence_no',
+    'md5',
+    'remote_sha256',
+    'content_hash',
+    'remote_rev',
+    'byte_size',
+    'remote_created_at',
+    'remote_modified_at',
+    'detected_at',
+    'scan_work_id',
+    'previous_id',
+  ],
+  sources: ['model_id', 'id', 'kind'],
+  storage_operations: ['id', 'kind', 'blob_sha256', 'from_key', 'to_key'],
   surfaces: ['model_id', 'id', 'account_id', 'kind'],
+  tags: ['id', 'model_id'],
+  web_uploads: ['model_id', 'id', 'upload_id', 'principal_id', 'size_expected'],
   work_operations: [
     'model_id',
     'kind',
@@ -46,58 +177,25 @@ const FIXED_COLUMNS: Record<string, string[]> = {
     'scope',
     'window_from',
     'window_to',
+    'draft_id',
+    'source_revision_id',
+    'asset_version_id',
+    'manifest_id',
+    'receipt_id',
+    'generation_id',
   ],
 }
-
-type Row = Record<string, unknown>
-type Factory = (client: pg.PoolClient, modelId: string) => Promise<Row>
-
-async function accountRow(_client: pg.PoolClient, modelId: string): Promise<Row> {
-  const code = `acc-${randomUUID().slice(0, 8)}`
-  return { model_id: modelId, code, platform: 'fansly', title: code, handle: code, position: 1 }
+/** Columns written once, NULL → value (`set_once`). */
+const SET_ONCE_COLUMNS: Record<string, string[]> = {
+  rendition_generations: ['master_sha256', 'bound_at'],
+  source_revisions: ['source_sha256', 'verified_at', 'verified_route', 'frozen_by_work_id'],
 }
-
-async function workRow(_client: pg.PoolClient, modelId: string): Promise<Row> {
-  return { model_id: modelId, kind: 'scan', work_key: `scan:${randomUUID()}` }
-}
-
-/** Column values of a valid row of the table in a model; dependencies are inserted. */
-const FACTORIES: Record<string, Factory> = {
-  accounts: accountRow,
-  work_operations: workRow,
-  surfaces: async (client, modelId) => {
-    const account = await insert(client, 'accounts', await accountRow(client, modelId))
-    return { model_id: modelId, account_id: account.id, kind: 'wall' }
-  },
-  id_counters: async (client, modelId) => {
-    const work = await insert(client, 'work_operations', await workRow(client, modelId))
-    return { model_id: modelId, type: 'PPV', next_number: 1, legacy_reserved_work_id: work.id }
-  },
-  policy_settings: async (client, modelId) => {
-    const account = await insert(client, 'accounts', await accountRow(client, modelId))
-    return { model_id: modelId, account_id: account.id, key: 'hub.receive', value: true }
-  },
-}
-
-function factory(table: string): Factory {
-  const make = FACTORIES[table]
-  if (!make) throw new Error(`add a row factory for ${table}`)
-  return make
-}
-
-async function insert(client: pg.PoolClient, table: string, row: Row): Promise<Row> {
-  const columns = Object.keys(row)
-  const values = columns.map((column) => {
-    const value = row[column]
-    return value !== null && typeof value === 'object' ? JSON.stringify(value) : value
-  })
-  const { rows } = await client.query(
-    `INSERT INTO ${table} (${columns.join(', ')})
-     VALUES (${columns.map((_, i) => `$${i + 1}`).join(', ')})
-     RETURNING to_jsonb(${table}.*) AS row`,
-    values,
-  )
-  return rows[0].row
+/**
+ * FKs into a table with shared rows (`model_id IS NULL`) cannot be composite: a trigger
+ * admits a shared row or one of the same model (schema §9.2). FK name → guarding trigger.
+ */
+const SCOPE_TRIGGER_FKS: Record<string, string> = {
+  item_tags_tag_id_fkey: 'item_tags_tag_scope',
 }
 
 interface ForeignKey {
@@ -106,6 +204,7 @@ interface ForeignKey {
   target: string
   sourceColumns: string[]
   targetColumns: string[]
+  deferrable: boolean
 }
 
 let db: TestDatabase
@@ -150,7 +249,8 @@ beforeAll(async () => {
               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum) AS "sourceColumns",
            (SELECT array_agg(a.attname::text ORDER BY k.ord)
               FROM unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
-              JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum) AS "targetColumns"
+              JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum) AS "targetColumns",
+           con.condeferrable AS deferrable
       FROM pg_constraint con
       JOIN pg_class src ON src.oid = con.conrelid
       JOIN pg_class tgt ON tgt.oid = con.confrelid
@@ -166,6 +266,7 @@ function needsModel(fk: ForeignKey): boolean {
   const source = tables.get(fk.source)
   const target = tables.get(fk.target)
   if (!source || !target || fk.target === 'models' || !target.hasModel) return false
+  if (fk.name in SCOPE_TRIGGER_FKS) return false
   return target.modelNotNull || source.modelNotNull
 }
 
@@ -173,6 +274,32 @@ function compositeFks(): ForeignKey[] {
   return foreignKeys.filter(
     (fk) => needsModel(fk) && fk.sourceColumns.length > 1 && fk.sourceColumns.includes('model_id'),
   )
+}
+
+/**
+ * Overriding the columns of one FK can break another FK of the same row that shares a
+ * column (a pinned version and the file of a membership). Its target gets a twin in the
+ * row's model with the same key, so only the FK under test can fail.
+ */
+async function satisfyOverlapping(
+  client: pg.PoolClient,
+  fk: ForeignKey,
+  row: Record<string, unknown>,
+  modelId: string,
+): Promise<void> {
+  const overridden = fk.sourceColumns.filter((column) => column !== 'model_id')
+  for (const other of compositeFks()) {
+    if (other.name === fk.name || other.source !== fk.source) continue
+    if (!other.sourceColumns.some((column) => overridden.includes(column))) continue
+    if (other.sourceColumns.some((column) => row[column] === null || row[column] === undefined)) {
+      continue
+    }
+    const twin = await factory(other.target)(client, modelId)
+    other.sourceColumns.forEach((column, i) => {
+      if (column !== 'model_id') twin[other.targetColumns[i] ?? ''] = row[column]
+    })
+    await insert(client, other.target, twin)
+  }
 }
 
 describe('model isolation in the catalog', () => {
@@ -213,6 +340,20 @@ describe('model isolation in the catalog', () => {
     }
   })
 
+  it('an FK into shared rows is guarded by its scope trigger', async () => {
+    const { rows } = await pool.query<{ name: string }>(
+      'SELECT tgname AS name FROM pg_trigger WHERE NOT tgisinternal AND tgname = ANY ($1)',
+      [Object.values(SCOPE_TRIGGER_FKS)],
+    )
+    expect(rows.map((row) => row.name).sort()).toEqual(Object.values(SCOPE_TRIGGER_FKS).sort())
+    for (const name of Object.keys(SCOPE_TRIGGER_FKS)) {
+      expect(
+        foreignKeys.some((fk) => fk.name === name),
+        `${name} is listed but missing`,
+      ).toBe(true)
+    }
+  })
+
   it('a reference to a row of another model fails with 23503 for every composite FK', async () => {
     const cases = compositeFks()
     expect(cases.length).toBeGreaterThan(0)
@@ -225,20 +366,23 @@ describe('model isolation in the catalog', () => {
         await journalContext(client)
         const [modelA, modelB] = await Promise.all([newModel(client), newModel(client)])
         const foreign = await insert(client, fk.target, await makeTarget(client, modelB))
-        const row = await makeSource(client, modelA)
+        const row = await makeSource(client, modelA, fk.sourceColumns)
         fk.sourceColumns.forEach((column, i) => {
           if (column !== 'model_id') row[column] = foreign[fk.targetColumns[i] ?? '']
         })
+        await satisfyOverlapping(client, fk, row, modelA)
         await client.query('SAVEPOINT probe')
+        // A deferred FK is checked here, not at a commit that never comes.
+        if (fk.deferrable) await client.query(`SET CONSTRAINTS "${fk.name}" IMMEDIATE`)
         const error = await insert(client, fk.source, row).then(
           () => null,
           (e: pg.DatabaseError) => e,
         )
         expect(error?.code, `${fk.name} accepted a row of another model`).toBe('23503')
-        expect(error?.constraint).toBe(fk.name)
+        expect(error?.constraint, `${fk.name}: ${error?.message}`).toBe(fk.name)
         await client.query('ROLLBACK TO SAVEPOINT probe')
         // The same row inside its own model is valid: the factory is not the cause.
-        await insert(client, fk.source, await makeSource(client, modelA))
+        await insert(client, fk.source, await makeSource(client, modelA, fk.sourceColumns))
       } finally {
         await client.query('ROLLBACK')
         client.release()
@@ -267,7 +411,7 @@ describe('journal and guards in the catalog', () => {
     }
   })
 
-  it('lists every guard: append-only tables and fixed columns', async () => {
+  it('lists every guard: append-only tables, fixed and set-once columns', async () => {
     const { rows } = await pool.query<{
       table: string
       fn: string
@@ -279,32 +423,40 @@ describe('journal and guards in the catalog', () => {
         FROM pg_trigger t
         JOIN pg_class c ON c.oid = t.tgrelid
         JOIN pg_proc p ON p.oid = t.tgfoid
-       WHERE p.proname IN ('forbid_update_delete', 'forbid_change') AND NOT t.tgisinternal`)
+       WHERE p.proname IN ('forbid_update_delete', 'forbid_change', 'set_once')
+         AND NOT t.tgisinternal`)
     const appendOnly = rows
       .filter((row) => row.fn === 'forbid_update_delete' && !row.conditional)
       .map((row) => row.table)
     expect(appendOnly.sort()).toEqual([...APPEND_ONLY].sort())
-    const fixed = Object.fromEntries(
-      rows
-        .filter((row) => row.fn === 'forbid_change')
-        .map((row) => [
-          row.table,
-          [...(/forbid_change\((.*)\)$/.exec(row.def)?.[1] ?? '').matchAll(/'([^']+)'/g)].map(
-            (m) => m[1],
-          ),
-        ]),
-    )
-    expect(fixed).toEqual(FIXED_COLUMNS)
+    const columnsOf = (fn: string) =>
+      Object.fromEntries(
+        rows
+          .filter((row) => row.fn === fn)
+          .map((row) => [
+            row.table,
+            [
+              ...(new RegExp(`${fn}\\((.*)\\)$`).exec(row.def)?.[1] ?? '').matchAll(/'([^']+)'/g),
+            ].map((m) => m[1]),
+          ]),
+      )
+    expect(columnsOf('forbid_change')).toEqual(FIXED_COLUMNS)
+    expect(columnsOf('set_once')).toEqual(SET_ONCE_COLUMNS)
   })
 
   it('the app role cannot UPDATE or DELETE append-only tables, nor write the ledger', async () => {
     const { rows } = await pool.query<{ table: string; privilege: string; granted: boolean }>(
       `SELECT t AS table, p AS privilege, has_table_privilege('contentops_app', t, p) AS granted
          FROM unnest($1::text[]) AS t, unnest(ARRAY['INSERT', 'UPDATE', 'DELETE']) AS p`,
-      [[...APPEND_ONLY, 'schema_migrations']],
+      [[...APPEND_ONLY, ...NO_DELETE, 'schema_migrations']],
     )
     for (const row of rows) {
-      const allowed = row.privilege === 'INSERT' && row.table !== 'schema_migrations'
+      const allowed =
+        row.table === 'schema_migrations'
+          ? false
+          : NO_DELETE.includes(row.table)
+            ? row.privilege !== 'DELETE'
+            : row.privilege === 'INSERT'
       expect(row.granted, `${row.privilege} on ${row.table}`).toBe(allowed)
     }
     const { rows: mutable } = await pool.query<{ table: string }>(
@@ -355,18 +507,3 @@ describe('journal and guards in the catalog', () => {
     }
   })
 })
-
-async function journalContext(client: pg.ClientBase) {
-  await client.query(`SELECT set_config('app.actor_type', 'system', true),
-    set_config('app.actor_label', 'test', true), set_config('app.action', 'test', true),
-    set_config('app.request_id', 'test', true)`)
-}
-
-async function newModel(client: pg.ClientBase): Promise<string> {
-  const code = `m${randomUUID().slice(0, 8)}`
-  const { rows } = await client.query(
-    'INSERT INTO models (code, title, title_genitive) VALUES ($1, $1, $1) RETURNING id',
-    [code],
-  )
-  return rows[0].id
-}

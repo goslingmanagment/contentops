@@ -1,12 +1,11 @@
 import { sql } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import pg from 'pg'
-import * as relations from '../drizzle/relations.ts'
 import * as tables from '../drizzle/schema.ts'
 import type { ActorType, LogResult } from './values.ts'
 
-/** The Drizzle mirror (tables and relations), generated from the migrations. */
-export const schema = { ...tables, ...relations }
+/** The Drizzle mirror (tables), generated from the migrations. */
+export const schema = { ...tables }
 export type Schema = typeof schema
 
 export type Db = NodePgDatabase<Schema> & { $client: pg.Pool }
