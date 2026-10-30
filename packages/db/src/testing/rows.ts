@@ -612,6 +612,16 @@ export const FACTORIES: Record<string, Factory> = {
       const confirmed = await insert(client, 'placement_evidence', { ...row, dedup_key: tag() })
       Object.assign(row, { kind: 'retract', strength: null, corrects_id: confirmed.id })
     }
+    if (testing.includes('hub_observation_id')) {
+      const observation = await make(client, 'hub_observations', modelId)
+      Object.assign(row, {
+        source: 'hub',
+        kind: 'observed',
+        strength: 'exact',
+        hub_observation_id: observation.id,
+        dedup_key: `exact:media-${tag()}:${observation.id}`,
+      })
+    }
     return row
   },
 
@@ -707,4 +717,120 @@ export const FACTORIES: Record<string, Factory> = {
     }
     return row
   },
+
+  // 0008_hub
+  /** The first observation of a post; with `previous_id` — its second. */
+  hub_observations: async (client, modelId, testing = []) => {
+    const row: Row = {
+      model_id: modelId,
+      account_id: await idOf(client, 'accounts', modelId),
+      dataset: 'posts',
+      external_key: `post-${tag()}`,
+      sequence_no: 1,
+      semantic_hash: randomBytes(32),
+      payload: { postRef: 'post' },
+      run_id: await idOf(client, 'work_operations', modelId),
+      run_attempt: 1,
+    }
+    if (testing.includes('previous_id')) {
+      const first = await insert(client, 'hub_observations', row)
+      Object.assign(row, { sequence_no: 2, semantic_hash: randomBytes(32), previous_id: first.id })
+    }
+    return row
+  },
+  hub_posts: async (client, modelId) => {
+    const observation = await make(client, 'hub_observations', modelId)
+    return {
+      model_id: modelId,
+      account_id: observation.account_id,
+      post_ref: observation.external_key,
+      current_observation_id: observation.id,
+      published_at: new Date().toISOString(),
+      attachment_count: 1,
+    }
+  },
+  /**
+   * The main file of a post; the testing columns add a match: a version, or a version with its
+   * issued file. That version is its asset's second, so a twin first version of the same asset
+   * (made for the FK of the version when the receipt FK is the one under test) still fits.
+   */
+  hub_post_attachments: async (client, modelId, testing = []) => {
+    const post = await make(client, 'hub_posts', modelId)
+    const row: Row = {
+      model_id: modelId,
+      post_id: post.id,
+      hub_key: `att-${tag()}`,
+      current_observation_id: post.current_observation_id,
+      attachment_index: 0,
+      role: 'main',
+      link_state: 'resolved',
+    }
+    const matched = { match_strength: 'exact', matched_at: new Date().toISOString() }
+    if (testing.includes('receipt_entry_id')) {
+      const asset = await make(client, 'assets', modelId)
+      const version = await insert(client, 'asset_versions', {
+        model_id: modelId,
+        id: asset.current_version_id,
+        asset_id: asset.id,
+        version_no: 2,
+        master_sha256: await newBlob(client),
+      })
+      const entry = await insert(client, 'download_receipt_entries', {
+        ...(await factory('download_receipt_entries')(client, modelId)),
+        asset_id: asset.id,
+        asset_version_id: version.id,
+      })
+      Object.assign(row, matched, {
+        matched_asset_id: asset.id,
+        matched_version_id: version.id,
+        receipt_entry_id: entry.id,
+      })
+    } else if (testing.includes('matched_version_id') || testing.includes('matched_asset_id')) {
+      const version = await make(client, 'asset_versions', modelId)
+      Object.assign(row, matched, {
+        matched_asset_id: version.asset_id,
+        matched_version_id: version.id,
+      })
+    }
+    return row
+  },
+  hub_raw_media: async (client, modelId) => {
+    const observation = await make(client, 'hub_observations', modelId)
+    return {
+      model_id: modelId,
+      account_id: observation.account_id,
+      media_ref: `media-${tag()}`,
+      current_observation_id: observation.id,
+      filename: 'SET-001_raw01.jpg',
+    }
+  },
+  hub_vault_albums: async (client, modelId) => ({
+    model_id: modelId,
+    account_id: await idOf(client, 'accounts', modelId),
+    album_ref: `album-${tag()}`,
+    title: 'PPV',
+  }),
+  hub_vault_media: async (client, modelId) => {
+    const album = await make(client, 'hub_vault_albums', modelId)
+    const observation = await insert(client, 'hub_observations', {
+      ...(await factory('hub_observations')(client, modelId)),
+      account_id: album.account_id,
+      dataset: 'vault_media',
+    })
+    return {
+      model_id: modelId,
+      account_id: album.account_id,
+      album_id: album.id,
+      member_ref: `member-${tag()}`,
+      current_observation_id: observation.id,
+    }
+  },
+  hub_sync_state: async (client, modelId, testing = []) => ({
+    model_id: modelId,
+    account_id: await idOf(client, 'accounts', modelId),
+    dataset: 'posts',
+    ...(testing.includes('last_work_id')
+      ? { last_work_id: await idOf(client, 'work_operations', modelId) }
+      : {}),
+  }),
 }

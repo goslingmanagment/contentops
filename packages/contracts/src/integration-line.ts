@@ -6,7 +6,14 @@ import type {
   IntegrationState,
 } from './domain/integrations'
 import { INTEGRATION_NAME } from './domain/integrations'
-import { formatAgo, formatClock, formatNumber, formatSpan, minutesBetween } from './format'
+import {
+  formatAgo,
+  formatClock,
+  formatNumber,
+  formatSpan,
+  formatStamp,
+  minutesBetween,
+} from './format'
 
 const ICON: Record<IntegrationState, IntegrationIcon> = {
   working: 'dot',
@@ -40,6 +47,12 @@ function scopeSuffix(context: IntegrationLineContext): string {
 
 function workingText(integration: Integration, context: IntegrationLineContext): string {
   const name = INTEGRATION_NAME[integration.kind]
+  // Hub is told by the time of its own data, not of the poll (SPEC §7): «Hub · посты на 18:32».
+  if (integration.kind === 'hub') {
+    return integration.last_ok_at
+      ? `${name} · посты на ${formatStamp(integration.last_ok_at, context.now)}`
+      : `${name} · работает`
+  }
   return integration.last_ok_at
     ? `${name} · ${formatAgo(integration.last_ok_at, context.now)}`
     : `${name} · работает`
@@ -67,6 +80,11 @@ function downText(integration: Integration, context: IntegrationLineContext): st
   const name = INTEGRATION_NAME[integration.kind]
   if (integration.down_reason === 'format_changed') {
     return `${name} изменил формат данных — опрос остановлен до обновления`
+  }
+  if (integration.down_reason === 'stale') {
+    const page = context.accountLabel ? ` ${context.accountLabel}` : ''
+    const since = integration.since ? ` с ${formatStamp(integration.since, context.now)}` : ''
+    return `${name} не обновлял посты${page}${since}`
   }
   if (integration.down_reason === 'token_rejected') {
     const since = integration.since ? ` с ${formatClock(integration.since)}` : ''

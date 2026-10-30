@@ -140,6 +140,13 @@ export function formatClock(instant: Instant): string {
   return mskTime(instant)
 }
 
+/** «18:32» today, «21.09 18:32» another day: data «на» a moment (DESIGN §3.11). */
+export function formatStamp(instant: Instant, now: Instant): string {
+  const date = mskDate(instant)
+  const today = mskDate(now)
+  return date === today ? mskTime(instant) : `${formatDate(date, today)} ${mskTime(instant)}`
+}
+
 /** «сегодня 11:02», «вчера 22:10», «20.09 18:00», «20.09.2025 18:00». */
 export function formatWhen(instant: Instant, now: Instant): string {
   const date = mskDate(instant)

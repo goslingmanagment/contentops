@@ -20,7 +20,7 @@ function hub(
     retry_at: null,
     down_reason: null,
     catch_up: null,
-    switches: { receive: true, auto_match: true },
+    switches: { receive: true, auto_match: true, publish: false },
     ...patch,
   }
 }

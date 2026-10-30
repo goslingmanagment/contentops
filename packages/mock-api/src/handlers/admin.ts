@@ -45,6 +45,7 @@ const MAIN_SWITCH: Record<Integration['kind'], SwitchKey | null> = {
 const SWITCH_LABEL: Record<SwitchKey, string> = {
   receive: 'Получать данные Hub',
   auto_match: 'Автосверка Hub',
+  publish: 'Публикация через Hub',
   scan: 'Скан Я.Диска',
   enabled: 'Агенты',
 }
@@ -53,6 +54,7 @@ const SWITCH_LABEL: Record<SwitchKey, string> = {
 const SWITCH_OBJECT: Record<SwitchKey, string> = {
   receive: 'получение данных Hub',
   auto_match: 'автосверку Hub',
+  publish: 'публикацию через Hub',
   scan: 'скан Я.Диска',
   enabled: 'агентов',
 }
@@ -61,7 +63,7 @@ function switchWord(value: boolean | undefined): string {
   return value === false ? 'выключено' : 'включено'
 }
 
-const SWITCH_KEYS: readonly SwitchKey[] = ['receive', 'auto_match', 'scan', 'enabled']
+const SWITCH_KEYS: readonly SwitchKey[] = ['receive', 'auto_match', 'publish', 'scan', 'enabled']
 
 function switchChanges(before: IntegrationSwitches, after: IntegrationSwitches) {
   return SWITCH_KEYS.flatMap((key): [SwitchKey, boolean][] => {

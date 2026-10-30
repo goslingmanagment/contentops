@@ -43,6 +43,12 @@ const NO_JOURNAL = [
   'blob_phashes',
   'blob_probes',
   'blobs',
+  // Current Hub rows: their journal is the observation log (schema §9.3).
+  'hub_post_attachments',
+  'hub_posts',
+  'hub_raw_media',
+  'hub_vault_albums',
+  'hub_vault_media',
   'idempotency_keys',
   'master_checks',
   'pipeline_versions',
@@ -63,6 +69,7 @@ const APPEND_ONLY = [
   'custom_order_deliveries',
   'download_receipt_entries',
   'download_receipts',
+  'hub_observations',
   'placement_evidence',
 ]
 /** Rows that are updated but never deleted by the app role. */
@@ -88,6 +95,12 @@ const FIXED_COLUMNS: Record<string, string[]> = {
   custom_order_messages: ['model_id', 'id', 'order_id'],
   custom_order_revisions: ['model_id', 'id', 'order_id'],
   custom_orders: ['model_id', 'id'],
+  hub_post_attachments: ['model_id', 'id', 'post_id', 'hub_key'],
+  hub_posts: ['model_id', 'id', 'account_id', 'post_ref'],
+  hub_raw_media: ['model_id', 'id', 'account_id', 'media_ref'],
+  hub_sync_state: ['model_id', 'id', 'account_id', 'dataset', 'scope'],
+  hub_vault_albums: ['model_id', 'id', 'account_id', 'album_ref'],
+  hub_vault_media: ['model_id', 'id', 'account_id', 'album_id', 'member_ref'],
   id_counters: ['model_id', 'type'],
   inbox_draft_candidates: [
     'model_id',

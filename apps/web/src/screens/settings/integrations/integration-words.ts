@@ -22,15 +22,22 @@ export const LINE_STATE: Record<IntegrationState, LineState> = {
 export function integrationDetail(integration: IntegrationView, now: Instant): string {
   switch (integration.state) {
     case 'working':
+      // Hub говорит временем своих данных, а не опроса: «посты на 18:32» (§3.11).
+      if (integration.kind === 'hub') {
+        return withoutName(integration)
+      }
       return integration.last_ok_at
         ? `работает · ${formatAgo(integration.last_ok_at, now)}`
         : 'работает'
     case 'unset':
       return 'не настроено'
-    default: {
-      const prefix = `${INTEGRATION_NAME[integration.kind]} · `
-      const text = integration.line.text
-      return text.startsWith(prefix) ? text.slice(prefix.length) : text
-    }
+    default:
+      return withoutName(integration)
   }
+}
+
+function withoutName(integration: IntegrationView): string {
+  const prefix = `${INTEGRATION_NAME[integration.kind]} · `
+  const text = integration.line.text
+  return text.startsWith(prefix) ? text.slice(prefix.length) : text
 }

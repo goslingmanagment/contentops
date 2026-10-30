@@ -108,9 +108,10 @@ export const globalWorkKinds = ['verify_blobs', 'backup'] as const satisfies rea
  * Concurrency slot of each kind inside its role. Limits come from the environment:
  * `fetch` — `FETCH_JOBS`, `encode` — `ENCODE_JOBS`, `copy` — `COPY_JOBS` (what the
  * manager waits for, next to the encoders), `image` — `IMAGE_JOBS`; `general` — the
- * light kinds of `worker`.
+ * light kinds of `worker`; `hub` — the calls to Agency Hub, one at a time: a slow or absent
+ * Hub never holds intake and exports (SPEC §8, PLAN 5 «недоступность одной внешней системы»).
  */
-export const workSlots = ['general', 'fetch', 'encode', 'copy', 'image'] as const
+export const workSlots = ['general', 'fetch', 'encode', 'copy', 'image', 'hub'] as const
 export type WorkSlot = (typeof workSlots)[number]
 
 export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
@@ -122,9 +123,9 @@ export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
   register: 'general',
   propose: 'general',
   export: 'general',
-  hub_sync: 'general',
-  hub_history: 'general',
-  hub_publish: 'general',
+  hub_sync: 'hub',
+  hub_history: 'hub',
+  hub_publish: 'hub',
   annotate: 'general',
   verify_blobs: 'general',
   backup: 'general',
@@ -718,6 +719,48 @@ export type PromoDeliveryState = (typeof promoDeliveryStates)[number]
 /** A past pack recorded by import is `import`: sent without date and author (SPEC §6.3). */
 export const promoDeliveryOrigins = ['product', 'import'] as const
 export type PromoDeliveryOrigin = (typeof promoDeliveryOrigins)[number]
+
+// ---------------------------------------------------------------------------
+// Hub mirror (schema §3.6, §9.6; SPEC §7, §8.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Streams of the hourly Hub poll of a page (`work_operations.dataset` of `hub_sync`,
+ * `hub_sync_state.dataset`): `posts` reads posts with their attachments, `capture_coverage`
+ * and `sync_streams`; `creator_stats` — views and likes per file per day (Fansly).
+ */
+export const hubSyncDatasets = ['posts', 'raw_media', 'vault_media', 'creator_stats'] as const
+export type HubSyncDataset = (typeof hubSyncDatasets)[number]
+
+/** Hub datasets whose changes go into the observation log. */
+export const hubObservedDatasets = [
+  'posts',
+  'post_attachments',
+  'raw_media',
+  'vault_media',
+  'creator_stats_media_daily',
+  'creator_stats_media_likes',
+] as const
+export type HubObservedDataset = (typeof hubObservedDatasets)[number]
+
+/** A post's attachment: the file itself, the preview of an offer or of a bundle. */
+export const hubAttachmentRoles = ['main', 'offer_preview', 'bundle_preview'] as const
+export type HubAttachmentRole = (typeof hubAttachmentRoles)[number]
+
+/**
+ * Link state of an attachment, Hub's seven values of 29.10.2026; anything but `resolved` gives
+ * `gaps_present`. A poll is `media_ref_missing`, a tip goal `non_media_attachment`.
+ */
+export const hubLinkStates = [
+  'resolved',
+  'attachment_ref_missing',
+  'media_ref_missing',
+  'bundle_members_missing',
+  'preview_unresolved',
+  'file_metadata_missing',
+  'non_media_attachment',
+] as const
+export type HubLinkState = (typeof hubLinkStates)[number]
 
 /** Codes of `RAISE` in the migration functions. */
 export const dbErrorCodes = {

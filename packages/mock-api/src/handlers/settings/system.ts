@@ -35,7 +35,7 @@ function connectHub(state: MockState, integration: Integration, hubPage: string)
       candidate.code === account.code ? { ...candidate, hub_page: hubPage } : candidate,
     ),
   }
-  integration.switches = { receive: true, auto_match: true }
+  integration.switches = { receive: true, auto_match: true, publish: false }
   return `Hub для ${account.label}`
 }
 

@@ -1469,6 +1469,190 @@ CREATE TABLE public.download_receipts (
 
 ALTER TABLE public.download_receipts OWNER TO contentops_migrate;
 
+CREATE TABLE public.hub_observations (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid NOT NULL,
+    dataset text NOT NULL,
+    external_key text NOT NULL,
+    sequence_no integer NOT NULL,
+    row_updated_at timestamp with time zone,
+    semantic_hash bytea NOT NULL,
+    payload jsonb NOT NULL,
+    observed_at timestamp with time zone DEFAULT now() NOT NULL,
+    run_id uuid NOT NULL,
+    run_attempt integer NOT NULL,
+    previous_id uuid,
+    CONSTRAINT hub_observations_dataset_check CHECK ((dataset = ANY (ARRAY['posts'::text, 'post_attachments'::text, 'raw_media'::text, 'vault_media'::text, 'creator_stats_media_daily'::text, 'creator_stats_media_likes'::text]))),
+    CONSTRAINT hub_observations_external_key_filled CHECK ((external_key <> ''::text)),
+    CONSTRAINT hub_observations_not_self CHECK ((previous_id <> id)),
+    CONSTRAINT hub_observations_payload_object CHECK ((jsonb_typeof(payload) = 'object'::text)),
+    CONSTRAINT hub_observations_previous CHECK (((sequence_no = 1) = (previous_id IS NULL))),
+    CONSTRAINT hub_observations_run_attempt_check CHECK ((run_attempt >= 1)),
+    CONSTRAINT hub_observations_semantic_hash_sha256 CHECK ((octet_length(semantic_hash) = 32)),
+    CONSTRAINT hub_observations_sequence_no_check CHECK ((sequence_no >= 1))
+);
+
+ALTER TABLE public.hub_observations OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_post_attachments (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    post_id uuid NOT NULL,
+    hub_key text NOT NULL,
+    current_observation_id uuid NOT NULL,
+    attachment_index integer,
+    member_index integer,
+    "position" integer,
+    role text NOT NULL,
+    content_type integer,
+    content_ref text,
+    bundle_ref text,
+    media_offer_ref text,
+    preview_ref text,
+    media_ref text,
+    link_state text NOT NULL,
+    filename text,
+    mime text,
+    duration_ms integer,
+    orig_width integer,
+    orig_height integer,
+    matched_asset_id uuid,
+    matched_version_id uuid,
+    receipt_entry_id uuid,
+    match_strength text DEFAULT 'none'::text NOT NULL,
+    matched_at timestamp with time zone,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT hub_post_attachments_link_state_check CHECK ((link_state = ANY (ARRAY['resolved'::text, 'attachment_ref_missing'::text, 'media_ref_missing'::text, 'bundle_members_missing'::text, 'preview_unresolved'::text, 'file_metadata_missing'::text, 'non_media_attachment'::text]))),
+    CONSTRAINT hub_post_attachments_match_strength_check CHECK ((match_strength = ANY (ARRAY['none'::text, 'candidate'::text, 'exact'::text]))),
+    CONSTRAINT hub_post_attachments_matched CHECK ((((match_strength = 'none'::text) = (matched_version_id IS NULL)) AND ((matched_at IS NULL) = (matched_version_id IS NULL)))),
+    CONSTRAINT hub_post_attachments_matched_version CHECK (((matched_asset_id IS NULL) = (matched_version_id IS NULL))),
+    CONSTRAINT hub_post_attachments_receipt_version CHECK (((receipt_entry_id IS NULL) OR (matched_version_id IS NOT NULL))),
+    CONSTRAINT hub_post_attachments_role_check CHECK ((role = ANY (ARRAY['main'::text, 'offer_preview'::text, 'bundle_preview'::text])))
+);
+
+ALTER TABLE public.hub_post_attachments OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_posts (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid NOT NULL,
+    post_ref text NOT NULL,
+    current_observation_id uuid NOT NULL,
+    published_at timestamp with time zone,
+    caption text,
+    attachment_count integer,
+    fyp_flags integer,
+    wall_refs jsonb DEFAULT '[]'::jsonb NOT NULL,
+    first_observed_at timestamp with time zone,
+    last_observed_at timestamp with time zone,
+    row_updated_at timestamp with time zone,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT hub_posts_wall_refs_array CHECK ((jsonb_typeof(wall_refs) = 'array'::text))
+);
+
+ALTER TABLE public.hub_posts OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_raw_media (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid NOT NULL,
+    media_ref text NOT NULL,
+    current_observation_id uuid NOT NULL,
+    filename text,
+    filename_norm text GENERATED ALWAYS AS (lower(regexp_replace(filename, '\.[^./]*$'::text, ''::text))) STORED,
+    mime text,
+    media_type integer,
+    duration_ms integer,
+    out_width integer,
+    out_height integer,
+    orig_width integer,
+    orig_height integer,
+    fps_milli integer,
+    created_at_platform timestamp with time zone,
+    origin text,
+    first_observed_at timestamp with time zone,
+    row_updated_at timestamp with time zone,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.hub_raw_media OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_sync_state (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid NOT NULL,
+    dataset text NOT NULL,
+    scope text DEFAULT 'page'::text NOT NULL,
+    watermark_at timestamp with time zone,
+    last_success_at timestamp with time zone,
+    last_daily_at timestamp with time zone,
+    next_full_at timestamp with time zone,
+    rebuilt_at timestamp with time zone,
+    hub_succeeded_at timestamp with time zone,
+    consecutive_failures integer DEFAULT 0 NOT NULL,
+    available boolean DEFAULT true NOT NULL,
+    unavailable_reason text,
+    last_error text,
+    last_work_id uuid,
+    window_from timestamp with time zone,
+    window_to timestamp with time zone,
+    expected_count integer,
+    observed_count integer,
+    stop_reason text,
+    blockers text[],
+    proven_complete_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT hub_sync_state_available CHECK ((available OR (unavailable_reason IS NOT NULL))),
+    CONSTRAINT hub_sync_state_consecutive_failures_check CHECK ((consecutive_failures >= 0)),
+    CONSTRAINT hub_sync_state_dataset_check CHECK ((dataset = ANY (ARRAY['posts'::text, 'raw_media'::text, 'vault_media'::text, 'creator_stats'::text])))
+);
+
+ALTER TABLE public.hub_sync_state OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_vault_albums (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid NOT NULL,
+    album_ref text NOT NULL,
+    title text,
+    last_full_walk_at timestamp with time zone,
+    full_walk_ref text,
+    member_count integer,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.hub_vault_albums OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_vault_media (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid NOT NULL,
+    album_id uuid NOT NULL,
+    member_ref text NOT NULL,
+    current_observation_id uuid NOT NULL,
+    media_ref text,
+    media_offer_ref text,
+    custom_filename text,
+    filename text,
+    mime text,
+    media_type integer,
+    duration_ms integer,
+    orig_width integer,
+    orig_height integer,
+    created_at_platform timestamp with time zone,
+    membership_at timestamp with time zone,
+    missing_since timestamp with time zone,
+    first_observed_at timestamp with time zone,
+    last_observed_at timestamp with time zone,
+    row_updated_at timestamp with time zone,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.hub_vault_media OWNER TO contentops_migrate;
+
 CREATE TABLE public.id_counters (
     model_id uuid NOT NULL,
     type text NOT NULL,
@@ -2266,6 +2450,54 @@ ALTER TABLE ONLY public.download_receipt_entries
 ALTER TABLE ONLY public.download_receipts
     ADD CONSTRAINT download_receipts_pkey PRIMARY KEY (model_id, id);
 
+ALTER TABLE ONLY public.hub_observations
+    ADD CONSTRAINT hub_observations_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.hub_observations
+    ADD CONSTRAINT hub_observations_sequence UNIQUE (model_id, account_id, dataset, external_key, sequence_no);
+
+ALTER TABLE ONLY public.hub_post_attachments
+    ADD CONSTRAINT hub_post_attachments_key UNIQUE (model_id, post_id, hub_key);
+
+ALTER TABLE ONLY public.hub_post_attachments
+    ADD CONSTRAINT hub_post_attachments_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.hub_post_attachments
+    ADD CONSTRAINT hub_post_attachments_slot UNIQUE NULLS NOT DISTINCT (model_id, post_id, attachment_index, member_index, role);
+
+ALTER TABLE ONLY public.hub_posts
+    ADD CONSTRAINT hub_posts_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.hub_posts
+    ADD CONSTRAINT hub_posts_ref UNIQUE (model_id, account_id, post_ref);
+
+ALTER TABLE ONLY public.hub_raw_media
+    ADD CONSTRAINT hub_raw_media_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.hub_raw_media
+    ADD CONSTRAINT hub_raw_media_ref UNIQUE (model_id, account_id, media_ref);
+
+ALTER TABLE ONLY public.hub_sync_state
+    ADD CONSTRAINT hub_sync_state_model_id_id_key UNIQUE (model_id, id);
+
+ALTER TABLE ONLY public.hub_sync_state
+    ADD CONSTRAINT hub_sync_state_pkey PRIMARY KEY (model_id, account_id, dataset, scope);
+
+ALTER TABLE ONLY public.hub_vault_albums
+    ADD CONSTRAINT hub_vault_albums_model_id_account_id_id_key UNIQUE (model_id, account_id, id);
+
+ALTER TABLE ONLY public.hub_vault_albums
+    ADD CONSTRAINT hub_vault_albums_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.hub_vault_albums
+    ADD CONSTRAINT hub_vault_albums_ref UNIQUE (model_id, account_id, album_ref);
+
+ALTER TABLE ONLY public.hub_vault_media
+    ADD CONSTRAINT hub_vault_media_member UNIQUE (model_id, account_id, album_id, member_ref);
+
+ALTER TABLE ONLY public.hub_vault_media
+    ADD CONSTRAINT hub_vault_media_pkey PRIMARY KEY (model_id, id);
+
 ALTER TABLE ONLY public.id_counters
     ADD CONSTRAINT id_counters_pkey PRIMARY KEY (model_id, type);
 
@@ -2567,6 +2799,22 @@ CREATE INDEX download_receipts_issued ON public.download_receipts USING btree (m
 
 CREATE INDEX download_receipts_plan_row ON public.download_receipts USING btree (model_id, plan_row_id) WHERE (plan_row_id IS NOT NULL);
 
+CREATE INDEX hub_post_attachments_media ON public.hub_post_attachments USING btree (model_id, media_ref);
+
+CREATE INDEX hub_post_attachments_offer ON public.hub_post_attachments USING btree (model_id, media_offer_ref);
+
+CREATE INDEX hub_posts_files ON public.hub_posts USING btree (account_id, attachment_count, published_at);
+
+CREATE INDEX hub_posts_published ON public.hub_posts USING btree (account_id, published_at DESC);
+
+CREATE INDEX hub_raw_media_name ON public.hub_raw_media USING btree (model_id, filename_norm);
+
+CREATE INDEX hub_raw_media_shape ON public.hub_raw_media USING btree (account_id, duration_ms, orig_width, orig_height);
+
+CREATE INDEX hub_vault_albums_title ON public.hub_vault_albums USING btree (model_id, lower(title));
+
+CREATE INDEX hub_vault_media_media ON public.hub_vault_media USING btree (model_id, media_ref);
+
 CREATE UNIQUE INDEX inbox_draft_candidates_chosen ON public.inbox_draft_candidates USING btree (model_id, draft_id, kind) WHERE chosen;
 
 CREATE INDEX inbox_drafts_blocked ON public.inbox_drafts USING btree (model_id, blocked_reason) WHERE (blocked_reason IS NOT NULL);
@@ -2758,6 +3006,22 @@ CREATE CONSTRAINT TRIGGER download_receipt_entries_sealed AFTER INSERT ON public
 CREATE TRIGGER download_receipts_append_only BEFORE DELETE OR UPDATE ON public.download_receipts FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
 CREATE CONSTRAINT TRIGGER download_receipts_sealed AFTER INSERT ON public.download_receipts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_sealed_count('download_receipts', 'download_receipt_entries', 'receipt_id');
+
+CREATE TRIGGER hub_observations_append_only BEFORE DELETE OR UPDATE ON public.hub_observations FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE TRIGGER hub_post_attachments_fixed BEFORE UPDATE ON public.hub_post_attachments FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'post_id', 'hub_key');
+
+CREATE TRIGGER hub_posts_fixed BEFORE UPDATE ON public.hub_posts FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'account_id', 'post_ref');
+
+CREATE TRIGGER hub_raw_media_fixed BEFORE UPDATE ON public.hub_raw_media FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'account_id', 'media_ref');
+
+CREATE TRIGGER hub_sync_state_fixed BEFORE UPDATE ON public.hub_sync_state FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'account_id', 'dataset', 'scope');
+
+CREATE TRIGGER hub_sync_state_journal AFTER INSERT OR DELETE OR UPDATE ON public.hub_sync_state FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER hub_vault_albums_fixed BEFORE UPDATE ON public.hub_vault_albums FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'account_id', 'album_ref');
+
+CREATE TRIGGER hub_vault_media_fixed BEFORE UPDATE ON public.hub_vault_media FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'account_id', 'album_id', 'member_ref');
 
 CREATE TRIGGER id_counters_fixed BEFORE UPDATE ON public.id_counters FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'type');
 
@@ -3115,6 +3379,54 @@ ALTER TABLE ONLY public.download_receipts
 ALTER TABLE ONLY public.download_receipts
     ADD CONSTRAINT download_receipts_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.hub_observations
+    ADD CONSTRAINT hub_observations_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_observations
+    ADD CONSTRAINT hub_observations_model_id_previous_id_fkey FOREIGN KEY (model_id, previous_id) REFERENCES public.hub_observations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_observations
+    ADD CONSTRAINT hub_observations_model_id_run_id_fkey FOREIGN KEY (model_id, run_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_post_attachments
+    ADD CONSTRAINT hub_post_attachments_model_id_current_observation_id_fkey FOREIGN KEY (model_id, current_observation_id) REFERENCES public.hub_observations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_post_attachments
+    ADD CONSTRAINT hub_post_attachments_model_id_matched_asset_id_matched_ver_fkey FOREIGN KEY (model_id, matched_asset_id, matched_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_post_attachments
+    ADD CONSTRAINT hub_post_attachments_model_id_matched_version_id_receipt_e_fkey FOREIGN KEY (model_id, matched_version_id, receipt_entry_id) REFERENCES public.download_receipt_entries(model_id, asset_version_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_post_attachments
+    ADD CONSTRAINT hub_post_attachments_model_id_post_id_fkey FOREIGN KEY (model_id, post_id) REFERENCES public.hub_posts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_posts
+    ADD CONSTRAINT hub_posts_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_posts
+    ADD CONSTRAINT hub_posts_model_id_current_observation_id_fkey FOREIGN KEY (model_id, current_observation_id) REFERENCES public.hub_observations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_raw_media
+    ADD CONSTRAINT hub_raw_media_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_raw_media
+    ADD CONSTRAINT hub_raw_media_model_id_current_observation_id_fkey FOREIGN KEY (model_id, current_observation_id) REFERENCES public.hub_observations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_sync_state
+    ADD CONSTRAINT hub_sync_state_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_sync_state
+    ADD CONSTRAINT hub_sync_state_model_id_last_work_id_fkey FOREIGN KEY (model_id, last_work_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_vault_albums
+    ADD CONSTRAINT hub_vault_albums_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_vault_media
+    ADD CONSTRAINT hub_vault_media_model_id_account_id_album_id_fkey FOREIGN KEY (model_id, account_id, album_id) REFERENCES public.hub_vault_albums(model_id, account_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_vault_media
+    ADD CONSTRAINT hub_vault_media_model_id_current_observation_id_fkey FOREIGN KEY (model_id, current_observation_id) REFERENCES public.hub_observations(model_id, id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.id_counters
     ADD CONSTRAINT id_counters_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
 
@@ -3273,6 +3585,9 @@ ALTER TABLE ONLY public.placement_assets
 
 ALTER TABLE ONLY public.placement_assets
     ADD CONSTRAINT placement_assets_model_id_receipt_entry_id_fkey FOREIGN KEY (model_id, receipt_entry_id) REFERENCES public.download_receipt_entries(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.placement_evidence
+    ADD CONSTRAINT placement_evidence_model_id_hub_observation_id_fkey FOREIGN KEY (model_id, hub_observation_id) REFERENCES public.hub_observations(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.placement_evidence
     ADD CONSTRAINT placement_evidence_model_id_legacy_claim_id_fkey FOREIGN KEY (model_id, legacy_claim_id) REFERENCES public.legacy_claims(model_id, id) ON DELETE RESTRICT;
@@ -3600,6 +3915,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.custom_order_revisions TO cont
 GRANT SELECT,INSERT ON TABLE public.download_receipt_entries TO contentops_app;
 
 GRANT SELECT,INSERT ON TABLE public.download_receipts TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.hub_observations TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_post_attachments TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_posts TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_raw_media TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_sync_state TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_vault_albums TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_vault_media TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.id_counters TO contentops_app;
 

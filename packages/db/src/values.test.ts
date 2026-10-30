@@ -120,6 +120,12 @@ const LISTS: Record<string, readonly string[]> = {
   promo_deliveries_format_check: v.contractorFormats,
   promo_deliveries_state_check: v.promoDeliveryStates,
   promo_deliveries_origin_check: v.promoDeliveryOrigins,
+  // 0008_hub
+  hub_observations_dataset_check: v.hubObservedDatasets,
+  hub_post_attachments_role_check: v.hubAttachmentRoles,
+  hub_post_attachments_link_state_check: v.hubLinkStates,
+  hub_post_attachments_match_strength_check: v.matchStrengths,
+  hub_sync_state_dataset_check: v.hubSyncDatasets,
 }
 
 let pool: pg.Pool

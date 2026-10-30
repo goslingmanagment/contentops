@@ -279,6 +279,12 @@ export class FakeHub extends FakeHttpServer {
     }
   }
 
+  /** Hub stops giving these rows (an attachment taken off a post, a file gone). */
+  remove(dataset: HubDataset, page: string, keys: readonly string[]): void {
+    const table = this.#table(dataset, page)
+    for (const key of keys) table.delete(key)
+  }
+
   rows(dataset: HubDataset, page: string): FakeRow[] {
     return [...this.#table(dataset, page).values()]
   }

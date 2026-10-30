@@ -10,6 +10,7 @@ import { sql } from 'drizzle-orm'
 import { instantOrNull, requireActor } from '../commands'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { type HubPageState, hubPageStates } from '../hub/views'
 import { cloudSources, hasCredentials, type SourceRow } from '../intake/source-client'
 import type { Services } from '../services'
 import { modelViews } from './models'
@@ -19,8 +20,11 @@ import { withFieldErrors } from './shared'
  * «Интеграции» (DESIGN §4.19, SPEC §8): each switch is a `policy_settings` row; no row means
  * off, so a fresh install has everything off. A missing secret in the environment is «не
  * настроено» whatever the switch says. «Временно недоступно» comes from the workers that
- * talk to the source; until they run nothing is down. Ids are `hub.lora-1`, `ydisk.lora`:
- * a `:` would break `…/{integration}:connect` (Fastify decodes `%3A` before matching).
+ * talk to the source; until they run nothing is down. Hub has three switches per page —
+ * «Получать данные», «Автосверка», «Публикация» — and is told by its own freshness: «Hub ·
+ * посты на 18:32», older than a day — «не обновлял посты с …» (SPEC §7, §8). Ids are
+ * `hub.lora-1`, `ydisk.lora`: a `:` would break `…/{integration}:connect` (Fastify decodes
+ * `%3A` before matching).
  */
 
 type SwitchName = keyof IntegrationSwitches
@@ -42,6 +46,7 @@ interface PolicyRow extends Record<string, unknown> {
 const SWITCH_LABEL: Record<SwitchName, string> = {
   receive: 'Получать данные',
   auto_match: 'Автосверка',
+  publish: 'Публикация',
   scan: 'Скан по источнику',
   enabled: 'Работают',
 }
@@ -100,6 +105,7 @@ function targetsOf(entry: Entry): Partial<Record<SwitchName, SwitchTarget>> {
       return {
         receive: { key: 'hub.receive', modelId, accountId },
         auto_match: { key: 'hub.auto_match', modelId, accountId },
+        publish: { key: 'hub.publish', modelId, accountId },
       }
     case 'ydisk':
       return { scan: { key: 'ydisk.scan', modelId, accountId: null } }
@@ -218,6 +224,8 @@ interface ViewContext {
   secrets: Services['secrets']
   env: Services['sourceEnv']
   health: readonly ScanHealth[]
+  /** The Hub poll of each page by account id; a page without it is told as working. */
+  hub?: ReadonlyMap<string, HubPageState>
 }
 
 function sourceState(integration: Integration, entry: Entry, context: ViewContext) {
@@ -233,6 +241,18 @@ function sourceState(integration: Integration, entry: Entry, context: ViewContex
     integration.state = 'down'
     integration.down_reason = 'unreachable'
     integration.retry_at = instantOrNull(health.retry_at)
+  }
+}
+
+function hubState(integration: Integration, entry: Entry, context: ViewContext) {
+  const page = entry.scope.accountId ? context.hub?.get(entry.scope.accountId) : undefined
+  if (!page) return
+  integration.last_ok_at = page.postsAt
+  if (page.state === 'down') {
+    integration.state = 'down'
+    integration.down_reason = page.downReason
+    integration.since = page.since
+    integration.retry_at = page.retryAt
   }
 }
 
@@ -265,6 +285,7 @@ function view(
   } else {
     integration.state = 'working'
     if (cloud) sourceState(integration, entry, context)
+    if (integration.kind === 'hub') hubState(integration, entry, context)
   }
   return {
     ...integration,
@@ -278,8 +299,8 @@ function view(
 async function policies(q: Queryable): Promise<PolicyRow[]> {
   const { rows } = await q.execute<PolicyRow>(sql`
     SELECT key, model_id, account_id, value, updated_at FROM policy_settings
-     WHERE key IN ('hub.receive', 'hub.auto_match', 'ydisk.scan', 'dropbox.scan',
-                   'agents.enabled', 'fyper.enabled')
+     WHERE key IN ('hub.receive', 'hub.auto_match', 'hub.publish', 'ydisk.scan',
+                   'dropbox.scan', 'agents.enabled', 'fyper.enabled')
        AND item_type IS NULL`)
   return rows
 }
@@ -296,6 +317,7 @@ export async function integrationViews(
     secrets: services.secrets,
     env: services.sourceEnv,
     health: await scanHealth(q),
+    hub: await hubPageStates(q, new Date()),
   }
   const now = new Date().toISOString()
   return list.map((entry) => view(entry, rows, context, now))
@@ -313,6 +335,7 @@ export function integrationHandlers({
     secrets,
     env: sourceEnv,
     health: await scanHealth(q),
+    hub: await hubPageStates(q, new Date()),
   })
   return {
     admin: {

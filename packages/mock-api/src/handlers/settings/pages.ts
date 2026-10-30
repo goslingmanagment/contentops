@@ -39,7 +39,7 @@ function hubFor(account: Account, now: Instant): Integration {
     account: account.code,
     state: known ? 'working' : 'unset',
     last_ok_at: known ? now : null,
-    switches: known ? { receive: true, auto_match: true } : {},
+    switches: known ? { receive: true, auto_match: true, publish: false } : {},
   })
 }
 

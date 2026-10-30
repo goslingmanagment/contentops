@@ -107,7 +107,7 @@ export interface WorkRunnerOptions {
   handlers: Partial<Record<WorkKind, WorkHandler>>
   /**
    * Concurrency per slot of the role (`FETCH_JOBS`, `ENCODE_JOBS`, `COPY_JOBS`,
-   * `IMAGE_JOBS`; `general` for the light kinds of `worker`); default 1 per slot.
+   * `IMAGE_JOBS`; `general` for the light kinds of `worker`, `hub` for Hub); default 1 per slot.
    */
   limits?: Partial<Record<WorkSlot, number>>
   /**
@@ -197,7 +197,7 @@ export class WorkRunner {
       const slot = workKindSlot[kind]
       this.kindsBySlot.set(slot, [...(this.kindsBySlot.get(slot) ?? []), kind])
     }
-    this.limits = { general: 1, fetch: 1, encode: 1, copy: 1, image: 1, ...options.limits }
+    this.limits = { general: 1, fetch: 1, encode: 1, copy: 1, image: 1, hub: 1, ...options.limits }
     this.dynamicLimits = options.dynamicLimits
   }
 
