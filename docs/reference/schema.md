@@ -1238,6 +1238,15 @@ LLM.
   целей; PK `id` и UNIQUE `(model_id, id)`: ссылки модельных таблиц на работу составные
   `(model_id, work_id)`, работа без модели в них не попадает; структурный тест держит
   этот список исключений и это правило.
+  Исполнитель (`packages/db/src/work`, 30.10.2026): места внутри роли — `fetch`
+  (`FETCH_JOBS`), `encode` (`ENCODE_JOBS`: `derive_video`, `encode_master`, `verify_master`,
+  `uniq_render`), `copy` (`COPY_JOBS`: `render`, `render_compat`, `extract_frame`), `image`
+  (`IMAGE_JOBS`) и `general` — остальные виды `worker`; больший `priority` идёт раньше;
+  попытка считается при захвате, возврат при остановке и пауза выключателем её снимают,
+  падение процесса — нет; итог и доменная запись результата (`commit`) — одна транзакция под
+  проверкой поколения; исход каждой попытки — событие `work.succeeded | retry | failed |
+  returned | paused` в журнале. Планировщик пишет `work_key = <stream_key>@<начало
+  интервала>` по часам базы.
 - **`custom_orders` / `custom_order_deliveries`**: `expects_video boolean NOT NULL`,
   `expects_photos boolean NOT NULL`, `photo_count?`, CHECK `(expects_video OR
   expects_photos)`; `video_completed_at/by?`, `photos_completed_at/by?` ставит команда
