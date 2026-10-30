@@ -9,8 +9,9 @@ import {
   type PlanRow,
   type UpdateRowCommand,
 } from '@contentops/contracts'
+import { useQueryClient } from '@tanstack/react-query'
 import { useActionToast } from '@/actions/action-toast-context'
-import { useDeliverDownload } from '@/actions/use-deliver-download'
+import { savedMessage, useDeliverDownload } from '@/actions/use-deliver-download'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
 import { planChangedKeys, usePlanCommands } from '@/data/plan'
 import { accountLabel } from '@/lib/words'
@@ -40,6 +41,7 @@ export function useRowActions() {
   const commands = usePlanCommands(model.code)
   const toast = useActionToast()
   const deliver = useDeliverDownload()
+  const queryClient = useQueryClient()
   const invalidates = () => planChangedKeys(model.code)
 
   const giveReason = useIntentMutation<{ rows: readonly PlanRow[]; reason: CancelReason }, void>({
@@ -139,7 +141,17 @@ export function useRowActions() {
       ),
     invalidates,
     onSuccess: (answers) =>
-      deliver(model.code, answers, { building: 'Копия для платформы собирается' }),
+      deliver(model.code, answers, {
+        building: 'Копия для платформы собирается',
+        // Расписку собранной копии ставит воркер, когда копия готова: строка перечитывается
+        // тогда же, иначе «Уже скачивала» появится только после перезагрузки.
+        onSaved: (files) => {
+          toast.show({ message: savedMessage(files) })
+          for (const queryKey of planChangedKeys(model.code)) {
+            void queryClient.invalidateQueries({ queryKey })
+          }
+        },
+      }),
   })
 
   return {

@@ -67,16 +67,18 @@ export function ReleaseFormView({ entry, data, preset, tabs, left, onDone }: Rel
   })
   const values = form.watch()
   const rows = releaseRows(entry, values)
-  const check = useBatchCheck(rows)
+  // Сториз ставится только тизером выпуска: предпросмотр обычных строк, которым идёт
+  // проверка, отверг бы её. Сториз-ячейки в проверку не идут, правило выпуска проверит сервер.
+  const checkedCells = values.cells.filter((key) => {
+    const cell = parseCell(key)
+    return cell !== null && cell.surface !== 'story'
+  })
+  const check = useBatchCheck(rows.filter((row) => row.surface !== 'story'))
   const already = existingRelease(entry, data.releases)
   const alreadyText = already
     ? `Выпуск уже в плане: ${formatShortDay(already.date)}, ${rowsWord(already.row_ids.length)}`
     : null
-  const noteByCell = new Map(
-    values.cells
-      .filter((key) => parseCell(key) !== null)
-      .map((key, index) => [key, check.notes[index] ?? null]),
-  )
+  const noteByCell = new Map(checkedCells.map((key, index) => [key, check.notes[index] ?? null]))
   const create = useCreateRows({ onCreated: onDone })
   const checked = new Set(values.cells)
   const pages = new Set(rows.map((row) => row.account)).size
