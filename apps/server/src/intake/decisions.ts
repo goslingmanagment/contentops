@@ -156,6 +156,39 @@ export async function updateFiles(
   await bump(tx, model, groupId)
 }
 
+/**
+ * The order of a group: ◆ «Какой заказ?» or the field «Заказ» of a custom (DESIGN §4.8, §6.6).
+ * The order is found by its address (`tg-…`, as the orders API gives it) or its stored id; an
+ * unknown one is 404, never a failed cast. With an order the group becomes its CUS, the
+ * chosen candidate is marked, and «Принять как сдачу» records the delivery (schema §9.2).
+ * `null` — «Без заказа». The group and its open drafts are locked by the caller, who also
+ * moves the group's version.
+ */
+export async function chooseOrder(
+  tx: Tx,
+  model: ModelScope,
+  actor: Actor,
+  groupId: string,
+  address: string | null,
+  draftIds: readonly string[],
+): Promise<void> {
+  const orderId = address === null ? null : (await lockOrder(tx, model, address)).id
+  await tx.execute(sql`
+    UPDATE inbox_groups SET custom_order_id = ${orderId}::uuid,
+           proposed_type = CASE WHEN ${orderId}::uuid IS NULL THEN proposed_type ELSE 'CUS' END
+     WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
+  if (orderId) {
+    await tx.execute(sql`
+      UPDATE inbox_draft_candidates SET chosen = true, chosen_at = now(), chosen_by = ${actor.id}::uuid
+       WHERE model_id = ${model.id}::uuid AND draft_id = ANY (${sql.param([...draftIds])}::uuid[])
+         AND kind = 'order' AND order_id = ${orderId}::uuid AND NOT chosen`)
+  }
+  await tx.execute(sql`
+    UPDATE inbox_drafts SET blocked_reason = NULL, updated_at = now(), row_version = row_version + 1
+     WHERE model_id = ${model.id}::uuid AND id = ANY (${sql.param([...draftIds])}::uuid[])
+       AND blocked_reason = 'ambiguous_order'`)
+}
+
 /** Answers to ◆ «нужно решение». */
 export async function decide(
   tx: Tx,
@@ -180,23 +213,9 @@ export async function decide(
          WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
       await clear('needs_type')
       break
-    case 'which_order': {
-      // The order by its address (`tg-…`, as the orders API gives it) or its stored id; an
-      // unknown one is 404, never a failed cast.
-      const orderId = body.order_id === null ? null : (await lockOrder(tx, model, body.order_id)).id
-      await tx.execute(sql`
-        UPDATE inbox_groups SET custom_order_id = ${orderId}::uuid,
-               proposed_type = CASE WHEN ${orderId}::uuid IS NULL THEN proposed_type ELSE 'CUS' END
-         WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
-      if (orderId) {
-        await tx.execute(sql`
-          UPDATE inbox_draft_candidates SET chosen = true, chosen_at = now(), chosen_by = ${actor.id}::uuid
-           WHERE model_id = ${model.id}::uuid AND draft_id = ANY (${sql.param(ids)}::uuid[])
-             AND kind = 'order' AND order_id = ${orderId}::uuid AND NOT chosen`)
-      }
-      await clear('ambiguous_order')
+    case 'which_order':
+      await chooseOrder(tx, model, actor, groupId, body.order_id, ids)
       break
-    }
     case 'video_in_set': {
       const videos = drafts.filter((draft) => draft.media_kind === 'video').map((draft) => draft.id)
       if (videos.length === 0) throw new ApiProblem('invalid_request', 'Видео в группе нет')

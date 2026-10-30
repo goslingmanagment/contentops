@@ -2,11 +2,18 @@ import type { UpdateDraftCommand } from '@contentops/contracts/commands/inbox'
 import { logAction, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { checkVersion, isUuid } from '../commands'
-import type { ModelScope, RequestContext } from '../context'
+import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
-import { acceptGroup, rejectGroup, reopenGroup } from '../intake/accept'
-import { decide, mergeGroups, retryGroup, splitGroup, updateFiles } from '../intake/decisions'
+import { acceptGroup, lockOpenDrafts, rejectGroup, reopenGroup } from '../intake/accept'
+import {
+  chooseOrder,
+  decide,
+  mergeGroups,
+  retryGroup,
+  splitGroup,
+  updateFiles,
+} from '../intake/decisions'
 import { draftSource, planDraftDownload } from '../intake/draft-files'
 import { ITEM_TO_DB_TYPE, inboxGroup, inboxList } from '../intake/inbox-view'
 import { dropStagedOfGroup } from '../intake/staging'
@@ -41,7 +48,13 @@ export async function lockGroup(tx: Tx, modelId: string, id: string): Promise<Lo
 }
 
 /** The fields of the decision panel into the columns of the group (schema §3.4). */
-async function writeFields(tx: Tx, modelId: string, id: string, body: UpdateDraftCommand) {
+async function writeFields(
+  tx: Tx,
+  model: ModelScope,
+  actor: Actor,
+  id: string,
+  body: UpdateDraftCommand,
+) {
   const sets = []
   if (body.type !== undefined) {
     sets.push(sql`proposed_type = ${body.type ? ITEM_TO_DB_TYPE[body.type] : null}`)
@@ -57,11 +70,23 @@ async function writeFields(tx: Tx, modelId: string, id: string, body: UpdateDraf
     sets.push(sql`proposed_purpose = ${purpose}`)
   }
   if (body.second_person !== undefined) sets.push(sql`has_second_person = ${body.second_person}`)
-  if (sets.length === 0) return
+  // «Заказ» of a custom: the KM's own upload becomes a delivery of the order (DESIGN §6.6).
+  if (body.order_id !== undefined) {
+    const drafts = await lockOpenDrafts(tx, model, id)
+    await chooseOrder(
+      tx,
+      model,
+      actor,
+      id,
+      body.order_id,
+      drafts.map((draft) => draft.id),
+    )
+  }
+  if (sets.length === 0 && body.order_id === undefined) return
   await tx.execute(sql`
     UPDATE inbox_groups
-       SET ${sql.join(sets, sql`, `)}, updated_at = now(), row_version = row_version + 1
-     WHERE model_id = ${modelId}::uuid AND id = ${id}::uuid`)
+       SET ${sql.join([...sets, sql`updated_at = now()`, sql`row_version = row_version + 1`], sql`, `)}
+     WHERE model_id = ${model.id}::uuid AND id = ${id}::uuid`)
 }
 
 export function inboxHandlers(services: Services): HandlerRegistry {
@@ -73,7 +98,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
       get: ({ params, ctx }) => inboxGroup(db, modelOf(ctx), groupId(params.group)),
 
       update: ({ params, body, ctx }) =>
-        command({ ctx, body }, async (tx) => {
+        command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx)
           const id = groupId(params.group)
           const group = await lockGroup(tx, model.id, id)
@@ -88,7 +113,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             },
             () => null,
           )
-          await writeFields(tx, model.id, id, body)
+          await writeFields(tx, model, actor, id, body)
           await logAction(tx, {
             modelId: model.id,
             subjectKind: 'inbox_groups',

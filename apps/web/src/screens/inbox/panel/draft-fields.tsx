@@ -12,7 +12,7 @@ import { useId } from 'react'
 import { ChoiceField } from './choice-field'
 import { DraftTextField } from './draft-text-field'
 import { FieldRow } from './field-row'
-import { OrderLine } from './order-line'
+import { OrderField } from './order-field'
 import { PromoFields } from './promo-fields'
 import { TagField } from './tag-field'
 import { TypeButtons } from './type-buttons'
@@ -41,8 +41,6 @@ export function DraftFields({ group, saver }: DraftFieldsProps) {
   const secondId = useId()
   const whatIsIt = group.state.kind === 'decision' && group.state.decision === 'what_is_it'
   const ownUpload = group.uploaded_by !== null
-  // Пока ◆ «Какой заказ?» не решён, заказа ещё нет, но и «без заказа» никто не выбирал.
-  const whichOrder = group.state.kind === 'decision' && group.state.decision === 'which_order'
   return (
     <InfoSection title="Черновик">
       {whatIsIt ? null : (
@@ -108,15 +106,7 @@ export function DraftFields({ group, saver }: DraftFieldsProps) {
             options={FAN_NAME_CHOICES}
             onChange={(fanName) => void saver.save({ fan_name: fanName })}
           />
-          <FieldRow label="Заказ">
-            {fields.order_id ? (
-              <OrderLine orderId={fields.order_id} />
-            ) : (
-              <span className="text-muted-foreground">
-                {whichOrder ? 'не выбран' : 'без заказа'}
-              </span>
-            )}
-          </FieldRow>
+          <OrderField group={group} saver={saver} />
         </>
       ) : null}
     </InfoSection>
