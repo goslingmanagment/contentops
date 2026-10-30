@@ -4,8 +4,9 @@ import { enqueueWork, type Tx, type values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
-import { lockGroupForDecision, lockOpenDrafts, rejectGroup } from './accept'
+import { acceptGroup, lockGroupForDecision, lockOpenDrafts, rejectGroup } from './accept'
 import { queueMedia } from './fetch'
+import { bindFrame, ordinalOfHandle, rawFrame } from './frames'
 import { ITEM_TO_DB_TYPE } from './inbox-view'
 
 /**
@@ -241,6 +242,35 @@ export async function decide(
       }
       if (body.keep) await clear('id_collision')
       else await rejectGroup(tx, model, actor, groupId, 'номер занят другой папкой')
+      break
+    }
+    case 'which_frame': {
+      const draft = drafts.find(
+        (candidate) => candidate.id === body.file_key && candidate.blocked_reason === 'which_frame',
+      )
+      if (!draft?.target_item_id) {
+        throw new ApiProblem('accept_blocked', 'У этого файла нет вопроса «К какому кадру?»', {
+          reason: 'no_frame_question',
+        })
+      }
+      const ordinal = ordinalOfHandle(body.frame)
+      if (!(await rawFrame(tx, model.id, draft.target_item_id, ordinal))) {
+        throw new ApiProblem('invalid_request', 'Такого кадра в сете нет', { frame: body.frame })
+      }
+      await bindFrame(tx, model.id, draft.id, ordinal)
+      // The last answer accepts the files into the set, as the upload itself would have.
+      const open = drafts.filter((other) => other.id !== draft.id && other.blocked_reason)
+      if (open.length === 0) {
+        const { rows } = await tx.execute<{ public_id: string }>(sql`
+          SELECT public_item_id(type, number) AS public_id FROM content_items
+           WHERE model_id = ${model.id}::uuid AND id = ${draft.target_item_id}::uuid`)
+        await acceptGroup(tx, model, actor, groupId, {
+          as: 'default',
+          how: 'upload',
+          role: 'ed',
+          extend: { item_id: rows[0]?.public_id as string, role: 'photos' },
+        })
+      }
       break
     }
     case 'substitute_montage':

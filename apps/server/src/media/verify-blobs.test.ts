@@ -8,7 +8,7 @@ import { BOOTSTRAP, OWNER } from '../testing/server'
 import { sweepExports } from './roles'
 import { type BlobStore, blobKey, shaBytes } from './storage'
 import { registerBlob } from './storage-ops'
-import { modelId, seedItem, tempFile, tempStore } from './testing'
+import { modelId, seedItem, systemTx, tempFile, tempStore } from './testing'
 import { enqueueVerifyBlobs, type VerifyReport, verifyBlobsHandler } from './work/verify-blobs'
 
 /**
@@ -63,6 +63,19 @@ describe('verify-blobs', () => {
     await mkdir(dirname(store.path(stray)), { recursive: true })
     await writeFile(store.path(stray), 'stray')
 
+    // A web upload left half way a while ago (SPEC §9.1: the owner's command removes it too).
+    const lora = await modelId(db, 'lora')
+    const key = 'inbox/web/lora/abandoned-1/data'
+    await mkdir(dirname(join(store.roots.dataRoot, key)), { recursive: true })
+    await writeFile(join(store.roots.dataRoot, key), 'half an upload')
+    await systemTx(db, (tx) =>
+      tx.execute(sql`
+        INSERT INTO web_uploads (model_id, upload_id, principal_id, client_filename,
+                                 declared_kind, size_expected, bytes_received, state, tmp_key)
+        SELECT ${lora}::uuid, 'abandoned-1', id, 'clip.mp4', 'other', 100, 14, 'failed', ${key}
+          FROM principals LIMIT 1`),
+    )
+
     const runner = new WorkRunner({
       db,
       role: 'worker',
@@ -90,6 +103,7 @@ describe('verify-blobs', () => {
       missing: [lost],
       orphans: [stray],
       unreferenced: [{ sha256: loose, key: blobKey(loose, 'mp4') }],
+      abandoned_uploads: [{ model_id: lora, upload_id: 'abandoned-1', key, bytes: 14 }],
     })
     const { rows } = await db.execute<{ sha256: Buffer; state: string; verified: boolean }>(sql`
       SELECT sha256, state, verified_at IS NOT NULL AS verified FROM blobs ORDER BY registered_at`)

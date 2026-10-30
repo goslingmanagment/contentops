@@ -13,6 +13,7 @@ import type { Queryable, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant, instantOrNull } from '../commands'
 import { ApiProblem } from '../errors'
+import { frameChoices } from './frames'
 import { sourceThumbPath } from './source-thumbs'
 
 /**
@@ -93,6 +94,8 @@ interface DraftRow extends Record<string, unknown> {
   fetch_total: string | null
   thumb_generation: string | null
   duplicate_handle: string | null
+  target_item_id: string | null
+  source_hex: string | null
   shot_at: string | null
 }
 
@@ -154,6 +157,7 @@ const DECISION: Partial<Record<values.DraftBlockedReason, InboxGroup['state']>> 
   needs_type: { kind: 'decision', decision: 'what_is_it' },
   id_collision: { kind: 'decision', decision: 'number_taken' },
   cross_model_dup: { kind: 'decision', decision: 'cross_model' },
+  which_frame: { kind: 'decision', decision: 'which_frame' },
 }
 
 /** The stage of a draft that is still being prepared (DESIGN §5.3). */
@@ -333,6 +337,7 @@ function fileOf(model: string, draft: DraftRow, index: number): DraftFile {
 interface Extras {
   hints: DraftHint[]
   candidates: OrderCandidate[]
+  frames?: InboxGroup['frame_choices']
 }
 
 const NO_EXTRAS: Extras = { hints: [], candidates: [] }
@@ -402,6 +407,10 @@ function view(
     candidates: extras.candidates,
     archive_entries: null,
     target_item: drafts.find((draft) => draft.target_public_id)?.target_public_id ?? null,
+    frame_choices:
+      state.kind === 'decision' && state.decision === 'which_frame'
+        ? (extras.frames ?? null)
+        : null,
     version: Number(group.row_version),
   }
 }
@@ -451,7 +460,8 @@ async function loadDrafts(
              WHERE i.model_id = d.model_id AND i.id = d.applied_item_id) AS applied_public_id,
            u.principal_id AS uploader_id, pu.display_name AS uploader_name, pu.kind AS uploader_kind, pu.gender AS uploader_gender,
            fw.progress_num AS fetch_done, fw.progress_den AS fetch_total,
-           NULL::timestamptz AS shot_at,
+           NULL::timestamptz AS shot_at, d.target_item_id,
+           encode(d.source_sha256, 'hex') AS source_hex,
            (SELECT g.id FROM rendition_generations g
              WHERE g.input_sha256 = d.source_sha256 AND g.kind = 'thumb640' AND g.state = 'ready'
                AND NOT g.meta_stripped
@@ -483,9 +493,30 @@ async function loadDrafts(
  * Candidates of the drafts (schema §3.4 `inbox_draft_candidates`): ◆ «Какой заказ?» without a
  * preselection, and the pHash hint «Похоже на фото № 7 из SET-069 — сравнить» (SPEC §6.2).
  */
-async function loadExtras(q: Queryable, modelId: string, drafts: readonly DraftRow[]) {
+async function loadExtras(
+  q: Queryable,
+  model: { id: string; code: string },
+  drafts: readonly DraftRow[],
+) {
+  const modelId = model.id
   const extras = new Map<string, Extras>()
   if (drafts.length === 0) return extras
+  // ◆ «К какому кадру?»: the first unanswered file of a group and the frames of its set.
+  for (const draft of drafts) {
+    if (draft.blocked_reason !== 'which_frame' || !draft.target_item_id) continue
+    const entry = extras.get(draft.group_id) ?? { hints: [], candidates: [] }
+    extras.set(draft.group_id, entry)
+    if (entry.frames) continue
+    entry.frames = {
+      file_key: draft.id,
+      frames: await frameChoices(
+        q,
+        model,
+        draft.target_item_id,
+        draft.source_hex ? Buffer.from(draft.source_hex, 'hex') : null,
+      ),
+    }
+  }
   const groupOf = new Map(drafts.map((draft) => [draft.id, draft.group_id]))
   const { rows } = await q.execute<{
     draft_id: string
@@ -515,7 +546,7 @@ async function loadExtras(q: Queryable, modelId: string, drafts: readonly DraftR
      ORDER BY c.score DESC NULLS LAST, c.created_at`)
   for (const row of rows) {
     const group = groupOf.get(row.draft_id) as string
-    const entry = extras.get(group) ?? { hints: [], candidates: [] }
+    const entry: Extras = extras.get(group) ?? { hints: [], candidates: [] }
     extras.set(group, entry)
     if (row.kind === 'similar_photo' && row.item_public) {
       const number = row.ordinal ? ` № ${row.ordinal}` : ''
@@ -559,7 +590,7 @@ export async function inboxList(
     groups.map((group) => group.id),
     filter,
   )
-  const extras = await loadExtras(q, modelId, drafts)
+  const extras = await loadExtras(q, model, drafts)
   const byGroup = new Map<string, DraftRow[]>()
   for (const draft of drafts)
     byGroup.set(draft.group_id, [...(byGroup.get(draft.group_id) ?? []), draft])
@@ -612,7 +643,7 @@ export async function inboxGroup(
   const now = new Date()
   for (const filter of ['active', 'accepted', 'rejected'] as const) {
     const drafts = await loadDrafts(q, modelId, [groupId], filter)
-    const extras = await loadExtras(q, modelId, drafts)
+    const extras = await loadExtras(q, model, drafts)
     const shown = view(model.code, group, drafts, filter, now, extras.get(groupId))
     if (shown) return shown
   }

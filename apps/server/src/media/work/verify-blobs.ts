@@ -1,3 +1,5 @@
+import { stat } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Db, Queryable, WorkHandler } from '@contentops/db'
 import { type EnqueueResult, enqueueWork } from '@contentops/db'
 import { sql } from 'drizzle-orm'
@@ -21,6 +23,11 @@ export interface VerifyReport {
   orphans: string[]
   unreferenced: { sha256: string; key: string; bytes: number }[]
   unreferenced_bytes: number
+  /**
+   * Web uploads left behind (SPEC §9.1: «брошенную загрузку удаляет та же команда
+   * владельца»): failed, cancelled, or still receiving after a day, with bytes on disk.
+   */
+  abandoned_uploads?: { model_id: string; upload_id: string; key: string; bytes: number }[]
 }
 
 export interface VerifyCheckpoint {
@@ -122,6 +129,28 @@ export function verifyBlobsHandler(deps: { db: Db; store: BlobStore }): WorkHand
       bytes: Number(row.byte_size),
     }))
     report.unreferenced_bytes = report.unreferenced.reduce((sum, b) => sum + b.bytes, 0)
+
+    const { rows: uploads } = await deps.db.execute<{
+      model_id: string
+      upload_id: string
+      tmp_key: string
+    }>(sql`
+      SELECT model_id, upload_id, tmp_key FROM web_uploads
+       WHERE sha256 IS NULL
+         AND (state IN ('failed', 'abandoned')
+              OR (state IN ('receiving', 'received') AND created_at < now() - interval '1 day'))
+       ORDER BY created_at`)
+    report.abandoned_uploads = []
+    for (const upload of uploads) {
+      const info = await stat(join(deps.store.roots.dataRoot, upload.tmp_key)).catch(() => null)
+      if (!info) continue
+      report.abandoned_uploads.push({
+        model_id: upload.model_id,
+        upload_id: upload.upload_id,
+        key: upload.tmp_key,
+        bytes: info.size,
+      })
+    }
     return { report }
   }
 }

@@ -527,6 +527,8 @@ export const draftBlockedReasons = [
   'needs_type',
   'source_unavailable',
   'deferred',
+  /** A processed frame whose download name is not known: ◆ «К какому кадру?» (SPEC §6.1). */
+  'which_frame',
 ] as const
 export type DraftBlockedReason = (typeof draftBlockedReasons)[number]
 

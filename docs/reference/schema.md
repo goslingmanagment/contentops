@@ -555,7 +555,7 @@ single | manual`; правило группировки — одно, SPEC §6.1
 | `proposed_role`, `proposed_ordinal`, `proposed_life_use?` | предложение шага 4 для файла, у лайфа — и назначение кадра; поля будущего объекта — на группе |
 | `target_item_id?`, `target_asset_id?` | для «дополнение»: объект и, если это новая версия, файл |
 | `duplicate_of_version_id?` | для «дубль-алиас» |
-| `blocked_reason?` | `ambiguous_order \| video_in_set \| id_collision \| cross_model_dup \| master_failed \| needs_type` |
+| `blocked_reason?` | `ambiguous_order \| video_in_set \| id_collision \| cross_model_dup \| master_failed \| needs_type \| source_unavailable \| deferred \| which_frame` (◆ «К какому кадру?»: обработанный кадр, чьё имя не найдено в квитанциях выдачи, SPEC §6.1; найденный — `ed` с номером исходного кадра и происхождением `processed_from`) |
 | `applied_item_id?`, `applied_version_id?` | результат принятия |
 | `reject_reason`, `error`, `row_version`, `search_tsv STORED` | |
 

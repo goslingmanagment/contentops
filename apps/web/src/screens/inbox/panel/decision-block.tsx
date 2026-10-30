@@ -8,6 +8,7 @@ import {
 } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { InfoSection } from '@contentops/ui/components/info-panel'
+import { Thumb } from '@contentops/ui/components/thumb'
 import type { ComponentType } from 'react'
 import { groupKind } from '../shared/draft-cover'
 import { groupOrigin } from '../shared/group-source'
@@ -37,6 +38,7 @@ const DECISIONS: Record<DecisionKind, ComponentType<DecisionProps>> = {
   number_taken: NumberTaken,
   substitute_montage: RowChange,
   split_archive: SplitArchive,
+  which_frame: WhichFrame,
 }
 
 export function DecisionBlock(props: DecisionProps) {
@@ -200,6 +202,51 @@ function RowChange({ group }: DecisionProps) {
         <dt className="text-ink-3">стало</dt>
         <dd>{change.now}</dd>
       </dl>
+    </InfoSection>
+  )
+}
+
+/**
+ * ◆ «К какому кадру?» (§4.8, SPEC §6.1): имя обработанного кадра не узнано по выдаче —
+ * кадры сета плиткой, похожие по pHash первыми; нажатие связывает файл с кадром.
+ */
+function WhichFrame({ group, pending, decide }: DecisionProps) {
+  const choices = group.frame_choices
+  const file = group.files.find((candidate) => candidate.key === choices?.file_key)
+  if (!choices) {
+    return null
+  }
+  return (
+    <InfoSection title="К какому кадру?">
+      {file ? (
+        <div className="flex items-center gap-3">
+          <FileThumb file={file} kind={groupKind(group)} />
+          <p className="text-sm">{file.file_name}</p>
+        </div>
+      ) : null}
+      <div className="grid grid-cols-4 gap-2">
+        {choices.frames.map((frame) => (
+          <button
+            key={frame.key}
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              decide({ decision: 'which_frame', file_key: choices.file_key, frame: frame.key })
+            }
+            className="flex flex-col items-center gap-1 rounded-lg p-1 text-xs hover:bg-muted disabled:opacity-60"
+          >
+            <Thumb
+              seed={frame.thumb.key}
+              src={frame.thumb.url}
+              showCaptions={false}
+              className="w-full"
+            />
+            <span className={frame.similar ? 'font-semibold' : 'text-muted-foreground'}>
+              {frame.similar ? `${frame.label} · похоже` : frame.label}
+            </span>
+          </button>
+        ))}
+      </div>
     </InfoSection>
   )
 }

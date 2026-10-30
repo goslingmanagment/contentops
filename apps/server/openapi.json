@@ -2350,6 +2350,26 @@
               "decision",
               "split"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "const": "which_frame"
+              },
+              "file_key": {
+                "type": "string"
+              },
+              "frame": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "decision",
+              "file_key",
+              "frame"
+            ]
           }
         ]
       },
@@ -2362,7 +2382,8 @@
           "number_taken",
           "cross_model",
           "substitute_montage",
-          "split_archive"
+          "split_archive",
+          "which_frame"
         ]
       },
       "DeleteItemCommandInput": {
@@ -3964,6 +3985,53 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "frame_choices": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "file_key": {
+                    "type": "string"
+                  },
+                  "frames": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "thumb": {
+                          "$ref": "#/components/schemas/ThumbRef"
+                        },
+                        "similar": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "thumb",
+                        "similar"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "file_key",
+                  "frames"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "null"

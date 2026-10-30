@@ -16,6 +16,8 @@ export const DecideCommandSchema = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('number_taken'), keep: z.boolean() }),
   /** `split` — each folder of the archive becomes its own group; otherwise one group. */
   z.object({ decision: z.literal('split_archive'), split: z.boolean() }),
+  /** «К какому кадру?»: the processed file `file_key` is frame `frame` (`raw07`) of the set. */
+  z.object({ decision: z.literal('which_frame'), file_key: z.string(), frame: z.string() }),
 ])
 export type DecideCommand = z.infer<typeof DecideCommandSchema>
 
