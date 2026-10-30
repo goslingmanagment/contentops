@@ -11,7 +11,8 @@
 #          lock for 25 s, so the run waits on it): the run stays `running` with the lease of
 #          the dead holder; the new worker takes it over once the lease (60 s) is out, with
 #          the next fence generation, and finishes it; one run, every blob counted once.
-# db       `docker compose restart db`: /healthz red while the database is away, green again;
+# db       the database stopped and started (`docker compose stop db`, `start db`): /healthz
+#          red while it is away, green again;
 #          web and the workers reconnect by themselves; nothing lost; the smoke suite passes.
 # restart  the whole stack stopped and started again with ops/up.sh: running works went back
 #          to the queue, the scheduler made one row per stream and interval and never two;
@@ -225,22 +226,19 @@ check_worker() {
 
 # --- db: restart of the database ------------------------------------------------------
 check_db() {
-  log "db: docker compose restart db"
+  log "db: the database stopped and started again"
   local items works web_started worker_started saw_red=0
   items=$(sql "SELECT count(*) FROM content_items")
   works=$(sql "SELECT count(*) FROM work_operations")
   web_started=$(docker inspect -f '{{.State.StartedAt}}' "$(container web)")
   worker_started=$(docker inspect -f '{{.State.StartedAt}}' "$(container worker)")
-  (docker compose restart db >/dev/null 2>&1) &
-  local restart=$!
-  local deadline=$((SECONDS + 60))
-  while ((SECONDS < deadline)); do
-    [[ $(health_code) != 200 ]] && { saw_red=1; break; }
-    sleep 0.3
-  done
-  wait "$restart"
-  if ((saw_red)); then pass "db: /healthz red while the database was away"
-  else fail "db: /healthz never turned red"; fi
+  # A restart in two steps, so the red /healthz is seen for sure: a quick restart of
+  # PostgreSQL may slip between two polls.
+  docker compose stop db >/dev/null 2>&1
+  if wait_health 503 30; then saw_red=1; fi
+  if ((saw_red)); then pass "db: database stopped — /healthz red: $(curl -s "$HEALTH")"
+  else fail "db: database stopped, /healthz still $(health_code)"; fi
+  docker compose start db >/dev/null 2>&1
   if wait_health 200 120; then pass "db: /healthz green again"
   else fail "db: /healthz still red after 120 s"; return; fi
   if [[ $(docker inspect -f '{{.State.StartedAt}}' "$(container web)") == "$web_started" &&
