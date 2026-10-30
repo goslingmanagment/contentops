@@ -578,6 +578,43 @@ describe('«Принять как есть» (SPEC §9.2)', () => {
   })
 })
 
+describe('a fetch that gave up (SPEC §6.1)', () => {
+  it('shows ▲ «Не скачался» with the answer, and «Повторить» fetches again', async () => {
+    const path = `${LORA_ROOT}/6. Life/Недокачан/01.jpg`
+    h.dropbox.tree.addFile(path, 2700)
+    await scan()
+    const { group_id, draft_id } = await groupOfPath(path)
+    // The source kept answering 500 and the runner spent the attempts.
+    await h.db.execute(sql`
+      UPDATE work_operations
+         SET state = 'failed', finished_at = now(), failure_kind = 'transient',
+             error_code = 'transient', error_text = '500  file IO failure'
+       WHERE kind = 'fetch' AND state = 'pending'
+         AND source_revision_id = (SELECT source_revision_id FROM inbox_drafts WHERE id = ${draft_id}::uuid)`)
+    const view = await call(app, {
+      method: 'GET',
+      url: `/api/v1/lora/inbox/groups/${group_id}`,
+      as: owner,
+    })
+    expect(view.json().state).toEqual({
+      kind: 'error',
+      error: 'fetch_failed',
+      detail: 'источник ответил: 500 file IO failure',
+    })
+    const retried = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${group_id}:retry`,
+      as: owner,
+      key: newKey(),
+    })
+    expect(retried.statusCode).toBe(200)
+    await fetchAll()
+    const { rows } = await h.db.execute<{ fetched: boolean }>(sql`
+      SELECT source_sha256 IS NOT NULL AS fetched FROM inbox_drafts WHERE id = ${draft_id}::uuid`)
+    expect(rows[0]?.fetched).toBe(true)
+  })
+})
+
 describe('staging (SPEC §9.1)', () => {
   it('a staged source goes once its master is registered and no media work needs it', async () => {
     const path = `${LORA_ROOT}/6. Life/Чистка/01.jpg`

@@ -2805,6 +2805,7 @@
         "enum": [
           "master_failed",
           "source_broken",
+          "fetch_failed",
           "vanished",
           "archive_unreadable",
           "upload_failed"

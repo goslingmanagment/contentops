@@ -310,15 +310,25 @@ export async function decide(
   await bump(tx, model, groupId)
 }
 
-/** «Повторить» after ▲: the fetch or the master of the failed drafts again. */
+/** «Повторить» after ▲: the fetch (vanished or given up) or the master of the failed drafts again. */
 export async function retryGroup(tx: Tx, model: ModelScope, groupId: string): Promise<number> {
   await lockGroupForDecision(tx, model, groupId)
   const drafts = await lockOpenDrafts(tx, model, groupId)
+  // Drafts whose last fetch gave up: no bytes yet, the work failed after its attempts.
+  const { rows: gaveUp } = await tx.execute<{ id: string }>(sql`
+    SELECT d.id FROM inbox_drafts d
+     WHERE d.model_id = ${model.id}::uuid AND d.group_id = ${groupId}::uuid
+       AND d.state <> 'resolved' AND d.source_sha256 IS NULL AND d.source_revision_id IS NOT NULL
+       AND (SELECT w.state FROM work_operations w
+             WHERE w.model_id = d.model_id AND w.kind = 'fetch'
+               AND w.source_revision_id = d.source_revision_id
+             ORDER BY w.created_at DESC LIMIT 1) = 'failed'`)
+  const fetchFailed = new Set(gaveUp.map((row) => row.id))
   let queued = 0
   for (const draft of drafts) {
     const failedMaster = draft.blocked_reason === 'master_failed'
     const vanished = draft.blocked_reason === 'source_unavailable'
-    if (!failedMaster && !vanished) continue
+    if (!failedMaster && !vanished && !fetchFailed.has(draft.id)) continue
     const attempt = `retry-${Date.now()}`
     await tx.execute(sql`
       UPDATE inbox_drafts SET blocked_reason = NULL, error = NULL, updated_at = now(),

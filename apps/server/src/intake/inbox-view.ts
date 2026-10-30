@@ -100,6 +100,8 @@ interface DraftRow extends Record<string, unknown> {
   uploader_gender: 'f' | 'm' | null
   fetch_done: string | null
   fetch_total: string | null
+  /** The source's answer when the last fetch gave up (attempts spent); null otherwise. */
+  fetch_failed: string | null
   thumb_generation: string | null
   duplicate_handle: string | null
   target_item_id: string | null
@@ -206,6 +208,7 @@ export function activeState(
   const failed = drafts.find(
     (draft) =>
       draft.error !== null ||
+      draft.fetch_failed !== null ||
       draft.blocked_reason === 'master_failed' ||
       draft.blocked_reason === 'source_unavailable',
   )
@@ -215,6 +218,17 @@ export function activeState(
       return {
         state: { kind: 'error', error: 'vanished', detail: 'Файла больше нет в источнике' },
         block: 'Файла нет в источнике',
+      }
+    }
+    // The source kept failing and the fetch gave up: ▲ with its answer, «Повторить» fetches again.
+    if (failed.fetch_failed !== null) {
+      return {
+        state: {
+          kind: 'error',
+          error: 'fetch_failed',
+          detail: `источник ответил: ${failed.fetch_failed.replace(/\s+/g, ' ').trim()}`,
+        },
+        block: 'Файл не скачался',
       }
     }
     // A broken source kept its bytes as the would-be master: «Принять как есть» (SPEC §9.2).
@@ -498,6 +512,12 @@ async function loadDrafts(
              WHERE i.model_id = d.model_id AND i.id = d.applied_item_id) AS applied_public_id,
            u.principal_id AS uploader_id, pu.display_name AS uploader_name, pu.kind AS uploader_kind, pu.gender AS uploader_gender,
            fw.progress_num AS fetch_done, fw.progress_den AS fetch_total,
+           CASE WHEN d.source_sha256 IS NULL THEN (
+             SELECT CASE WHEN w.state = 'failed' THEN coalesce(w.error_text, w.error_code, 'ошибка') END
+               FROM work_operations w
+              WHERE w.model_id = d.model_id AND w.kind = 'fetch'
+                AND w.source_revision_id = d.source_revision_id
+              ORDER BY w.created_at DESC LIMIT 1) END AS fetch_failed,
            NULL::timestamptz AS shot_at, d.target_item_id,
            encode(d.source_sha256, 'hex') AS source_hex,
            (SELECT g.id FROM rendition_generations g
