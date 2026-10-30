@@ -398,6 +398,7 @@ function member(
     uploaded_on: spec.added_on,
     added_on: spec.added_on,
     handed_to: [],
+    prepared_for: [],
     other_collections: [],
   }
 }

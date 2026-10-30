@@ -73,6 +73,7 @@ function memberFrom(
     uploaded_on: entry.arrived_on,
     added_on: todayOf(state),
     handed_to: [],
+    prepared_for: [],
     other_collections: [],
   }
 }

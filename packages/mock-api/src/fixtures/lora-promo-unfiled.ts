@@ -30,6 +30,7 @@ function freshMontage(entry: CatalogEntry): CollectionMember {
     uploaded_on: entry.arrived_on,
     added_on: FIRST_DAY,
     handed_to: [],
+    prepared_for: [],
     other_collections: [],
   }
 }

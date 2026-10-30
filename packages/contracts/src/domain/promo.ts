@@ -67,6 +67,18 @@ export const CollectionMemberSchema = z.object({
       on: LocalDateSchema,
     }),
   ),
+  /**
+   * Prepared handoffs that carry the material but are not marked «Передано» yet: «уже в
+   * PRM-013 (подготовлена 21.09, «Передано» не нажато)» (DESIGN §4.17).
+   */
+  prepared_for: z.array(
+    z.object({
+      contractor_id: z.string(),
+      contractor: z.string(),
+      collection_id: ItemIdSchema,
+      on: LocalDateSchema,
+    }),
+  ),
   other_collections: z.array(z.string()),
 })
 export type CollectionMember = z.infer<typeof CollectionMemberSchema>
@@ -125,13 +137,20 @@ export const PromoCollectionSchema = z.object({
 })
 export type PromoCollection = z.infer<typeof PromoCollectionSchema>
 
-/** «38 из 100 уже передавали Coraline Red (PRM-011, 02.09)». */
+/**
+ * «38 из 100 уже передавали Coraline Red (PRM-011, 02.09)» and, apart from it, «20 из 100
+ * уже в PRM-013 (подготовлена 21.09, «Передано» не нажато)» (DESIGN §4.17).
+ */
 export const HandoffOverlapSchema = z.object({
   contractor_id: z.string(),
   already: z.int().nonnegative(),
   total: z.int().nonnegative(),
   from: z.array(z.object({ collection_id: ItemIdSchema, on: LocalDateSchema })),
   text: z.string().nullable(),
+  /** In a prepared handoff to this contractor that nobody marked «Передано». */
+  pending: z.int().nonnegative(),
+  pending_from: z.array(z.object({ collection_id: ItemIdSchema, on: LocalDateSchema })),
+  pending_text: z.string().nullable(),
 })
 export type HandoffOverlap = z.infer<typeof HandoffOverlapSchema>
 
@@ -147,3 +166,33 @@ export const ChannelContentsSchema = z.object({
   materials: z.array(CollectionMemberSchema),
 })
 export type ChannelContents = z.infer<typeof ChannelContentsSchema>
+
+/**
+ * Where the files of an object went in «Промо» (SPEC §7.1: «эти связи доступны и из
+ * исходного объекта»): «в промо: PRM-015 · Instagram · GaranTTeam Social», «передавали:
+ * GaranTTeam Social 18.09 (PRM-015)». `files` are the object's own handles.
+ */
+export const ItemPromoSchema = z.object({
+  collections: z.array(
+    z.object({
+      id: ItemIdSchema,
+      title: z.string(),
+      /** Channel code, for the address of the collection. */
+      channel: z.string(),
+      channel_name: z.string(),
+      /** The collection's contractor; `null` — not chosen yet. */
+      contractor: z.string().nullable(),
+      files: z.array(z.string()),
+    }),
+  ),
+  /** Sent handoffs (imported past packs too) that carried the object's files, oldest first. */
+  handed: z.array(
+    z.object({
+      contractor: z.string(),
+      collection_id: ItemIdSchema,
+      on: LocalDateSchema,
+      files: z.array(z.string()),
+    }),
+  ),
+})
+export type ItemPromo = z.infer<typeof ItemPromoSchema>

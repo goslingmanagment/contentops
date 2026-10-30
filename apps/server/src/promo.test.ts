@@ -478,6 +478,34 @@ describe('handoffs (SPEC §5, §7.1, §9.3)', () => {
     expect(prepared.summary_text).toMatch(/^Офис, нейлон · 2 видео · 1 фото · \d+ КБ$/)
   })
 
+  it('a prepared handoff without «Передано» is its own line of the check (DESIGN §4.17)', async () => {
+    const check = (
+      await get(manager, `/promo/collections/PRM-001/handoff-check?contractor=${garanteam.id}`)
+    ).json()
+    expect(check).toMatchObject({ already: 0, text: null, pending: 3, total: 3 })
+    expect(check.pending_text).toMatch(
+      /^3 из 3 уже в PRM-001 \(подготовлена \d\d\.\d\d, «Передано» не нажато\)$/,
+    )
+    // The same file in another collection carries it too; another contractor does not.
+    const second = (
+      await get(manager, `/promo/collections/PRM-002/handoff-check?contractor=${garanteam.id}`)
+    ).json()
+    expect(second.pending).toBe(1)
+    const other = (
+      await get(manager, `/promo/collections/PRM-001/handoff-check?contractor=${coraline.id}`)
+    ).json()
+    expect(other).toMatchObject({ pending: 0, pending_text: null })
+    const collection = (await get(manager, '/promo/collections/PRM-001')).json()
+    expect(collection.members[0].prepared_for).toEqual([
+      {
+        contractor_id: garanteam.id,
+        contractor: 'GaranTTeam Social',
+        collection_id: 'PRM-001',
+        on: expect.any(String),
+      },
+    ])
+  })
+
   it('the ZIP and manifest.csv match the sealed composition and receipt', async () => {
     const zip = readZip(await zipOf(first.zip_url))
     expect(zip.map((entry) => entry.name)).toEqual([
@@ -544,6 +572,7 @@ describe('handoffs (SPEC §5, §7.1, §9.3)', () => {
       get(manager, `/promo/collections/PRM-001/handoff-check?contractor=${contractor}`)
     const same = (await check(garanteam.id)).json()
     expect(same.already).toBe(3)
+    expect(same).toMatchObject({ pending: 0, pending_text: null })
     expect(same.text).toMatch(/^3 из 3 уже передавали GaranTTeam Social \(PRM-001, \d\d\.\d\d\)$/)
     const other = (await check(coraline.id)).json()
     expect(other).toMatchObject({ already: 0, text: null })
@@ -560,6 +589,40 @@ describe('handoffs (SPEC §5, §7.1, §9.3)', () => {
     const second = (await get(manager, '/promo/collections/PRM-002')).json()
     const raw01 = second.members.find((m: { file_key: string }) => m.file_key === 'raw01')
     expect(raw01.handed_to).toHaveLength(1)
+  })
+
+  it('the source object shows its collections and its handoffs (SPEC §7.1)', async () => {
+    const raw = (await get(reader, '/i/RAW-0213')).json()
+    expect(raw.promo).toEqual({
+      collections: [
+        {
+          id: 'PRM-001',
+          title: 'Офис, нейлон',
+          channel: 'reddit',
+          channel_name: 'Reddit',
+          contractor: 'GaranTTeam Social',
+          files: ['raw01', 'raw02'],
+        },
+        {
+          id: 'PRM-002',
+          title: 'Второй пак',
+          channel: 'reddit',
+          channel_name: 'Reddit',
+          contractor: null,
+          files: ['raw01', 'raw03'],
+        },
+      ],
+      handed: [
+        {
+          contractor: 'GaranTTeam Social',
+          collection_id: 'PRM-001',
+          on: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          files: ['raw01', 'raw02'],
+        },
+      ],
+    })
+    const untouched = (await get(reader, '/i/PPV-073')).json()
+    expect(untouched.promo).toEqual({ collections: [], handed: [] })
   })
 
   it('«Убрать их» with nothing new is refused; a follow-up carries only what was added', async () => {

@@ -6,6 +6,7 @@ import { HandoffsSection } from './handoffs-section'
 import { HistoryTab } from './history-tab'
 import { MarkupSection } from './markup-section'
 import { OrderSection } from './order-section'
+import { PromoSection } from './promo-section'
 import { ProvenanceSection } from './provenance-section'
 import { YdiskSection } from './ydisk-section'
 
@@ -16,7 +17,7 @@ interface ObjectPanelProps {
 
 /**
  * Панель «Сведения / История» объекта (DESIGN §4.4): раскрытая страница «где залито»
- * сверху, затем разметка, отметки, происхождение, Я.Диск и заказ или передачи.
+ * сверху, затем разметка, отметки, происхождение, промо, Я.Диск и заказ или передачи.
  */
 export function ObjectPanel({ width, onClose }: ObjectPanelProps) {
   const { detail, search, setSearch } = useObjectPage()
@@ -40,6 +41,7 @@ export function ObjectPanel({ width, onClose }: ObjectPanelProps) {
               <MarkupSection />
               {type === 'promo' ? null : <FlagsSection />}
               <ProvenanceSection />
+              {type === 'promo' ? null : <PromoSection />}
               <YdiskSection />
               {type === 'custom' ? <OrderSection /> : null}
               {type === 'promo' ? <HandoffsSection /> : null}

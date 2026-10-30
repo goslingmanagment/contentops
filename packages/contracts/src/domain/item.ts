@@ -14,6 +14,7 @@ import { ItemIdSchema } from './item-type'
 import { MarkupFieldSchema } from './markup'
 import { OperationAcceptedSchema } from './operations'
 import { PageSummaryEntrySchema, PlacementVerdictSchema, SurfaceKindSchema } from './placement'
+import { ItemPromoSchema } from './promo'
 import { ProvenanceLinkSchema } from './provenance'
 
 /** An old name of the object; names with fans are visible only to those who see the order. */
@@ -102,6 +103,8 @@ export const ItemDetailSchema = z.object({
   order: z.object({ id: z.string(), title: z.string(), status: StatusWordSchema }).nullable(),
   /** Promo collection: handoffs of this collection. */
   handoffs: z.array(z.object({ id: z.string(), status: StatusWordSchema })),
+  /** Collections and handoffs that hold the object's files (SPEC §7.1). */
+  promo: ItemPromoSchema,
   receipts: z.array(DownloadReceiptSchema),
   /** Custom «готов для PPV»: a video custom without PPV whose order is delivered, no open revision. */
   ready_for_ppv: z.boolean(),

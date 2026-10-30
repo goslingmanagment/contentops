@@ -198,6 +198,7 @@ function promo(state: MockState, model: ModelWorld, group: InboxGroup): Accepted
     uploaded_on: todayOf(state),
     added_on: todayOf(state),
     handed_to: [],
+    prepared_for: [],
     other_collections: [],
   }))
   collection.members.push(...members)
