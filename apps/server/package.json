@@ -8,6 +8,7 @@
     "build": "node build.mjs",
     "openapi": "tsx src/write-openapi.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "seed": "tsx src/seed.ts",
     "test": "vitest run"
   },
   "dependencies": {

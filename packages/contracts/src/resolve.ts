@@ -44,11 +44,12 @@ function typeOfWord(word: string): ItemType | null {
 
 /** `ппв 73` → `PPV-073`; `null` when the query is not an ID. */
 export function parseIdQuery(query: string): ItemId | null {
-  const match = /^#?\[?\s*([a-zа-яё]+)[\s_-]*(\d{1,4})\s*\]?$/iu.exec(query.trim().toLowerCase())
+  const match = /^#?\[?\s*([a-zа-яё]+)[\s_-]*(\d{1,6})\s*\]?$/iu.exec(query.trim().toLowerCase())
   if (!match) return null
   const type = typeOfWord(match[1] ?? '')
-  if (!type) return null
-  return formatItemId(type, Number(match[2]))
+  const number = Number(match[2])
+  if (!type || number < 1) return null
+  return formatItemId(type, number)
 }
 
 export function sectionOfQuery(query: string): ResolveResult['section'] {

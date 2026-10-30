@@ -1,7 +1,7 @@
 import type { PathParams, Route } from '@contentops/contracts/api/route'
 import type { ApiRoutes } from '@contentops/contracts/api/routes/index'
 import type { z } from 'zod'
-import type { RequestContext } from './context'
+import type { NotModified, RequestContext } from './context'
 
 /** What a handler gets: everything already checked by the route's schemas. */
 export interface HandlerInput<R extends Route> {
@@ -11,10 +11,13 @@ export interface HandlerInput<R extends Route> {
   ctx: RequestContext
 }
 
-/** Returns the answer before its schema; the server validates it and sends `route.success`. */
+/**
+ * Returns the answer before its schema; the server validates it and sends `route.success`.
+ * A read of a whole resource may answer `NotModified` (304).
+ */
 export type RouteHandler<R extends Route> = (
   input: HandlerInput<R>,
-) => z.input<R['response']> | Promise<z.input<R['response']>>
+) => z.input<R['response']> | NotModified | Promise<z.input<R['response']> | NotModified>
 
 type AreaHandlers<Area> = {
   [Name in keyof Area]?: Area[Name] extends Route ? RouteHandler<Area[Name]> : never

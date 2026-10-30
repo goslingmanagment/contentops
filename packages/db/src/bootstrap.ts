@@ -10,6 +10,7 @@ import {
   platforms,
   reservedModelCodes,
   surfaceKinds,
+  tagGroups,
   uniqLevels,
 } from './values.ts'
 
@@ -90,9 +91,18 @@ const ModelSchema = z.strictObject({
   id_counters: z.record(z.enum(contentTypes), CounterSchema),
 })
 
+/** A known tag of the shared dictionary with its group (SPEC §8.3); `null` — no group yet. */
+const TagSchema = z.strictObject({
+  slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'lowercase letters, digits and dashes'),
+  ru: text,
+  group: z.enum(tagGroups).nullable(),
+})
+
 export const BootstrapConfigSchema = z
   .strictObject({
     models: z.array(ModelSchema).min(1),
+    /** The shared tag dictionary: known tags of every model, three groups (schema §9.5). */
+    tags: z.array(TagSchema).default([]),
     owner: z.strictObject({
       login: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/),
       display_name: text,
@@ -108,6 +118,7 @@ export const BootstrapConfigSchema = z
     const repeated = (values: string[]) => values.filter((v, i) => values.indexOf(v) !== i)
     const issues = [
       ...repeated(config.models.map((m) => m.code)).map((c) => `model ${c} twice`),
+      ...repeated(config.tags.map((tag) => tag.slug)).map((slug) => `tag ${slug} twice`),
       ...repeated(config.models.flatMap((m) => m.accounts.map((a) => a.code))).map(
         (c) => `account ${c} twice`,
       ),
@@ -180,6 +191,7 @@ export async function bootstrap(
       await ensureCounters(tx, modelId, model, created)
       await ensureGrant(tx, modelId, model.code, ownerId, config.owner.login, created)
     }
+    await ensureTags(tx, config.tags, created)
     if (created.length > 0) {
       await logAction(tx, {
         modelId: null,
@@ -332,6 +344,18 @@ async function ensureCounters(tx: Tx, modelId: string, model: ModelConfig, creat
       .onConflictDoNothing({ target: [t.idCounters.modelId, t.idCounters.type] })
       .returning({ type: t.idCounters.type })
     if (row) created.push(`counter ${model.code}/${type}`)
+  }
+}
+
+/** Known tags are added, never changed: the owner edits names and groups in the settings. */
+async function ensureTags(tx: Tx, tags: BootstrapConfig['tags'], created: string[]) {
+  for (const tag of tags) {
+    const { rows } = await tx.execute<{ slug: string }>(sql`
+      INSERT INTO tags (model_id, slug, label_ru, tag_group)
+      VALUES (NULL, ${tag.slug}, ${tag.ru}, ${tag.group})
+      ON CONFLICT ON CONSTRAINT tags_slug DO NOTHING
+      RETURNING slug`)
+    if (rows[0]) created.push(`tag ${tag.slug}`)
   }
 }
 
