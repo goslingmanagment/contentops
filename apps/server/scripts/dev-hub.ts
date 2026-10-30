@@ -4,6 +4,8 @@
 // approve, cancel and the feed of changes — and moves publications the way Hub would:
 // an approved one is handed to the platform's schedule after a few seconds. «Вышло» and
 // «не вышло» are the developer's: `POST /__dev/publications/<id>/publish` or `/not-publish`.
+// With `DATABASE_URL` it also serves posts made from the dev plan, so matching and «Сверить»
+// have something to show (`dev-hub-posts.ts`).
 // Started by `dev-stack.mjs`; prints `ready <url>` when it listens.
 import type { LoggedRequest, Reply } from '@contentops/hub/testing'
 import { FakeHub } from '@contentops/hub/testing'
@@ -60,6 +62,12 @@ setInterval(() => {
 }, 1_000).unref()
 
 await hub.start()
+// Posts made from the dev plan for the matching and «Сверить» (`dev-hub-posts.ts`).
+if (process.env.DATABASE_URL) {
+  const { seedMatching } = await import('./dev-hub-posts.ts')
+  const posts = await seedMatching(hub, process.env.DATABASE_URL)
+  process.stderr.write(`fake Hub: ${posts} posts made from the dev plan\n`)
+}
 // The fake listens on a random port; a stable one is proxied for the stack's environment.
 const { createServer, request } = await import('node:http')
 const target = new URL(hub.url)

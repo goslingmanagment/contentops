@@ -495,3 +495,37 @@ describe('массовое подтверждение и OnlyFans', () => {
     expect(created.map((row) => row.mark_button)).toEqual(['mark', 'mark_confirm'])
   })
 })
+
+describe('со сторон экрана (перенос проверок заглушки)', () => {
+  it('строки «Hub не смог проверить» совпадают с числом и группами в списке', async () => {
+    const view = await list()
+    const rows = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/reconcile/unverified',
+      as: owner,
+    })
+    const items = rows.json().items as { reason: string }[]
+    expect(items).toHaveLength(view.unverified.total)
+    for (const group of view.unverified.groups) {
+      expect(items.filter((row) => row.reason === group.reason)).toHaveLength(group.count)
+    }
+  })
+
+  it('страница с выключенной автосверкой находок не даёт: ни случаев, ни «не смог проверить»', async () => {
+    await setSwitch(db, loraOf, 'hub.auto_match', false)
+    try {
+      const view = await list()
+      expect(view.items.some((item) => item.account === 'lora-of')).toBe(false)
+      const rows = await call(server.app, {
+        method: 'GET',
+        url: '/api/v1/lora/reconcile/unverified',
+        as: owner,
+      })
+      expect(
+        (rows.json().items as { account: string }[]).some((row) => row.account === 'lora-of'),
+      ).toBe(false)
+    } finally {
+      await setSwitch(db, loraOf, 'hub.auto_match', true)
+    }
+  })
+})

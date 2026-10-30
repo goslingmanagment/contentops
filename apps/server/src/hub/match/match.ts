@@ -219,8 +219,12 @@ export async function matchPage(tx: Tx, page: Page, options: MatchOptions): Prom
     )
   }
 
+  // A row or a post tied for certain this run asks nothing more about its other pairs.
+  const tiedRows = new Set(found.filter(certain).map((pair) => pair.row.id))
+  const tiedPosts = new Set(found.filter(certain).map((pair) => pair.post.ref))
   for (const pair of found) {
     const { row, post, judgement } = pair
+    if (!certain(pair) && (tiedRows.has(row.id) || tiedPosts.has(post.ref))) continue
     const kind = certain(pair)
       ? judgement.kind
       : judgement.kind === 'exact' || judgement.kind === 'reused'
@@ -322,11 +326,12 @@ export async function matchPage(tx: Tx, page: Page, options: MatchOptions): Prom
     placements.flatMap((placement) => (placement.postRef ? [placement.postRef] : [])),
   )
   const hidden = new Map<string, number>()
+  const shapes = settings.ads ? await modelShapes(tx, page, settings) : null
   for (const post of posts) {
     if (Date.parse(post.publishedAt) < liveAt || byPost.has(post.ref) || linkedRefs.has(post.ref))
       continue
     if (exactItems(post, exact, reused)) continue
-    if (await isAdPost(tx, page, post, settings)) {
+    if (shapes && isAdPost(post, settings, shapes)) {
       const day = mskDay(post.publishedAt, page.timezone)
       hidden.set(day, (hidden.get(day) ?? 0) + 1)
       continue
@@ -599,28 +604,57 @@ function candidatePayload(
   }
 }
 
-/** A post without plan is an ad of another page by its caption and none of the model's files. */
-export async function isAdPost(
-  tx: Queryable,
+/** Shapes of the model's files: «ни одного файла модели по длительности и размерам». */
+export interface ModelShapes {
+  has(file: Pick<HubFile, 'isVideo' | 'durationMs' | 'width' | 'height'>): boolean
+}
+
+/** Read once per page and run: sizes as an unordered pair, video lengths within tolerance. */
+export async function modelShapes(
+  q: Queryable,
   page: Page,
+  settings: MatchSettings,
+): Promise<ModelShapes> {
+  const { rows } = await q.execute<{ a: number; b: number; video: boolean; ms: string | null }>(sql`
+    SELECT DISTINCT least(v.width, v.height) AS a, greatest(v.width, v.height) AS b,
+           a.media_kind = 'video' AS video, v.duration_ms::text AS ms
+      FROM asset_versions v JOIN assets a ON a.model_id = v.model_id AND a.id = v.asset_id
+     WHERE v.model_id = ${page.modelId}::uuid AND v.width IS NOT NULL AND v.height IS NOT NULL`)
+  const tolerance = settings.durationMs ?? MISMATCH_MS
+  const bySize = new Map<string, { video: boolean; ms: number | null }[]>()
+  for (const row of rows) {
+    const key = `${row.a}x${row.b}`
+    const list = bySize.get(key) ?? []
+    list.push({ video: row.video, ms: row.ms === null ? null : Number(row.ms) })
+    bySize.set(key, list)
+  }
+  return {
+    has(file) {
+      if (!file.width || !file.height) return false
+      const key = `${Math.min(file.width, file.height)}x${Math.max(file.width, file.height)}`
+      return (bySize.get(key) ?? []).some(
+        (shape) =>
+          !file.isVideo ||
+          (shape.video &&
+            shape.ms !== null &&
+            file.durationMs !== null &&
+            Math.abs(shape.ms - file.durationMs) <= tolerance),
+      )
+    },
+  }
+}
+
+/**
+ * An ad of another page without plan (SPEC §7): a marker or a foreign `@handle` in the caption,
+ * and none of its files is a file of the model by duration and size.
+ */
+export function isAdPost(
   post: HubPostFacts,
   settings: MatchSettings,
-): Promise<boolean> {
+  shapes: ModelShapes,
+): boolean {
   if (!looksLikeAd(post.caption, settings.ads)) return false
-  const tolerance = settings.durationMs ?? MISMATCH_MS
-  for (const file of post.mains) {
-    if (!file.width || !file.height) continue
-    const { rows } = await tx.execute(sql`
-      SELECT 1 FROM asset_versions v JOIN assets a ON a.model_id = v.model_id AND a.id = v.asset_id
-       WHERE v.model_id = ${page.modelId}::uuid
-         AND ((v.width = ${file.width} AND v.height = ${file.height})
-              OR (v.width = ${file.height} AND v.height = ${file.width}))
-         AND (${file.isVideo} = false OR (a.media_kind = 'video'
-              AND abs(coalesce(v.duration_ms, -1) - ${file.durationMs ?? -1000000}) <= ${tolerance}))
-       LIMIT 1`)
-    if (rows.length > 0) return false
-  }
-  return true
+  return !post.mains.some((file) => shapes.has(file))
 }
 
 /**

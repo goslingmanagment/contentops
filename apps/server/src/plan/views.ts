@@ -1,4 +1,10 @@
-import { addDays, isoWeekOf, weekDates, weekdayIndex } from '@contentops/contracts/clock'
+import {
+  addDays,
+  isoWeekOf,
+  mskInstant,
+  weekDates,
+  weekdayIndex,
+} from '@contentops/contracts/clock'
 import type { CatalogEntry } from '@contentops/contracts/domain/catalog'
 import type { IsoWeek, LocalDate, Sign } from '@contentops/contracts/domain/common'
 import type { Integration, IntegrationLine } from '@contentops/contracts/domain/integrations'
@@ -20,7 +26,7 @@ import { sql } from 'drizzle-orm'
 import { catalogEntries } from '../catalog/entries'
 import { publicIdOf } from '../catalog/ids'
 import { instant } from '../commands'
-import { checkModel, unplannedOn } from '../hub/check/cases'
+import { loosePosts, unplannedOn } from '../hub/check/cases'
 import type { DownloadItem } from '../media/downloads'
 import { planWarnings, slotOrder } from './checks'
 import {
@@ -465,7 +471,11 @@ export async function dayView(
     ),
   }))
   const norms = normsOf(state)
-  const check = await checkModel(context.q, state)
+  // Posts without plan of this day only (DESIGN §4.11 «Hub видел N постов без плана»).
+  const loose = await loosePosts(context.q, state, {
+    from: mskInstant(date),
+    to: mskInstant(addDays(date, 1)),
+  })
   const step = views.filter(
     (view) =>
       !view.cancelled && (NEEDS_STEP.has(view.verdict.level) || view.verdict.sign === 'turn'),
@@ -479,7 +489,7 @@ export async function dayView(
       assignee: personRef(state.people, account.usual_assignee),
       integration: hubLine(context, account.code, account.label),
       // «Пост без плана» of the page on this day (SPEC §7, DESIGN §4.11).
-      unplanned_posts: unplannedOn(check, account.code, date),
+      unplanned_posts: unplannedOn(loose, account.code, date),
     })),
     rows: views,
     gaps: gapsOf(state, norms, [date]),

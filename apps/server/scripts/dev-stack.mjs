@@ -8,7 +8,9 @@
 // by itself within seconds.
 // `DEV_FAKE_HUB=1` starts a fake Agency Hub (`scripts/dev-hub.ts`), gives the stack its key and
 // turns «Публикация» on for Lora's pages: «Подготовить» and «Отправить» in the plan go to it
-// (never to a real Hub); `POST <hub>/__dev/publications/<id>/publish` makes one «вышло».
+// (never to a real Hub); `POST <hub>/__dev/publications/<id>/publish` makes one «вышло». The
+// fake also serves posts made from the dev plan and turns receiving and matching on, so the
+// first poll fills «План › Сверить» and the Hub states of the rows (`scripts/dev-hub-posts.ts`).
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -174,6 +176,8 @@ if (process.env.DEV_FAKE_HUB === '1') {
   const fake = spawn(process.execPath, [join(ROOT, 'apps/server/scripts/dev-hub.ts')], {
     cwd: join(ROOT, 'apps/server'),
     stdio: ['ignore', 'pipe', 'inherit'],
+    // Posts made from the dev plan and matching switched on (`dev-hub-posts.ts`).
+    env: { ...process.env, DATABASE_URL: url('contentops_app', 'dev-app') },
   })
   children.push(fake)
   const base = await new Promise((resolve, reject) => {
