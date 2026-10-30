@@ -95,7 +95,7 @@ export async function createGeneration(
 }
 
 /** Serialises switches of one derivative key (schema §9.1 «переключение поколения»). */
-async function lockKey(tx: Tx, master: Buffer, key: GenerationKey): Promise<void> {
+export async function lockKey(tx: Tx, master: Buffer, key: GenerationKey): Promise<void> {
   const name = `rendition:${master.toString('hex')}:${key.kind}:${key.recipeDigest}:${key.metaStripped}`
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${name}, 0))`)
 }

@@ -44,12 +44,15 @@ export interface PlatformProfile {
 }
 
 /**
- * Default until the Fansly profile is measured from Hub `raw_media` (SPEC §9.3, §13): 1080p
- * long side, ≤ 60 fps, H.264 High CRF 20 capped at 8 Mbit/s — «сотни мегабайт, не
- * гигабайты». Pass the measured profile as configuration when it exists.
+ * The profile measured on Fansly (SPEC §9.3, compression.md §10.10, 30.10.2026). The fan's
+ * player streams a fixed ladder 1920/1280/854/640 below the upload — a 3840 rung only from
+ * a 4K upload — at the source fps up to 60; the progressive file is 1280. So: long side 1920
+ * without upscaling (the top rung a phone shows of a vertical video), source fps up to 60,
+ * H.264 High CRF 20 capped at 8 Mbit/s — «сотни мегабайт, не гигабайты» at PPV lengths,
+ * where a 4K copy of the same quality is gigabytes. OnlyFans sizes are not in Hub yet.
  */
 export const DEFAULT_PLATFORM_PROFILE: PlatformProfile = {
-  id: 'default-1080p-2026-10',
+  id: 'fansly-2026-10-30',
   maxLongSide: 1920,
   maxFps: 60,
   codec: 'libx264',

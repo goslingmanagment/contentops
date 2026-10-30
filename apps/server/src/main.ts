@@ -16,6 +16,7 @@ import { intakeMediaHandlers } from './intake/media'
 import { scanHandler, scanStreams } from './intake/scan'
 import { envSourceFactory } from './intake/source-client'
 import { createLogger } from './logger'
+import { startGenerationCollector } from './media/collector'
 import { createMediaEnv } from './media/pipeline'
 import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
 import { BlobStore } from './media/storage'
@@ -232,6 +233,8 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     log,
   })
   const stopSweep = role === 'worker' ? startExportSweep(store, log) : () => {}
+  // Old rendition generations go once their rebuild has served a day (SPEC §9.1).
+  const stopCollector = role === 'worker' ? startGenerationCollector(db, store, log) : () => {}
   // Periodic works (Hub polls, source scans) are scheduled only by `worker`; their streams
   // come with their stages. A source's streams exist while its token is in the environment.
   const startedAt = new Date()
@@ -246,6 +249,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
       : null
   stopWork = async () => {
     stopSweep()
+    stopCollector()
     await scheduler?.stop()
     // Running works go back to the queue without counting the attempt.
     await runner.stop()

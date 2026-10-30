@@ -339,7 +339,9 @@ export function mediaRouteHandlers({ db, command, store }: Services): HandlerReg
           throw notFound(
             served.key.startsWith('exports/')
               ? 'Выдача удалена через сутки — скачайте заново'
-              : 'Байты этой выдачи недоступны',
+              : served.key.startsWith('derived/')
+                ? 'Копия пересобрана — скачайте заново'
+                : 'Байты этой выдачи недоступны',
           )
         }
         return new FileAnswer({
