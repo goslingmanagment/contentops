@@ -131,10 +131,11 @@ export function RowFormView({ entry, data, preset, title, tabs, left, onDone }: 
   )
   const check = useCheckSummary(rows)
   const summaryCheck = rejected
-    ? { tone: 'blocked' as const, text: rejected, thresholdUnset: false }
+    ? { tone: 'blocked' as const, text: rejected, thresholdUnset: false, question: null }
     : check.summary
 
-  const surfaces = allowedSurfaces(entry.type)
+  // Сториз — только тизером во вкладке «Выпуск PPV» (DESIGN §4.13): у строки её нет.
+  const surfaces = allowedSurfaces(entry.type).filter((surface) => surface !== 'story')
   const disabledReason = (account: Account) => pageBlockReason([entry], account, values.surface)
   const firstAccount = values.accounts[0]
   const pageAssigneeId = firstAccount

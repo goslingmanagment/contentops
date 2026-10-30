@@ -12,7 +12,7 @@ import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
 import { createContext, useContext } from 'react'
 import { type ServerFile, saveServerFile } from '@/lib/save-file'
 import { devMock } from './dev-mock'
-import { isServerRoute } from './server-routes'
+import { isServerRoute, SERVER_CLOCK } from './server-routes'
 
 /**
  * Сеанс данных: часы, клиент API и кэш запросов. Всё живёт, пока не сменились `?demo=` и
@@ -88,7 +88,8 @@ export function createApiSession({ demo, role, onUnauthenticated }: ApiSessionOp
   })
   return {
     client,
-    clock: mock?.clock ?? systemClock,
+    // План на сервере (4а) живёт по настоящему времени: «сегодня» в разработке — тоже.
+    clock: mock && !SERVER_CLOCK ? mock.clock : systemClock,
     queryClient,
     demo,
     role,
@@ -112,7 +113,10 @@ export function useApi(): ApiClient {
   return useApiSession().client
 }
 
-/** «Сейчас»: настоящее время; у заглушки — 22.09.2026 14:20 МСК и дальше по настоящему времени. */
+/**
+ * «Сейчас»: настоящее время; у заглушки — 22.09.2026 14:20 МСК и дальше по настоящему времени,
+ * пока план отвечает заглушка.
+ */
 export function useClock(): Clock {
   return useApiSession().clock
 }

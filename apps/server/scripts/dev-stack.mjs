@@ -115,11 +115,21 @@ function hasFfmpeg() {
 }
 
 // A fictional catalog of Лора for the screens; a model with objects is left as it is.
-execFileSync('pnpm', ['--filter', '@contentops/server', 'seed', 'lora', ...(media ? ['--media'] : [])], {
-  cwd: ROOT,
-  stdio: 'inherit',
-  env: { ...process.env, ...storageEnv, DATABASE_URL: url('contentops_app', 'dev-app') },
-})
+// …and a week of its plan with the content manager `diana` (same password as the owner).
+execFileSync(
+  'pnpm',
+  ['--filter', '@contentops/server', 'seed', 'lora', '--plan', ...(media ? ['--media'] : [])],
+  {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      ...storageEnv,
+      DATABASE_URL: url('contentops_app', 'dev-app'),
+      CONTENTOPS_OWNER_PASSWORD: OWNER_PASSWORD,
+    },
+  },
+)
 
 const children = []
 let sourceEnv = {}

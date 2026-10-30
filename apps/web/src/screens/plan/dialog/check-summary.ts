@@ -1,4 +1,9 @@
-import type { CreatePlanRowsResult, PlanWarning, RowCheckResult } from '@contentops/contracts'
+import type {
+  CreatePlanRowsResult,
+  ItemId,
+  PlanWarning,
+  RowCheckResult,
+} from '@contentops/contracts'
 import { capitalize, formatNumber, plural } from '@contentops/contracts'
 
 /**
@@ -10,6 +15,13 @@ export interface CheckSummary {
   tone: 'muted' | 'attention' | 'blocked'
   text: string
   thresholdUnset: boolean
+  /** Старый объект, второго человека не проверяли: «Есть второй человек? · Нет · Есть». */
+  question: { item_id: ItemId } | null
+}
+
+function questionOf(checks: readonly PageCheck[]): CheckSummary['question'] {
+  const asked = checks.find((check) => check.result.question)?.result.question
+  return asked ? { item_id: asked.item_id } : null
 }
 
 /** Порядок янтаря: объект уже стоит на этом месте — первым, дальше повтор и время. */
@@ -58,13 +70,14 @@ export function pickCheck(checks: readonly PageCheck[]): CheckSummary | null {
   const thresholdUnset = checks.some((check) =>
     check.result.warnings.some((warning) => warning.kind === 'threshold_unset'),
   )
+  const question = questionOf(checks)
   if (checks.length === 1) {
-    return { tone, text: only.result.text, thresholdUnset }
+    return { tone, text: only.result.text, thresholdUnset, question }
   }
   const ordered = [...checks].sort((left, right) => rankOf(left.result) - rankOf(right.result))
   const parts = ordered.map((check) => `${check.label}: ${check.result.page_text}`).join(' · ')
   const calm = checks.every((check) => rankOf(check.result) === 5)
-  return { tone, text: calm ? `Повторов нет · ${parts}` : parts, thresholdUnset }
+  return { tone, text: calm ? `Повторов нет · ${parts}` : parts, thresholdUnset, question }
 }
 
 /** Пометка строки пакета в предпросмотре. */
@@ -103,12 +116,17 @@ export function batchSummary(notes: readonly (RowNote | null)[]): CheckSummary {
     null,
   )
   if (!first) {
-    return { tone: 'muted', text: 'Повторов нет', thresholdUnset: false }
+    return { tone: 'muted', text: 'Повторов нет', thresholdUnset: false, question: null }
   }
   const more = marked.filter((note) => note.rank === first.rank).length - 1
   const tail =
     more > 0
       ? ` · ещё ${formatNumber(more)} ${plural(more, ['такая строка', 'такие строки', 'таких строк'])}`
       : ''
-  return { tone: first.tone, text: `${capitalize(first.text)}${tail}`, thresholdUnset: false }
+  return {
+    tone: first.tone,
+    text: `${capitalize(first.text)}${tail}`,
+    thresholdUnset: false,
+    question: null,
+  }
 }

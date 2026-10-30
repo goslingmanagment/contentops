@@ -20,12 +20,16 @@ import type {
 /** Порядок мест в окне: стена / фуп / vault / сториз / рассылка. */
 export const SURFACE_ORDER: readonly SurfaceKind[] = ['wall', 'fyp', 'vault', 'story', 'dm']
 
+/**
+ * Таблица SPEC §7 «тип ставится только на свои поверхности» — та же, что проверяет сервер:
+ * кастом в план не ставится (выходит как PPV), рассылка — только PPV.
+ */
 const TYPE_SURFACES: Record<ItemType, readonly SurfaceKind[]> = {
   ppv: ['wall', 'vault', 'story', 'dm'],
   fyp: ['fyp'],
-  custom: ['vault', 'dm'],
+  custom: [],
   set: ['wall'],
-  sexting: ['vault', 'dm'],
+  sexting: ['vault'],
   life: ['wall', 'vault'],
   raw: [],
   promo: [],
