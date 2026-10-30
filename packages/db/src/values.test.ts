@@ -96,6 +96,30 @@ const LISTS: Record<string, readonly string[]> = {
   custom_orders_name_in_media_check: v.nameInMediaValues,
   custom_order_messages_kind_check: v.orderMessageKinds,
   custom_order_deliveries_part_check: v.orderParts,
+  // 0005_legacy_placements
+  legacy_claims_claim_kind_check: v.legacyClaimKinds,
+  legacy_claims_resolution_check: v.legacyClaimResolutions,
+  legacy_number_claims_type_check: v.contentTypes,
+  legacy_number_claims_decision_check: v.legacyNumberDecisions,
+  placements_occurrence_kind_check: v.occurrenceKinds,
+  placements_event_precision_check: v.eventPrecisions,
+  placements_occurred_source_check: v.occurredSources,
+  placements_surface_source_check: v.surfaceSources,
+  placements_origin_check: v.placementOrigins,
+  placement_assets_match_strength_check: v.matchStrengths,
+  placement_evidence_source_check: v.evidenceSources,
+  placement_evidence_kind_check: v.evidenceKinds,
+  placement_evidence_strength_check: v.evidenceStrengths,
+  // 0006_plan
+  posting_plan_rows_release_surface_kind_check: v.releaseSurfaceKinds,
+  posting_plan_rows_expected_type_check: v.montageTypes,
+  posting_plan_rows_mark_kind_check: v.markKinds,
+  posting_plan_rows_cancel_reason_check: v.cancelReasons,
+  // 0007_promo
+  contractors_format_check: v.contractorFormats,
+  promo_deliveries_format_check: v.contractorFormats,
+  promo_deliveries_state_check: v.promoDeliveryStates,
+  promo_deliveries_origin_check: v.promoDeliveryOrigins,
 }
 
 let pool: pg.Pool

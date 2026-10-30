@@ -20,15 +20,22 @@ export function OrdersScreen() {
     SelectedOrderSchema,
     () => null,
   )
-  const tab: OrderTab = search.tab === 'closed' ? 'closed' : 'open'
+  const tab: OrderTab = search.tab ?? 'open'
   const changeTab = (next: OrderTab) =>
     void navigate({
-      search: (previous) => ({ ...previous, tab: next === 'closed' ? 'closed' : undefined }),
+      search: (previous) => ({ ...previous, tab: next === 'open' ? undefined : next }),
+      replace: true,
+    })
+  const changeQuery = (q: string) =>
+    void navigate({
+      search: (previous) => ({ ...previous, q: q || undefined }),
       replace: true,
     })
   return (
     <OrdersView
       tab={tab}
+      query={search.q ?? ''}
+      onQueryChange={changeQuery}
       selectedId={selected}
       onSelect={setSelected}
       onClosePanel={() => setSelected(null)}

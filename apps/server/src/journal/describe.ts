@@ -124,6 +124,50 @@ const WORDING: Record<string, Wording> = {
   'settings.updateTag': { verb: 'изменил', rest: 'тег {subject}', noun: 'правка тега' },
   'settings.mergeTag': { verb: 'слил', rest: 'тег {subject}', noun: 'слияние тегов' },
   'fixtures.seed': { verb: 'завёл', rest: '{subject} (фикстура)', noun: 'фикстура' },
+  // Promo (stage 4в): `{subject}` is «PRM-015»; contractors by name.
+  'promo.create': { verb: 'завёл', rest: 'подборку {subject}', noun: 'новая подборка' },
+  'promo.add': { verb: 'добавил', rest: 'материалы в {subject}', noun: 'добавление в промо' },
+  'promo.remove': { verb: 'убрал', rest: 'материалы из {subject}', noun: 'удаление из промо' },
+  'promo.prepareHandoff': {
+    verb: 'начал',
+    rest: 'готовить передачу {subject}',
+    noun: 'подготовка передачи',
+  },
+  'promo.markSent': { verb: 'отметил', rest: 'передачу {subject}', noun: '«Передано»' },
+  'settings.addContractor': {
+    verb: 'добавил',
+    rest: 'подрядчика {subject}',
+    noun: 'добавление подрядчика',
+  },
+  'settings.updateContractor': {
+    verb: 'изменил',
+    rest: 'формат подрядчика {subject}',
+    noun: 'формат подрядчика',
+  },
+  // Orders (stage 4б): `{subject}` is «Кастом «вся в красном»».
+  'orders.create': { verb: 'завёл', rest: 'заказ: {subject}', noun: 'новый заказ' },
+  'orders.update': { verb: 'изменил', rest: 'заказ: {subject}', noun: 'правка заказа' },
+  'orders.markPart': { verb: 'отметил', rest: 'часть заказа: {subject}', noun: 'отметка части' },
+  'orders.linkDelivery': { verb: 'привязал', rest: 'сдачу к заказу: {subject}', noun: 'сдача' },
+  'orders.retractDelivery': {
+    verb: 'отвязал',
+    rest: 'сдачу от заказа: {subject}',
+    noun: 'отвязка сдачи',
+  },
+  'orders.addRevision': { verb: 'добавил', rest: 'правку: {subject}', noun: 'правка' },
+  'orders.completeRevision': {
+    verb: 'отметил',
+    rest: 'правку выполненной: {subject}',
+    noun: 'выполнение правки',
+  },
+  'orders.reopenRevision': { verb: 'переоткрыл', rest: 'правку: {subject}', noun: 'правка снова' },
+  'orders.addMessage': {
+    verb: 'добавил',
+    rest: 'сообщение к заказу: {subject}',
+    noun: 'сообщение',
+  },
+  'orders.close': { verb: 'закрыл', rest: 'заказ: {subject}', noun: 'закрытие заказа' },
+  'orders.cancel': { verb: 'снял', rest: 'заказ: {subject}', noun: 'снятие заказа' },
 }
 
 /** Why an object is in «Недавние»: «правка разметки», «подтверждение разметки». */

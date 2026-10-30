@@ -63,9 +63,10 @@ const APPEND_ONLY = [
   'custom_order_deliveries',
   'download_receipt_entries',
   'download_receipts',
+  'placement_evidence',
 ]
 /** Rows that are updated but never deleted by the app role. */
-const NO_DELETE = ['blobs']
+const NO_DELETE = ['blobs', 'promo_deliveries']
 /** Columns that never change (`forbid_change`). */
 const FIXED_COLUMNS: Record<string, string[]> = {
   accounts: ['model_id', 'id'],
@@ -83,6 +84,7 @@ const FIXED_COLUMNS: Record<string, string[]> = {
   blobs: ['sha256', 'byte_size', 'ext', 'media_kind', 'storage_key'],
   chronology_entries: ['model_id', 'id', 'item_id', 'asset_version_id'],
   content_items: ['model_id', 'id', 'type', 'number'],
+  contractors: ['model_id', 'id'],
   custom_order_messages: ['model_id', 'id', 'order_id'],
   custom_order_revisions: ['model_id', 'id', 'order_id'],
   custom_orders: ['model_id', 'id'],
@@ -107,6 +109,24 @@ const FIXED_COLUMNS: Record<string, string[]> = {
   inbox_groups: ['model_id', 'id', 'source_id', 'group_key'],
   item_memberships: ['model_id', 'id', 'item_id', 'item_type', 'asset_id', 'variant_no', 'kind'],
   item_tags: ['model_id', 'item_id', 'tag_id', 'id'],
+  legacy_claims: [
+    'model_id',
+    'id',
+    'source_object_id',
+    'source_revision_id',
+    'parser_version',
+    'claim_key',
+    'raw_fragment',
+    'claim_kind',
+  ],
+  legacy_number_claims: [
+    'model_id',
+    'id',
+    'type',
+    'claimed_number',
+    'source_object_id',
+    'claim_id',
+  ],
   pipeline_versions: [
     'version',
     'ffmpeg',
@@ -118,10 +138,35 @@ const FIXED_COLUMNS: Record<string, string[]> = {
     'rendition_recipes',
     'recipe_digests',
   ],
+  placement_assets: ['model_id', 'id', 'placement_id', 'asset_id', 'asset_version_id'],
+  placements: ['model_id', 'id', 'account_id', 'surface_id'],
   platform_texts: ['model_id', 'id', 'item_id', 'platform', 'account_id', 'locale', 'variant_no'],
   policy_settings: ['model_id', 'account_id', 'item_type', 'key'],
+  posting_plan_rows: [
+    'model_id',
+    'id',
+    'release_id',
+    'release_surface_kind',
+    'created_at',
+    'created_by',
+  ],
+  ppv_releases: ['model_id', 'id', 'account_id', 'item_id', 'item_type'],
   principal_grants: ['model_id', 'id', 'principal_id'],
   promo_channels: ['model_id', 'id'],
+  promo_deliveries: [
+    'model_id',
+    'id',
+    'package_item_id',
+    'package_item_type',
+    'channel_id',
+    'contractor_id',
+    'format',
+    'manifest_id',
+    'origin',
+    'corrects_id',
+    'prepared_at',
+    'prepared_by',
+  ],
   provenance: [
     'model_id',
     'id',
@@ -194,6 +239,7 @@ const FIXED_COLUMNS: Record<string, string[]> = {
 }
 /** Columns written once, NULL → value (`set_once`). */
 const SET_ONCE_COLUMNS: Record<string, string[]> = {
+  promo_deliveries: ['receipt_id'],
   rendition_generations: ['master_sha256', 'bound_at'],
   source_revisions: [
     'source_sha256',
@@ -378,7 +424,11 @@ describe('model isolation in the catalog', () => {
         await client.query('BEGIN')
         await journalContext(client)
         const [modelA, modelB] = await Promise.all([newModel(client), newModel(client)])
-        const foreign = await insert(client, fk.target, await makeTarget(client, modelB))
+        const foreign = await insert(
+          client,
+          fk.target,
+          await makeTarget(client, modelB, [], fk.source),
+        )
         const row = await makeSource(client, modelA, fk.sourceColumns)
         fk.sourceColumns.forEach((column, i) => {
           if (column !== 'model_id') row[column] = foreign[fk.targetColumns[i] ?? '']

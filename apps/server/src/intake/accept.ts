@@ -10,6 +10,7 @@ import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import { handleOf } from '../media/downloads'
 import { lockBlobForReference } from '../media/storage-ops'
+import { markDeliveredParts } from '../orders/writes'
 
 /**
  * «Принять» (SPEC §4.1, §6.1, schema §5 «Принятие группы», §9.3): one transaction after the
@@ -524,6 +525,7 @@ export async function acceptGroup(
 
   if (group.custom_order_id && item.type === 'CUS') {
     await recordDelivery(tx, model.id, group.custom_order_id, item, created, drafts, actor)
+    await markDeliveredParts(tx, model, group.custom_order_id, actor)
   }
 
   const outcome = target ? 'append' : 'new_item'

@@ -8,6 +8,8 @@ const KIND_LABEL: Record<FollowingKind, string> = {
   repost: 'перепост',
   delivery: 'сдача',
   revision: 'правка',
+  confirmation: 'подтверждение',
+  note: 'заметка',
 }
 
 /**
@@ -25,9 +27,25 @@ export function OrderMessages({ order }: { order: Order }) {
     <InfoSection title="Значимые сообщения">
       <ol className="flex flex-col gap-3">
         {messages.map((message) => (
-          <li key={`${message.at}-${message.kind}`} className="flex flex-col gap-0.5">
+          <li
+            key={`${message.at}-${message.kind}-${message.url ?? message.excerpt}`}
+            className="flex flex-col gap-0.5"
+          >
             <span className="text-ink-3 text-sm tabular-nums">
               {formatWhen(message.at, now)} · {KIND_LABEL[message.kind]}
+              {message.url ? (
+                <>
+                  {' · '}
+                  <a
+                    href={message.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary-ink underline-offset-4 hover:underline"
+                  >
+                    сообщение ↗
+                  </a>
+                </>
+              ) : null}
             </span>
             <span className="line-clamp-2 text-base">{message.excerpt}</span>
           </li>

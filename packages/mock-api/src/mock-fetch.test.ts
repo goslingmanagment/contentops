@@ -133,11 +133,14 @@ describe('изменение видно при следующем чтении',
     )
     expect(closing.status).toBe(422)
     expect(closing.code).toBe('order_not_complete')
+    // Not delivered yet: the revision is kept, the order stays overdue (SPEC §5: «Сдано,
+    // требуется правка» needs a delivery).
     const updated = await api.orders.addRevision({
       params: { model: 'lora', order: red?.id ?? '' },
       body: { text: 'добавить чулки', message_url: null },
     })
-    expect(updated.state).toBe('revision')
+    expect(updated.revisions.at(-1)?.text).toBe('добавить чулки')
+    expect(updated.state).toBe('overdue')
   })
 })
 

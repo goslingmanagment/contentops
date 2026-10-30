@@ -12,7 +12,9 @@ export type DeliveredWithin = z.infer<typeof DeliveredWithinSchema>
  * «Кастомы» — папка Библиотеки, поэтому схема подмешивается в его адрес.
  */
 export const ordersSearchShape = {
-  tab: z.enum(['closed']).optional().catch(undefined),
+  tab: z.enum(['closed', 'cancelled']).optional().catch(undefined),
+  /** «Найти заказ»: покупатель, название, ТЗ — сразу во всех вкладках. */
+  q: z.string().optional().catch(undefined),
   /** «Не сделано»: только кастомы, из которых PPV ещё нет. */
   todo: SearchFlagSchema.optional().catch(undefined),
   /** «Имя ▾»: есть / нет / не знаю. */

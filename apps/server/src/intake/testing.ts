@@ -277,7 +277,9 @@ export async function drain(
   kinds: readonly string[],
   handlers: Partial<Record<string, WorkHandler>>,
 ): Promise<WorkOutcome[]> {
-  const started = new Date()
+  // The database clock: the Docker VM may run behind or ahead of the host.
+  const { rows: clock } = await db.execute<{ at: string }>(sql`SELECT now()::text AS at`)
+  const started = (clock[0] as { at: string }).at
   const runner = new WorkRunner({
     db,
     role: 'worker',
@@ -310,7 +312,7 @@ export async function drain(
     SELECT id, state, error_code, paused_reason, report, next_attempt_at::text
       FROM work_operations
      WHERE kind = ANY (${sql.param([...kinds])}::text[])
-       AND (finished_at >= ${started.toISOString()}::timestamptz
+       AND (finished_at >= ${started}::timestamptz
             OR (state = 'retry_wait' AND next_attempt_at > now()))
      ORDER BY created_at`)
   return rows

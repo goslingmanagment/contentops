@@ -1,0 +1,27 @@
+{
+  "name": "@contentops/cli",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "contentops: the API of ContentOps from the command line, built from the route table.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "contentops": "./bin/contentops.mjs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@contentops/contracts": "workspace:*",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
+}

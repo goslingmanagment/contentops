@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { CatalogEntry, RawPurpose } from '@contentops/contracts/domain/catalog'
 import type { ThumbRef } from '@contentops/contracts/domain/common'
 import type { ItemType } from '@contentops/contracts/domain/item-type'
+import { orderAddress } from '@contentops/contracts/order-link'
 import type { Queryable } from '@contentops/db'
 import { type SQL, sql } from 'drizzle-orm'
 import type { ModelScope } from '../context'
@@ -9,8 +10,7 @@ import { itemTypeOfDb, publicIdOf } from './ids'
 
 /**
  * The compact catalog index (SPEC §12.0 «Интерфейс»): the view `catalog_index` as entries of
- * the contract. Fields that come with later migrations stay empty: the custom delivery date
- * and the order (`0004_orders`).
+ * the contract; a CUS carries its order's address and the source date of its delivery.
  */
 
 /** The shared vendor tag: «SteadyContent» is a tag, not a column (schema §9.2). */
@@ -50,6 +50,10 @@ interface IndexRow extends Record<string, unknown> {
   photo_custom: boolean
   aliases: string[]
   promo_channel_code: string | null
+  delivered_on: string | null
+  order_chat: string | null
+  order_topic: string | null
+  order_message: string | null
 }
 
 /** `mass_dm` of the schema is «рассылка» of the contract. */
@@ -115,7 +119,7 @@ function entryOf(row: IndexRow, model: ModelScope): CatalogEntry {
     ppv_made_as: (row.ppv_made_as as CatalogEntry['ppv_made_as']) ?? null,
     fan_name: type === 'custom' ? row.name_in_media : null,
     second_person: row.has_second_person === true,
-    delivered_on: null,
+    delivered_on: row.delivered_on,
     selected_count: row.selected_count,
     processed_count: row.processed_count,
     life_unassigned: row.life_unassigned,
@@ -124,7 +128,14 @@ function entryOf(row: IndexRow, model: ModelScope): CatalogEntry {
     steady_content: row.tags.includes(STEADY_CONTENT_TAG),
     photo_custom: row.photo_custom,
     aliases: row.aliases,
-    order_id: null,
+    order_id:
+      row.order_chat && row.order_message
+        ? orderAddress({
+            chat: row.order_chat,
+            topic: row.order_topic === null ? null : Number(row.order_topic),
+            message: Number(row.order_message),
+          })
+        : null,
     channel: row.promo_channel_code,
     size_bytes: type === 'promo' ? (row.size_bytes ?? 0) : null,
   }
@@ -147,8 +158,12 @@ export async function catalogEntries(
            c.shot_on::text AS shot_on, c.ppv_kind, c.raw_purpose, c.ppv_made_as,
            c.name_in_media, c.has_second_person, c.selected_count, c.processed_count,
            c.life_unassigned, c.life_chat_count, c.life_feed_count, c.photo_custom, c.aliases,
-           c.promo_channel_code, c.created_at::text AS created_at
+           c.promo_channel_code, c.created_at::text AS created_at,
+           (c.delivered_at AT TIME ZONE 'Europe/Moscow')::date::text AS delivered_on,
+           co.tg_chat AS order_chat, co.tg_topic::text AS order_topic,
+           co.tg_message_id::text AS order_message
       FROM catalog_index c
+      LEFT JOIN custom_orders co ON co.model_id = c.model_id AND co.id = c.order_id
       LEFT JOIN LATERAL (
         SELECT a.media_kind FROM asset_versions v JOIN assets a
             ON a.model_id = v.model_id AND a.id = v.asset_id

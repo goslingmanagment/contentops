@@ -14,6 +14,7 @@ import { call, newKey, signIn } from '../testing/server'
 import { acceptGroup } from './accept'
 import { fetchHandler } from './fetch'
 import { scanHandler } from './scan'
+import { sweepStaging } from './staging'
 import { drain, type IntakeHarness, intakeHarness, LORA_ROOT, runWork, setSwitch } from './testing'
 
 /**
@@ -108,6 +109,10 @@ async function makeReady(draftId: string) {
              state = 'ready', ready_at = now()
        WHERE id = ${draftId}::uuid`),
   )
+  // The media works of the draft are done.
+  await h.db.execute(sql`
+    UPDATE work_operations SET state = 'cancelled', finished_at = now()
+     WHERE draft_id = ${draftId}::uuid AND kind <> 'fetch' AND state = 'pending'`)
 }
 
 async function groupOfPath(path: string) {
@@ -399,5 +404,23 @@ describe('duplicates (SPEC §6.2)', () => {
                                WHERE c.draft_id = d.id AND c.kind = 'exact_duplicate') AS candidate
         FROM inbox_drafts d WHERE d.path = ${`${LORA_ROOT}/1. PPV/Из кастома/master.mp4`}`)
     expect(rows[0]).toEqual({ state: 'processing', candidate: true })
+  })
+})
+
+describe('staging (SPEC §9.1)', () => {
+  it('a staged source goes once its master is registered and no media work needs it', async () => {
+    const path = `${LORA_ROOT}/6. Life/Чистка/01.jpg`
+    h.dropbox.tree.addFile(path, 2700)
+    await scan()
+    await fetchAll()
+    const { draft_id } = await groupOfPath(path)
+    const { rows } = await h.db.execute<{ sha: string }>(sql`
+      SELECT encode(source_sha256, 'hex') AS sha FROM inbox_drafts WHERE id = ${draft_id}::uuid`)
+    const sha = rows[0]?.sha as string
+    expect(await sweepStaging(h.db, store)).not.toContain(sha)
+    expect(await store.staged(sha)).not.toBeNull()
+    await makeReady(draft_id)
+    expect(await sweepStaging(h.db, store)).toContain(sha)
+    expect(await store.staged(sha)).toBeNull()
   })
 })

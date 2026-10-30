@@ -25,10 +25,9 @@ const ROUTE_ACCESS: Record<string, Access> = {
   'admin.tags': 'signed',
   'admin.state': 'signed',
   'admin.operation': 'signed',
-  // «Интеграции» — КМ только смотрит; пороги и подрядчики нужны его экранам.
+  // «Интеграции» — КМ только смотрит; пороги нужны его экранам.
   'admin.integrations': 'staff',
   'admin.thresholds': 'staff',
-  'settings.contractors': 'staff',
   // «Только чтение» видит превью, но не скачивает (SPEC §11.1).
   'media.download': 'staff',
 }

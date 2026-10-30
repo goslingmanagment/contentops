@@ -1,8 +1,10 @@
-import { mkdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { PROMO_MANIFEST_NAME } from '@contentops/contracts/download-name'
 import { type WorkContext, WorkDeferred, WorkError, type WorkHandler } from '@contentops/db'
 import { stripPhotoMetadata, stripVideoMetadata } from '@contentops/media'
 import { sql } from 'drizzle-orm'
+import { markHandoffPrepared, promoManifestCsv } from '../../promo/issue'
 import {
   type DownloadPlan,
   downloadUrl,
@@ -207,6 +209,14 @@ export function exportHandler(env: MediaEnv): WorkHandler {
         const members = []
         for (const entry of issued)
           members.push({ name: entry.name, path: await pathOf(env, entry) })
+        if (plan.promo) {
+          // The handoff's own list goes last in its ZIP (naming §6).
+          const dir = env.store.path(exportKey(plan.receiptId, 'files'))
+          await mkdir(dir, { recursive: true })
+          const csv = join(dir, PROMO_MANIFEST_NAME)
+          await writeFile(csv, promoManifestCsv(plan, issued))
+          members.push({ name: PROMO_MANIFEST_NAME, path: csv })
+        }
         const zip = await writeZip(env.store.path(zipKey), members, ctx.signal)
         // Stripped members live inside the ZIP; the receipt keeps their hash and size.
         await rm(env.store.path(exportKey(plan.receiptId, 'files')), {
@@ -232,7 +242,10 @@ export function exportHandler(env: MediaEnv): WorkHandler {
           size_bytes: bytes,
           files: issued.length,
         },
-        commit: (tx) => sealReceipt(tx, plan, issued, zipKey),
+        commit: async (tx) => {
+          await sealReceipt(tx, plan, issued, zipKey)
+          if (plan.promo) await markHandoffPrepared(tx, plan, issued, bytes)
+        },
       }
     } catch (error) {
       if (!(error instanceof WorkDeferred)) {

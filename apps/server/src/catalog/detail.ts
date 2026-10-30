@@ -14,6 +14,8 @@ import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
 import type { ModelScope } from '../context'
+import { itemOrderSummary } from '../orders/view'
+import { handoffsOf } from '../promo/views'
 import { catalogEntries, rawPurposeOf, renditionUrl, thumbRatio } from './entries'
 import {
   type DbItemType,
@@ -473,6 +475,7 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
       description: item.description,
     },
   ])
+  const order = item.type === 'CUS' ? await itemOrderSummary(q, model, item.id) : null
   const accounts = await q.execute<{ code: string }>(sql`
     SELECT code FROM accounts
      WHERE model_id = ${model.id}::uuid AND archived_at IS NULL ORDER BY position, code`)
@@ -492,10 +495,21 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
       surfaces: [],
       action: null,
     })),
-    order: null,
-    handoffs: [],
+    order: order ? { id: order.id, title: order.title, status: order.status } : null,
+    handoffs:
+      item.type === 'PRM'
+        ? (await handoffsOf(q, model, { packages: [item.id] })).map(({ id, status }) => ({
+            id,
+            status,
+          }))
+        : [],
     receipts: [],
-    ready_for_ppv: false,
+    // A video custom without a PPV whose order is delivered and has no open revision.
+    ready_for_ppv:
+      order !== null &&
+      (order.state === 'delivered' || order.state === 'closed') &&
+      !entry.photo_custom &&
+      entry.ppv_made_as === null,
     frame_check: null,
     ppv_montage: null,
   }

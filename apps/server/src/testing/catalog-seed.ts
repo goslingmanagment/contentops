@@ -282,19 +282,126 @@ function raws(rnd: Random): FixtureItem[] {
   })
 }
 
+const fyp = (number: number) => ({ item: `FYP-0${number}` as ItemId, handle: 'master' })
+const frame = (set: number, ordinal: number) => ({
+  item: `SET-0${set}` as ItemId,
+  handle: `raw${String(ordinal).padStart(2, '0')}`,
+})
+
+/**
+ * Collections of «Промо» (DESIGN §9.8): links to files of the catalog, never copies; the
+ * same montage sits in two channels.
+ */
 function promos(rnd: Random): FixtureItem[] {
-  const channels = ['reddit', 'instagram', 'twitter', 'reddit']
-  return channels.map((channel, index) => ({
+  const collections: { channel: string; title: string; references: FixtureItem['references'] }[] = [
+    {
+      channel: 'instagram',
+      title: 'Офис, нейлон',
+      references: [
+        ...[401, 402, 403, 404, 405, 406, 407, 408].map(fyp),
+        ...[1, 2, 3, 4].map((n) => frame(60, n)),
+      ],
+    },
+    {
+      channel: 'reddit',
+      title: 'Бельё у окна',
+      references: [
+        ...[1, 2, 3, 4, 5, 6].map((n) => frame(61, n)),
+        { item: 'PPV-073', handle: 'teaser' },
+        fyp(409),
+      ],
+    },
+    {
+      channel: 'twitter',
+      title: 'Танцы, лето',
+      references: [...[410, 411, 412, 413, 414].map(fyp), { item: 'RAW-0030', handle: 'raw01' }],
+    },
+    {
+      channel: 'reddit',
+      title: 'Зеркало',
+      references: [...[1, 2, 3].map((n) => frame(62, n)), fyp(415), fyp(401)],
+    },
+    {
+      channel: 'gif-sites',
+      title: 'Гифки, сентябрь',
+      references: [416, 417, 418, 402].map(fyp),
+    },
+  ]
+  return collections.map((collection, index) => ({
     type: 'promo',
     number: 1 + index,
-    title: `Подборка ${rnd.pick(['лето', 'бельё', 'танцы', 'зеркало'])}`,
-    promoChannel: channel,
+    title: collection.title,
+    promoChannel: collection.channel,
     createdAt: arrived(60 + index * 5, rnd),
-    references: [
-      { item: `PPV-0${62 + index * 3}` as ItemId, handle: 'master' },
-      { item: `FYP-04${String(1 + index * 2).padStart(2, '0')}` as ItemId, handle: 'master' },
-    ],
+    references: collection.references,
   }))
+}
+
+/**
+ * Contractors with their one format field, and one past pack recorded as import would record
+ * it (SPEC §6.3): sent, without date and author, the folder date in the summary.
+ */
+async function seedPromo(db: Db, model: string): Promise<void> {
+  await withActorTx(
+    db,
+    { actor: FIXTURE_ACTOR, action: 'fixtures.seed', requestId: randomUUID() },
+    async (tx) => {
+      const { rows } = await tx.execute<{ id: string }>(sql`
+        SELECT id FROM models WHERE code = ${model}`)
+      const modelId = rows[0]?.id as string
+      const contractors: [string, string, string][] = [
+        ['GaranTTeam Social', 'instagram', 'upload'],
+        ['Coraline Red', 'gif-sites', 'master'],
+        ['True Helper', 'sfs', 'compat'],
+      ]
+      for (const [name, channel, format] of contractors) {
+        await tx.execute(sql`
+          INSERT INTO contractors (model_id, name, channel_id, format)
+          SELECT ${modelId}::uuid, ${name}, ch.id, ${format}
+            FROM (SELECT NULL) one
+            LEFT JOIN promo_channels ch ON ch.model_id = ${modelId}::uuid AND ch.code = ${channel}`)
+      }
+      const manifestId = randomUUID()
+      const { rows: files } = await tx.execute<{
+        item_id: string
+        membership_id: string
+        asset_id: string
+        version_id: string
+        handle: string
+      }>(sql`
+        SELECT p.id AS item_id, im.id AS membership_id, a.id AS asset_id,
+               a.current_version_id AS version_id,
+               public_item_id(o.type, o.number) || '/master' AS handle
+          FROM content_items p
+          JOIN item_memberships im ON im.model_id = p.model_id AND im.item_id = p.id
+          JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id
+          JOIN content_items o ON o.model_id = a.model_id AND o.id = a.created_in_item_id
+         WHERE p.model_id = ${modelId}::uuid AND p.type = 'PRM' AND p.number = 5
+           AND o.type = 'FYP' AND o.number IN (416, 417, 418)
+         ORDER BY o.number`)
+      if (files.length === 0) return
+      await tx.execute(sql`
+        INSERT INTO asset_manifests (model_id, id, purpose, origin_item_id, entry_count)
+        VALUES (${modelId}::uuid, ${manifestId}::uuid, 'delivery', ${files[0]?.item_id}::uuid,
+                ${files.length})`)
+      for (const [index, file] of files.entries()) {
+        await tx.execute(sql`
+          INSERT INTO asset_manifest_entries (model_id, manifest_id, position, item_id, membership_id,
+                                              asset_id, asset_version_id, handle_snapshot)
+          VALUES (${modelId}::uuid, ${manifestId}::uuid, ${index + 1}, ${file.item_id}::uuid,
+                  ${file.membership_id}::uuid, ${file.asset_id}::uuid, ${file.version_id}::uuid,
+                  ${file.handle})`)
+      }
+      await tx.execute(sql`
+        INSERT INTO promo_deliveries (model_id, package_item_id, channel_id, contractor_id,
+                                      manifest_id, state, origin, summary)
+        SELECT ${modelId}::uuid, p.id, p.promo_channel_id, c.id, ${manifestId}::uuid, 'sent',
+               'import', ${JSON.stringify({ folder_date: '2026-09-02', video_count: 3, photo_count: 0 })}::jsonb
+          FROM content_items p, contractors c
+         WHERE p.model_id = ${modelId}::uuid AND p.type = 'PRM' AND p.number = 5
+           AND c.model_id = ${modelId}::uuid AND c.name = 'Coraline Red'`)
+    },
+  )
 }
 
 const LINKS: readonly FixtureLink[] = [
@@ -338,6 +445,7 @@ export async function seedCatalog(
   const created = await createCatalogItems(db, model, options.media ? options.media(items) : items)
   await linkCatalogItems(db, model, LINKS)
   await tombstoneCatalogItem(db, model, 'LIFE-186')
+  await seedPromo(db, model)
   // No legacy in a fictional catalog: the counters issue new numbers right away (a type
   // change or a split in the dev stand), unlike a real model before stage 3.
   await withActorTx(

@@ -10,6 +10,7 @@ import type { RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { areaOf, areaPatterns, describeEvent, type LogRow } from '../journal/describe'
+import { orderCondition } from '../orders/view'
 import type { Services } from '../services'
 
 /**
@@ -94,6 +95,8 @@ async function journalPage(services: Services, ctx: RequestContext, query: Journ
     ? await findItem(services.db, model, query.item, { withTombstones: true }).catch(() => null)
     : null
   if (query.item && !item) return { items: [], next_cursor: null }
+  const order = query.order ? orderCondition(query.order) : null
+  if (query.order && !order) return { items: [], next_cursor: null }
   const patterns = query.area ? areaPatterns(query.area) : null
   const { rows } = await services.db.execute<EventRow>(sql`
     SELECT a.id::text AS id, a.at::text AS at_text, a.actor_type, a.actor_id, a.actor_label,
@@ -103,6 +106,12 @@ async function journalPage(services: Services, ctx: RequestContext, query: Journ
       LEFT JOIN content_items i ON i.model_id = a.model_id AND i.id = a.item_id
      WHERE a.entry_kind = 'action'
        AND (${item?.id ?? null}::uuid IS NULL OR a.item_id = ${item?.id ?? null}::uuid)
+       ${
+         order
+           ? sql`AND a.subject_kind = 'custom_orders' AND a.subject_id = (
+               SELECT o.id FROM custom_orders o WHERE o.model_id = ${model.id}::uuid AND ${order})`
+           : sql``
+       }
        AND (a.model_id = ${model.id}::uuid OR (${actor.role === 'owner'} AND a.model_id IS NULL))
        AND (${query.actor_type ? ACTOR_TYPE[query.actor_type] : null}::text IS NULL
             OR a.actor_type = ${query.actor_type ? ACTOR_TYPE[query.actor_type] : null})

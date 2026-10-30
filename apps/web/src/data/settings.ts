@@ -67,16 +67,6 @@ export function useThresholds({ enabled = true }: OwnerOnly = {}) {
   })
 }
 
-export function useContractors({ enabled = true }: OwnerOnly = {}) {
-  const api = useApi()
-  return useQuery({
-    queryKey: queryKeys.contractors(),
-    queryFn: ({ signal }) => api.settings.contractors({ signal }),
-    select: (page) => page.items,
-    enabled,
-  })
-}
-
 /** «Сервис ИИ»: сервисы, согласия, бюджет и остановка. */
 export function useAiSettings({ enabled = true }: OwnerOnly = {}) {
   const api = useApi()

@@ -20,7 +20,7 @@ import { notFound } from '../domain-error'
 import { evaluateRow, evaluateTrack, type FactsContext } from '../fixtures/facts'
 import { synthesizeFiles, synthesizeFrames, synthesizeMarkup } from '../fixtures/item-files'
 import type { CollectionRecord, ItemRecord, OrderRecord } from '../fixtures/world-types'
-import { orderStatusOf } from './orders'
+import { orderFacts, orderStatusOf } from './orders'
 import { handoffStatus } from './promo'
 
 /** The object page (DESIGN §4.4): files, markup, origin, «где залито» per page. */
@@ -170,7 +170,7 @@ export function markupOf(record: ItemRecord) {
 function readyForPpv(entry: CatalogEntry, order: OrderRecord | undefined, now: Instant): boolean {
   if (entry.type !== 'custom' || entry.photo_custom || entry.ppv_made_as !== null) return false
   if (!order) return true
-  const { state } = computeOrderStatus(order, now, '')
+  const { state } = computeOrderStatus(orderFacts(order, now), now, '')
   return state === 'delivered' || state === 'closed'
 }
 

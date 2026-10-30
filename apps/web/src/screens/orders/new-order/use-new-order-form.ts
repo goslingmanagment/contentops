@@ -9,16 +9,15 @@ const PARSE_DELAY_MS = 250
 
 function emptyFields(model: Model): OrderFields {
   return {
-    title: '',
     buyer: null,
-    account: model.accounts[0]?.code ?? '',
-    brief: null,
+    account: model.accounts[0]?.code ?? null,
+    brief: '',
     duration_raw: '',
     wants_video: true,
     wants_photos: 0,
     deadline: null,
     fan_name: 'unknown',
-    message_url: null,
+    message_url: '',
     card_text: null,
   }
 }
@@ -48,6 +47,7 @@ export function useNewOrderForm(model: Model) {
     form.reset(
       {
         ...fields,
+        brief: fields.brief ?? '',
         account: knownAccount ? fields.account : form.getValues('account'),
         card_text: form.getValues('card_text'),
         message_url: form.getValues('message_url'),
