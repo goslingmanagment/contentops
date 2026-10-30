@@ -36,6 +36,11 @@ export const AcceptCommandSchema = z.object({
   as: z.enum(['default', 'separate']),
   /** «Дополнить…»: the files join this object in this role instead of making a new one. */
   extend: z.object({ item_id: ItemIdSchema, role: ExtendRoleSchema }).nullable().optional(),
+  /**
+   * «Принять как есть» (SPEC §9.2): a broken source (decode errors, truncated) that opens and
+   * has a preview becomes its own master by this decision; an unreadable one keeps waiting.
+   */
+  as_is: z.boolean().optional(),
 })
 export type AcceptCommand = z.infer<typeof AcceptCommandSchema>
 

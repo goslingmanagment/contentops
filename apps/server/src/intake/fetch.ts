@@ -231,7 +231,7 @@ function extOf(name: string): string {
   return ext ? `.${ext}` : ''
 }
 
-interface DuplicateRow extends Record<string, unknown> {
+export interface DuplicateRow extends Record<string, unknown> {
   version_id: string
   asset_id: string
   item_id: string
@@ -272,29 +272,8 @@ export async function afterFetch(
            error = NULL, updated_at = now(), row_version = row_version + 1
      WHERE model_id = ${modelId}::uuid AND id = ${draftId}::uuid`)
 
-  const { rows: dups } = await tx.execute<DuplicateRow>(sql`
-    SELECT v.id AS version_id, v.asset_id, i.id AS item_id, i.type
-      FROM asset_versions v
-      JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id
-                             AND m.kind = 'owned' AND m.removed_at IS NULL
-      JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id AND i.deleted_at IS NULL
-     WHERE v.model_id = ${modelId}::uuid AND (v.source_sha256 = ${bytes} OR v.master_sha256 = ${bytes})
-     ORDER BY v.created_at LIMIT 1`)
-  const dup = dups[0]
-  const pair = new Set([draft.type, dup?.type])
-  const customPpv = dup && draft.type !== dup.type && pair.has('CUS') && pair.has('PPV')
-  if (dup && !customPpv) {
-    await resolveAlias(tx, modelId, draftId, dup, draft.source_object_id)
-    return
-  }
-  if (dup) {
-    // Custom ↔ PPV: a new object over the same bytes, the link stays a candidate.
-    await tx.execute(sql`
-      INSERT INTO inbox_draft_candidates (model_id, draft_id, kind, item_id, version_id, signals)
-      VALUES (${modelId}::uuid, ${draftId}::uuid, 'exact_duplicate', ${dup.item_id}::uuid,
-              ${dup.version_id}::uuid, '{"sha256": true, "custom_ppv": true}'::jsonb)
-      ON CONFLICT DO NOTHING`)
-  }
+  const dup = await acceptedHolder(tx, modelId, bytes)
+  if (dup && (await applyDuplicate(tx, modelId, { id: draftId, ...draft }, dup)) === 'alias') return
   const { rows: others } = await tx.execute<{ model_id: string }>(sql`
     SELECT DISTINCT v.model_id FROM asset_versions v
      WHERE v.model_id <> ${modelId}::uuid AND (v.source_sha256 = ${bytes} OR v.master_sha256 = ${bytes})`)
@@ -309,6 +288,84 @@ export async function afterFetch(
       ON CONFLICT (model_id, kind, dedup_key) DO NOTHING`)
   }
   await queueMedia(tx, modelId, draftId, sha, mediaKindOf(draft.path ?? '', null), workId)
+}
+
+/** The oldest accepted version of the model holding these bytes (SPEC §6.2), if any. */
+async function acceptedHolder(
+  tx: Tx,
+  modelId: string,
+  bytes: Buffer,
+): Promise<DuplicateRow | undefined> {
+  const { rows } = await tx.execute<DuplicateRow>(sql`
+    SELECT v.id AS version_id, v.asset_id, i.id AS item_id, i.type
+      FROM asset_versions v
+      JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id
+                             AND m.kind = 'owned' AND m.removed_at IS NULL
+      JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id AND i.deleted_at IS NULL
+     WHERE v.model_id = ${modelId}::uuid AND (v.source_sha256 = ${bytes} OR v.master_sha256 = ${bytes})
+     ORDER BY v.created_at LIMIT 1`)
+  return rows[0]
+}
+
+/**
+ * The bytes of an open draft are those of an accepted version: «дубль-алиас» by itself,
+ * except custom ↔ PPV, where the draft goes on to a new object over the same bytes and the
+ * link stays a candidate (SPEC §6.1 p. 1).
+ */
+async function applyDuplicate(
+  tx: Tx,
+  modelId: string,
+  draft: { id: string; type: string | null; source_object_id: string | null },
+  dup: DuplicateRow,
+): Promise<'alias' | 'candidate'> {
+  const pair = new Set([draft.type, dup.type])
+  if (draft.type !== dup.type && pair.has('CUS') && pair.has('PPV')) {
+    await tx.execute(sql`
+      INSERT INTO inbox_draft_candidates (model_id, draft_id, kind, item_id, version_id, signals)
+      VALUES (${modelId}::uuid, ${draft.id}::uuid, 'exact_duplicate', ${dup.item_id}::uuid,
+              ${dup.version_id}::uuid, '{"sha256": true, "custom_ppv": true}'::jsonb)
+      ON CONFLICT DO NOTHING`)
+    return 'candidate'
+  }
+  await resolveAlias(tx, modelId, draft.id, dup, draft.source_object_id)
+  return 'alias'
+}
+
+/**
+ * At an accept: open drafts of other groups with the bytes of the accepted files become their
+ * aliases now (SPEC §6.2: the exact duplicate is found among every draft, accepted or not).
+ * Drafts made over an accepted version (`derived`: PPV from a custom, master from raw) are
+ * meant to share its bytes and are left alone; a draft locked by a concurrent accept is
+ * skipped rather than waited for.
+ */
+export async function aliasOpenDuplicates(
+  tx: Tx,
+  modelId: string,
+  groupId: string,
+  hexes: readonly string[],
+): Promise<number> {
+  if (hexes.length === 0) return 0
+  const { rows } = await tx.execute<{
+    id: string
+    type: string | null
+    source_object_id: string | null
+    sha: string
+  }>(sql`
+    SELECT d.id, g.proposed_type AS type, r.source_object_id, encode(d.source_sha256, 'hex') AS sha
+      FROM inbox_drafts d
+      JOIN inbox_groups g ON g.model_id = d.model_id AND g.id = d.group_id
+      LEFT JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id
+     WHERE d.model_id = ${modelId}::uuid AND d.group_id <> ${groupId}::uuid
+       AND d.state <> 'resolved' AND d.origin <> 'derived'
+       AND d.source_sha256 IN (SELECT decode(h, 'hex') FROM unnest(${sql.param([...hexes])}::text[]) h)
+     ORDER BY d.id
+     FOR UPDATE OF d SKIP LOCKED`)
+  let aliased = 0
+  for (const row of rows) {
+    const dup = await acceptedHolder(tx, modelId, shaBytes(row.sha))
+    if (dup && (await applyDuplicate(tx, modelId, row, dup)) === 'alias') aliased += 1
+  }
+  return aliased
 }
 
 /** The derivatives of the source and, for a video, the master (schema §3.4 `work_key`). */
@@ -345,19 +402,21 @@ export async function queueMedia(
 }
 
 /** «Дубль-алиас» (schema §5, SPEC §6.1 p. 1): resolved by itself, the paths become aliases. */
-async function resolveAlias(
+export async function resolveAlias(
   tx: Tx,
   modelId: string,
   draftId: string,
   dup: DuplicateRow,
   sourceObjectId: string | null,
+  /** A twin inside an accepted group: decided by the person who accepts, one journal row. */
+  twin?: { decidedBy: string },
 ): Promise<void> {
   await tx.execute(sql`
     UPDATE inbox_drafts
        SET state = 'resolved', outcome = 'alias', duplicate_of_version_id = ${dup.version_id}::uuid,
            applied_item_id = ${dup.item_id}::uuid, applied_version_id = ${dup.version_id}::uuid,
-           decided_at = now(), blocked_reason = NULL, updated_at = now(),
-           row_version = row_version + 1
+           decided_at = now(), decided_by = ${twin?.decidedBy ?? null}::uuid, blocked_reason = NULL,
+           updated_at = now(), row_version = row_version + 1
      WHERE model_id = ${modelId}::uuid AND id = ${draftId}::uuid`)
   await tx.execute(sql`
     INSERT INTO inbox_draft_candidates (model_id, draft_id, kind, item_id, version_id, signals, chosen, chosen_at)
@@ -372,6 +431,7 @@ async function resolveAlias(
        WHERE p.model_id = ${modelId}::uuid AND p.source_object_id = ${sourceObjectId}::uuid
       ON CONFLICT DO NOTHING`)
   }
+  if (twin) return
   const { rows } = await tx.execute<{ label: string }>(sql`
     SELECT public_item_id(type, number) AS label FROM content_items
      WHERE model_id = ${modelId}::uuid AND id = ${dup.item_id}::uuid`)

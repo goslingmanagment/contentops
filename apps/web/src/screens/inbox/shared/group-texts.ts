@@ -84,6 +84,7 @@ function withShare(word: string, progress: number | null): string {
 /** Короткое слово ▲ на плитке; в панели к нему добавляется подробность. */
 export const ERROR_WORD: Record<DraftErrorKind, string> = {
   master_failed: 'Мастер не собрался',
+  source_broken: 'Исходник битый',
   vanished: 'Пропал с Я.Диска',
   archive_unreadable: 'Архив не читается',
   upload_failed: 'Загрузка не прошла проверку',
@@ -95,6 +96,7 @@ export const ERROR_WORD: Record<DraftErrorKind, string> = {
  */
 const ERROR_DETAILED: Record<DraftErrorKind, boolean> = {
   master_failed: true,
+  source_broken: true,
   vanished: false,
   archive_unreadable: false,
   upload_failed: true,

@@ -51,6 +51,8 @@ export const DECISION_LABEL: Record<DecisionKind, string> = {
 /** ▲ «ошибка». */
 export const DraftErrorKindSchema = z.enum([
   'master_failed',
+  /** ▲ «Исходник битый»: it opens and has a preview — «Принять как есть» (SPEC §9.2). */
+  'source_broken',
   'vanished',
   'archive_unreadable',
   'upload_failed',

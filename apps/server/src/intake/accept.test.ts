@@ -408,6 +408,176 @@ describe('duplicates (SPEC §6.2)', () => {
   })
 })
 
+describe('duplicates among open drafts (SPEC §6.2, schema §5)', () => {
+  const life = (path: string) => `${LORA_ROOT}/6. Life/${path}`
+
+  it('twins in one group: one file, the other an alias of it without a master of its own', async () => {
+    h.dropbox.tree.addFile(life('Двойня/01.jpg'), 3100)
+    h.dropbox.tree.addFile(
+      life('Двойня/01 (1).jpg'),
+      h.dropbox.tree.get(life('Двойня/01.jpg'))?.bytes as Buffer,
+    )
+    await scan()
+    await fetchAll()
+    const first = await groupOfPath(life('Двойня/01.jpg'))
+    const twin = await groupOfPath(life('Двойня/01 (1).jpg'))
+    expect(twin.group_id).toBe(first.group_id)
+    await makeReady(first.draft_id)
+    const response = await accept(first.group_id)
+    expect(response.statusCode).toBe(200)
+    const { rows } = await h.db.execute<{
+      path: string
+      outcome: string
+      same: boolean
+      decided: boolean
+      files: number
+      alias: boolean
+    }>(sql`
+      SELECT d.path, d.outcome, d.decided_by IS NOT NULL AS decided,
+             d.applied_version_id = (SELECT applied_version_id FROM inbox_drafts WHERE id = ${first.draft_id}::uuid) AS same,
+             (SELECT count(*)::int FROM item_memberships m WHERE m.item_id = d.applied_item_id) AS files,
+             EXISTS (SELECT 1 FROM aliases a WHERE a.value_raw = d.path AND a.kind = 'legacy_path') AS alias
+        FROM inbox_drafts d WHERE d.group_id = ${first.group_id}::uuid ORDER BY d.path`)
+    expect(rows).toEqual([
+      {
+        path: life('Двойня/01 (1).jpg'),
+        outcome: 'alias',
+        same: true,
+        decided: true,
+        files: 1,
+        alias: true,
+      },
+      {
+        path: life('Двойня/01.jpg'),
+        outcome: 'new_item',
+        same: true,
+        decided: true,
+        files: 1,
+        alias: true,
+      },
+    ])
+  })
+
+  it('an open draft in another group becomes an alias when its bytes are accepted', async () => {
+    h.dropbox.tree.addFile(life('Оригинал/01.jpg'), 3200)
+    h.dropbox.tree.addFile(
+      life('Повтор/01.jpg'),
+      h.dropbox.tree.get(life('Оригинал/01.jpg'))?.bytes as Buffer,
+    )
+    await scan()
+    await fetchAll()
+    const original = await groupOfPath(life('Оригинал/01.jpg'))
+    const copy = await groupOfPath(life('Повтор/01.jpg'))
+    expect(copy.group_id).not.toBe(original.group_id)
+    await makeReady(original.draft_id)
+    expect((await accept(original.group_id)).statusCode).toBe(200)
+    const { rows } = await h.db.execute<{ state: string; outcome: string; alias: boolean }>(sql`
+      SELECT d.state, d.outcome,
+             EXISTS (SELECT 1 FROM aliases a WHERE a.value_raw = d.path AND a.kind = 'legacy_path') AS alias
+        FROM inbox_drafts d WHERE d.id = ${copy.draft_id}::uuid`)
+    expect(rows[0]).toEqual({ state: 'resolved', outcome: 'alias', alias: true })
+    // The second group is not a second object: accepting it has nothing left.
+    expect((await accept(copy.group_id)).json().code).toBe('case_resolved')
+  })
+})
+
+describe('«Принять как есть» (SPEC §9.2)', () => {
+  const life = (path: string) => `${LORA_ROOT}/6. Life/${path}`
+
+  /** What `encode_master` leaves for a broken source: kept as a blob for «как есть», or not. */
+  async function makeBroken(draftId: string, verdict: 'source_truncated' | 'unreadable') {
+    const { rows } = await h.db.execute<{ sha: string }>(sql`
+      SELECT encode(source_sha256, 'hex') AS sha FROM inbox_drafts WHERE id = ${draftId}::uuid`)
+    const sha = rows[0]?.sha as string
+    const kept = verdict !== 'unreadable'
+    if (kept) {
+      const staged = await store.staged(sha)
+      if (!staged) throw new Error(`nothing staged for ${draftId}`)
+      await registerBlob(h.db, store, {
+        file: staged.path,
+        sha256: sha,
+        ext: staged.ext,
+        mediaKind: 'video',
+        owner: 'test:',
+      })
+    }
+    const { rows: works } = await h.db.execute<{ id: string }>(sql`
+      INSERT INTO work_operations (model_id, kind, work_key, state, finished_at, input_sha256, draft_id)
+      VALUES (${h.modelId}::uuid, 'encode_master', ${`master:test:${draftId}`}, 'succeeded', now(),
+              decode(${sha}, 'hex'), ${draftId}::uuid)
+      RETURNING id`)
+    await h.db.execute(sql`
+      INSERT INTO master_checks (source_sha256, recipe_digest, work_id, attempt, decision, verdict, report)
+      VALUES (decode(${sha}, 'hex'), 'test', ${works[0]?.id}::uuid, 1, ${kept ? 'encode' : null},
+              ${verdict}, ${JSON.stringify({ acceptance: kept ? 'accept_as_is_only' : 'wait_replacement' })}::jsonb)`)
+    if (kept) {
+      await h.db.execute(sql`
+        INSERT INTO rendition_generations (kind, recipe_digest, input_kind, input_sha256, state, ready_at)
+        VALUES ('preview', 'test', 'source', decode(${sha}, 'hex'), 'ready', now())`)
+    }
+    await withActorTx(
+      h.db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test', requestId: randomUUID() },
+      (tx) =>
+        tx.execute(sql`
+          UPDATE inbox_drafts
+             SET master_sha256 = ${kept ? sql`source_sha256` : sql`NULL`}, master_is_source = false,
+                 master_verified_at = NULL, blocked_reason = 'master_failed',
+                 error = ${`master: ${verdict}`}
+           WHERE id = ${draftId}::uuid`),
+    )
+    await h.db.execute(sql`
+      UPDATE work_operations SET state = 'cancelled', finished_at = now()
+       WHERE draft_id = ${draftId}::uuid AND kind <> 'fetch' AND state = 'pending'`)
+  }
+
+  const group = (id: string) =>
+    call(app, { method: 'GET', url: `/api/v1/lora/inbox/groups/${id}`, as: owner })
+
+  it('a broken source that opens is accepted only by «Принять как есть»; an unreadable one waits', async () => {
+    h.dropbox.tree.addFile(life('Битый/01.mp4'), 4100)
+    h.dropbox.tree.addFile(life('Нечитаемый/01.mp4'), 4200)
+    await scan()
+    await fetchAll()
+    const broken = await groupOfPath(life('Битый/01.mp4'))
+    const unreadable = await groupOfPath(life('Нечитаемый/01.mp4'))
+    await makeBroken(broken.draft_id, 'source_truncated')
+    await makeBroken(unreadable.draft_id, 'unreadable')
+
+    expect((await group(broken.group_id)).json().state).toEqual({
+      kind: 'error',
+      error: 'source_broken',
+      detail: 'файл обрезан',
+    })
+    const plain = await accept(broken.group_id)
+    expect(plain.statusCode).toBe(422)
+    expect(plain.json().details).toMatchObject({ reason: 'master_failed' })
+    const asIs = await accept(broken.group_id, newKey(), { as: 'default', as_is: true })
+    expect(asIs.statusCode).toBe(200)
+    const { rows } = await h.db.execute<{
+      verified: boolean
+      source: boolean
+      outcome: string
+    }>(sql`
+      SELECT master_verified_at IS NOT NULL AS verified, master_is_source AS source, outcome
+        FROM inbox_drafts WHERE id = ${broken.draft_id}::uuid`)
+    expect(rows[0]).toEqual({ verified: true, source: true, outcome: 'new_item' })
+    const { rows: journal } = await h.db.execute<{ after: [string, string][] }>(sql`
+      SELECT after FROM action_log WHERE action = 'draft.accept'
+       ORDER BY id DESC LIMIT 1`)
+    expect(journal[0]?.after).toContainEqual(['Как есть', 'битый исходник: 1'])
+
+    expect((await group(unreadable.group_id)).json().state).toEqual({
+      kind: 'error',
+      error: 'master_failed',
+      detail: 'файл не читается — ждёт замены',
+    })
+    const refused = await accept(unreadable.group_id, newKey(), { as: 'default', as_is: true })
+    expect(refused.statusCode).toBe(422)
+    expect(refused.json().details).toMatchObject({ reason: 'master_failed' })
+  })
+})
+
 describe('staging (SPEC §9.1)', () => {
   it('a staged source goes once its master is registered and no media work needs it', async () => {
     const path = `${LORA_ROOT}/6. Life/Чистка/01.jpg`
