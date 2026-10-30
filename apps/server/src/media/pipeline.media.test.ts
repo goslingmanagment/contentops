@@ -162,7 +162,8 @@ async function draftFor(sourceSha: string): Promise<string> {
   return systemTx(db, async (tx) => {
     const tag = randomUUID().slice(0, 8)
     const source = await tx.execute<{ id: string }>(sql`
-      INSERT INTO sources (model_id, kind, label, read_only) VALUES (${lora}::uuid, 'yandex_disk', ${`disk-${tag}`}, true)
+      INSERT INTO sources (model_id, kind, label, read_only, root_path, credentials_ref)
+      VALUES (${lora}::uuid, 'yandex_disk', ${`disk-${tag}`}, true, 'disk:/', 'YDISK_TOKEN')
       RETURNING id`)
     const sourceId = source.rows[0]?.id
     const object = await tx.execute<{ id: string }>(sql`
