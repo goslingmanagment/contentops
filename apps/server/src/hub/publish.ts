@@ -489,7 +489,9 @@ class Run {
             if (!isHubError(error, 'refused')) throw error
           })
       }
-      const previous = row.hub_status === 'draft' ? null : row.hub_publication_id
+      // The key names the publication this one follows: the same content after a cancel, «не
+      // вышло» or a replaced draft is a new draft, while a retry of this work replays it.
+      const previous = row.hub_publication_id
       publication = await this.client.createDraft(
         page.hubPage,
         { ...draft, idempotencyKey: draftKey(row.id, previous, fingerprint) },
