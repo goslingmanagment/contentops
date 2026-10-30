@@ -220,7 +220,11 @@ describe('Yandex Disk', () => {
     expect(down).toMatchObject({ state: 'retry_wait', error_code: 'transient' })
     h.yandex.clearFailures()
 
-    const since = new Date()
+    // The database clock: the Docker VM may run behind or ahead of the host.
+    const { rows: clock } = await h.db.execute<{ at: string }>(sql`SELECT now()::text AS at`)
+    const since = new Date(
+      (clock[0] as { at: string }).at.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00'),
+    )
     h.yandex.fail('unauthorized', { times: 10 })
     const refused = await scan('yandex')
     h.yandex.clearFailures()

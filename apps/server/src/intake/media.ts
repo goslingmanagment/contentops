@@ -53,6 +53,8 @@ function derivePhotoForDraft(env: MediaEnv): WorkHandler {
         ext: staged.ext,
         mediaKind: 'image',
         mime: mimeOfExt(staged.ext),
+        // The source is the master: an atomic rename into `blobs/`, no second copy (§9.1).
+        move: true,
         owner: env.owner,
       })
     }

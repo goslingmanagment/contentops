@@ -15,6 +15,7 @@ import { fetchHandler } from './intake/fetch'
 import { intakeMediaHandlers } from './intake/media'
 import { scanHandler, scanStreams } from './intake/scan'
 import { envSourceFactory } from './intake/source-client'
+import { startStagingSweep } from './intake/staging'
 import { createLogger } from './logger'
 import { createMediaEnv } from './media/pipeline'
 import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
@@ -231,7 +232,12 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     gate: createWorkGate(),
     log,
   })
-  const stopSweep = role === 'worker' ? startExportSweep(store, log) : () => {}
+  const stopExports = role === 'worker' ? startExportSweep(store, log) : () => {}
+  const stopStaging = role === 'worker' ? startStagingSweep(db, store, log) : () => {}
+  const stopSweep = () => {
+    stopExports()
+    stopStaging()
+  }
   // Periodic works (Hub polls, source scans) are scheduled only by `worker`; their streams
   // come with their stages. A source's streams exist while its token is in the environment.
   const startedAt = new Date()
