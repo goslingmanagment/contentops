@@ -63,6 +63,7 @@ const APPEND_ONLY = [
   'custom_order_deliveries',
   'download_receipt_entries',
   'download_receipts',
+  'placement_evidence',
 ]
 /** Rows that are updated but never deleted by the app role. */
 const NO_DELETE = ['blobs']
@@ -107,6 +108,24 @@ const FIXED_COLUMNS: Record<string, string[]> = {
   inbox_groups: ['model_id', 'id', 'source_id', 'group_key'],
   item_memberships: ['model_id', 'id', 'item_id', 'item_type', 'asset_id', 'variant_no', 'kind'],
   item_tags: ['model_id', 'item_id', 'tag_id', 'id'],
+  legacy_claims: [
+    'model_id',
+    'id',
+    'source_object_id',
+    'source_revision_id',
+    'parser_version',
+    'claim_key',
+    'raw_fragment',
+    'claim_kind',
+  ],
+  legacy_number_claims: [
+    'model_id',
+    'id',
+    'type',
+    'claimed_number',
+    'source_object_id',
+    'claim_id',
+  ],
   pipeline_versions: [
     'version',
     'ffmpeg',
@@ -118,8 +137,19 @@ const FIXED_COLUMNS: Record<string, string[]> = {
     'rendition_recipes',
     'recipe_digests',
   ],
+  placement_assets: ['model_id', 'id', 'placement_id', 'asset_id', 'asset_version_id'],
+  placements: ['model_id', 'id', 'account_id', 'surface_id'],
   platform_texts: ['model_id', 'id', 'item_id', 'platform', 'account_id', 'locale', 'variant_no'],
   policy_settings: ['model_id', 'account_id', 'item_type', 'key'],
+  posting_plan_rows: [
+    'model_id',
+    'id',
+    'release_id',
+    'release_surface_kind',
+    'created_at',
+    'created_by',
+  ],
+  ppv_releases: ['model_id', 'id', 'account_id', 'item_id', 'item_type'],
   principal_grants: ['model_id', 'id', 'principal_id'],
   promo_channels: ['model_id', 'id'],
   provenance: [
@@ -378,7 +408,11 @@ describe('model isolation in the catalog', () => {
         await client.query('BEGIN')
         await journalContext(client)
         const [modelA, modelB] = await Promise.all([newModel(client), newModel(client)])
-        const foreign = await insert(client, fk.target, await makeTarget(client, modelB))
+        const foreign = await insert(
+          client,
+          fk.target,
+          await makeTarget(client, modelB, [], fk.source),
+        )
         const row = await makeSource(client, modelA, fk.sourceColumns)
         fk.sourceColumns.forEach((column, i) => {
           if (column !== 'model_id') row[column] = foreign[fk.targetColumns[i] ?? '']

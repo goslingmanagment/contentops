@@ -5,7 +5,8 @@
  * and outcome, blob state, review case kind, master check verdict, order status) close before
  * the `schema-freeze` tag. Lists inside SQL functions (`role_fits_type`, `public_item_id`,
  * `blob_is_referenced`) are compared by behaviour in `catalog.test.ts`, the order rules
- * (`custom_order_status`, `custom_order_live_files`) in `orders.test.ts`.
+ * (`custom_order_status`, `custom_order_live_files`) in `orders.test.ts`, the plan and
+ * placement rules (the evidence triple, slots, second person on OnlyFans) in `plan.test.ts`.
  */
 
 /** Public ID types (SPEC §4.1). */
@@ -607,6 +608,92 @@ export const orderMessageKinds = [
 ] as const
 export type OrderMessageKind = (typeof orderMessageKinds)[number]
 
+// ---------------------------------------------------------------------------
+// Legacy claims and placements (schema §3.4, §3.6, §9.2, §9.6, §9.7; SPEC §6.3, §7)
+// ---------------------------------------------------------------------------
+
+/** What a legacy name claims (SPEC §6.3). */
+export const legacyClaimKinds = [
+  'number',
+  'used',
+  'posted',
+  'date',
+  'role',
+  'registry_row',
+  'duration',
+  'unknown',
+] as const
+export type LegacyClaimKind = (typeof legacyClaimKinds)[number]
+
+export const legacyClaimResolutions = ['pending', 'resolved', 'ignored'] as const
+export type LegacyClaimResolution = (typeof legacyClaimResolutions)[number]
+
+/** Decision on a claimed legacy number (SPEC §6.4). */
+export const legacyNumberDecisions = ['keep', 'renumber', 'typo', 'unclear'] as const
+export type LegacyNumberDecision = (typeof legacyNumberDecisions)[number]
+
+/** The unit of a placement: a post, a file in a named vault album, a manual mark. */
+export const occurrenceKinds = ['post', 'vault_member', 'manual'] as const
+export type OccurrenceKind = (typeof occurrenceKinds)[number]
+
+/** How well the time of a placement is known; a legacy claim may have no date. */
+export const eventPrecisions = ['exact', 'day', 'unknown'] as const
+export type EventPrecision = (typeof eventPrecisions)[number]
+
+export const occurredSources = ['hub', 'km', 'import'] as const
+export type OccurredSource = (typeof occurredSources)[number]
+
+/** Where the surface of a placement comes from (schema §9.6); `import` — the legacy rule. */
+export const surfaceSources = ['hub', 'km_mark', 'km', 'plan', 'import'] as const
+export type SurfaceSource = (typeof surfaceSources)[number]
+
+export const placementOrigins = ['plan', 'hub', 'manual', 'import'] as const
+export type PlacementOrigin = (typeof placementOrigins)[number]
+
+/** Per file of a placement: one of twelve matching is a partial result. */
+export const matchStrengths = ['none', 'candidate', 'exact'] as const
+export type MatchStrength = (typeof matchStrengths)[number]
+
+/** Preliminary (schema §4): where evidence came from — a source, not a stage. */
+export const evidenceSources = ['hub', 'manual', 'import'] as const
+export type EvidenceSource = (typeof evidenceSources)[number]
+
+/** Preliminary (schema §4). */
+export const evidenceKinds = [
+  'observed',
+  'manual_confirm',
+  'reused_pair',
+  'manual_reject',
+  'legacy_claim',
+  'outside_catalog',
+  'retract',
+] as const
+export type EvidenceKind = (typeof evidenceKinds)[number]
+
+/** Preliminary (schema §4). Denying kinds (`manual_reject`, `retract`, `outside_catalog`) have none. */
+export const evidenceStrengths = ['claim', 'candidate', 'exact'] as const
+export type EvidenceStrength = (typeof evidenceStrengths)[number]
+
+// ---------------------------------------------------------------------------
+// Plan (schema §3.5, §9.2; SPEC §4, §5, §7)
+// ---------------------------------------------------------------------------
+
+/** Surfaces a PPV release has rows on: wall, story teaser, vault, mass message. */
+export const releaseSurfaceKinds = ['wall', 'story', 'vault', 'mass_dm'] as const
+export type ReleaseSurfaceKind = (typeof releaseSurfaceKinds)[number]
+
+/** What a row waiting for a montage expects (a teaser — `expected_role = 'teaser'`). */
+export const montageTypes = ['FYP', 'PPV'] as const
+export type MontageType = (typeof montageTypes)[number]
+
+/** «выложено» / «в планировщике» (SPEC §5). */
+export const markKinds = ['posted', 'scheduled'] as const
+export type MarkKind = (typeof markKinds)[number]
+
+/** Optional reason of a cancelled row; `second_person` — set by the late flag (0006). */
+export const cancelReasons = ['late', 'replaced', 'paused', 'second_person'] as const
+export type CancelReason = (typeof cancelReasons)[number]
+
 /** Codes of `RAISE` in the migration functions. */
 export const dbErrorCodes = {
   journalContextMissing: 'CO001',
@@ -623,4 +710,9 @@ export const dbErrorCodes = {
   transitionRefused: 'CO005',
   /** A private tag of another model. */
   foreignTag: 'CO006',
+  /**
+   * An object with a second person in frame (DETAIL `second_person`) or not checked for one
+   * (DETAIL `unchecked`) put on OnlyFans: a new row, a move, a new composition, a montage.
+   */
+  secondPersonOnOnlyFans: 'CO007',
 } as const
