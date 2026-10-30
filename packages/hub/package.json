@@ -1,0 +1,21 @@
+{
+  "name": "@contentops/hub",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Client of the Agency Hub agent API (datasets, capabilities, publications) with the pinned dataset fields; no database.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "smoke:live": "node scripts/live-smoke.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
+}
