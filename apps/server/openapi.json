@@ -11609,6 +11609,31 @@
               "kind",
               "row_id"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "ppv_from_custom"
+              },
+              "item_id": {
+                "$ref": "#/components/schemas/ItemIdInput"
+              },
+              "ppv_kind": {
+                "$ref": "#/components/schemas/PpvKindInput"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "kind",
+              "item_id",
+              "ppv_kind",
+              "title"
+            ]
           }
         ]
       },
