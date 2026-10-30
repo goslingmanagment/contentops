@@ -8,9 +8,12 @@ import {
   WorkRunner,
   WorkScheduler,
 } from '@contentops/db'
+import type { ToolVersions } from '@contentops/media'
 import type { Logger } from 'pino'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
+import { hubPublishHandler, publicationStreams } from './hub/publish'
+import { storedMedia } from './hub/publish-media'
 import { envHubClient, hubStreams, hubSyncHandler } from './hub/sync'
 import { draftZipExport } from './intake/draft-files'
 import { fetchHandler } from './intake/fetch'
@@ -180,9 +183,20 @@ async function waitForStorage(config: Config, logger: Logger): Promise<void> {
   }
 }
 
-/** The hourly Hub poll of the pages (SPEC §8.1), role `worker`; nothing without the key. */
-function hubHandlers(config: Config): Partial<Record<values.WorkKind, WorkHandler>> {
-  return { hub_sync: hubSyncHandler({ client: envHubClient(config) }) }
+/**
+ * The hourly Hub poll of the pages (SPEC §8.1) and the publication of plan rows through Hub
+ * (SPEC §7, 5б), role `worker`; nothing reaches Hub without the key.
+ */
+function hubHandlers(
+  config: Config,
+  store: BlobStore,
+  versions: ToolVersions,
+): Partial<Record<values.WorkKind, WorkHandler>> {
+  const client = envHubClient(config)
+  return {
+    hub_sync: hubSyncHandler({ client }),
+    hub_publish: hubPublishHandler({ client, media: storedMedia(store, versions) }),
+  }
 }
 
 /** Discovery and fetch from the cloud folders of the models (SPEC §6.1), role `worker`. */
@@ -250,7 +264,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     ...(role === 'worker' ? intakeHandlers(config, store, mediaHandlers(role, env).export) : {}),
     // The legacy pass of stage 3 and its dry run (SPEC §6.3).
     ...(role === 'worker' ? { import_parse: importParseHandler() } : {}),
-    ...(role === 'worker' ? hubHandlers(config) : {}),
+    ...(role === 'worker' ? hubHandlers(config, store, env.versions) : {}),
   }
   const runner = new WorkRunner({
     db,
@@ -287,6 +301,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
           streams: async () => [
             ...(await scanStreams(db, process.env, startedAt)),
             ...(await hubStreams(db, { configured: hubConfigured, since: startedAt })),
+            ...(await publicationStreams(db, { configured: hubConfigured })),
           ],
           pollMs: 10_000,
           log,

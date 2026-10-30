@@ -45,6 +45,8 @@ export function useDayKeys({
           marks.markConfirm(row)
           return
         case 'check':
+        // «Отправить»: человек сначала видит проверки Hub — в панели.
+        case 'send':
           onOpenPanel()
           return
         case 'montage':

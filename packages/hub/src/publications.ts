@@ -45,11 +45,13 @@ export function canCancel(status: string): boolean {
 }
 
 /**
- * What the plan row shows (SPEC §7): «в расписании», «вышло», «не вышло: причина»,
- * «не удалось проверить — решает владелец в Hub»; plus the draft and the cancelled one.
+ * What the plan row shows (SPEC §7, DESIGN §5.2): «отправлено» (approved, Hub has not handed it
+ * to the platform yet), «в расписании», «вышло», «не вышло: причина», «не удалось проверить —
+ * решает владелец в Hub»; plus the draft and the cancelled one.
  */
 export type PublicationRowState =
   | 'draft'
+  | 'sent'
   | 'scheduled'
   | 'published'
   | 'not_published'
@@ -61,6 +63,7 @@ export function publicationRowState(status: string): PublicationRowState {
     case 'draft':
       return 'draft'
     case 'approved':
+      return 'sent'
     case 'submitting':
     case 'scheduled':
     case 'processing':

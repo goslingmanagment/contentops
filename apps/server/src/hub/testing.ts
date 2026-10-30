@@ -126,13 +126,18 @@ export async function runHubWork(
   db: Db,
   workId: string,
   handler: WorkHandler,
-  options: { claim?: boolean; extra?: Partial<Record<string, WorkHandler>> } = {},
+  options: {
+    claim?: boolean
+    extra?: Partial<Record<string, WorkHandler>>
+    /** The kind the handler runs (default `hub_sync`). */
+    kind?: 'hub_sync' | 'hub_publish'
+  } = {},
 ): Promise<WorkOutcome> {
   const start = await workOutcome(db, workId)
   const runner = new WorkRunner({
     db,
     role: 'worker',
-    handlers: { hub_sync: handler, ...options.extra } as never,
+    handlers: { [options.kind ?? 'hub_sync']: handler, ...options.extra } as never,
     gate: createWorkGate(),
     pollMs: 20,
     leaseMs: 5_000,

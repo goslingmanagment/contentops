@@ -656,6 +656,26 @@ $$;
 
 ALTER FUNCTION public.inbox_draft_transition() OWNER TO contentops_migrate;
 
+CREATE FUNCTION public.is_publication_album(p_model uuid, p_account uuid, p_album_ref text) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM posting_plan_rows
+     WHERE model_id = p_model AND account_id = p_account AND vault_album_ref = p_album_ref)
+$$;
+
+ALTER FUNCTION public.is_publication_album(p_model uuid, p_account uuid, p_album_ref text) OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.is_publication_post(p_model uuid, p_account uuid, p_post_ref text) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM posting_plan_rows
+     WHERE model_id = p_model AND account_id = p_account AND platform_post_ref = p_post_ref)
+$$;
+
+ALTER FUNCTION public.is_publication_post(p_model uuid, p_account uuid, p_post_ref text) OWNER TO contentops_migrate;
+
 CREATE FUNCTION public.jsonb_has_secret(doc jsonb) RETURNS boolean
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
     RETURN ((doc IS NOT NULL) AND jsonb_path_exists(doc, 'strict $.**?(@.type() == "object").keyvalue()?(@."key" like_regex "^(password|password_hash|token|token_hash|secret|cookie|set-cookie|authorization)$" flag "i")'::jsonpath, '{}'::jsonb, true));
@@ -1614,7 +1634,7 @@ CREATE TABLE public.hub_sync_state (
     row_version bigint DEFAULT 1 NOT NULL,
     CONSTRAINT hub_sync_state_available CHECK ((available OR (unavailable_reason IS NOT NULL))),
     CONSTRAINT hub_sync_state_consecutive_failures_check CHECK ((consecutive_failures >= 0)),
-    CONSTRAINT hub_sync_state_dataset_check CHECK ((dataset = ANY (ARRAY['posts'::text, 'raw_media'::text, 'vault_media'::text, 'creator_stats'::text])))
+    CONSTRAINT hub_sync_state_dataset_check CHECK ((dataset = ANY (ARRAY['posts'::text, 'raw_media'::text, 'vault_media'::text, 'creator_stats'::text, 'publications'::text])))
 );
 
 ALTER TABLE public.hub_sync_state OWNER TO contentops_migrate;
@@ -2044,10 +2064,39 @@ CREATE TABLE public.posting_plan_rows (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by uuid,
     row_version bigint DEFAULT 1 NOT NULL,
+    hub_publication_id bigint,
+    hub_kind text,
+    hub_status text,
+    hub_status_reason text,
+    hub_status_at timestamp with time zone,
+    hub_updated_at timestamp with time zone,
+    hub_version integer,
+    hub_checks jsonb,
+    hub_files jsonb DEFAULT '[]'::jsonb NOT NULL,
+    hub_content_hash text,
+    hub_prepared_at timestamp with time zone,
+    hub_prepared_by uuid,
+    hub_prepared_version bigint,
+    hub_sent_at timestamp with time zone,
+    hub_sent_by uuid,
+    platform_post_ref text,
+    vault_album_ref text,
     CONSTRAINT posting_plan_rows_cancel CHECK (((cancelled_at IS NOT NULL) OR ((cancelled_by IS NULL) AND (cancel_reason IS NULL)))),
     CONSTRAINT posting_plan_rows_cancel_reason_check CHECK ((cancel_reason = ANY (ARRAY['late'::text, 'replaced'::text, 'paused'::text, 'second_person'::text]))),
     CONSTRAINT posting_plan_rows_expected_role CHECK ((expected_role = 'teaser'::text)),
     CONSTRAINT posting_plan_rows_expected_type_check CHECK ((expected_type = ANY (ARRAY['FYP'::text, 'PPV'::text]))),
+    CONSTRAINT posting_plan_rows_hub_checks_object CHECK ((jsonb_typeof(hub_checks) = 'object'::text)),
+    CONSTRAINT posting_plan_rows_hub_files_array CHECK ((jsonb_typeof(hub_files) = 'array'::text)),
+    CONSTRAINT posting_plan_rows_hub_kind_check CHECK ((hub_kind = ANY (ARRAY['fyp_post'::text, 'subscriber_post'::text, 'paid_post'::text, 'story'::text, 'vault_album'::text]))),
+    CONSTRAINT posting_plan_rows_hub_publication CHECK (
+CASE
+    WHEN (hub_publication_id IS NULL) THEN (num_nonnulls(hub_kind, hub_status, hub_version, hub_checks, hub_prepared_at, hub_sent_at, platform_post_ref, vault_album_ref) = 0)
+    ELSE (num_nulls(hub_kind, hub_status, hub_version, hub_updated_at, hub_prepared_at) = 0)
+END),
+    CONSTRAINT posting_plan_rows_hub_publication_id_positive CHECK ((hub_publication_id > 0)),
+    CONSTRAINT posting_plan_rows_hub_ref CHECK (((num_nonnulls(platform_post_ref, vault_album_ref) <= 1) AND ((vault_album_ref IS NULL) OR (hub_kind = 'vault_album'::text)))),
+    CONSTRAINT posting_plan_rows_hub_sent CHECK (((hub_sent_at IS NULL) = (hub_sent_by IS NULL))),
+    CONSTRAINT posting_plan_rows_hub_version_positive CHECK ((hub_version > 0)),
     CONSTRAINT posting_plan_rows_inputs CHECK (((input_manifest_id IS NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL))),
     CONSTRAINT posting_plan_rows_mark CHECK (
 CASE
@@ -2876,17 +2925,23 @@ CREATE INDEX placements_unbound ON public.placements USING btree (model_id, crea
 
 CREATE UNIQUE INDEX placements_vault_member ON public.placements USING btree (model_id, surface_id, external_album_ref, external_media_ref) WHERE (external_media_ref IS NOT NULL);
 
+CREATE UNIQUE INDEX posting_plan_rows_hub_publication ON public.posting_plan_rows USING btree (hub_publication_id) WHERE (hub_publication_id IS NOT NULL);
+
 CREATE INDEX posting_plan_rows_item ON public.posting_plan_rows USING btree (model_id, item_id, slot_at DESC);
 
 CREATE INDEX posting_plan_rows_open ON public.posting_plan_rows USING btree (model_id, slot_at) WHERE ((marked_at IS NULL) AND (cancelled_at IS NULL));
 
 CREATE INDEX posting_plan_rows_page ON public.posting_plan_rows USING btree (model_id, account_id, slot_at);
 
+CREATE INDEX posting_plan_rows_platform_post ON public.posting_plan_rows USING btree (model_id, account_id, platform_post_ref) WHERE (platform_post_ref IS NOT NULL);
+
 CREATE UNIQUE INDEX posting_plan_rows_release_surface ON public.posting_plan_rows USING btree (model_id, release_id, release_surface_kind) WHERE ((release_id IS NOT NULL) AND (cancelled_at IS NULL));
 
 CREATE INDEX posting_plan_rows_tasks ON public.posting_plan_rows USING btree (model_id, assignee_id, slot_date);
 
 CREATE INDEX posting_plan_rows_uniq_waiting ON public.posting_plan_rows USING btree (model_id, item_id, uniq_variant_no) WHERE ((manifest_id IS NULL) AND (uniq_variant_no IS NOT NULL));
+
+CREATE INDEX posting_plan_rows_vault_album ON public.posting_plan_rows USING btree (model_id, account_id, vault_album_ref) WHERE (vault_album_ref IS NOT NULL);
 
 CREATE INDEX ppv_releases_page ON public.ppv_releases USING btree (model_id, account_id, release_date DESC);
 
@@ -3652,6 +3707,12 @@ ALTER TABLE ONLY public.posting_plan_rows
 
 ALTER TABLE ONLY public.posting_plan_rows
     ADD CONSTRAINT posting_plan_rows_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_hub_prepared_by_fkey FOREIGN KEY (hub_prepared_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_hub_sent_by_fkey FOREIGN KEY (hub_sent_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.posting_plan_rows
     ADD CONSTRAINT posting_plan_rows_marked_by_fkey FOREIGN KEY (marked_by) REFERENCES public.principals(id) ON DELETE RESTRICT;

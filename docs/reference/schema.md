@@ -732,13 +732,20 @@ PPV (триггер).
 | `mark_kind?` | `posted \| scheduled` — «выложено» / «в планировщике» (SPEC §5, 28.09.2026) |
 | `stated_occurred_at?` | фактическая дата, указанная КМ для сториз и рассылки (§7) |
 | `caption?`, `tier_refs text[]?`, `price_mills?`, `repost`, `album_name?` | для публикации через Hub, с 4а: подпись; аудитория Fansly — пусто: подписчики, иначе тиры; цена в тысячных долях доллара, как у Hub (с ценой — `paid_post`); флаг повтора (`boolean NOT NULL DEFAULT false`); имя альбома vault |
-| `hub_publication_id?`, `hub_status?`, `hub_status_reason?`, `platform_post_ref?` | с 5б: публикация Hub, её статус и причина как отдаёт Hub (опрос раз в 10 мин), пост или альбом на площадке — к посту Hub без сопоставления (схема §9.6) |
+| `hub_publication_id?`, `hub_kind?`, `hub_status?`, `hub_status_reason?`, `hub_status_at?`, `hub_updated_at?` | с 5б (`0009_publications`): публикация Hub, её вид по поверхности (SPEC §7), статус и причина как отдаёт Hub (опрос раз в 10 мин; списка статусов в CHECK нет — он растёт у Hub), время смены статуса и `updatedAt` Hub — более старая строка ленты ничего не меняет |
+| `hub_version?`, `hub_checks?`, `hub_files`, `hub_content_hash?` | черновик: версия содержимого (её утверждает «Отправить»), проверки Hub `{blocked, findings}`, файлы черновика (`jsonb`: версия, имя по naming §5–6, SHA-256 и размер, `file_id` загрузки или `vault_media_ref` того же файла из vault страницы, когда загружен) — повторное «Подготовить» не грузит то, что уже здесь; отпечаток черновика — тот же черновик дважды не создаётся |
+| `hub_prepared_at/by?`, `hub_prepared_version?`, `hub_sent_at/by?` | кто подготовил и с какой версии строки (правка строки после этого — «подготовьте заново»); кто отправил — только человек (SPEC §11.1) |
+| `platform_post_ref?`, `vault_album_ref?` | пост или альбом vault на площадке, которыми стала публикация, — к посту Hub без сопоставления (схема §9.6) |
 | `cancelled_at/by`, `cancel_reason` | |
 | `note`, `row_version`, `created_at/by` | |
 
 CHECK `marked_at IS NULL OR cancelled_at IS NULL`; CHECK `release_id IS NULL OR
-item_id IS NOT NULL`; частичный UNIQUE `(hub_publication_id)`; FK на состав только
-закрытый. Уникальности по слоту нет: два
+item_id IS NOT NULL`; частичный UNIQUE `(hub_publication_id)`; CHECK: без публикации нет ни
+вида, ни статуса, ни черновика; у публикации — вид, статус, версия и автор подготовки; пост
+или альбом — одно из двух, альбом только у `vault_album`; FK на состав только
+закрытый. Индексы `(model_id, account_id, platform_post_ref)` и `(…, vault_album_ref)` и
+функции `is_publication_post`, `is_publication_album` — сопоставление пропускает посты и
+альбомы, пришедшие по публикации Hub (SPEC §7). Уникальности по слоту нет: два
 поста в один слот представимы и показываются как конфликт. Индексы:
 `(model_id, assignee_id, slot_date)` — задачи на день; `(model_id, account_id,
 slot_at)` — норма и дыры; `(model_id, item_id, slot_at DESC)` — «слишком рано»;
@@ -829,7 +836,9 @@ IS NOT NULL`. Уникальности по `external_ref` внутри разм
 
 **`hub_sync_state`** — граница опроса (§8.1), строка на страницу и поток опроса
 (`posts` — посты с вложениями, `capture_coverage` и `sync_streams`; `raw_media`;
-`vault_media`; `creator_stats` — просмотры и лайки Fansly). PK `(model_id, account_id,
+`vault_media`; `creator_stats` — просмотры и лайки Fansly; с 5б `publications` — статусы своих
+публикаций раз в 10 мин: `watermark_at` — наибольший `updatedAt` ленты, следующее чтение — от
+него минус 3 ч; `last_success_at` — «Hub · статусы на 18:32»). PK `(model_id, account_id,
 dataset, scope)`, `scope` = `page`; `id` — субъект журнала; `watermark_at` (прошлый успех
 минус 3 ч, SPEC §8.1), `last_success_at` (начало прошлого успешного опроса ContentOps —
 база следующего чтения), `last_daily_at` (прошлый суточный или полный опрос),
@@ -1657,7 +1666,7 @@ LLM.
 | 4 (4а) | `0006_plan` | `ppv_releases`, `posting_plan_rows` с полями публикации (2) |
 | 4 (4в) | `0007_promo` | `contractors`, `promo_deliveries` (2) |
 | 5 | `0008_hub` | `hub_sync_state`, `hub_observations`, `hub_posts`, `hub_post_attachments`, `hub_raw_media`, `hub_vault_albums`, `hub_vault_media` (7); FK `placement_evidence.hub_observation_id` |
-| 5б | `0009_publications` | таблиц нет: связь строки плана с публикацией Hub (схема §3.5) |
+| 5б | `0009_publications` | таблиц нет: связь строки плана с публикацией Hub — колонки `posting_plan_rows` (схема §3.5), функции `is_publication_post/album`, поток `publications` в `hub_sync_state` |
 | 8 (8а) | `0010_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 

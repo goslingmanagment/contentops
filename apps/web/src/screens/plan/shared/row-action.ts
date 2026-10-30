@@ -5,15 +5,45 @@ import { isAwaitingMontage, isOpenRow } from './plan-text'
 
 /**
  * Одна кнопка строки по случаю (DESIGN §4.11): «Отметить ▾», «Отметить и подтвердить»,
- * «Сверить», «Отменить строку», «Загрузить монтаж» — или ничего.
+ * «Подготовить» / «Отправить» (публикация через Hub), «Сверить», «Отменить строку»,
+ * «Загрузить монтаж» — или ничего.
  */
 export type RowAction =
   | { kind: 'mark'; timed: boolean }
   | { kind: 'mark_confirm' }
+  | { kind: 'prepare'; again: boolean }
+  | { kind: 'send'; blocked: string | null }
+  | { kind: 'hub_pending'; op: 'prepare' | 'send' | 'cancel' }
   | { kind: 'check' }
   | { kind: 'cancel' }
   | { kind: 'montage' }
   | { kind: 'none' }
+
+/**
+ * На странице с публикацией через Hub вместо «Отметить ▾» — «Подготовить», затем «Отправить»
+ * (DESIGN §4.11); после ▲ «не вышло» и отмены публикации — «Подготовить» заново.
+ */
+function hubActionOf(row: PlanRow): RowAction | null {
+  const hub = row.hub
+  if (!hub?.enabled || hub.manual) {
+    return null
+  }
+  if (hub.pending) {
+    return { kind: 'hub_pending', op: hub.pending }
+  }
+  const publication = hub.publication
+  if (publication?.state === 'draft' && !publication.stale) {
+    const blocking = publication.checks.find((check) => check.severity === 'blocking')
+    return {
+      kind: 'send',
+      blocked: publication.blocked ? (blocking?.text ?? 'Hub не пропускает черновик') : null,
+    }
+  }
+  if (hub.can_prepare) {
+    return { kind: 'prepare', again: publication !== null }
+  }
+  return null
+}
 
 export function rowActionOf(row: PlanRow, canAct: boolean): RowAction {
   if (!canAct || row.cancelled) {
@@ -27,6 +57,10 @@ export function rowActionOf(row: PlanRow, canAct: boolean): RowAction {
   }
   if (row.verdict.sign === 'turn') {
     return { kind: 'check' }
+  }
+  const publish = hubActionOf(row)
+  if (publish) {
+    return publish
   }
   if (!isOpenRow(row)) {
     return { kind: 'none' }

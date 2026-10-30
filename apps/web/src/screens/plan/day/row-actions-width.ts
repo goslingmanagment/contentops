@@ -11,6 +11,9 @@ import type { DayListItem } from './day-list'
 const ACTION_PX: Record<RowAction['kind'], number> = {
   mark: 134,
   mark_confirm: 180,
+  prepare: 132,
+  send: 118,
+  hub_pending: 156,
   check: 97,
   cancel: 132,
   montage: 162,

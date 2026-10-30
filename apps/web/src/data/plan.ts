@@ -39,6 +39,16 @@ interface PlanDayOptions {
   cancelled: boolean
 }
 
+/**
+ * Пока Hub готовит, отправляет или отменяет публикацию строки (5б), день и неделя
+ * перечитываются раз в 2 с — строка сама сменит «Hub готовит…» на проверки или статус.
+ */
+const HUB_PENDING_REFRESH_MS = 2_000
+
+function hubPending(data: { rows: readonly { hub: { pending: unknown } | null }[] } | undefined) {
+  return data?.rows.some((row) => row.hub?.pending) ? HUB_PENDING_REFRESH_MS : false
+}
+
 export function usePlanDay(model: ModelCode, date: LocalDate, options: PlanDayOptions) {
   const api = useApi()
   const { mine, cancelled } = options
@@ -47,6 +57,7 @@ export function usePlanDay(model: ModelCode, date: LocalDate, options: PlanDayOp
     queryFn: ({ signal }) =>
       api.plan.day({ params: { model }, query: { date, mine, cancelled }, signal }),
     placeholderData: (previous) => (previous?.date === date ? previous : undefined),
+    refetchInterval: (query) => hubPending(query.state.data),
   })
 }
 
@@ -56,6 +67,7 @@ export function usePlanWeek(model: ModelCode, week: IsoWeek, enabled = true) {
     queryKey: queryKeys.planWeek(model, week),
     queryFn: ({ signal }) => api.plan.week({ params: { model }, query: { week }, signal }),
     enabled,
+    refetchInterval: (query) => hubPending(query.state.data),
   })
 }
 
@@ -255,6 +267,13 @@ export function usePlanCommands(model: ModelCode) {
         }),
       download: ({ key, command }: Call & { command: PlanDownloadCommand }) =>
         api.plan.download({ params: { model }, body: command, idempotencyKey: key }),
+      /** Публикация через Hub (5б): «Подготовить», «Отправить», отмена своей публикации. */
+      prepare: ({ key, row }: RowCall) =>
+        api.plan.prepare({ params: { model, row }, idempotencyKey: key }),
+      send: ({ key, row, version }: RowCall & { version: number }) =>
+        api.plan.send({ params: { model, row }, body: { version }, idempotencyKey: key }),
+      cancelPublication: ({ key, row }: RowCall) =>
+        api.plan.cancelPublication({ params: { model, row }, idempotencyKey: key }),
       /** Файл строки плана: имя с кодом страницы, днём и временем строки (§2.5). */
       downloadRow: ({
         key,

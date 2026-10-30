@@ -12,13 +12,20 @@ import {
   NewPlanRowSchema,
   PlanDownloadCommandSchema,
   RowCheckResultSchema,
+  SendPublicationCommandSchema,
   UpdateRowCommandSchema,
   UpdateWeekNormCommandSchema,
 } from '../../commands/plan'
 import { IsoWeekSchema, LocalDateSchema } from '../../domain/common'
 import { DownloadAnswerSchema } from '../../domain/operations'
 import { BatchResultSchema } from '../../domain/pagination'
-import { PlanDaySchema, PlanRowSchema, PlanWeekSchema, WeekNormSchema } from '../../domain/plan'
+import {
+  PlanDaySchema,
+  PlanHubSchema,
+  PlanRowSchema,
+  PlanWeekSchema,
+  WeekNormSchema,
+} from '../../domain/plan'
 import { OkSchema, ReleaseResultSchema } from '../responses'
 import { defineRoute, QueryFlagSchema } from '../route'
 
@@ -95,6 +102,44 @@ export const planRoutes = {
     path: '/api/v1/{model}/plan/rows/{row}:cancel',
     body: CancelRowCommandSchema,
     response: PlanRowSchema,
+  }),
+  /**
+   * Publication through Hub (5б, SPEC §7): «Подготовить» — Hub gets the missing files and makes a
+   * draft with its checks; a person and an agent may prepare. The work runs in the background:
+   * the row answers with `hub.pending`.
+   */
+  prepare: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/plan/rows/{row}:prepare',
+    response: PlanRowSchema,
+    success: 202,
+  }),
+  /**
+   * «Отправить»: a person who saw Hub's checks confirms, ContentOps approves the draft of that
+   * version. An agent never sends (SPEC §11.1): 403.
+   */
+  send: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/plan/rows/{row}:send',
+    body: SendPublicationCommandSchema,
+    response: PlanRowSchema,
+    success: 202,
+  }),
+  /**
+   * Takes ContentOps' own publication off while Hub has not handed it to the platform (7 days
+   * before it goes out); later only the owner, in Hub. The row stays in the plan.
+   */
+  cancelPublication: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/plan/rows/{row}:cancel-publication',
+    response: PlanRowSchema,
+    success: 202,
+  }),
+  /** The publication of the row as the row shows it: status, Hub's checks, what may be done. */
+  publication: defineRoute({
+    method: 'GET',
+    path: '/api/v1/{model}/plan/rows/{row}/publication',
+    response: PlanHubSchema,
   }),
   move: defineRoute({
     method: 'POST',

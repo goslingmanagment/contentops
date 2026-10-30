@@ -2426,9 +2426,9 @@ export const hubSyncState = pgTable("hub_sync_state", {
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.accountId, table.dataset, table.modelId, table.scope], name: "hub_sync_state_pkey"}),
 	unique("hub_sync_state_model_id_id_key").on(table.id, table.modelId),
-	check("hub_sync_state_dataset_check", sql`dataset = ANY (ARRAY['posts'::text, 'raw_media'::text, 'vault_media'::text, 'creator_stats'::text])`),
 	check("hub_sync_state_consecutive_failures_check", sql`consecutive_failures >= 0`),
 	check("hub_sync_state_available", sql`available OR (unavailable_reason IS NOT NULL)`),
+	check("hub_sync_state_dataset_check", sql`dataset = ANY (ARRAY['posts'::text, 'raw_media'::text, 'vault_media'::text, 'creator_stats'::text, 'publications'::text])`),
 ]);
 
 export const contentItems = pgTable("content_items", {
@@ -2746,123 +2746,6 @@ export const customOrders = pgTable("custom_orders", {
 	check("custom_orders_cancelled", sql`(status = 'cancelled'::text) = ((cancelled_at IS NOT NULL) AND (cancel_reason IS NOT NULL))`),
 ]);
 
-export const postingPlanRows = pgTable("posting_plan_rows", {
-	modelId: uuid("model_id").notNull(),
-	id: uuid().default(sql`uuidv7()`).notNull(),
-	itemId: uuid("item_id"),
-	accountId: uuid("account_id").notNull(),
-	surfaceId: uuid("surface_id").notNull(),
-	slotDate: date("slot_date").notNull(),
-	slotTime: time("slot_time"),
-	slotTz: text("slot_tz").notNull(),
-	slotAt: timestamp("slot_at", { withTimezone: true, mode: 'string' }).notNull(),
-	assigneeId: uuid("assignee_id"),
-	releaseId: uuid("release_id"),
-	releaseSurfaceKind: text("release_surface_kind"),
-	manifestId: uuid("manifest_id"),
-	markedManifestId: uuid("marked_manifest_id"),
-	expectedType: text("expected_type"),
-	expectedRole: text("expected_role"),
-	inputManifestId: uuid("input_manifest_id"),
-	uniqVariantNo: integer("uniq_variant_no"),
-	markedBy: uuid("marked_by"),
-	markedAt: timestamp("marked_at", { withTimezone: true, mode: 'string' }),
-	markKind: text("mark_kind"),
-	statedOccurredAt: timestamp("stated_occurred_at", { withTimezone: true, mode: 'string' }),
-	requiresNewUpload: boolean("requires_new_upload").default(false).notNull(),
-	caption: text(),
-	tierRefs: text("tier_refs").array(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	priceMills: bigint("price_mills", { mode: "number" }),
-	repost: boolean().default(false).notNull(),
-	albumName: text("album_name"),
-	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
-	cancelledBy: uuid("cancelled_by"),
-	cancelReason: text("cancel_reason"),
-	note: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	createdBy: uuid("created_by"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
-}, (table): PgTableExtraConfigValue[] => [
-	index("posting_plan_rows_item").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.itemId.asc().nullsLast().op("timestamptz_ops"), table.slotAt.desc().nullsFirst().op("timestamptz_ops")),
-	index("posting_plan_rows_open").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.slotAt.asc().nullsLast().op("uuid_ops")).where(sql`((marked_at IS NULL) AND (cancelled_at IS NULL))`),
-	index("posting_plan_rows_page").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.accountId.asc().nullsLast().op("uuid_ops"), table.slotAt.asc().nullsLast().op("timestamptz_ops")),
-	uniqueIndex("posting_plan_rows_release_surface").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.releaseId.asc().nullsLast().op("text_ops"), table.releaseSurfaceKind.asc().nullsLast().op("uuid_ops")).where(sql`((release_id IS NOT NULL) AND (cancelled_at IS NULL))`),
-	index("posting_plan_rows_tasks").using("btree", table.modelId.asc().nullsLast().op("date_ops"), table.assigneeId.asc().nullsLast().op("date_ops"), table.slotDate.asc().nullsLast().op("uuid_ops")),
-	index("posting_plan_rows_uniq_waiting").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.itemId.asc().nullsLast().op("uuid_ops"), table.uniqVariantNo.asc().nullsLast().op("uuid_ops")).where(sql`((manifest_id IS NULL) AND (uniq_variant_no IS NOT NULL))`),
-	foreignKey({
-			columns: [table.assigneeId],
-			foreignColumns: [principals.id],
-			name: "posting_plan_rows_assignee_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.markedBy],
-			foreignColumns: [principals.id],
-			name: "posting_plan_rows_marked_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.cancelledBy],
-			foreignColumns: [principals.id],
-			name: "posting_plan_rows_cancelled_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.createdBy],
-			foreignColumns: [principals.id],
-			name: "posting_plan_rows_created_by_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.itemId],
-			foreignColumns: [contentItems.id, contentItems.modelId],
-			name: "posting_plan_rows_model_id_item_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.accountId, table.surfaceId],
-			foreignColumns: [surfaces.accountId, surfaces.id, surfaces.modelId],
-			name: "posting_plan_rows_model_id_account_id_surface_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.itemId, table.releaseId],
-			foreignColumns: [ppvReleases.id, ppvReleases.itemId, ppvReleases.modelId],
-			name: "posting_plan_rows_model_id_release_id_item_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.manifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_manifest_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.markedManifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_marked_manifest_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.inputManifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_input_manifest_id_fkey"
-		}).onDelete("restrict"),
-	primaryKey({ columns: [table.id, table.modelId], name: "posting_plan_rows_pkey"}),
-	check("posting_plan_rows_release_surface_kind_check", sql`release_surface_kind = ANY (ARRAY['wall'::text, 'story'::text, 'vault'::text, 'mass_dm'::text])`),
-	check("posting_plan_rows_expected_type_check", sql`expected_type = ANY (ARRAY['FYP'::text, 'PPV'::text])`),
-	check("posting_plan_rows_expected_role", sql`expected_role = 'teaser'::text`),
-	check("posting_plan_rows_uniq_variant", sql`uniq_variant_no > 0`),
-	check("posting_plan_rows_mark_kind_check", sql`mark_kind = ANY (ARRAY['posted'::text, 'scheduled'::text])`),
-	check("posting_plan_rows_price", sql`price_mills >= 0`),
-	check("posting_plan_rows_cancel_reason_check", sql`cancel_reason = ANY (ARRAY['late'::text, 'replaced'::text, 'paused'::text, 'second_person'::text])`),
-	check("posting_plan_rows_marked_cancelled", sql`(marked_at IS NULL) OR (cancelled_at IS NULL)`),
-	check("posting_plan_rows_release_item", sql`(release_id IS NULL) OR (item_id IS NOT NULL)`),
-	check("posting_plan_rows_release_kind", sql`(release_id IS NULL) = (release_surface_kind IS NULL)`),
-	check("posting_plan_rows_ships", sql`(manifest_id IS NOT NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL) OR (uniq_variant_no IS NOT NULL)`),
-	check("posting_plan_rows_object", sql`(item_id IS NOT NULL) OR (expected_type IS NOT NULL)`),
-	check("posting_plan_rows_inputs", sql`(input_manifest_id IS NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL)`),
-	check("posting_plan_rows_mark", sql`CHECK (
-CASE
-    WHEN (marked_at IS NULL) THEN (num_nonnulls(marked_by, mark_kind, marked_manifest_id, stated_occurred_at) = 0)
-    ELSE (num_nulls(marked_by, mark_kind, marked_manifest_id, manifest_id) = 0)
-END)`),
-	check("posting_plan_rows_cancel", sql`(cancelled_at IS NOT NULL) OR ((cancelled_by IS NULL) AND (cancel_reason IS NULL))`),
-]);
-
 export const inboxDrafts = pgTable("inbox_drafts", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -2995,6 +2878,167 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 	check("inbox_drafts_verified_master", sql`(master_verified_at IS NULL) OR (master_sha256 IS NOT NULL)`),
 	check("inbox_drafts_alias_target", sql`(outcome <> 'alias'::text) OR (duplicate_of_version_id IS NOT NULL)`),
 	check("inbox_drafts_rejected_at", sql`(outcome <> 'rejected'::text) OR (rejected_at IS NOT NULL)`),
+]);
+
+export const postingPlanRows = pgTable("posting_plan_rows", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	itemId: uuid("item_id"),
+	accountId: uuid("account_id").notNull(),
+	surfaceId: uuid("surface_id").notNull(),
+	slotDate: date("slot_date").notNull(),
+	slotTime: time("slot_time"),
+	slotTz: text("slot_tz").notNull(),
+	slotAt: timestamp("slot_at", { withTimezone: true, mode: 'string' }).notNull(),
+	assigneeId: uuid("assignee_id"),
+	releaseId: uuid("release_id"),
+	releaseSurfaceKind: text("release_surface_kind"),
+	manifestId: uuid("manifest_id"),
+	markedManifestId: uuid("marked_manifest_id"),
+	expectedType: text("expected_type"),
+	expectedRole: text("expected_role"),
+	inputManifestId: uuid("input_manifest_id"),
+	uniqVariantNo: integer("uniq_variant_no"),
+	markedBy: uuid("marked_by"),
+	markedAt: timestamp("marked_at", { withTimezone: true, mode: 'string' }),
+	markKind: text("mark_kind"),
+	statedOccurredAt: timestamp("stated_occurred_at", { withTimezone: true, mode: 'string' }),
+	requiresNewUpload: boolean("requires_new_upload").default(false).notNull(),
+	caption: text(),
+	tierRefs: text("tier_refs").array(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	priceMills: bigint("price_mills", { mode: "number" }),
+	repost: boolean().default(false).notNull(),
+	albumName: text("album_name"),
+	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
+	cancelledBy: uuid("cancelled_by"),
+	cancelReason: text("cancel_reason"),
+	note: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	hubPublicationId: bigint("hub_publication_id", { mode: "number" }),
+	hubKind: text("hub_kind"),
+	hubStatus: text("hub_status"),
+	hubStatusReason: text("hub_status_reason"),
+	hubStatusAt: timestamp("hub_status_at", { withTimezone: true, mode: 'string' }),
+	hubUpdatedAt: timestamp("hub_updated_at", { withTimezone: true, mode: 'string' }),
+	hubVersion: integer("hub_version"),
+	hubChecks: jsonb("hub_checks"),
+	hubFiles: jsonb("hub_files").default([]).notNull(),
+	hubContentHash: text("hub_content_hash"),
+	hubPreparedAt: timestamp("hub_prepared_at", { withTimezone: true, mode: 'string' }),
+	hubPreparedBy: uuid("hub_prepared_by"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	hubPreparedVersion: bigint("hub_prepared_version", { mode: "number" }),
+	hubSentAt: timestamp("hub_sent_at", { withTimezone: true, mode: 'string' }),
+	hubSentBy: uuid("hub_sent_by"),
+	platformPostRef: text("platform_post_ref"),
+	vaultAlbumRef: text("vault_album_ref"),
+}, (table): PgTableExtraConfigValue[] => [
+	uniqueIndex("posting_plan_rows_hub_publication").using("btree", table.hubPublicationId.asc().nullsLast().op("int8_ops")).where(sql`(hub_publication_id IS NOT NULL)`),
+	index("posting_plan_rows_item").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.itemId.asc().nullsLast().op("uuid_ops"), table.slotAt.desc().nullsFirst().op("uuid_ops")),
+	index("posting_plan_rows_open").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.slotAt.asc().nullsLast().op("uuid_ops")).where(sql`((marked_at IS NULL) AND (cancelled_at IS NULL))`),
+	index("posting_plan_rows_page").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.accountId.asc().nullsLast().op("uuid_ops"), table.slotAt.asc().nullsLast().op("timestamptz_ops")),
+	index("posting_plan_rows_platform_post").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.platformPostRef.asc().nullsLast().op("uuid_ops")).where(sql`(platform_post_ref IS NOT NULL)`),
+	uniqueIndex("posting_plan_rows_release_surface").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.releaseId.asc().nullsLast().op("uuid_ops"), table.releaseSurfaceKind.asc().nullsLast().op("text_ops")).where(sql`((release_id IS NOT NULL) AND (cancelled_at IS NULL))`),
+	index("posting_plan_rows_tasks").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.assigneeId.asc().nullsLast().op("date_ops"), table.slotDate.asc().nullsLast().op("uuid_ops")),
+	index("posting_plan_rows_uniq_waiting").using("btree", table.modelId.asc().nullsLast().op("int4_ops"), table.itemId.asc().nullsLast().op("int4_ops"), table.uniqVariantNo.asc().nullsLast().op("int4_ops")).where(sql`((manifest_id IS NULL) AND (uniq_variant_no IS NOT NULL))`),
+	index("posting_plan_rows_vault_album").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.vaultAlbumRef.asc().nullsLast().op("text_ops")).where(sql`(vault_album_ref IS NOT NULL)`),
+	foreignKey({
+			columns: [table.assigneeId],
+			foreignColumns: [principals.id],
+			name: "posting_plan_rows_assignee_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.markedBy],
+			foreignColumns: [principals.id],
+			name: "posting_plan_rows_marked_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.cancelledBy],
+			foreignColumns: [principals.id],
+			name: "posting_plan_rows_cancelled_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [principals.id],
+			name: "posting_plan_rows_created_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.itemId],
+			foreignColumns: [contentItems.id, contentItems.modelId],
+			name: "posting_plan_rows_model_id_item_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.accountId, table.surfaceId],
+			foreignColumns: [surfaces.accountId, surfaces.id, surfaces.modelId],
+			name: "posting_plan_rows_model_id_account_id_surface_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.itemId, table.releaseId],
+			foreignColumns: [ppvReleases.id, ppvReleases.itemId, ppvReleases.modelId],
+			name: "posting_plan_rows_model_id_release_id_item_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.manifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.markedManifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_marked_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.inputManifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_input_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.hubPreparedBy],
+			foreignColumns: [principals.id],
+			name: "posting_plan_rows_hub_prepared_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.hubSentBy],
+			foreignColumns: [principals.id],
+			name: "posting_plan_rows_hub_sent_by_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "posting_plan_rows_pkey"}),
+	check("posting_plan_rows_release_surface_kind_check", sql`release_surface_kind = ANY (ARRAY['wall'::text, 'story'::text, 'vault'::text, 'mass_dm'::text])`),
+	check("posting_plan_rows_expected_type_check", sql`expected_type = ANY (ARRAY['FYP'::text, 'PPV'::text])`),
+	check("posting_plan_rows_expected_role", sql`expected_role = 'teaser'::text`),
+	check("posting_plan_rows_uniq_variant", sql`uniq_variant_no > 0`),
+	check("posting_plan_rows_mark_kind_check", sql`mark_kind = ANY (ARRAY['posted'::text, 'scheduled'::text])`),
+	check("posting_plan_rows_price", sql`price_mills >= 0`),
+	check("posting_plan_rows_cancel_reason_check", sql`cancel_reason = ANY (ARRAY['late'::text, 'replaced'::text, 'paused'::text, 'second_person'::text])`),
+	check("posting_plan_rows_marked_cancelled", sql`(marked_at IS NULL) OR (cancelled_at IS NULL)`),
+	check("posting_plan_rows_release_item", sql`(release_id IS NULL) OR (item_id IS NOT NULL)`),
+	check("posting_plan_rows_release_kind", sql`(release_id IS NULL) = (release_surface_kind IS NULL)`),
+	check("posting_plan_rows_ships", sql`(manifest_id IS NOT NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL) OR (uniq_variant_no IS NOT NULL)`),
+	check("posting_plan_rows_object", sql`(item_id IS NOT NULL) OR (expected_type IS NOT NULL)`),
+	check("posting_plan_rows_inputs", sql`(input_manifest_id IS NULL) OR (expected_type IS NOT NULL) OR (expected_role IS NOT NULL)`),
+	check("posting_plan_rows_mark", sql`CHECK (
+CASE
+    WHEN (marked_at IS NULL) THEN (num_nonnulls(marked_by, mark_kind, marked_manifest_id, stated_occurred_at) = 0)
+    ELSE (num_nulls(marked_by, mark_kind, marked_manifest_id, manifest_id) = 0)
+END)`),
+	check("posting_plan_rows_cancel", sql`(cancelled_at IS NOT NULL) OR ((cancelled_by IS NULL) AND (cancel_reason IS NULL))`),
+	check("posting_plan_rows_hub_publication_id_positive", sql`hub_publication_id > 0`),
+	check("posting_plan_rows_hub_kind_check", sql`hub_kind = ANY (ARRAY['fyp_post'::text, 'subscriber_post'::text, 'paid_post'::text, 'story'::text, 'vault_album'::text])`),
+	check("posting_plan_rows_hub_version_positive", sql`hub_version > 0`),
+	check("posting_plan_rows_hub_checks_object", sql`jsonb_typeof(hub_checks) = 'object'::text`),
+	check("posting_plan_rows_hub_files_array", sql`jsonb_typeof(hub_files) = 'array'::text`),
+	check("posting_plan_rows_hub_publication", sql`CHECK (
+CASE
+    WHEN (hub_publication_id IS NULL) THEN (num_nonnulls(hub_kind, hub_status, hub_version, hub_checks, hub_prepared_at, hub_sent_at, platform_post_ref, vault_album_ref) = 0)
+    ELSE (num_nulls(hub_kind, hub_status, hub_version, hub_updated_at, hub_prepared_at) = 0)
+END)`),
+	check("posting_plan_rows_hub_sent", sql`(hub_sent_at IS NULL) = (hub_sent_by IS NULL)`),
+	check("posting_plan_rows_hub_ref", sql`(num_nonnulls(platform_post_ref, vault_album_ref) <= 1) AND ((vault_album_ref IS NULL) OR (hub_kind = 'vault_album'::text))`),
 ]);
 export const catalogIndex = pgView("catalog_index", {	modelId: uuid("model_id"),
 	itemId: uuid("item_id"),

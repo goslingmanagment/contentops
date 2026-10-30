@@ -734,6 +734,34 @@ export type PromoDeliveryOrigin = (typeof promoDeliveryOrigins)[number]
 export const hubSyncDatasets = ['posts', 'raw_media', 'vault_media', 'creator_stats'] as const
 export type HubSyncDataset = (typeof hubSyncDatasets)[number]
 
+/**
+ * Rows of `hub_sync_state`: the hourly streams and, from 5б, the 10-minute read of the statuses
+ * of ContentOps' own publications (`publications`, SPEC §7).
+ */
+export const hubStateDatasets = [...hubSyncDatasets, 'publications'] as const
+export type HubStateDataset = (typeof hubStateDatasets)[number]
+
+/**
+ * What a Hub publication of a plan row publishes (`posting_plan_rows.hub_kind`; SPEC §7 table:
+ * wall `subscriber_post` or, with a price, `paid_post`; FYP `fyp_post`; vault `vault_album`;
+ * story `story`; a mass message only by hand).
+ */
+export const publicationKinds = [
+  'fyp_post',
+  'subscriber_post',
+  'paid_post',
+  'story',
+  'vault_album',
+] as const
+export type PublicationKind = (typeof publicationKinds)[number]
+
+/**
+ * What a `hub_publish` work does (`work_operations.dataset`): prepare a row's draft, send it
+ * (approve; a person only), cancel it, or read the statuses of a page (every 10 min).
+ */
+export const hubPublishOps = ['prepare', 'send', 'cancel', 'status'] as const
+export type HubPublishOp = (typeof hubPublishOps)[number]
+
 /** Hub datasets whose changes go into the observation log. */
 export const hubObservedDatasets = [
   'posts',
