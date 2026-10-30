@@ -205,15 +205,10 @@ export async function runWork(
         workKey: key,
         scope: input.scope ?? null,
         dataset: input.dataset ?? null,
+        sourceRevisionId: input.sourceRevisionId ?? null,
+        draftId: input.draftId ?? null,
       }),
   )
-  if (input.sourceRevisionId || input.draftId) {
-    await db.execute(sql`
-      UPDATE work_operations
-         SET source_revision_id = ${input.sourceRevisionId ?? null}::uuid,
-             draft_id = ${input.draftId ?? null}::uuid
-       WHERE id = ${work.id}::uuid`)
-  }
   const runner = new WorkRunner({
     db,
     role: 'worker',
@@ -267,4 +262,52 @@ export async function intakeCounts(db: Db) {
     'objects' | 'paths' | 'revisions' | 'groups' | 'drafts' | 'changes',
     number
   >
+}
+
+/**
+ * Runs the queued works of `kinds` (with the real gate) until none is due: what failed waits
+ * in `retry_wait` a minute and is left alone. Returns the rows it ran.
+ */
+export async function drain(
+  db: Db,
+  kinds: readonly string[],
+  handlers: Partial<Record<string, WorkHandler>>,
+): Promise<WorkOutcome[]> {
+  const started = new Date()
+  const runner = new WorkRunner({
+    db,
+    role: 'worker',
+    handlers: handlers as never,
+    gate: createWorkGate(),
+    pollMs: 20,
+    leaseMs: 5_000,
+    backoffMs: () => 60_000,
+    maxAttempts: 3,
+    stopTimeoutMs: 1_000,
+  })
+  runner.start()
+  try {
+    await vi.waitFor(
+      async () => {
+        const { rows } = await db.execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM work_operations
+           WHERE kind = ANY (${sql.param([...kinds])}::text[])
+             AND (state = 'running'
+                  OR (state IN ('pending', 'retry_wait') AND paused_reason IS NULL
+                      AND next_attempt_at <= now()))`)
+        if ((rows[0]?.n ?? 0) > 0) throw new Error('works still due')
+      },
+      { timeout: 20_000, interval: 50 },
+    )
+  } finally {
+    await runner.stop()
+  }
+  const { rows } = await db.execute<WorkOutcome & Record<string, unknown>>(sql`
+    SELECT id, state, error_code, paused_reason, report, next_attempt_at::text
+      FROM work_operations
+     WHERE kind = ANY (${sql.param([...kinds])}::text[])
+       AND (finished_at >= ${started.toISOString()}::timestamptz
+            OR (state = 'retry_wait' AND next_attempt_at > now()))
+     ORDER BY created_at`)
+  return rows
 }

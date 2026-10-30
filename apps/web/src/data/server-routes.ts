@@ -94,7 +94,21 @@ export const SERVER_ROUTES: ServerRoutes = {
   media: 'all',
   objectBatch: 'all',
   markup: 'all',
-  inbox: ['list', 'get', 'update', 'setType'],
+  inbox: [
+    'list',
+    'get',
+    'update',
+    'files',
+    'decide',
+    'accept',
+    'acceptMany',
+    'setType',
+    'merge',
+    'split',
+    'reject',
+    'retry',
+    'restore',
+  ],
   legacy: ['get'],
 }
 
