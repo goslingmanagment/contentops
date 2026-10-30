@@ -136,6 +136,16 @@ export type UpdateRowCommand = z.infer<typeof UpdateRowCommandSchema>
 export const SendPublicationCommandSchema = z.object({ version: z.int().positive() })
 export type SendPublicationCommand = z.infer<typeof SendPublicationCommandSchema>
 
+/** «Подготовить 12» (DESIGN §4.11): the rows of the selection. */
+export const PrepareRowsCommandSchema = z.object({ row_ids: z.array(z.string()).min(1) })
+export type PrepareRowsCommand = z.infer<typeof PrepareRowsCommandSchema>
+
+/** «Отправить 12»: each row with the draft version whose checks the summary showed. */
+export const SendRowsCommandSchema = z.object({
+  rows: z.array(z.object({ id: z.string(), version: z.int().positive() })).min(1),
+})
+export type SendRowsCommand = z.infer<typeof SendRowsCommandSchema>
+
 export const UpdateWeekNormCommandSchema = WeekNormSchema.omit({ account: true, version: true })
 export type UpdateWeekNormCommand = z.infer<typeof UpdateWeekNormCommandSchema>
 

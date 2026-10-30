@@ -1,4 +1,9 @@
-import { type PlanRow, PUBLICATION_KIND_LABEL, type PublicationCheck } from '@contentops/contracts'
+import {
+  formatNumber,
+  type PlanRow,
+  PUBLICATION_KIND_LABEL,
+  type PublicationCheck,
+} from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import {
   Dialog,
@@ -185,6 +190,96 @@ function SendDialog({ row, onClose }: { row: PlanRow; onClose: () => void }) {
           >
             <SendIcon />
             Отправить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * «Отправить 12» (DESIGN §4.11): одно окно со сводкой проверок Hub — что уйдёт (с
+ * предупреждениями янтарём) и что останется из-за блокирующей проверки.
+ */
+export function SendManyDialog({
+  send,
+  blocked,
+  pending,
+  onSend,
+  onClose,
+}: {
+  send: readonly PlanRow[]
+  blocked: readonly PlanRow[]
+  pending: boolean
+  onSend: () => void
+  onClose: () => void
+}) {
+  const model = useCurrentModel()
+  const label = (row: PlanRow) =>
+    `${row.manifest?.item_id ?? 'строка'} · ${accountLabel(model.accounts, row.account)} · ${slotText(row.date, row.time)}`
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="max-w-140">
+        <DialogHeader>
+          <DialogTitle>Отправить в Hub · {formatNumber(send.length)}</DialogTitle>
+          <DialogDescription>
+            ContentOps утвердит черновики, которые вы видите; отменить можно, пока Hub не поставил
+            публикацию в расписание площадки — за 7 дней до выхода.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto text-base">
+          <ul className="flex flex-col gap-2">
+            {send.map((row) => {
+              const warnings = (row.hub?.publication?.checks ?? []).filter(
+                (check) => check.severity !== 'blocking',
+              )
+              return (
+                <li key={row.id} className="flex flex-col gap-1">
+                  <span>
+                    {label(row)} ·{' '}
+                    <span className="text-ink-3">
+                      {row.hub?.publication ? PUBLICATION_KIND_LABEL[row.hub.publication.kind] : ''}
+                    </span>
+                  </span>
+                  {warnings.length > 0 ? <CheckLines checks={warnings} /> : null}
+                </li>
+              )
+            })}
+          </ul>
+          {blocked.length > 0 ? (
+            <div className="flex flex-col gap-1.5 border-t pt-3">
+              <p className="text-ink-3 text-sm">
+                Останутся — блокирующая проверка Hub: {formatNumber(blocked.length)}
+              </p>
+              <ul className="flex flex-col gap-2">
+                {blocked.map((row) => (
+                  <li key={row.id} className="flex flex-col gap-1">
+                    <span>{label(row)}</span>
+                    <CheckLines
+                      checks={(row.hub?.publication?.checks ?? []).filter(
+                        (check) => check.severity === 'blocking',
+                      )}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button
+            disabled={send.length === 0}
+            pending={pending}
+            onClick={() => {
+              onSend()
+              onClose()
+            }}
+          >
+            <SendIcon />
+            Отправить {formatNumber(send.length)}
           </Button>
         </DialogFooter>
       </DialogContent>

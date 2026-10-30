@@ -191,7 +191,10 @@ function FieldsForm({ row, onDone }: { row: PlanRow; onDone: () => void }) {
     subject: 'поля публикации',
     invalidates: planChangedKeys(model),
     onSuccess: () => {
-      toast.show({ message: 'Сохранено · подготовьте заново' })
+      toast.show({
+        message:
+          row.hub?.publication?.state === 'draft' ? 'Сохранено · подготовьте заново' : 'Сохранено',
+      })
       onDone()
     },
   })

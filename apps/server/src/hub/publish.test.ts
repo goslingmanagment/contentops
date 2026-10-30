@@ -29,6 +29,7 @@ import {
   setHubPage,
   setReceive,
   syncOnce,
+  workOutcome,
 } from './testing'
 
 /**
@@ -537,6 +538,95 @@ describe('checks and «Отправить»', () => {
       body: { date: day(6), time: '19:00', account: 'lora-1' },
     })
     expect(moved.statusCode).toBe(422)
+  })
+})
+
+describe('«Подготовить 12» and «Отправить 12»', () => {
+  async function batch(verb: 'prepare' | 'send', body: unknown, as = diana.session) {
+    return call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/plan/rows:${verb}`,
+      as,
+      key: newKey(),
+      body,
+    })
+  }
+
+  it('each row on its own: a row Hub does not publish stays with its code, the rest go', async () => {
+    const wall = await put({ item_id: 'SET-074', date: day(14), time: '19:00' })
+    const paid = await put(
+      { item_id: 'PPV-076', date: day(14), time: '20:00' },
+      { price_mills: 9_000 },
+    )
+    const dm = await put({ item_id: 'PPV-076', surface: 'dm', date: day(14), time: '21:00' })
+    const prepared = await batch('prepare', { row_ids: [wall.id, paid.id, dm.id, wall.id] })
+    expect(prepared.statusCode, prepared.body).toBe(202)
+    expect(prepared.json().results).toEqual([
+      { id: wall.id, ok: true, code: null },
+      { id: paid.id, ok: true, code: null },
+      { id: dm.id, ok: false, code: 'publication_refused' },
+    ])
+    // One runner takes both works of the batch, one after the other.
+    for (const row of [wall, paid]) {
+      const done = await workOutcome(db, await lastWork(row.id))
+      const outcome = done.state === 'succeeded' ? done : await runRow(row.id)
+      expect(outcome.state, outcome.error_text ?? '').toBe('succeeded')
+    }
+    const ready = await rowOf(wall.id)
+    const blocked = await rowOf(paid.id)
+    expect(blocked.hub?.publication?.blocked).toBe(true)
+    const rows = [ready, blocked].map((row) => ({ id: row.id, version: versionOf(row) }))
+
+    // An agent never sends, not even in a batch.
+    const refused = await batch('send', { rows }, agent)
+    expect(refused.statusCode).toBe(403)
+
+    const approves = hub.calls('publications.approve').length
+    const sentBatch = await batch('send', { rows })
+    expect(sentBatch.statusCode, sentBatch.body).toBe(202)
+    expect(sentBatch.json().results).toEqual([
+      { id: ready.id, ok: true, code: null },
+      { id: blocked.id, ok: false, code: 'publication_blocked' },
+    ])
+    const outcome = await runRow(ready.id)
+    expect(outcome.state, outcome.error_text ?? '').toBe('succeeded')
+    expect(hub.calls('publications.approve').length).toBe(approves + 1)
+    expect((await rowOf(ready.id)).verdict.word).toBe('отправлено')
+    expect((await rowOf(blocked.id)).hub?.publication?.state).toBe('draft')
+  })
+})
+
+describe('a row that already went out', () => {
+  it('offers neither «Подготовить» nor «Отправить» once its placement is confirmed', async () => {
+    const row = await put({ item_id: 'SET-074', date: day(15), time: '19:00' })
+    expect(row.hub?.can_prepare).toBe(true)
+    // The placement of the row confirmed exactly (a pair a person confirmed), no KM mark.
+    await withActorTx(
+      db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test.confirm', requestId: randomUUID() },
+      async (tx) => {
+        const { rows } = await tx.execute<{ id: string }>(sql`
+          INSERT INTO placements (model_id, account_id, surface_id, occurrence_kind, manual_key,
+                                  item_id, item_type, plan_row_id, planned_at, occurred_at,
+                                  occurred_source, surface_source, origin)
+          SELECT r.model_id, r.account_id, r.surface_id, 'manual', ${`test:${row.id}`}, r.item_id,
+                 i.type, r.id, r.slot_at, r.slot_at, 'km', 'plan', 'manual'
+            FROM posting_plan_rows r JOIN content_items i ON i.model_id = r.model_id AND i.id = r.item_id
+           WHERE r.id = ${row.id}::uuid
+          RETURNING id`)
+        await tx.execute(sql`
+          INSERT INTO placement_evidence (model_id, placement_id, source, kind, strength, payload,
+                                          dedup_key)
+          VALUES (${lora1.modelId}::uuid, ${rows[0]?.id}::uuid, 'manual', 'manual_confirm', 'exact',
+                  '{"basis": "inspected_pair"}'::jsonb, ${`manual:${randomUUID()}`})`)
+      },
+    )
+    const out = await rowOf(row.id)
+    expect(out.verdict.sign).toBe('done')
+    expect(out.hub).toMatchObject({ can_prepare: false, can_send: false })
+    const refused = await command(row.id, 'prepare')
+    expect(refused.statusCode).toBe(422)
+    expect(refused.json().message).toContain('уже вышла')
   })
 })
 

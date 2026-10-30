@@ -274,6 +274,14 @@ export function usePlanCommands(model: ModelCode) {
         api.plan.send({ params: { model, row }, body: { version }, idempotencyKey: key }),
       cancelPublication: ({ key, row }: RowCall) =>
         api.plan.cancelPublication({ params: { model, row }, idempotencyKey: key }),
+      prepareMany: ({ key, rows }: Call & { rows: readonly string[] }) =>
+        api.plan.prepareMany({
+          params: { model },
+          body: { row_ids: [...rows] },
+          idempotencyKey: key,
+        }),
+      sendMany: ({ key, rows }: Call & { rows: readonly { id: string; version: number }[] }) =>
+        api.plan.sendMany({ params: { model }, body: { rows: [...rows] }, idempotencyKey: key }),
       /** Файл строки плана: имя с кодом страницы, днём и временем строки (§2.5). */
       downloadRow: ({
         key,

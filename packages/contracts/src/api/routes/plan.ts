@@ -11,8 +11,10 @@ import {
   MoveRowCommandSchema,
   NewPlanRowSchema,
   PlanDownloadCommandSchema,
+  PrepareRowsCommandSchema,
   RowCheckResultSchema,
   SendPublicationCommandSchema,
+  SendRowsCommandSchema,
   UpdateRowCommandSchema,
   UpdateWeekNormCommandSchema,
 } from '../../commands/plan'
@@ -133,6 +135,28 @@ export const planRoutes = {
     method: 'POST',
     path: '/api/v1/{model}/plan/rows/{row}:cancel-publication',
     response: PlanRowSchema,
+    success: 202,
+  }),
+  /**
+   * «Подготовить 12» (DESIGN §4.11): each row on its own, `{results: [{id, ok, code}]}`; a row
+   * Hub does not publish stays with its code.
+   */
+  prepareMany: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/plan/rows:prepare',
+    body: PrepareRowsCommandSchema,
+    response: BatchResultSchema,
+    success: 202,
+  }),
+  /**
+   * «Отправить 12» after one window with the summary of Hub's checks: rows with a blocking
+   * check stay (`publication_blocked`), the rest go. A person only: an agent gets 403.
+   */
+  sendMany: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/plan/rows:send',
+    body: SendRowsCommandSchema,
+    response: BatchResultSchema,
     success: 202,
   }),
   /** The publication of the row as the row shows it: status, Hub's checks, what may be done. */

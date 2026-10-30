@@ -1,9 +1,11 @@
-import type { PlanRow } from '@contentops/contracts'
+import type { BatchResult, PlanRow } from '@contentops/contracts'
 import { useActionToast } from '@/actions/action-toast-context'
+import { failedIds } from '@/actions/batch-result'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
 import { planChangedKeys, usePlanCommands } from '@/data/plan'
 import { accountLabel } from '@/lib/words'
 import { useCurrentModel } from '@/shell/model/model-context'
+import { rowsWord } from '../plan-text'
 
 /**
  * Публикация строки через Hub (DESIGN §4.11, SPEC §7): «Подготовить» — Hub получает файлы и
@@ -11,7 +13,12 @@ import { useCurrentModel } from '@/shell/model/model-context'
  * «Отменить публикацию» — пока Hub не поставил её в расписание площадки. Работа идёт в фоне:
  * строка сама сменит «Hub готовит…» на проверки или статус.
  */
-export function usePublishActions() {
+export function usePublishActions({
+  onShowFailed,
+}: {
+  /** «Показать»: выделить строки пакета, которые не прошли (§3.3). */
+  onShowFailed?: (rowIds: readonly string[]) => void
+} = {}) {
   const model = useCurrentModel()
   const commands = usePlanCommands(model.code)
   const toast = useActionToast()
@@ -40,7 +47,44 @@ export function usePublishActions() {
     onSuccess: (updated) => toast.show({ message: `Публикация отменяется · ${where(updated)}` }),
   })
 
+  /** Итог пакета: «Hub готовит · 12 строк» или «… 11 из 12 · 1 не прошла · Показать». */
+  const batchToast = (rows: readonly PlanRow[], result: BatchResult, done: string) => {
+    const failed = failedIds(result)
+    const passed = rows.length - failed.length
+    toast.show({
+      message:
+        failed.length === 0
+          ? `${done} · ${rowsWord(passed)}`
+          : `${done} ${passed} из ${rows.length} · не прошли: ${rowsWord(failed.length)}`,
+      action:
+        failed.length > 0 && onShowFailed
+          ? { label: 'Показать', onSelect: () => onShowFailed(failed) }
+          : undefined,
+    })
+  }
+
+  const prepareMany = useIntentMutation<{ rows: readonly PlanRow[] }, BatchResult>({
+    failed: 'Не подготовилось',
+    run: ({ rows }, key) => commands.prepareMany({ key, rows: rows.map((row) => row.id) }),
+    invalidates,
+    onSuccess: (result, { rows }) => batchToast(rows, result, 'Hub готовит черновики'),
+  })
+
+  const sendMany = useIntentMutation<{ rows: readonly PlanRow[] }, BatchResult>({
+    failed: 'Не отправилось',
+    run: ({ rows }, key) =>
+      commands.sendMany({
+        key,
+        rows: rows.map((row) => ({ id: row.id, version: row.hub?.publication?.version ?? 1 })),
+      }),
+    invalidates,
+    onSuccess: (result, { rows }) => batchToast(rows, result, 'Отправляется в Hub'),
+  })
+
   return {
+    prepareMany: (rows: readonly PlanRow[]) => prepareMany.start({ rows }),
+    sendMany: (rows: readonly PlanRow[]) => sendMany.start({ rows }),
+    batchPending: prepareMany.isPending || sendMany.isPending,
     prepare: (row: PlanRow) => prepare.start({ row }),
     send: (row: PlanRow, version: number) => send.start({ row, version }),
     cancel: (row: PlanRow) => cancel.start({ row }),

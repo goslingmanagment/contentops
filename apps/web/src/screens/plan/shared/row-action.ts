@@ -71,6 +71,29 @@ export function rowActionOf(row: PlanRow, canAct: boolean): RowAction {
   return { kind: 'mark', timed: row.surface === 'story' || row.surface === 'dm' }
 }
 
+/**
+ * Строки выделения, которые публикуются через Hub (DESIGN §4.11): «Подготовить N» — строки без
+ * черновика или после «не вышло»; «Отправить N» — черновики Hub, из них с блокирующей проверкой
+ * остаются (`blocked`). Работа уже идёт — строка ни туда, ни сюда.
+ */
+export function publishableRows(rows: readonly PlanRow[]) {
+  const prepare: PlanRow[] = []
+  const send: PlanRow[] = []
+  const blocked: PlanRow[] = []
+  for (const row of rows) {
+    if (row.cancelled || isAwaitingMontage(row)) {
+      continue
+    }
+    const action = hubActionOf(row)
+    if (action?.kind === 'prepare') {
+      prepare.push(row)
+    } else if (action?.kind === 'send') {
+      ;(action.blocked ? blocked : send).push(row)
+    }
+  }
+  return { prepare, send, blocked, all: new Set([...prepare, ...send, ...blocked]) }
+}
+
 /** Строки, которые можно отметить пакетом одним видом (массовая отметка не смешивает два). */
 export function markableRows(rows: readonly PlanRow[]) {
   const open = rows.filter((row) => isOpenRow(row) && !isAwaitingMontage(row))
