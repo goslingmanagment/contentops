@@ -1,14 +1,17 @@
+import { randomBytes } from 'node:crypto'
 import { IntegrationViewSchema } from '@contentops/contracts/api/responses'
 import { ThresholdSchema } from '@contentops/contracts/domain/system'
 import { WorkRunner } from '@contentops/db'
+import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createMediaEnv } from './media/pipeline'
 import { shaBytes } from './media/storage'
 import { registerBlob } from './media/storage-ops'
-import { tempFile } from './media/testing'
+import { systemTx, tempFile } from './media/testing'
 import { exportHandler } from './media/work/export'
 import { createCatalogItems } from './testing/catalog-factory'
 import { call, newKey, OWNER, signIn, type TestServer, testServer } from './testing/server'
+import { tusUpload } from './testing/tus'
 
 /**
  * PLAN 1а: the base scenario «всё выключено» — every switch off and no integration secret in
@@ -245,5 +248,50 @@ describe('«всё выключено»', () => {
       key: newKey(),
     })
     expect(sent.json()).toMatchObject({ state: 'sent', status: { word: 'передано' } })
+  })
+
+  it('uploads a photo from the web and accepts it: a draft in «Приехало», then SET-001', async () => {
+    const bytes = randomBytes(12_000)
+    const uploadId = await tusUpload(server.app, {
+      model: 'lora',
+      as: owner,
+      name: 'frame.jpg',
+      bytes,
+    })
+    const uploaded = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/uploads',
+      as: owner,
+      key: newKey(),
+      body: {
+        kind: 'other',
+        target: null,
+        type: 'set',
+        files: [
+          { upload_id: uploadId, file_name: 'frame.jpg', size_bytes: bytes.length, media: 'photo' },
+        ],
+      },
+    })
+    expect(uploaded.statusCode).toBe(201)
+    expect(uploaded.json()).toMatchObject({ placed: 'inbox', item_id: null, decision: null })
+    const group = uploaded.json().group_id as string
+    // What `derive_image` leaves (media works run in the image, `*.media.test.ts`): the
+    // uploaded photo, decoded whole, is its own verified master.
+    await systemTx(server.db, (tx) =>
+      tx.execute(sql`
+        UPDATE inbox_drafts
+           SET master_sha256 = source_sha256, master_is_source = true,
+               master_verified_at = now(), state = 'ready', ready_at = now()
+         WHERE group_id = ${group}::uuid`),
+    )
+    const accepted = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${group}:accept`,
+      as: owner,
+      key: newKey(),
+      body: { as: 'default' },
+    })
+    expect(accepted.statusCode).toBe(200)
+    expect(accepted.json()).toMatchObject({ item_id: 'SET-001', how: 'new' })
   })
 })

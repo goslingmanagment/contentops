@@ -10841,6 +10841,10 @@
       "UploadedFileInput": {
         "type": "object",
         "properties": {
+          "upload_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f-]{36}$"
+          },
           "file_name": {
             "type": "string",
             "minLength": 1
@@ -10855,6 +10859,7 @@
           }
         },
         "required": [
+          "upload_id",
           "file_name",
           "size_bytes",
           "media"

@@ -4,12 +4,19 @@ import type { UploadTarget } from './upload-target'
 
 /**
  * Ход загрузок и долгих сборок для лотка (DESIGN §3.7). Файлы идут по очереди, как у
- * Я.Диска: «Загружается 3 из 5». Одно нажатие «Загрузить» — одна пачка: когда все её
- * файлы переданы, пачка уходит на сервер одной командой, и готовой она считается
- * только после его ответа (SPEC §6.1): «в Приехало» или «принято → PPV-089».
+ * Я.Диска: «Загружается 3 из 5». Байты идут кусками по tus (SPEC §6.1), после обрыва —
+ * «Загрузка прервана · Продолжить» с принятого байта. Одно нажатие «Загрузить» — одна
+ * пачка: когда все её файлы переданы, пачка уходит на сервер одной командой, и готовой она
+ * считается только после его ответа: «в Приехало» или «принято → PPV-089».
  */
 
-export type UploadPhase = 'queued' | 'uploading' | 'checking' | 'done' | 'failed'
+export type UploadPhase = 'queued' | 'uploading' | 'interrupted' | 'checking' | 'done' | 'failed'
+
+/**
+ * `tus` — байты идут на сервер; `simulated` — экран ещё на заглушке (строка плана в
+ * разработке): ход передачи изображается, команда уходит в заглушку.
+ */
+export type UploadTransport = 'tus' | 'simulated'
 
 export interface UploadEntry {
   id: string
@@ -19,6 +26,9 @@ export interface UploadEntry {
   media: MediaKind
   loadedBytes: number
   phase: UploadPhase
+  transport: UploadTransport
+  /** Загрузка tus, которая несёт байты: её называет команда. */
+  uploadId: string | null
   /** Проверка длится не меньше этого времени, мс от начала страницы. */
   checkEndsAt: number | null
 }
@@ -35,8 +45,9 @@ export interface UploadBatch {
   model: ModelCode
   kind: UploadKind
   target: UploadTarget | null
-  /** Что уйдёт в команде: имена, размеры, фото или видео. */
-  files: readonly UploadedFile[]
+  /** Что уйдёт в команде: загрузка, имя, размер, фото или видео. */
+  files: readonly Omit<UploadedFile, 'upload_id'>[]
+  transport: UploadTransport
   /** `sent` — команда ушла; `settled` — ответ пришёл, итог в `outcome`. */
   status: 'transferring' | 'sent' | 'settled'
   outcome: UploadOutcome | null
@@ -85,10 +96,15 @@ export interface NewUploadFile {
 export type UploadAction =
   | {
       type: 'add-batch'
-      batch: Omit<UploadBatch, 'status' | 'outcome' | 'files'>
+      batch: Omit<UploadBatch, 'status' | 'outcome' | 'files' | 'transport'>
       files: readonly NewUploadFile[]
+      transport: UploadTransport
     }
   | { type: 'tick'; elapsedMs: number; now: number }
+  | { type: 'progress'; id: string; loadedBytes: number }
+  | { type: 'transferred'; id: string; uploadId: string; now: number }
+  | { type: 'interrupted'; id: string }
+  | { type: 'resume'; id: string }
   | { type: 'batch-sent'; id: string }
   | { type: 'batch-settled'; id: string; outcome: UploadOutcome }
   | { type: 'cancel-uploads' }
@@ -97,7 +113,7 @@ export type UploadAction =
   | ({ type: 'update-operation' } & OperationUpdate)
   | { type: 'set-collapsed'; collapsed: boolean }
 
-/** Скорость загрузки прототипа: настоящих файлов на сервер он не шлёт. */
+/** Скорость изображаемой передачи: в заглушку файлы не шлются. */
 const SIMULATED_BYTES_PER_MS = 60_000
 export const CHECK_DURATION_MS = 1_200
 
@@ -105,7 +121,10 @@ function transfer(uploads: readonly UploadEntry[], elapsedMs: number, now: numbe
   let budget = elapsedMs * SIMULATED_BYTES_PER_MS
   let started = false
   return uploads.map((entry) => {
-    if (entry.phase !== 'queued' && entry.phase !== 'uploading') {
+    if (
+      entry.transport !== 'simulated' ||
+      (entry.phase !== 'queued' && entry.phase !== 'uploading')
+    ) {
       return entry
     }
     if (started || budget <= 0) {
@@ -119,6 +138,7 @@ function transfer(uploads: readonly UploadEntry[], elapsedMs: number, now: numbe
         ...entry,
         loadedBytes: loaded,
         phase: 'checking',
+        uploadId: crypto.randomUUID(),
         checkEndsAt: now + CHECK_DURATION_MS,
       }
     }
@@ -161,6 +181,7 @@ export function uploadReducer(state: UploadState, action: UploadAction): UploadS
           ...state.batches,
           {
             ...action.batch,
+            transport: action.transport,
             files: action.files.map((file) => ({
               file_name: file.fileName,
               size_bytes: file.sizeBytes,
@@ -177,6 +198,8 @@ export function uploadReducer(state: UploadState, action: UploadAction): UploadS
             batchId: action.batch.id,
             loadedBytes: 0,
             phase: 'queued' as const,
+            transport: action.transport,
+            uploadId: null,
             checkEndsAt: null,
           })),
         ],
@@ -185,6 +208,30 @@ export function uploadReducer(state: UploadState, action: UploadAction): UploadS
       const moved = { ...state, uploads: transfer(state.uploads, action.elapsedMs, action.now) }
       return { ...moved, uploads: finishChecks(moved, action.now) }
     }
+    case 'progress':
+      return withEntry(state, action.id, (entry) => ({
+        ...entry,
+        phase: 'uploading',
+        loadedBytes: Math.min(entry.sizeBytes, action.loadedBytes),
+      }))
+    case 'transferred':
+      return withEntry(state, action.id, (entry) => ({
+        ...entry,
+        phase: 'checking',
+        loadedBytes: entry.sizeBytes,
+        uploadId: action.uploadId,
+        checkEndsAt: action.now,
+      }))
+    case 'interrupted':
+      return withEntry(state, action.id, (entry) =>
+        entry.phase === 'uploading' || entry.phase === 'queued'
+          ? { ...entry, phase: 'interrupted' }
+          : entry,
+      )
+    case 'resume':
+      return withEntry(state, action.id, (entry) =>
+        entry.phase === 'interrupted' ? { ...entry, phase: 'queued' } : entry,
+      )
     case 'batch-sent':
       return {
         ...state,
@@ -236,6 +283,35 @@ export function uploadReducer(state: UploadState, action: UploadAction): UploadS
     case 'set-collapsed':
       return { ...state, collapsed: action.collapsed }
   }
+}
+
+function withEntry(
+  state: UploadState,
+  id: string,
+  change: (entry: UploadEntry) => UploadEntry,
+): UploadState {
+  return {
+    ...state,
+    uploads: state.uploads.map((entry) => (entry.id === id ? change(entry) : entry)),
+  }
+}
+
+/** Следующий файл для передачи по tus: по одному, как у Я.Диска. */
+export function nextToTransfer(state: UploadState): UploadEntry | null {
+  const tus = state.uploads.filter((entry) => entry.transport === 'tus')
+  if (tus.some((entry) => entry.phase === 'uploading')) {
+    return null
+  }
+  return tus.find((entry) => entry.phase === 'queued') ?? null
+}
+
+/** Файлы команды пачки: каждый со своей загрузкой tus. */
+export function commandFiles(state: UploadState, batch: UploadBatch): UploadedFile[] {
+  const entries = state.uploads.filter((entry) => entry.batchId === batch.id)
+  return batch.files.map((file, index) => ({
+    upload_id: entries[index]?.uploadId ?? '',
+    ...file,
+  }))
 }
 
 /** Пачки, все файлы которых переданы, а команда ещё не ушла. */

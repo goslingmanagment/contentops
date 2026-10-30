@@ -11,8 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@contentops/contracts": "workspace:*",
     "@contentops/ui": "workspace:*",
-    "@contentops/contracts": "workspace:*"
+    "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
     "@contentops/mock-api": "workspace:*"

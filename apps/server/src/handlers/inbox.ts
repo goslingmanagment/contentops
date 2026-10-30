@@ -10,6 +10,7 @@ import { acceptGroup, rejectGroup, reopenGroup } from '../intake/accept'
 import { decide, mergeGroups, retryGroup, splitGroup, updateFiles } from '../intake/decisions'
 import { ITEM_TO_DB_TYPE, inboxGroup, inboxList } from '../intake/inbox-view'
 import { dropStagedOfGroup } from '../intake/staging'
+import { createUpload } from '../intake/upload'
 import type { Services } from '../services'
 
 /** «Приехало» (DESIGN §4.8–4.10): reading groups and editing the fields of a future object. */
@@ -304,6 +305,8 @@ export function inboxHandlers(services: Services): HandlerRegistry {
           })
           return { results }
         }),
+
+      upload: ({ body, ctx }) => createUpload(services, ctx, body),
     },
     legacy: {
       get: ({ ctx }) => legacyReview(services, modelOf(ctx).id),
