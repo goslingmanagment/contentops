@@ -115,8 +115,19 @@ for (const ext of 'jpg jpeg png heic heif webp tif tiff dng gif'.split(' '))
 for (const ext of 'mp4 mov m4v avi mkv webm mts m2ts 3gp hevc'.split(' '))
   MEDIA_BY_EXT[ext] = 'video'
 
+/**
+ * macOS service files: anything under `__MACOSX/` of a zip and the AppleDouble twin `._name`
+ * (a few hundred bytes of attributes next to every file copied from a Mac). Taken for photos
+ * and videos by their extension, they failed the image and video works of an archive.
+ */
+function isMacServiceFile(name: string): boolean {
+  const parts = name.split('/')
+  return parts.includes('__MACOSX') || (parts.at(-1) ?? '').startsWith('._')
+}
+
 /** Photo or video by the source's media type, then by the extension; `null` — not media. */
 export function mediaKindOf(name: string, mediaType: string | null): values.MediaKind | null {
+  if (isMacServiceFile(name)) return null
   if (mediaType === 'image') return 'image'
   if (mediaType === 'video') return 'video'
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
