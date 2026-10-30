@@ -210,6 +210,29 @@ describe('fetch (SPEC §6.1)', () => {
   })
 })
 
+describe('a file gone before its fetch', () => {
+  it('blocks the draft «исходник недоступен» instead of failing the work', async () => {
+    // Dropbox still serves a removed file's revision; Yandex Disk answers 404.
+    const path = `${LORA_ROOT}/6. Life/Исчез/01.jpg`
+    await setSwitch(h.db, 'ydisk.scan', h.modelId, true)
+    h.yandex.tree.addFile(path, 3300)
+    await runWork(h.db, {
+      modelId: h.modelId,
+      kind: 'scan',
+      scope: h.sources.yandex.id,
+      dataset: 'full',
+      handlers: { scan: scanHandler(h.factory) },
+    })
+    h.yandex.tree.remove(path)
+    const [work] = await fetchAll()
+    expect(work?.state).toBe('succeeded')
+    expect(String(work?.report?.changed ?? work?.report?.vanished)).toMatch(/gone|true/)
+    const { rows } = await h.db.execute<{ blocked: string | null }>(sql`
+      SELECT blocked_reason AS blocked FROM inbox_drafts WHERE path = ${`disk:${path}`}`)
+    expect(rows[0]?.blocked).toBe('source_unavailable')
+  })
+})
+
 describe('accept (schema §5, §9.3)', () => {
   it('is refused without a verified master and never thins the group', async () => {
     const { group_id } = await groupOfPath(`${LORA_ROOT}/6. Life/Кухня/01.jpg`)
