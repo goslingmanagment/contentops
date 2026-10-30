@@ -22,6 +22,8 @@ x-app-env: &app-env
   DATA_ROOT: /srv/content
   DERIVED_ROOT: /srv/derived
   TMP_ROOT: /srv/tmp
+  # Part of the master recipe: every role computes the same pipeline version (SPEC §9.1).
+  SVTAV1_LP: ${SVTAV1_LP:-4}
   # A bind mount always looks mounted inside a container: the volume mark of ops/up.sh is
   # the check (health.ts). Without it /healthz is red and the workers wait.
   REQUIRE_VOLUMES: /srv/content,/srv/derived,/srv/tmp
@@ -142,7 +144,6 @@ services:
       <<: *app-env
       ROLE: worker-video
       ENCODE_JOBS: ${ENCODE_JOBS:-1}
-      SVTAV1_LP: ${SVTAV1_LP:-4}
       COPY_JOBS: ${COPY_JOBS:-1}
     volumes: *storage
     cpus: ${VIDEO_CPUS:-11}
