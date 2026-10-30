@@ -3319,7 +3319,10 @@
           "handoff_not_ready",
           "handoff_replaced",
           "number_not_issued",
-          "item_in_use"
+          "item_in_use",
+          "publication_refused",
+          "publication_blocked",
+          "publication_handed"
         ]
       },
       "ExtendRoleInput": {
@@ -6728,7 +6731,8 @@
           "legacy_parse",
           "legacy_plan",
           "legacy_bytes",
-          "legacy_reconcile"
+          "legacy_reconcile",
+          "hub_publication"
         ]
       },
       "Order": {
@@ -8135,6 +8139,82 @@
           "strip_metadata"
         ]
       },
+      "PlanHub": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "manual": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RowPublication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "prepare",
+                  "send",
+                  "cancel"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statuses_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "can_prepare": {
+            "type": "boolean"
+          },
+          "can_send": {
+            "type": "boolean"
+          },
+          "can_cancel": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "manual",
+          "publication",
+          "pending",
+          "error",
+          "statuses_at",
+          "can_prepare",
+          "can_send",
+          "can_cancel"
+        ],
+        "additionalProperties": false
+      },
       "PlanManifest": {
         "type": "object",
         "properties": {
@@ -8443,6 +8523,16 @@
           "publication": {
             "$ref": "#/components/schemas/PlanPublication"
           },
+          "hub": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanHub"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "copy": {
             "anyOf": [
               {
@@ -8523,6 +8613,7 @@
           "note",
           "album",
           "publication",
+          "hub",
           "copy",
           "downloaded",
           "warnings",
@@ -9007,6 +9098,53 @@
           "extracted_from",
           "merged_from",
           "frame_from"
+        ]
+      },
+      "PublicationCheck": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "warning",
+              "info"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationKind": {
+        "type": "string",
+        "enum": [
+          "fyp_post",
+          "subscriber_post",
+          "paid_post",
+          "story",
+          "vault_album"
+        ]
+      },
+      "PublicationState": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "sent",
+          "scheduled",
+          "published",
+          "not_published",
+          "unverified",
+          "cancelled"
         ]
       },
       "QueryFlagInput": {
@@ -9716,6 +9854,147 @@
         ],
         "additionalProperties": false
       },
+      "RowPublication": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PublicationKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PublicationState"
+          },
+          "hub_status": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "publish_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicationCheck"
+            }
+          },
+          "blocked": {
+            "type": "boolean"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "upload",
+                    "vault"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "prepared": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "$ref": "#/components/schemas/Instant"
+              },
+              "by": {
+                "$ref": "#/components/schemas/ActorRef"
+              }
+            },
+            "required": [
+              "at",
+              "by"
+            ],
+            "additionalProperties": false
+          },
+          "sent": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "$ref": "#/components/schemas/Instant"
+                  },
+                  "by": {
+                    "$ref": "#/components/schemas/ActorRef"
+                  }
+                },
+                "required": [
+                  "at",
+                  "by"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "post_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "album_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "kind",
+          "state",
+          "hub_status",
+          "text",
+          "publish_at",
+          "checks",
+          "blocked",
+          "stale",
+          "files",
+          "prepared",
+          "sent",
+          "post_ref",
+          "album_ref"
+        ],
+        "additionalProperties": false
+      },
       "SaveFrameCheckCommandInput": {
         "type": "object",
         "properties": {
@@ -9845,6 +10124,19 @@
           "inbox"
         ],
         "additionalProperties": false
+      },
+      "SendPublicationCommandInput": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "version"
+        ]
       },
       "Session": {
         "type": "object",
@@ -16435,6 +16727,216 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PlanRow"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/plan/rows/{row}:prepare": {
+      "post": {
+        "operationId": "plan.prepare",
+        "tags": [
+          "plan"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "row",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanRow"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/plan/rows/{row}:send": {
+      "post": {
+        "operationId": "plan.send",
+        "tags": [
+          "plan"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendPublicationCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "row",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanRow"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/plan/rows/{row}:cancel-publication": {
+      "post": {
+        "operationId": "plan.cancelPublication",
+        "tags": [
+          "plan"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "row",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanRow"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/plan/rows/{row}/publication": {
+      "get": {
+        "operationId": "plan.publication",
+        "tags": [
+          "plan"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "row",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanHub"
                 }
               }
             }
