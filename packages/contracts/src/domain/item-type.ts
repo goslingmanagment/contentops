@@ -37,8 +37,8 @@ export const ITEM_TYPE_INFO: Record<ItemType, ItemTypeInfo> = {
   promo: { prefix: 'PRM', digits: 3, folder: 'Промо', noun: 'подборка', slug: 'promo' },
 }
 
-/** `PPV-073`, `FYP-0801`, `LIFE-141`. */
-export const ITEM_ID_PATTERN = /^(PPV|FYP|CUS|SET|SXT|LIFE|RAW|PRM)-\d{3,4}$/
+/** `PPV-073`, `FYP-0801`, `LIFE-141`; after `PPV-999` comes `PPV-1000` (SPEC §4.1). */
+export const ITEM_ID_PATTERN = /^(PPV|FYP|CUS|SET|SXT|LIFE|RAW|PRM)-\d{3,6}$/
 export const ItemIdSchema = z.string().regex(ITEM_ID_PATTERN)
 export type ItemId = z.infer<typeof ItemIdSchema>
 
@@ -57,7 +57,10 @@ export function parseItemId(id: string): { type: ItemType; number: number } | nu
   const type = TYPE_BY_PREFIX.get(match[1] ?? '')
   if (!type) return null
   const digits = match[2] ?? ''
-  if (digits.length !== ITEM_TYPE_INFO[type].digits) return null
+  const padding = ITEM_TYPE_INFO[type].digits
+  // The minimal padding only: `PPV-073`, `PPV-1000`, never `PPV-0073` or `PPV-73`.
+  if (digits.length < padding || (digits.length > padding && digits.startsWith('0'))) return null
+  if (digits.length > 6) return null
   return { type, number: Number(digits) }
 }
 

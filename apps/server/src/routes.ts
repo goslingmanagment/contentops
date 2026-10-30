@@ -8,6 +8,7 @@ import {
   type Authenticate,
   type Authorize,
   createRequestContext,
+  NotModified,
   type RequestContext,
 } from './context'
 import { ApiProblem, invalidRequest } from './errors'
@@ -210,6 +211,10 @@ export function registerApiRoutes(app: FastifyInstance, options: ApiRouteOptions
             })
           }
           const answer = await handler({ params, query, body: request.body, ctx })
+          if (answer instanceof NotModified) {
+            reply.header(HEADER.etag, answer.etag)
+            return reply.code(304).send()
+          }
           reply.code(entry.route.success)
           const version = entry.route.versioned ? versionOf(answer) : null
           if (version !== null) reply.header(HEADER.etag, versionTag(version))

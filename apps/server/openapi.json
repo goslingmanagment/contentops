@@ -4466,11 +4466,11 @@
       },
       "ItemId": {
         "type": "string",
-        "pattern": "^(PPV|FYP|CUS|SET|SXT|LIFE|RAW|PRM)-\\d{3,4}$"
+        "pattern": "^(PPV|FYP|CUS|SET|SXT|LIFE|RAW|PRM)-\\d{3,6}$"
       },
       "ItemIdInput": {
         "type": "string",
-        "pattern": "^(PPV|FYP|CUS|SET|SXT|LIFE|RAW|PRM)-\\d{3,4}$"
+        "pattern": "^(PPV|FYP|CUS|SET|SXT|LIFE|RAW|PRM)-\\d{3,6}$"
       },
       "ItemLifecycle": {
         "oneOf": [
@@ -5267,6 +5267,7 @@
         "type": "string",
         "enum": [
           "title",
+          "title_en",
           "tags",
           "description",
           "timeline",
@@ -5308,6 +5309,23 @@
               "key": {
                 "type": "string",
                 "const": "title"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "const": "title_en"
               },
               "value": {
                 "type": "string"
@@ -5410,6 +5428,22 @@
               "key": {
                 "type": "string",
                 "const": "title"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "value"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "const": "title_en"
               },
               "value": {
                 "type": "string"

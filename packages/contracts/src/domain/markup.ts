@@ -24,6 +24,7 @@ export type Tag = z.infer<typeof TagSchema>
 
 export const MarkupFieldKeySchema = z.enum([
   'title',
+  'title_en',
   'tags',
   'description',
   'timeline',
@@ -33,6 +34,7 @@ export type MarkupFieldKey = z.infer<typeof MarkupFieldKeySchema>
 
 export const MARKUP_FIELD_LABEL: Record<MarkupFieldKey, string> = {
   title: 'Название',
+  title_en: 'Название по-английски',
   tags: 'Теги',
   description: 'Описание',
   timeline: 'Хронология',
@@ -63,6 +65,8 @@ export const PlatformTextsSchema = z.object({
 
 export const MarkupValueSchema = z.discriminatedUnion('key', [
   z.object({ key: z.literal('title'), value: z.string() }),
+  /** Short English title, 2–5 words; the slug of downloads (naming §4). Optional. */
+  z.object({ key: z.literal('title_en'), value: z.string() }),
   z.object({ key: z.literal('tags'), value: z.array(z.string()) }),
   z.object({ key: z.literal('description'), value: z.string() }),
   z.object({ key: z.literal('timeline'), value: z.array(TimelineSegmentSchema) }),

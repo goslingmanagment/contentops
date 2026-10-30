@@ -59,6 +59,8 @@ export interface RequestContext {
   idempotencyKey: string | null
   /** Version from `If-Match: "<n>"`; `requireIfMatch` gives 428 when it is absent. */
   ifMatch: number | null
+  /** `If-None-Match` of a read: the index resources answer 304 when nothing changed. */
+  ifNoneMatch: string | null
   /** Cookies of the request, by name. */
   cookies: Readonly<Record<string, string>>
   /** Adds a header to the answer: `Set-Cookie` of sign-in and sign-out. */
@@ -143,6 +145,7 @@ export async function createRequestContext(
     model: null,
     idempotencyKey,
     ifMatch,
+    ifNoneMatch: single(headers[HEADER.ifNoneMatch.toLowerCase()])?.trim() || null,
     cookies: parseCookies(single(headers.cookie)),
     setHeader: (name, value) => {
       reply.header(name, value)
@@ -167,4 +170,19 @@ export function requestIdGenerator(trustedProxy: readonly string[]) {
     if (incoming && INCOMING_REQUEST_ID.test(incoming) && peer && trusted(peer, 0)) return incoming
     return randomUUID()
   }
+}
+
+/** What a read handler returns when the client's copy is current: 304 with the same ETag. */
+export class NotModified {
+  constructor(readonly etag: string) {}
+}
+
+/**
+ * A whole resource with a content ETag (SPEC §12.0): 304 when `If-None-Match` names the
+ * same content, otherwise the answer with its `ETag`.
+ */
+export function withContentTag<T>(ctx: RequestContext, etag: string, answer: T): T | NotModified {
+  if (ctx.ifNoneMatch === etag) return new NotModified(etag)
+  ctx.setHeader(HEADER.etag, etag)
+  return answer
 }

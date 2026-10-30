@@ -18,6 +18,7 @@ export const BOOTSTRAP = {
         { code: 'lora-1', platform: 'fansly', title: 'Fansly 1', handle: 'LoraVie' },
         { code: 'lora-of', platform: 'onlyfans', title: 'OF Free', handle: 'loravie' },
       ],
+      promo_channels: [{ code: 'reddit', title: 'Reddit' }],
       id_counters: counters(),
     },
     {
@@ -27,6 +28,13 @@ export const BOOTSTRAP = {
       accounts: [{ code: 'ari-1', platform: 'fansly', title: 'Fansly 1', handle: 'itsaribae' }],
       id_counters: counters(),
     },
+  ],
+  tags: [
+    { slug: 'stockings', ru: 'чулки', group: 'attribute' },
+    { slug: 'lace', ru: 'кружево', group: 'attribute' },
+    { slug: 'dance', ru: 'танец', group: 'action' },
+    { slug: 'tender', ru: 'нежное', group: 'mood' },
+    { slug: 'steadycontent', ru: 'SteadyContent', group: null },
   ],
   owner: { login: OWNER.login, display_name: 'Дмитрий', gender: 'm' },
 }

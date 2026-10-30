@@ -101,6 +101,7 @@ export function MarkupSection() {
       ) : null}
       <div className="flex flex-col gap-4">
         <TitleField />
+        <TitleField fieldKey="title_en" label="По-английски" />
         <TagsField />
         <DescriptionField />
         {detail.entry.duration_s ? <TimelineField /> : null}

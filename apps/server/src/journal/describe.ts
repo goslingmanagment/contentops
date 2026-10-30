@@ -80,6 +80,53 @@ const WORDING: Record<string, Wording> = {
   'principal.reset_password': { verb: 'сбросил', rest: 'пароль: {subject}', noun: 'сброс пароля' },
   'principal.create': { verb: 'завёл', rest: 'владельца: {subject}', noun: 'заведение владельца' },
   bootstrap: { verb: 'выполнил', rest: 'начальную настройку', noun: 'начальная настройка' },
+  // Catalog (stage 2а): `{subject}` is «название PPV-073», «PPV-073».
+  'objects.updateField': { verb: 'изменил', rest: '{subject}', noun: 'правка разметки' },
+  'objects.confirmMarkup': {
+    verb: 'подтвердил',
+    rest: 'разметку {subject}',
+    noun: 'подтверждение разметки',
+  },
+  'objects.setFlags': { verb: 'изменил', rest: 'отметки {subject}', noun: 'изменение отметок' },
+  'objects.addLink': { verb: 'добавил', rest: 'связь {subject}', noun: 'новая связь' },
+  'objects.confirmLink': {
+    verb: 'подтвердил',
+    rest: 'связь {subject}',
+    noun: 'подтверждение связи',
+  },
+  'objects.removeLink': { verb: 'убрал', rest: 'связь {subject}', noun: 'удаление связи' },
+  'objects.changeType': { verb: 'сменил', rest: 'тип {subject}', noun: 'смена типа' },
+  'objects.remove': { verb: 'удалил', rest: '{subject}', noun: 'удаление' },
+  'objects.restore': { verb: 'вернул', rest: '{subject}', noun: 'возврат' },
+  'objectFiles.reorder': { verb: 'переставил', rest: 'файлы {subject}', noun: 'новый порядок' },
+  'objectFiles.pick': { verb: 'изменил', rest: 'отбор {subject}', noun: 'отбор кадров' },
+  'objectFiles.assign': {
+    verb: 'изменил',
+    rest: 'назначение кадров {subject}',
+    noun: 'назначение кадров',
+  },
+  'objectFiles.setPurpose': {
+    verb: 'изменил',
+    rest: 'назначение {subject}',
+    noun: 'назначение съёмки',
+  },
+  'objectFiles.remove': { verb: 'убрал', rest: 'файлы из {subject}', noun: 'удаление файлов' },
+  'objectFiles.merge': { verb: 'слил', rest: '{subject}', noun: 'слияние' },
+  'objectFiles.extractShoot': { verb: 'выделил', rest: '{subject}', noun: 'выделение съёмки' },
+  'objectBatch.tags': { verb: 'изменил', rest: 'теги {subject}', noun: 'правка тегов' },
+  'objectBatch.secondPerson': {
+    verb: 'изменил',
+    rest: 'отметку «второй человек» {subject}',
+    noun: 'отметка «второй человек»',
+  },
+  'settings.updateTag': { verb: 'изменил', rest: 'тег {subject}', noun: 'правка тега' },
+  'settings.mergeTag': { verb: 'слил', rest: 'тег {subject}', noun: 'слияние тегов' },
+  'fixtures.seed': { verb: 'завёл', rest: '{subject} (фикстура)', noun: 'фикстура' },
+}
+
+/** Why an object is in «Недавние»: «правка разметки», «подтверждение разметки». */
+export function reasonOf(action: string): string {
+  return WORDING[action]?.noun ?? action
 }
 
 /** «Что» of the journal filter by the action's prefix: route keys are `area.name`. */

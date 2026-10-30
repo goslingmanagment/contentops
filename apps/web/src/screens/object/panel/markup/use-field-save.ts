@@ -17,6 +17,7 @@ export interface FieldConflict {
 
 const FIELD_ACCUSATIVE: Record<MarkupFieldKey, string> = {
   title: 'название',
+  title_en: 'английское название',
   tags: 'теги',
   description: 'описание',
   timeline: 'хронологию',

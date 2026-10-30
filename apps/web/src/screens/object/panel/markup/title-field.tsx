@@ -5,17 +5,23 @@ import { FieldRow } from './field-row'
 import { useFieldSave } from './use-field-save'
 import { useMarkupField } from './use-markup-field'
 
+interface TitleFieldProps {
+  /** `title_en` — короткое английское название для имени скачивания (naming §4). */
+  fieldKey?: 'title' | 'title_en'
+  label?: string
+}
+
 /** «Название» в разметке: то же поле, что в шапке, правка на месте. */
-export function TitleField() {
+export function TitleField({ fieldKey = 'title', label = 'Название' }: TitleFieldProps) {
   const { canAct } = useObjectPage()
-  const field = useMarkupField('title')
-  const save = useFieldSave('title')
+  const field = useMarkupField(fieldKey)
+  const save = useFieldSave(fieldKey)
   const [editing, setEditing] = useState(false)
-  const value = field?.field.key === 'title' ? field.field.value : ''
+  const value = field?.field.key === fieldKey ? field.field.value : ''
 
   return (
     <FieldRow
-      label="Название"
+      label={label}
       field={field}
       conflict={save.conflict}
       onShowTheirs={save.showTheirs}
@@ -30,7 +36,7 @@ export function TitleField() {
               setEditing(false)
               const trimmed = next?.trim()
               if (trimmed && trimmed !== value) {
-                save.save({ key: 'title', value: trimmed })
+                save.save({ key: fieldKey, value: trimmed })
               }
             }}
           />

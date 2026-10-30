@@ -1,5 +1,6 @@
-// pnpm dev:server — PostgreSQL 18 in Docker, migrations, bootstrap with the example models
-// and the server in watch mode on 127.0.0.1:3000. `pnpm dev` (Vite) proxies `/api` to it.
+// pnpm dev:server — PostgreSQL 18 in Docker, migrations, bootstrap with the example models,
+// a fictional catalog of Лора and the server in watch mode on 127.0.0.1:3000. `pnpm dev`
+// (Vite) proxies `/api` to it.
 // Sign in as `dmitriy` with the password below. Data stays in the container between runs;
 // `docker rm -f contentops-dev-pg` starts from scratch.
 import { execFileSync, spawn } from 'node:child_process'
@@ -88,6 +89,13 @@ node(cli, ['migrate'], { DATABASE_URL: url('contentops_migrate', 'dev-migrate') 
 node(cli, ['bootstrap', join(ROOT, 'packages/db/bootstrap.example.json')], {
   DATABASE_URL: url('contentops_app', 'dev-app'),
   CONTENTOPS_OWNER_PASSWORD: OWNER_PASSWORD,
+})
+
+// A fictional catalog of Лора for the screens; a model with objects is left as it is.
+execFileSync('pnpm', ['--filter', '@contentops/server', 'seed', 'lora'], {
+  cwd: ROOT,
+  stdio: 'inherit',
+  env: { ...process.env, DATABASE_URL: url('contentops_app', 'dev-app') },
 })
 
 const storage = join(tmpdir(), 'contentops-dev')

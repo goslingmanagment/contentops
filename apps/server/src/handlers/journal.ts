@@ -4,6 +4,7 @@ import type { JournalEvent } from '@contentops/contracts/domain/journal'
 import { DEFAULT_PAGE_LIMIT } from '@contentops/contracts/domain/pagination'
 import { sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { findItem, publicIdOf } from '../catalog/ids'
 import { instant, requireActor } from '../commands'
 import type { RequestContext } from '../context'
 import { ApiProblem } from '../errors'
@@ -29,6 +30,8 @@ interface EventRow extends LogRow, Record<string, unknown> {
   at_text: string
   actor_id: string | null
   request_id: string | null
+  item_type: string | null
+  item_number: number | null
 }
 
 /** The cursor belongs to the model and the filters it was given with (SPEC §11.2). */
@@ -71,8 +74,8 @@ function eventOf(row: EventRow): JournalEvent {
     area: areaOf(row.action),
     action: row.action,
     phrase,
-    // Objects of the catalog come with stage 2; settings events have no object.
-    item_id: null,
+    item_id:
+      row.item_type && row.item_number !== null ? publicIdOf(row.item_type, row.item_number) : null,
     thumb: null,
     result: row.result,
     changes,
@@ -87,14 +90,19 @@ async function journalPage(services: Services, ctx: RequestContext, query: Journ
   const digest = filterDigest(model.code, query)
   const cursor = readCursor(query.cursor, digest)
   const limit = query.limit ?? DEFAULT_PAGE_LIMIT
-  // Objects of the catalog do not exist before stage 2: a filter by object finds nothing.
-  if (query.item) return { items: [], next_cursor: null }
+  const item = query.item
+    ? await findItem(services.db, model, query.item, { withTombstones: true }).catch(() => null)
+    : null
+  if (query.item && !item) return { items: [], next_cursor: null }
   const patterns = query.area ? areaPatterns(query.area) : null
   const { rows } = await services.db.execute<EventRow>(sql`
     SELECT a.id::text AS id, a.at::text AS at_text, a.actor_type, a.actor_id, a.actor_label,
-           p.gender, a.action, a.subject_label, a.before, a.after, a.result, a.request_id
+           p.gender, a.action, a.subject_label, a.before, a.after, a.result, a.request_id,
+           i.type AS item_type, i.number AS item_number
       FROM action_log a LEFT JOIN principals p ON p.id = a.actor_id
+      LEFT JOIN content_items i ON i.model_id = a.model_id AND i.id = a.item_id
      WHERE a.entry_kind = 'action'
+       AND (${item?.id ?? null}::uuid IS NULL OR a.item_id = ${item?.id ?? null}::uuid)
        AND (a.model_id = ${model.id}::uuid OR (${actor.role === 'owner'} AND a.model_id IS NULL))
        AND (${query.actor_type ? ACTOR_TYPE[query.actor_type] : null}::text IS NULL
             OR a.actor_type = ${query.actor_type ? ACTOR_TYPE[query.actor_type] : null})
