@@ -216,6 +216,36 @@ describe('fetch (SPEC §6.1)', () => {
   })
 })
 
+describe('a full prefetch', () => {
+  it('waits without spending an attempt, however long the encoder takes', async () => {
+    // The drafts staged above are not masters yet: with no prefetch budget the next fetch waits.
+    const path = `${LORA_ROOT}/6. Life/Ждёт/01.jpg`
+    h.dropbox.tree.addFile(path, 3100)
+    await scan()
+    const full = fetchHandler({
+      factory: h.factory,
+      store,
+      fetchAheadGb: 0,
+      retry: recordingRetry({ attempts: 2 }).policy,
+    })
+    const { rows: before } = await h.db.execute<{ id: string }>(sql`
+      SELECT w.id FROM work_operations w JOIN inbox_drafts d ON d.id = w.draft_id
+       WHERE w.kind = 'fetch' AND d.path = ${path}`)
+    const id = before[0]?.id as string
+    for (let round = 0; round < 6; round += 1) {
+      await drain(h.db, ['fetch'], { fetch: full })
+      await h.db.execute(sql`
+        UPDATE work_operations SET next_attempt_at = now() WHERE id = ${id}::uuid`)
+    }
+    const { rows } = await h.db.execute<{ state: string; attempts: number; note: string }>(sql`
+      SELECT state, attempt_no AS attempts, progress_note AS note FROM work_operations
+       WHERE id = ${id}::uuid`)
+    expect(rows[0]).toEqual({ state: 'retry_wait', attempts: 0, note: 'предзабор полон' })
+    const [done] = await fetchAll()
+    expect(done?.state).toBe('succeeded')
+  })
+})
+
 describe('a file gone before its fetch', () => {
   it('blocks the draft «исходник недоступен» instead of failing the work', async () => {
     // Dropbox still serves a removed file's revision; Yandex Disk answers 404.
