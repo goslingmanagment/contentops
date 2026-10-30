@@ -1,7 +1,13 @@
 import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { PROMO_MANIFEST_NAME } from '@contentops/contracts/download-name'
-import { type WorkContext, WorkDeferred, WorkError, type WorkHandler } from '@contentops/db'
+import {
+  type Tx,
+  type WorkContext,
+  WorkDeferred,
+  WorkError,
+  type WorkHandler,
+} from '@contentops/db'
 import { stripPhotoMetadata, stripVideoMetadata } from '@contentops/media'
 import { sql } from 'drizzle-orm'
 import { markHandoffPrepared, promoManifestCsv } from '../../promo/issue'
@@ -44,13 +50,40 @@ export function storedPlan(plan: DownloadPlan): unknown {
   )
 }
 
-export function planOf(stored: unknown): DownloadPlan {
-  const plan = (stored as { plan: DownloadPlan }).plan
+function revived(plan: DownloadPlan): DownloadPlan {
   for (const f of plan.files) {
     const master = f.file.master as unknown as { hex?: string } | Buffer
     if (!Buffer.isBuffer(master) && master?.hex) f.file.master = Buffer.from(master.hex, 'hex')
   }
   return plan
+}
+
+export function planOf(stored: unknown): DownloadPlan {
+  return revived((stored as { plan: DownloadPlan }).plan)
+}
+
+/**
+ * A plan archive (DESIGN §4.11–4.12: «Скачать всё за день», «Скачать выпуск», «Скачать
+ * неделю»): one ZIP over several downloads, each a plan of its own row with its own receipt;
+ * members lie by page (and by day for a week). The receipts share the ZIP.
+ */
+export interface StoredBatch {
+  scope: 'day' | 'release' | 'week'
+  archive: string
+  parts: { folder: string; plan: DownloadPlan }[]
+}
+
+export function batchOf(stored: unknown): StoredBatch | null {
+  const batch = (stored as { batch?: StoredBatch } | null)?.batch
+  if (!batch) return null
+  return { ...batch, parts: batch.parts.map((part) => ({ ...part, plan: revived(part.plan) })) }
+}
+
+export function storedBatch(batch: StoredBatch): unknown {
+  return {
+    ...batch,
+    parts: batch.parts.map((part) => ({ folder: part.folder, plan: storedPlan(part.plan) })),
+  }
 }
 
 interface WorkState extends Record<string, unknown> {
@@ -185,9 +218,69 @@ async function pathOf(env: MediaEnv, issued: IssuedFile): Promise<string> {
   return (await locateInput(env, issued.file.master)).path
 }
 
+async function exportBatch(env: MediaEnv, ctx: WorkContext, batch: StoredBatch) {
+  const first = batch.parts[0]?.plan
+  if (!first) throw new WorkError('permanent', 'empty_batch', 'nothing to put into the archive')
+  try {
+    const issuedByPart: IssuedFile[][] = []
+    for (const part of batch.parts) {
+      const issued: IssuedFile[] = []
+      for (const planned of part.plan.files) {
+        if (planned.supply.kind !== 'strip') issued.push(await awaitCopy(env, planned))
+      }
+      issuedByPart.push(issued)
+    }
+    await ctx.checkpoint({ progress: { num: 1, den: 3, note: 'копии готовы' } })
+    for (const [index, part] of batch.parts.entries()) {
+      for (const planned of part.plan.files) {
+        if (planned.supply.kind === 'strip') {
+          issuedByPart[index]?.push(await strip(env, ctx, part.plan, planned))
+        }
+      }
+      issuedByPart[index]?.sort((a, b) => a.position - b.position)
+    }
+    await ctx.checkpoint({ progress: { num: 2, den: 3, note: 'архив' } })
+    const zipKey = exportKey(first.receiptId, batch.archive)
+    const members = []
+    for (const [index, part] of batch.parts.entries()) {
+      for (const entry of issuedByPart[index] ?? []) {
+        members.push({ name: `${part.folder}/${entry.name}`, path: await pathOf(env, entry) })
+      }
+    }
+    await mkdir(dirname(env.store.path(zipKey)), { recursive: true })
+    const zip = await writeZip(env.store.path(zipKey), members, ctx.signal)
+    for (const part of batch.parts) {
+      await rm(env.store.path(exportKey(part.plan.receiptId, 'files')), {
+        recursive: true,
+        force: true,
+      })
+    }
+    const url = downloadUrl(first.modelCode, first.receiptId)
+    return {
+      outputRef: url,
+      report: {
+        receipt_id: first.receiptId,
+        download_url: url,
+        file_name: batch.archive,
+        size_bytes: zip.bytes,
+        files: members.length,
+      },
+      commit: async (tx: Tx) => {
+        for (const [index, part] of batch.parts.entries()) {
+          await sealReceipt(tx, part.plan, issuedByPart[index] ?? [], zipKey)
+        }
+      },
+    }
+  } catch (error) {
+    throw asWorkError(error)
+  }
+}
+
 export function exportHandler(env: MediaEnv): WorkHandler {
   return async (ctx) => {
     modelOf(ctx)
+    const batch = batchOf(ctx.work.checkpoint)
+    if (batch) return exportBatch(env, ctx, batch)
     const plan = planOf(ctx.work.checkpoint)
     try {
       // Copies first: while one is missing the issue waits, without building anything.

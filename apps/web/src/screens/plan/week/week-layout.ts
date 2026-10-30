@@ -1,8 +1,8 @@
 import type {
   Account,
   AccountCode,
+  GapKind,
   LocalDate,
-  NormKind,
   PlanRow,
   PlanWeek,
   SlotGap,
@@ -47,11 +47,12 @@ export function orderedRows(week: PlanWeek, accounts: readonly Account[]): PlanR
 }
 
 /** «+ фуп», «+ пост на стену» — короткая подпись места нормы в ячейке недели. */
-export const GAP_SHORT: Record<NormKind, string> = {
+export const GAP_SHORT: Record<GapKind, string> = {
   fyp: '+ фуп',
   wall: '+ пост на стену',
   life_vault: '+ лайф в vault',
   story: '+ сториз',
+  release: '+ выпуск PPV',
 }
 
 /** Какой тип показывает ящик по «пусто N» столбца: первого пустого места страницы. */

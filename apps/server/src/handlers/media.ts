@@ -9,7 +9,7 @@ import {
 import type { NameSlot } from '@contentops/contracts/download-name'
 import { enqueueWork, logAction, type Queryable, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
-import { findItem, modelOf, publicIdOfRow } from '../catalog/ids'
+import { findItem, modelOf, publicIdOf, publicIdOfRow } from '../catalog/ids'
 import { instant, instantOrNull, isUuid } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
@@ -35,6 +35,8 @@ import { uniqKey } from '../media/work/copies'
 import { exportKeyOf, storedPlan } from '../media/work/export'
 import { frameKey } from '../media/work/frame'
 import { enqueueVerifyBlobs } from '../media/work/verify-blobs'
+import { manifestFiles } from '../plan/composition'
+import { type RowRecord, rowById } from '../plan/records'
 import type { Services } from '../services'
 
 /**
@@ -127,6 +129,7 @@ async function issue(
   strip: boolean,
   slot: NameSlot | null,
   picks?: FileRow[],
+  planRowId: string | null = null,
 ) {
   for (const f of picks ?? files) {
     if (f.blob_state !== 'present') {
@@ -147,6 +150,7 @@ async function issue(
     slot,
     principalId: actor.id,
     digests,
+    planRowId,
     ...(picks ? { picks } : {}),
   })
   if (plan.files.length === 0) {
@@ -167,6 +171,7 @@ async function issue(
       strip_metadata: strip,
       files: plan.files.map((f) => f.name),
       ...(plan.zipName ? { zip: plan.zipName } : {}),
+      ...(planRowId ? { plan_row: planRowId } : {}),
     },
   })
   if (readyNow(plan)) {
@@ -200,7 +205,10 @@ interface WorkRowView extends Record<string, unknown> {
   progress_den: string | null
   progress_note: string | null
   report: Record<string, unknown> | null
-  checkpoint: { plan?: DownloadPlan } | null
+  checkpoint: {
+    plan?: DownloadPlan
+    batch?: { scope: 'day' | 'release' | 'week'; archive: string }
+  } | null
   error_text: string | null
   created_at: string
   finished_at: string | null
@@ -210,6 +218,8 @@ function operationKind(row: WorkRowView): OperationKind {
   switch (row.kind) {
     case 'export': {
       if (row.checkpoint?.plan?.promo) return 'handoff'
+      const batch = row.checkpoint?.batch
+      if (batch) return `zip_${batch.scope}`
       const kind = row.checkpoint?.plan?.kind
       if (kind === 'compat') return 'compat_copy'
       if (kind === 'platform' || kind === 'teaser' || kind === 'fan') return 'platform_copy'
@@ -267,7 +277,7 @@ async function operationView(
       : null
   const progress = group.length > 1 ? done / group.length : state === 'done' ? 1 : (own ?? 0)
   const kind = operationKind(row)
-  const subject = row.checkpoint?.plan?.publicId
+  const subject = row.checkpoint?.plan?.publicId ?? row.checkpoint?.batch?.archive
   const report = row.report ?? {}
   const finished = group
     .map((w) => w.finished_at)
@@ -307,6 +317,33 @@ function byHandles(files: FileRow[], keys: readonly string[], id: string): FileR
     if (!file) throw new ApiProblem('not_found', `${id}/${key}: такого файла нет`, { key })
     return file
   })
+}
+
+/**
+ * A download from a plan row (SPEC §10, naming §6): the files of the row's sealed composition
+ * at the versions it holds, named with the page, the planned date and the slot time; the
+ * receipt keeps the row (schema §3.5).
+ */
+export async function issuePlanRow(
+  tx: Tx,
+  actor: Actor,
+  model: ModelScope,
+  row: RowRecord,
+  kind: DownloadKind,
+  strip: boolean,
+) {
+  if (!row.item_id || !row.item_type || row.item_number === null) {
+    throw new ApiProblem('invalid_request', 'Строка ждёт монтаж: скачивать нечего', { row: row.id })
+  }
+  if (!row.manifest_id) {
+    throw new ApiProblem('invalid_request', 'Файл строки ещё собирается — скачать можно позже', {
+      row: row.id,
+    })
+  }
+  const item = itemOf(await findItem(tx, model, publicIdOf(row.item_type, row.item_number)))
+  const files = await manifestFiles(tx, model.id, row.manifest_id)
+  const slot: NameSlot = { account: row.account, date: row.slot_date, time: row.slot_time }
+  return issue(tx, actor, model, item, files, kind, strip, slot, undefined, row.id)
 }
 
 export function mediaRouteHandlers({ db, command, store }: Services): HandlerRegistry {
@@ -361,13 +398,17 @@ export function mediaRouteHandlers({ db, command, store }: Services): HandlerReg
         command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx.model)
           if (body.plan_row) {
-            throw new ApiProblem(
-              'invalid_request',
-              'Скачивание строки плана появится с планом (4а)',
-              {
+            const row = await rowById(tx, model, body.plan_row)
+            const own =
+              row.item_type && row.item_number !== null
+                ? publicIdOf(row.item_type, row.item_number)
+                : null
+            if (own !== params.id) {
+              throw new ApiProblem('invalid_request', 'Эта строка плана — про другой объект', {
                 field: 'plan_row',
-              },
-            )
+              })
+            }
+            return issuePlanRow(tx, actor, model, row, body.kind, body.strip_metadata)
           }
           const item = itemOf(await findItem(tx, model, params.id))
           const files = await loadFiles(tx, model.id, item.id)

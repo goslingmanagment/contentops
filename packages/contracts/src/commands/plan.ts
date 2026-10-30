@@ -56,6 +56,14 @@ export const RowCheckResultSchema = z.object({
   page_text: z.string(),
   blocked: z.boolean(),
   warnings: z.array(PlanWarningSchema),
+  /**
+   * An old object never checked for a second person, put on OnlyFans: «Есть второй человек?
+   * · Нет · Есть» — asked once; a person or an agent answers with the object's flag.
+   */
+  question: z
+    .object({ kind: z.literal('second_person'), item_id: ItemIdSchema })
+    .nullable()
+    .optional(),
 })
 export type RowCheckResult = z.infer<typeof RowCheckResultSchema>
 
@@ -112,6 +120,12 @@ export const UpdateRowCommandSchema = z.object({
   note: z.string().nullable().optional(),
   assignee: z.string().nullable().optional(),
   replace_manifest: z.boolean().optional(),
+  /** Publication through Hub (5б): caption, Fansly tiers, price, repeat, vault album name. */
+  caption: z.string().nullable().optional(),
+  tiers: z.array(z.string().min(1)).nullable().optional(),
+  price_mills: z.int().nonnegative().nullable().optional(),
+  repost: z.boolean().optional(),
+  album: z.string().nullable().optional(),
 })
 export type UpdateRowCommand = z.infer<typeof UpdateRowCommandSchema>
 

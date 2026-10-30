@@ -77,7 +77,7 @@ export function PlanWeekView({ week }: { week: IsoWeek }) {
         surface: gap.surface,
         date: gap.date,
         time: gap.time,
-        kind: gap.kind,
+        kind: gap.kind === 'release' ? undefined : gap.kind,
       }),
     selectRows: (ids) => {
       workspace.stopEditing()

@@ -57,6 +57,19 @@ export const PlanManifestSchema = z.object({
 })
 export type PlanManifest = z.infer<typeof PlanManifestSchema>
 
+/**
+ * Fields for publishing through Hub (5б, decision 29.10.2026): caption, Fansly audience —
+ * `tiers` empty for subscribers, price in thousandths of a dollar as Hub has it (a price makes a
+ * `paid_post`), the repeat flag; the vault album name is `album` of the row.
+ */
+export const PlanPublicationSchema = z.object({
+  caption: z.string().nullable(),
+  tiers: z.array(z.string()).nullable(),
+  price_mills: z.int().nonnegative().nullable(),
+  repost: z.boolean(),
+})
+export type PlanPublication = z.infer<typeof PlanPublicationSchema>
+
 export const PlanRowSchema = z.object({
   id: z.string(),
   date: LocalDateSchema,
@@ -92,6 +105,7 @@ export const PlanRowSchema = z.object({
   has_newer_version: z.boolean(),
   note: z.string().nullable(),
   album: z.string().nullable(),
+  publication: PlanPublicationSchema,
   copy: CopyStateSchema.nullable(),
   downloaded: z
     .object({ at: InstantSchema, by: z.string(), meta_stripped: z.boolean() })
@@ -141,11 +155,15 @@ export const WeekNormSchema = z.object({
 })
 export type WeekNorm = z.infer<typeof WeekNormSchema>
 
-/** An empty place of the norm: «Здесь нужен лайф в vault». */
+/** Kinds of empty places: a norm cell, or the PPV release due «раз в N недель». */
+export const GapKindSchema = z.enum([...NormKindSchema.options, 'release'])
+export type GapKind = z.infer<typeof GapKindSchema>
+
+/** An empty place of the norm: «Здесь нужен лайф в vault», «Здесь нужен выпуск PPV». */
 export const SlotGapSchema = z.object({
   date: LocalDateSchema,
   account: AccountCodeSchema,
-  kind: NormKindSchema,
+  kind: GapKindSchema,
   surface: SurfaceKindSchema,
   time: LocalTimeSchema.nullable(),
   text: z.string(),

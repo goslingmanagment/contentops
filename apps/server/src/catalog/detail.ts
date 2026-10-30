@@ -9,12 +9,13 @@ import {
 import type { ItemDetail, ItemLifecycle, OldName } from '@contentops/contracts/domain/item'
 import type { UniqLevel } from '@contentops/contracts/domain/model'
 import type { ProvenanceLink, ProvenanceRelation } from '@contentops/contracts/domain/provenance'
-import { summarizePage } from '@contentops/contracts/page-summary'
 import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
 import type { ModelScope } from '../context'
 import { itemOrderSummary } from '../orders/view'
+import { loadState } from '../plan/state'
+import { itemPages, versionPlacements } from '../plan/summaries'
 import { handoffsOf, itemPromo } from '../promo/views'
 import { catalogEntries, rawPurposeOf, renditionUrl, thumbRatio } from './entries'
 import {
@@ -476,25 +477,22 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
     },
   ])
   const order = item.type === 'CUS' ? await itemOrderSummary(q, model, item.id) : null
-  const accounts = await q.execute<{ code: string }>(sql`
-    SELECT code FROM accounts
-     WHERE model_id = ${model.id}::uuid AND archived_at IS NULL ORDER BY position, code`)
+  const plan = await loadState(q, model, { rows: sql`AND r.item_id = ${item.id}::uuid` })
+  const versionsPlaced = versionPlacements(plan, item.id)
   return {
     entry: { ...entry, id: publicIdOf(item.type, item.number) },
     version: item.row_version,
     lifecycle: await lifecycleOf(q, model, item),
     files,
     frames: await masterFrames(q, model, publicIdOfRow(item), base),
-    fyp_versions: fypVersions,
+    fyp_versions: fypVersions.map((version) => ({
+      ...version,
+      placed: versionsPlaced.get(version.no) ?? [],
+    })),
     markup: markup.get(item.id) ?? [],
     provenance: await provenanceLinks(q, model, item),
     ydisk: await diskOf(q, model, item),
-    pages: accounts.rows.map((account) => ({
-      account: account.code,
-      summary: summarizePage(entry.id, account.code, []),
-      surfaces: [],
-      action: null,
-    })),
+    pages: itemPages(plan, { ...entry, id: publicIdOf(item.type, item.number) }, item.id),
     order: order ? { id: order.id, title: order.title, status: order.status } : null,
     handoffs:
       item.type === 'PRM'

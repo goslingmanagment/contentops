@@ -30,6 +30,8 @@ export type UploadNowResult = z.infer<typeof UploadNowResultSchema>
 export const ReleaseResultSchema = z.object({
   release: ReleaseSchema,
   rows: z.array(PlanRowSchema),
+  /** One release per page (SPEC §4): «Поставить выпуск» on three pages makes three. */
+  releases: z.array(ReleaseSchema).optional(),
 })
 export type ReleaseResult = z.infer<typeof ReleaseResultSchema>
 

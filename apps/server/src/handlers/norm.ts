@@ -61,6 +61,17 @@ function normOf(row: AccountRow): WeekNorm {
   }
 }
 
+/** Norms of every live page of the model, in page order. */
+export async function pageNorms(q: Queryable, model: ModelScope): Promise<WeekNorm[]> {
+  const { rows } = await q.execute<AccountRow>(sql`
+    SELECT id, code, title, platform, week_norm, default_assignee_id, default_uniq_level,
+           row_version
+      FROM accounts
+     WHERE model_id = ${model.id}::uuid AND archived_at IS NULL
+     ORDER BY position, id`)
+  return rows.map(normOf)
+}
+
 async function pageOf(q: Queryable, model: ModelScope, code: string, lock: boolean) {
   const { rows } = await q.execute<AccountRow>(sql`
     SELECT id, code, title, platform, week_norm, default_assignee_id, default_uniq_level,

@@ -956,7 +956,8 @@
         "enum": [
           "late",
           "replaced",
-          "paused"
+          "paused",
+          "second_person"
         ]
       },
       "CancelReasonInput": {
@@ -964,7 +965,8 @@
         "enum": [
           "late",
           "replaced",
-          "paused"
+          "paused",
+          "second_person"
         ]
       },
       "CancelRowCommandInput": {
@@ -3526,6 +3528,16 @@
           "placed"
         ],
         "additionalProperties": false
+      },
+      "GapKind": {
+        "type": "string",
+        "enum": [
+          "fyp",
+          "wall",
+          "life_vault",
+          "story",
+          "release"
+        ]
       },
       "Gender": {
         "type": "string",
@@ -8041,6 +8053,52 @@
         ],
         "additionalProperties": false
       },
+      "PlanPublication": {
+        "type": "object",
+        "properties": {
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tiers": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_mills": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repost": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "caption",
+          "tiers",
+          "price_mills",
+          "repost"
+        ],
+        "additionalProperties": false
+      },
       "PlanRow": {
         "type": "object",
         "properties": {
@@ -8221,6 +8279,9 @@
               "null"
             ]
           },
+          "publication": {
+            "$ref": "#/components/schemas/PlanPublication"
+          },
           "copy": {
             "anyOf": [
               {
@@ -8300,6 +8361,7 @@
           "has_newer_version",
           "note",
           "album",
+          "publication",
           "copy",
           "downloaded",
           "warnings",
@@ -9076,6 +9138,12 @@
             "items": {
               "$ref": "#/components/schemas/PlanRow"
             }
+          },
+          "releases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Release"
+            }
           }
         },
         "required": [
@@ -9434,6 +9502,30 @@
             "items": {
               "$ref": "#/components/schemas/PlanWarning"
             }
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "second_person"
+                  },
+                  "item_id": {
+                    "$ref": "#/components/schemas/ItemId"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "item_id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -9713,7 +9805,7 @@
             "$ref": "#/components/schemas/AccountCode"
           },
           "kind": {
-            "$ref": "#/components/schemas/NormKind"
+            "$ref": "#/components/schemas/GapKind"
           },
           "surface": {
             "$ref": "#/components/schemas/SurfaceKind"
@@ -10700,6 +10792,47 @@
           },
           "replace_manifest": {
             "type": "boolean"
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tiers": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_mills": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repost": {
+            "type": "boolean"
+          },
+          "album": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

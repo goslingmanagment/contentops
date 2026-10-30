@@ -1,9 +1,12 @@
-import type { Queue, SystemState } from '@contentops/contracts/domain/system'
+import type { ModelCounters, Queue, SystemState } from '@contentops/contracts/domain/system'
 import { type Db, logAction, pausedQueues, setQueuePaused, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { requireActor } from '../commands'
+import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { evaluateRow, loadState } from '../plan/state'
+import { todayRows } from '../plan/views'
 import type { Services } from '../services'
 import { diskViews, readHostSpace, type SpaceOptions, spaceCard } from '../space'
 
@@ -83,6 +86,40 @@ async function systemState(db: Db, space: SpaceOptions): Promise<SystemState> {
   }
 }
 
+/** Steps a person still has in the plan: a row in plan, missed, blocked, or a ◆ of Hub. */
+const NEEDS_STEP: ReadonlySet<string> = new Set(['planned', 'missed', 'blocked_second_person'])
+
+/**
+ * Counters of the left column (DESIGN §2.2): today's rows the person posts that still need a
+ * step (the owner sees every page), whether one of them is missed; «Приехало» counts with 2в.
+ */
+async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelCounters> {
+  const scope = await modelScopeOf(db, code)
+  if (!scope || actor.role === 'reader') {
+    return { model: code, inbox: 0, plan: 0, plan_missed: false, attention: false }
+  }
+  const state = await loadState(db, scope)
+  const verdicts = todayRows(state)
+    .filter((row) => actor.role === 'owner' || row.executor_id === actor.id)
+    .map((row) => evaluateRow(state, row))
+  const steps = verdicts.filter(
+    (verdict) => NEEDS_STEP.has(verdict.level) || verdict.sign === 'turn',
+  )
+  return {
+    model: code,
+    inbox: 0,
+    plan: steps.length,
+    plan_missed: steps.some((verdict) => verdict.level === 'missed'),
+    attention: verdicts.some((verdict) => verdict.sign === 'turn' || verdict.sign === 'trouble'),
+  }
+}
+
+async function modelScopeOf(db: Db, code: string): Promise<ModelScope | undefined> {
+  const { rows } = await db.execute<ModelScope & Record<string, unknown>>(sql`
+    SELECT id, code, title AS name FROM models WHERE code = ${code} AND archived_at IS NULL`)
+  return rows[0]
+}
+
 export function systemHandlers({ db, command, space }: Services): HandlerRegistry {
   return {
     admin: {
@@ -90,15 +127,10 @@ export function systemHandlers({ db, command, space }: Services): HandlerRegistr
       counters: async ({ ctx }) => {
         const actor = requireActor(ctx)
         const report = await readHostSpace(space.file)
+        const models = []
+        for (const model of actor.models) models.push(await modelCounters(db, actor, model))
         return {
-          // «Приехало» and the plan get their tables in 2в and 4а: nothing waits for a person.
-          models: actor.models.map((model) => ({
-            model,
-            inbox: 0,
-            plan: 0,
-            plan_missed: false,
-            attention: false,
-          })),
+          models,
           space: spaceCard(diskViews(report, space, new Date())),
           generated_at: new Date().toISOString(),
         }
