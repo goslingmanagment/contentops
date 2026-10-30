@@ -5,6 +5,7 @@ import { PanelFrame, type PanelFrameWidth } from '@contentops/ui/components/pane
 import { DownloadIcon, PlusIcon, RotateCcwIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useDeliverDownload } from '@/actions/use-deliver-download'
+import { useRole } from '@/data/session'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { HandoffStatus } from '../shared/handoff-status'
 import { mediaComposition, memberRefOf } from '../shared/promo-text'
@@ -39,6 +40,9 @@ export function HandoffStatePanel({
   history,
 }: HandoffStatePanelProps) {
   const model = useCurrentModel().code
+  const role = useRole()
+  // «Только чтение» видит передачу и её историю, но не скачивает и не передаёт (SPEC §11.1).
+  const editable = role === 'owner' || role === 'manager'
   const actions = usePromoActions()
   const deliver = useDeliverDownload()
   // A prepared handoff keeps its own format, whatever the contractor has now (SPEC §7.1).
@@ -111,7 +115,7 @@ export function HandoffStatePanel({
       }
       width={width}
       onClose={onClose}
-      actions={buttons[handoff.state]}
+      actions={editable ? buttons[handoff.state] : null}
     >
       <InfoSection title="Подрядчик">
         <p className="text-base">{handoff.contractor_name}</p>
@@ -122,7 +126,7 @@ export function HandoffStatePanel({
       </InfoSection>
       <InfoSection title="Состав">
         <p className="text-base tabular-nums">{mediaComposition(handoff)}</p>
-        {handoff.state === 'prepared' ? (
+        {editable && handoff.state === 'prepared' ? (
           // До «Передано» состав можно поменять в подборке и подготовить заново.
           <Button variant="link" size="inline" className="self-start" onClick={onNew}>
             Подготовить заново

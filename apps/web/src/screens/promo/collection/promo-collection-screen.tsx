@@ -166,7 +166,10 @@ export function PromoCollectionScreen() {
         <QueryErrorLine query={query} hasData={collection !== undefined} className="mb-3" />
         {query.isPending ? <CollectionSkeleton /> : null}
         {collection && collection.members.length === 0 ? (
-          <EmptyState>В подборке пока ничего. Выделите материалы в Библиотеке → В промо</EmptyState>
+          <EmptyState>
+            В подборке пока ничего.
+            {editable ? ' Выделите материалы в Библиотеке → В промо' : ''}
+          </EmptyState>
         ) : null}
         {collection && collection.members.length > 0 ? (
           <MemberGrid

@@ -1,5 +1,6 @@
 import type { PromoCollection } from '@contentops/contracts'
 import type { PanelFrameWidth } from '@contentops/ui/components/panel-frame'
+import { useRole } from '@/data/session'
 import { HandoffFormPanel } from './handoff-form-panel'
 import { HandoffHistory } from './handoff-history'
 import { type HandoffPanelState, handoffToShow } from './handoff-panel-state'
@@ -25,6 +26,7 @@ export function HandoffPanel({
   onClose,
   width,
 }: HandoffPanelProps) {
+  const role = useRole()
   const handoff = handoffToShow(state, collection.handoffs)
   const showHandoff = (id: string) => onStateChange({ show: 'handoff', id })
   const history = (
@@ -35,6 +37,8 @@ export function HandoffPanel({
     />
   )
   if (!handoff) {
+    // Шаг 1 — подготовка — только у тех, кто передаёт; «Только чтение» её не открывает.
+    if (role !== 'owner' && role !== 'manager') return null
     return (
       <HandoffFormPanel
         key={collection.id}
