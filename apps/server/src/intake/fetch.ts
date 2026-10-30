@@ -5,6 +5,7 @@ import {
   enqueueWork,
   logAction,
   type Tx,
+  WorkDeferred,
   WorkError,
   type WorkHandler,
 } from '@contentops/db'
@@ -145,15 +146,13 @@ export function fetchHandler(deps: FetchDeps): WorkHandler {
         commit: (tx) => afterFetch(tx, modelId, draftId, row.source_sha256 as string, work.id),
       }
     }
+    // Back-pressure, not a failure: the fetch waits without spending an attempt. Counted as
+    // attempts, a big import gave up on every file still waiting while the encoder caught up.
     if (await spaceLow(deps.space)) {
-      throw new WorkError('transient', 'space_low', 'забор остановлен: мало места', {
-        retryAfterMs: WAIT_SPACE_MS,
-      })
+      throw new WorkDeferred(WAIT_SPACE_MS, 'забор остановлен: мало места')
     }
     if ((await stagedAhead(db)) > deps.fetchAheadGb * GB) {
-      throw new WorkError('transient', 'fetch_ahead', 'предзабор полон', {
-        retryAfterMs: WAIT_AHEAD_MS,
-      })
+      throw new WorkDeferred(WAIT_AHEAD_MS, 'предзабор полон')
     }
     const source = await sourceById(db, row.source_id)
     const client = source ? deps.factory(source) : null
