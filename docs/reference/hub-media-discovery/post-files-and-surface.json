@@ -1,0 +1,1491 @@
+{
+ "schemaVersion": 1,
+ "researchDate": "2026-10-30",
+ "pages": [
+  "lora-1",
+  "lora-2",
+  "lora-3"
+ ],
+ "hubContract": "3a64b6b39b479c75ca0ad6b263ffd20c7c6a7a5e8bee2b2a6ba3720ec39a4f4f",
+ "scope": "Read-only hub CLI (posts, post_attachments, creator_stats_media_totals; lora-of posts/post_attachments for 2026-09..10), Hub repo docs, one read-only SQL read of pages.metadata.walls on agency-de. No captions, file names, fan data.",
+ "windows": {
+  "posts_and_attachments": [
+   "2024-01-01T00:00:00Z",
+   "2026-10-31T00:00:00Z"
+  ],
+  "creator_stats_media_totals_capturedDay": [
+   "2026-10-01",
+   "2026-10-31"
+  ]
+ },
+ "perPage": {
+  "lora-1": {
+   "posts": 1394,
+   "captureFloor": {
+    "at": "2025-01-19T16:08:07.000Z",
+    "kind": "oldest_stored_row"
+   },
+   "blockers": {
+    "posts": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ],
+    "post_attachments": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ],
+    "totals": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ]
+   },
+   "publishedFrom": "2025-01-19",
+   "publishedTo": "2026-10-29",
+   "fypFlags": {
+    "0": 1085,
+    "2": 78,
+    "4": 231
+   },
+   "wallRefs": {
+    "emptyList": 1343,
+    "null": 51,
+    "nonEmpty": 0
+   },
+   "fypTagVsFlag": {
+    "flag0_tag0": 1085,
+    "flag2_tag1": 78,
+    "flag4_tag0": 231
+   },
+   "attachmentCountEqualsSlots": 1394,
+   "attachmentCountNotEqualFiles": 393,
+   "postsOneFile": 1009,
+   "postsSeveralFiles": 385,
+   "postsSameFileInTwoSlots": 1,
+   "roleCounts": {
+    "main": 4309,
+    "offer_preview": 1005
+   },
+   "linkStateByContentType": {
+    "ct1_main_resolved": 1087,
+    "ct1_offer_preview_resolved": 95,
+    "ct2_main_media_ref_missing": 1514,
+    "ct2_main_resolved": 1657,
+    "ct2_offer_preview_preview_unresolved": 8,
+    "ct2_offer_preview_resolved": 902,
+    "ct7100_main_non_media_attachment": 6,
+    "ct42001_main_media_ref_missing": 45
+   },
+   "bundles": 388,
+   "bundleMemberRows": 3171,
+   "bundleMemberRowsWithoutFile": 1514,
+   "bundleMemberRowsWithoutFileSince2026_09": 0,
+   "previews": 1005,
+   "previewsSameFileNameAsMain": 876,
+   "postsWithForYouViews": 41,
+   "earliestPostWithForYouViews": "2026-07-23"
+  },
+  "lora-2": {
+   "posts": 1252,
+   "captureFloor": {
+    "at": "2025-02-01T20:38:42.000Z",
+    "kind": "oldest_stored_row"
+   },
+   "blockers": {
+    "posts": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ],
+    "post_attachments": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ],
+    "totals": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ]
+   },
+   "publishedFrom": "2025-02-01",
+   "publishedTo": "2026-10-29",
+   "fypFlags": {
+    "0": 916,
+    "2": 126,
+    "4": 210
+   },
+   "wallRefs": {
+    "emptyList": 1203,
+    "null": 49,
+    "nonEmpty": 0
+   },
+   "fypTagVsFlag": {
+    "flag0_tag0": 916,
+    "flag2_tag1": 126,
+    "flag4_tag0": 208,
+    "flag4_tag1": 2
+   },
+   "attachmentCountEqualsSlots": 1252,
+   "attachmentCountNotEqualFiles": 368,
+   "postsOneFile": 891,
+   "postsSeveralFiles": 361,
+   "postsSameFileInTwoSlots": 1,
+   "roleCounts": {
+    "main": 3934,
+    "offer_preview": 963
+   },
+   "linkStateByContentType": {
+    "ct1_main_resolved": 966,
+    "ct1_offer_preview_resolved": 88,
+    "ct2_main_media_ref_missing": 1423,
+    "ct2_main_resolved": 1501,
+    "ct2_offer_preview_preview_unresolved": 8,
+    "ct2_offer_preview_resolved": 867,
+    "ct7100_main_non_media_attachment": 4,
+    "ct42001_main_media_ref_missing": 40
+   },
+   "bundles": 361,
+   "bundleMemberRows": 2924,
+   "bundleMemberRowsWithoutFile": 1423,
+   "bundleMemberRowsWithoutFileSince2026_09": 40,
+   "previews": 963,
+   "previewsSameFileNameAsMain": 854,
+   "postsWithForYouViews": 82,
+   "earliestPostWithForYouViews": "2026-07-22"
+  },
+  "lora-3": {
+   "posts": 1193,
+   "captureFloor": {
+    "at": "2025-02-08T01:53:44.000Z",
+    "kind": "oldest_stored_row"
+   },
+   "blockers": {
+    "posts": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ],
+    "post_attachments": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ],
+    "totals": [
+     "claim_not_declared",
+     "delivery_not_exhausted",
+     "gaps_present",
+     "mutable_sort_key_traversal",
+     "window_before_capture_floor"
+    ]
+   },
+   "publishedFrom": "2025-02-08",
+   "publishedTo": "2026-10-29",
+   "fypFlags": {
+    "0": 905,
+    "2": 98,
+    "4": 190
+   },
+   "wallRefs": {
+    "emptyList": 1141,
+    "null": 52,
+    "nonEmpty": 0
+   },
+   "fypTagVsFlag": {
+    "flag0_tag0": 905,
+    "flag2_tag1": 98,
+    "flag4_tag0": 187,
+    "flag4_tag1": 3
+   },
+   "attachmentCountEqualsSlots": 1193,
+   "attachmentCountNotEqualFiles": 356,
+   "postsOneFile": 844,
+   "postsSeveralFiles": 349,
+   "postsSameFileInTwoSlots": 1,
+   "roleCounts": {
+    "main": 3829,
+    "offer_preview": 926
+   },
+   "linkStateByContentType": {
+    "ct1_main_resolved": 918,
+    "ct1_offer_preview_resolved": 88,
+    "ct2_main_media_ref_missing": 1406,
+    "ct2_main_resolved": 1461,
+    "ct2_offer_preview_preview_unresolved": 6,
+    "ct2_offer_preview_resolved": 832,
+    "ct7100_main_non_media_attachment": 4,
+    "ct42001_main_media_ref_missing": 40
+   },
+   "bundles": 351,
+   "bundleMemberRows": 2867,
+   "bundleMemberRowsWithoutFile": 1406,
+   "bundleMemberRowsWithoutFileSince2026_09": 31,
+   "previews": 926,
+   "previewsSameFileNameAsMain": 831,
+   "postsWithForYouViews": 83,
+   "earliestPostWithForYouViews": "2026-07-22"
+  }
+ },
+ "surfaceSince2026_07_22": {
+  "allTime_flag4_posts": 631,
+  "allTime_flag4_withForYou": 0,
+  "since0722_flag0_novideo_noForYou": 199,
+  "since0722_flag0_video_forYou": 161,
+  "since0722_flag0_video_noForYou": 1,
+  "since0722_flag2_video_forYou": 45,
+  "since0722_flag2_video_noForYou": 1,
+  "since0722_flag4_novideo_noForYou": 3,
+  "since0722_flag4_video_noForYou": 23
+ },
+ "bundlesWithGapsInMemberIndex": 0,
+ "crossPageTwins": {
+  "pairs": 704,
+  "fileCountDiffers": 9,
+  "previewCountDiffers": 51,
+  "maxFileCountDifference": 1
+ },
+ "samePagePostsWithin30min": {
+  "pairs": 46,
+  "bothSeveralFiles": 17,
+  "bothSeveralFilesWithin1": 8
+ },
+ "walls": {
+  "source": "pages.metadata.walls (read-only SQL, agency-de, 30.10.2026)",
+  "lora-1": {
+   "walls": 10,
+   "private": 2,
+   "note": "Posts (main, private), Main Feed (default), TikTok, Nude FYP (private), 6 thematic"
+  },
+  "lora-2": {
+   "walls": 12,
+   "private": 1,
+   "note": "Posts (main, private), Main Feed (default), 10 thematic"
+  },
+  "lora-3": {
+   "walls": 9,
+   "private": 1,
+   "note": "Posts (main, private), Main feed (default), TikTok, 6 thematic"
+  }
+ },
+ "onlyfans_lora_of_2026_09_10": {
+  "posts": 20863,
+  "fypFlagsNull": 20863,
+  "wallRefsNull": 20863,
+  "attachmentCountEqualsMainRows": 20863,
+  "roles": [
+   "main"
+  ]
+ },
+ "sample30": [
+  {
+   "n": 1,
+   "page": "lora-1",
+   "postRef": "972138953563992064",
+   "publishedAt": "2026-10-29T10:39:07.000Z",
+   "kind": "FYP-видео",
+   "knownBy": "просмотры For You",
+   "surfaceFact": "фуп",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 187,
+   "timelineViews": 0,
+   "videoDurationsS": [
+    6.4
+   ],
+   "videoOriginalSize": [
+    "720x1280"
+   ],
+   "fileNameKinds": {
+    "camera": 1
+   }
+  },
+  {
+   "n": 2,
+   "page": "lora-2",
+   "postRef": "962918671708078081",
+   "publishedAt": "2026-10-04T00:01:01.000Z",
+   "kind": "FYP-видео",
+   "knownBy": "просмотры For You",
+   "surfaceFact": "фуп",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 1622,
+   "timelineViews": 152,
+   "videoDurationsS": [
+    5.0
+   ],
+   "videoOriginalSize": [
+    "1080x1920"
+   ],
+   "fileNameKinds": {
+    "other": 1
+   }
+  },
+  {
+   "n": 3,
+   "page": "lora-1",
+   "postRef": "951936072508534784",
+   "publishedAt": "2026-09-03T16:40:05.000Z",
+   "kind": "FYP-видео",
+   "knownBy": "просмотры For You",
+   "surfaceFact": "фуп",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 3389,
+   "timelineViews": 1260,
+   "videoDurationsS": [
+    7.8
+   ],
+   "videoOriginalSize": [
+    "1080x1920"
+   ],
+   "fileNameKinds": {
+    "uuid": 1
+   }
+  },
+  {
+   "n": 4,
+   "page": "lora-1",
+   "postRef": "950091054772666368",
+   "publishedAt": "2026-08-29T14:28:38.000Z",
+   "kind": "FYP-видео, #fyp",
+   "knownBy": "просмотры For You",
+   "surfaceFact": "фуп",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 2,
+   "captionHasFypTag": true,
+   "wallRefs": [],
+   "forYouViews": 3495,
+   "timelineViews": 700,
+   "videoDurationsS": [
+    4.9
+   ],
+   "videoOriginalSize": [
+    "1440x2560"
+   ],
+   "fileNameKinds": {
+    "other": 1
+   }
+  },
+  {
+   "n": 5,
+   "page": "lora-2",
+   "postRef": "971978188760559616",
+   "publishedAt": "2026-10-29T00:00:18.000Z",
+   "kind": "FYP-видео, #fyp",
+   "knownBy": "просмотры For You",
+   "surfaceFact": "фуп",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 2,
+   "captionHasFypTag": true,
+   "wallRefs": null,
+   "forYouViews": 169,
+   "timelineViews": 0,
+   "videoDurationsS": [
+    5.4
+   ],
+   "videoOriginalSize": [
+    "1080x1920"
+   ],
+   "fileNameKinds": {
+    "other": 1
+   }
+  },
+  {
+   "n": 6,
+   "page": "lora-3",
+   "postRef": "956033115304763392",
+   "publishedAt": "2026-09-15T00:00:16.000Z",
+   "kind": "FYP-видео, #fyp",
+   "knownBy": "просмотры For You",
+   "surfaceFact": "фуп",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 2,
+   "captionHasFypTag": true,
+   "wallRefs": [],
+   "forYouViews": 895,
+   "timelineViews": 0,
+   "videoDurationsS": [
+    4.6
+   ],
+   "videoOriginalSize": [
+    "1920x1080"
+   ],
+   "fileNameKinds": {
+    "other": 1
+   }
+  },
+  {
+   "n": 7,
+   "page": "lora-3",
+   "postRef": "958207440975847424",
+   "publishedAt": "2026-09-21T00:00:16.000Z",
+   "kind": "FYP-видео",
+   "knownBy": "просмотры For You",
+   "surfaceFact": "фуп",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 625,
+   "timelineViews": 111,
+   "videoDurationsS": [
+    5.8
+   ],
+   "videoOriginalSize": [
+    "1080x1920"
+   ],
+   "fileNameKinds": {
+    "other": 1
+   }
+  },
+  {
+   "n": 8,
+   "page": "lora-1",
+   "postRef": "942665600956657664",
+   "publishedAt": "2026-08-09T02:42:32.000Z",
+   "kind": "видео, #fyp",
+   "knownBy": "нет For You при флаге 2",
+   "surfaceFact": "не ясно",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 2,
+   "captionHasFypTag": true,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 327,
+   "videoDurationsS": [
+    5.5
+   ],
+   "videoOriginalSize": [
+    "2160x3840"
+   ],
+   "fileNameKinds": {
+    "number": 1
+   }
+  },
+  {
+   "n": 9,
+   "page": "lora-1",
+   "postRef": "942121249457315840",
+   "publishedAt": "2026-08-07T14:39:29.000Z",
+   "kind": "видео",
+   "knownBy": "нет For You при флаге 0",
+   "surfaceFact": "не ясно",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 715,
+   "videoDurationsS": [
+    4.8
+   ],
+   "videoOriginalSize": [
+    "2160x3840"
+   ],
+   "fileNameKinds": {
+    "number": 1
+   }
+  },
+  {
+   "n": 10,
+   "page": "lora-1",
+   "postRef": "935567945877180416",
+   "publishedAt": "2026-07-20T12:38:59.000Z",
+   "kind": "видео, #fyp",
+   "knownBy": "до 22.07: For You у Hub нет",
+   "surfaceFact": "не ясно",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 2,
+   "captionHasFypTag": true,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 532,
+   "videoDurationsS": [
+    4.4
+   ],
+   "videoOriginalSize": [
+    "1440x2560"
+   ],
+   "fileNameKinds": {
+    "other": 1
+   }
+  },
+  {
+   "n": 11,
+   "page": "lora-2",
+   "postRef": "921968811819679744",
+   "publishedAt": "2026-06-13T00:00:53.000Z",
+   "kind": "видео, #fyp",
+   "knownBy": "флаг 4",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": true,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 274,
+   "videoDurationsS": [
+    6.0
+   ],
+   "videoOriginalSize": [
+    "1080x1920"
+   ],
+   "fileNameKinds": {
+    "other": 1
+   }
+  },
+  {
+   "n": 12,
+   "page": "lora-1",
+   "postRef": "771003980535836672",
+   "publishedAt": "2025-04-22T10:00:33.000Z",
+   "kind": "видео",
+   "knownBy": "флаг 4",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 2,
+   "videoDurationsS": [
+    9.0
+   ],
+   "videoOriginalSize": [
+    "1080x1920"
+   ],
+   "fileNameKinds": {
+    "camera": 1
+   }
+  },
+  {
+   "n": 13,
+   "page": "lora-1",
+   "postRef": "828035006805852160",
+   "publishedAt": "2025-09-26T19:01:29.000Z",
+   "kind": "видео с видео-превью",
+   "knownBy": "флаг 4",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 0,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 1,
+   "videoPreviews": 1,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 2
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 505,
+   "videoDurationsS": [
+    435.1
+   ],
+   "videoOriginalSize": [
+    "1080x1920"
+   ],
+   "fileNameKinds": {
+    "lossy": 1
+   }
+  },
+  {
+   "n": 14,
+   "page": "lora-3",
+   "postRef": "971510063858479104",
+   "publishedAt": "2026-10-27T17:00:08.000Z",
+   "kind": "фото",
+   "knownBy": "нет видео",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 1,
+   "mainVideos": 0,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 0,
+   "timelineViews": 234,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 1
+   }
+  },
+  {
+   "n": 15,
+   "page": "lora-1",
+   "postRef": "909904133450907648",
+   "publishedAt": "2026-05-10T17:00:10.000Z",
+   "kind": "фото",
+   "knownBy": "флаг 4, нет видео",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "offer"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 1,
+   "mainVideos": 0,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 1
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 1825,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 1
+   }
+  },
+  {
+   "n": 16,
+   "page": "lora-1",
+   "postRef": "972234839799390208",
+   "publishedAt": "2026-10-29T17:00:08.000Z",
+   "kind": "фото + опрос",
+   "knownBy": "нет видео; двойник 17",
+   "surfaceFact": "стена",
+   "attachmentCount": 2,
+   "slots": [
+    "offer",
+    "poll"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 1,
+   "mainVideos": 0,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 1,
+   "nonMediaLinkStates": [
+    "media_ref_missing"
+   ],
+   "linkStates": {
+    "resolved": 1,
+    "media_ref_missing": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 0,
+   "timelineViews": 0,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 1
+   }
+  },
+  {
+   "n": 17,
+   "page": "lora-2",
+   "postRef": "972234838583033856",
+   "publishedAt": "2026-10-29T17:00:08.000Z",
+   "kind": "фото + опрос",
+   "knownBy": "нет видео; двойник 16",
+   "surfaceFact": "стена",
+   "attachmentCount": 2,
+   "slots": [
+    "offer",
+    "poll"
+   ],
+   "mainRows": 1,
+   "distinctMainFiles": 1,
+   "mainPhotos": 1,
+   "mainVideos": 0,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 1,
+   "nonMediaLinkStates": [
+    "media_ref_missing"
+   ],
+   "linkStates": {
+    "resolved": 1,
+    "media_ref_missing": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 0,
+   "timelineViews": 0,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 1
+   }
+  },
+  {
+   "n": 18,
+   "page": "lora-1",
+   "postRef": "962087970448371712",
+   "publishedAt": "2026-10-01T17:00:06.000Z",
+   "kind": "пачка + опрос",
+   "knownBy": "нет видео",
+   "surfaceFact": "стена",
+   "attachmentCount": 2,
+   "slots": [
+    "bundle",
+    "poll"
+   ],
+   "mainRows": 2,
+   "distinctMainFiles": 2,
+   "mainPhotos": 2,
+   "mainVideos": 0,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 1,
+   "nonMediaLinkStates": [
+    "media_ref_missing"
+   ],
+   "linkStates": {
+    "resolved": 2,
+    "media_ref_missing": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 0,
+   "timelineViews": 119,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 2
+   }
+  },
+  {
+   "n": 19,
+   "page": "lora-3",
+   "postRef": "968973344781135875",
+   "publishedAt": "2026-10-20T17:00:07.000Z",
+   "kind": "пачка фото",
+   "knownBy": "нет видео",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "bundle"
+   ],
+   "mainRows": 2,
+   "distinctMainFiles": 2,
+   "mainPhotos": 2,
+   "mainVideos": 0,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 2
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 0,
+   "timelineViews": 60,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 2
+   }
+  },
+  {
+   "n": 20,
+   "page": "lora-1",
+   "postRef": "916830393838088193",
+   "publishedAt": "2026-05-29T19:42:39.000Z",
+   "kind": "видео + PPV-пачка + цель чаевых",
+   "knownBy": "до 22.07: For You у Hub нет",
+   "surfaceFact": "не ясно",
+   "attachmentCount": 3,
+   "slots": [
+    "offer",
+    "bundle",
+    "tip_goal"
+   ],
+   "mainRows": 41,
+   "distinctMainFiles": 41,
+   "mainPhotos": 10,
+   "mainVideos": 1,
+   "mainUnresolved": 30,
+   "previews": 7,
+   "videoPreviews": 1,
+   "previewsSameNameAsMain": 3,
+   "nonMediaRows": 1,
+   "nonMediaLinkStates": [
+    "non_media_attachment"
+   ],
+   "linkStates": {
+    "resolved": 18,
+    "media_ref_missing": 30,
+    "non_media_attachment": 1
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 4298,
+   "videoDurationsS": [
+    1044.5
+   ],
+   "videoOriginalSize": [
+    "2160x3840"
+   ],
+   "fileNameKinds": {
+    "uuid": 1,
+    "camera": 9,
+    "number": 1
+   }
+  },
+  {
+   "n": 21,
+   "page": "lora-1",
+   "postRef": "971902660275888128",
+   "publishedAt": "2026-10-28T19:00:10.000Z",
+   "kind": "PPV-сет",
+   "knownBy": "нет видео",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "bundle"
+   ],
+   "mainRows": 16,
+   "distinctMainFiles": 16,
+   "mainPhotos": 16,
+   "mainVideos": 0,
+   "mainUnresolved": 0,
+   "previews": 7,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 7,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 23
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 0,
+   "timelineViews": 414,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 16
+   }
+  },
+  {
+   "n": 22,
+   "page": "lora-1",
+   "postRef": "946535650717360128",
+   "publishedAt": "2026-08-19T19:00:44.000Z",
+   "kind": "PPV-сет",
+   "knownBy": "нет видео",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "bundle"
+   ],
+   "mainRows": 13,
+   "distinctMainFiles": 13,
+   "mainPhotos": 5,
+   "mainVideos": 0,
+   "mainUnresolved": 8,
+   "previews": 5,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 5,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "media_ref_missing": 8,
+    "resolved": 10
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 274,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 5
+   }
+  },
+  {
+   "n": 23,
+   "page": "lora-1",
+   "postRef": "878044500453236736",
+   "publishedAt": "2026-02-11T19:01:21.000Z",
+   "kind": "PPV-сет",
+   "knownBy": "двойник 24",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "bundle"
+   ],
+   "mainRows": 17,
+   "distinctMainFiles": 17,
+   "mainPhotos": 5,
+   "mainVideos": 0,
+   "mainUnresolved": 12,
+   "previews": 5,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 5,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "media_ref_missing": 12,
+    "resolved": 10
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 533,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 5
+   }
+  },
+  {
+   "n": 24,
+   "page": "lora-3",
+   "postRef": "878044670901383168",
+   "publishedAt": "2026-02-11T19:02:02.000Z",
+   "kind": "PPV-сет",
+   "knownBy": "двойник 23",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "bundle"
+   ],
+   "mainRows": 18,
+   "distinctMainFiles": 18,
+   "mainPhotos": 5,
+   "mainVideos": 0,
+   "mainUnresolved": 13,
+   "previews": 5,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 5,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "media_ref_missing": 13,
+    "resolved": 10
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 422,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "camera": 5
+   }
+  },
+  {
+   "n": 25,
+   "page": "lora-1",
+   "postRef": "962523047770734592",
+   "publishedAt": "2026-10-02T21:48:56.000Z",
+   "kind": "выпуск PPV: сет + видео",
+   "knownBy": "флаг 4; двойник 26",
+   "surfaceFact": "стена",
+   "attachmentCount": 2,
+   "slots": [
+    "bundle",
+    "offer"
+   ],
+   "mainRows": 13,
+   "distinctMainFiles": 13,
+   "mainPhotos": 12,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 8,
+   "videoPreviews": 1,
+   "previewsSameNameAsMain": 7,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 21
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 0,
+   "timelineViews": 868,
+   "videoDurationsS": [
+    505.2
+   ],
+   "videoOriginalSize": [
+    "2160x3840"
+   ],
+   "fileNameKinds": {
+    "camera": 12,
+    "uuid": 1
+   }
+  },
+  {
+   "n": 26,
+   "page": "lora-2",
+   "postRef": "962523099989819392",
+   "publishedAt": "2026-10-02T21:49:09.000Z",
+   "kind": "выпуск PPV: сет + видео",
+   "knownBy": "флаг 4; двойник 25",
+   "surfaceFact": "стена",
+   "attachmentCount": 2,
+   "slots": [
+    "bundle",
+    "offer"
+   ],
+   "mainRows": 13,
+   "distinctMainFiles": 13,
+   "mainPhotos": 9,
+   "mainVideos": 1,
+   "mainUnresolved": 3,
+   "previews": 7,
+   "videoPreviews": 1,
+   "previewsSameNameAsMain": 6,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 17,
+    "media_ref_missing": 3
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 0,
+   "timelineViews": 631,
+   "videoDurationsS": [
+    505.2
+   ],
+   "videoOriginalSize": [
+    "2160x3840"
+   ],
+   "fileNameKinds": {
+    "camera": 9,
+    "uuid": 1
+   }
+  },
+  {
+   "n": 27,
+   "page": "lora-1",
+   "postRef": "891491443225411584",
+   "publishedAt": "2026-03-20T21:34:42.000Z",
+   "kind": "выпуск PPV: видео + сет",
+   "knownBy": "флаг 4; двойник 28",
+   "surfaceFact": "стена",
+   "attachmentCount": 2,
+   "slots": [
+    "offer",
+    "bundle"
+   ],
+   "mainRows": 7,
+   "distinctMainFiles": 7,
+   "mainPhotos": 5,
+   "mainVideos": 1,
+   "mainUnresolved": 1,
+   "previews": 5,
+   "videoPreviews": 1,
+   "previewsSameNameAsMain": 4,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 11,
+    "media_ref_missing": 1
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 1702,
+   "videoDurationsS": [
+    486.2
+   ],
+   "videoOriginalSize": [
+    "3840x2160"
+   ],
+   "fileNameKinds": {
+    "lossy": 1,
+    "camera": 5
+   }
+  },
+  {
+   "n": 28,
+   "page": "lora-2",
+   "postRef": "891491595080192000",
+   "publishedAt": "2026-03-20T21:35:18.000Z",
+   "kind": "выпуск PPV: видео + сет",
+   "knownBy": "флаг 4; двойник 27",
+   "surfaceFact": "стена",
+   "attachmentCount": 2,
+   "slots": [
+    "offer",
+    "bundle"
+   ],
+   "mainRows": 8,
+   "distinctMainFiles": 8,
+   "mainPhotos": 5,
+   "mainVideos": 1,
+   "mainUnresolved": 2,
+   "previews": 5,
+   "videoPreviews": 1,
+   "previewsSameNameAsMain": 4,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 11,
+    "media_ref_missing": 2
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 1032,
+   "videoDurationsS": [
+    486.2
+   ],
+   "videoOriginalSize": [
+    "3840x2160"
+   ],
+   "fileNameKinds": {
+    "lossy": 1,
+    "camera": 5
+   }
+  },
+  {
+   "n": 29,
+   "page": "lora-1",
+   "postRef": "970116229517811712",
+   "publishedAt": "2026-10-23T20:41:32.000Z",
+   "kind": "PPV-пачка + бесплатная пачка",
+   "knownBy": "просмотры For You; флаг 0, видео-превью",
+   "surfaceFact": "стена и фуп",
+   "attachmentCount": 2,
+   "slots": [
+    "bundle",
+    "bundle"
+   ],
+   "mainRows": 21,
+   "distinctMainFiles": 17,
+   "mainPhotos": 20,
+   "mainVideos": 1,
+   "mainUnresolved": 0,
+   "previews": 1,
+   "videoPreviews": 1,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 22
+   },
+   "fypFlags": 0,
+   "captionHasFypTag": false,
+   "wallRefs": null,
+   "forYouViews": 389,
+   "timelineViews": 1386,
+   "videoDurationsS": [
+    355.4
+   ],
+   "videoOriginalSize": [
+    "2160x3840"
+   ],
+   "fileNameKinds": {
+    "other": 20,
+    "lossy": 1
+   }
+  },
+  {
+   "n": 30,
+   "page": "lora-1",
+   "postRef": "737394413734473728",
+   "publishedAt": "2025-01-19T16:08:07.000Z",
+   "kind": "пачка фото, первый пост в Hub",
+   "knownBy": "флаг 4",
+   "surfaceFact": "стена",
+   "attachmentCount": 1,
+   "slots": [
+    "bundle"
+   ],
+   "mainRows": 4,
+   "distinctMainFiles": 4,
+   "mainPhotos": 4,
+   "mainVideos": 0,
+   "mainUnresolved": 0,
+   "previews": 0,
+   "videoPreviews": 0,
+   "previewsSameNameAsMain": 0,
+   "nonMediaRows": 0,
+   "nonMediaLinkStates": [],
+   "linkStates": {
+    "resolved": 4
+   },
+   "fypFlags": 4,
+   "captionHasFypTag": false,
+   "wallRefs": [],
+   "forYouViews": 0,
+   "timelineViews": 2426,
+   "videoDurationsS": [],
+   "videoOriginalSize": [],
+   "fileNameKinds": {
+    "number": 4
+   }
+  }
+ ]
+}
