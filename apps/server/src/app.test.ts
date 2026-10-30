@@ -283,7 +283,7 @@ describe('/healthz', () => {
   })
 
   it('is green when every check passes', async () => {
-    const { app } = testApp({ checks: { db: async () => true }, requireMounts: ['/'] })
+    const { app } = testApp({ checks: { db: async () => {} }, requireMounts: ['/'] })
     const response = await app.inject({ url: '/healthz' })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({ ok: true })

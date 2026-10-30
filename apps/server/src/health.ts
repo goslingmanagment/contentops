@@ -2,8 +2,8 @@ import { stat } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 
-/** A check of `/healthz`: throwing or returning `false` makes it red. */
-export type HealthCheck = () => Promise<boolean | undefined> | boolean | undefined
+/** A check of `/healthz`, sync or async: throwing or giving `false` makes it red. */
+export type HealthCheck = () => unknown
 
 const CHECK_TIMEOUT_MS = 3000
 
