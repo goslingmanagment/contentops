@@ -44,6 +44,7 @@ export function DecidedRow({ group, selected, restoring, onRestore, menu }: Deci
     return (
       <div data-selected={selected} className={ROW}>
         <Thumb
+          src={group.files[0]?.thumb.url}
           seed={cover.seed}
           kind={cover.kind}
           family={cover.family}

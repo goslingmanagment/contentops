@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Db } from '@contentops/db'
-import { type SourceEntry, sourcePath } from '@contentops/sources'
+import { isSourceError, type SourceEntry, sourcePath } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { isUuid } from '../commands'
@@ -71,9 +71,9 @@ export function registerSourceThumbs(app: FastifyInstance, options: ThumbOptions
       const client = source ? options.factory(source) : null
       if (!source || !client) throw new ApiProblem('not_found', 'Картинки источника нет')
       // Yandex hands out a preview link with the metadata; Dropbox draws by id.
-      const entry: SourceEntry =
+      const entry: SourceEntry | null =
         source.kind === 'yandex_disk'
-          ? await client.stat({ path: row.current_path })
+          ? await client.stat({ path: row.current_path }).catch(noPicture)
           : {
               source: 'dropbox',
               id: row.resource_id,
@@ -93,9 +93,13 @@ export function registerSourceThumbs(app: FastifyInstance, options: ThumbOptions
               mimeType: null,
               previewUrl: null,
             }
-      const picture = await client.thumbnail(entry, {
-        size: source.kind === 'yandex_disk' ? 'M' : 'w480h320',
-      })
+      // The source may refuse its own picture (Я.Диск answers 500 for files it cannot serve):
+      // the tile keeps its drawn cover.
+      const picture = entry
+        ? await client
+            .thumbnail(entry, { size: source.kind === 'yandex_disk' ? 'M' : 'w480h320' })
+            .catch(noPicture)
+        : null
       if (!picture) throw new ApiProblem('not_found', 'Картинки источника нет')
       const bytes = Buffer.from(picture.bytes)
       if (cached) {
@@ -107,6 +111,12 @@ export function registerSourceThumbs(app: FastifyInstance, options: ThumbOptions
       return send(reply, bytes, picture.contentType)
     },
   )
+}
+
+/** A source error while fetching a picture: there is no picture to show. */
+function noPicture(error: unknown): null {
+  if (isSourceError(error)) return null
+  throw error
 }
 
 function send(reply: import('fastify').FastifyReply, bytes: Buffer, type: string) {

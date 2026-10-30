@@ -172,7 +172,10 @@ export async function searchCatalog(
          ORDER BY c.item_id, c.at_ms`),
       parsed.stems.length > 0
         ? q.execute<{ item_id: string }>(sql`
-            SELECT item_id FROM catalog_search(${model.id}::uuid, ${parsed.stems.join(' ')})`)
+            SELECT item_id FROM catalog_search(${model.id}::uuid, ${parsed.stems.join(' ')})
+            UNION
+            -- An old file name as typed: «IMG_2448» is one name, not «img» and «2448».
+            SELECT item_id FROM catalog_search(${model.id}::uuid, ${query.trim()})`)
         : Promise.resolve({ rows: [] }),
     ])
     const labels = new Map(tags.rows.map((tag) => [tag.slug, tag.label]))

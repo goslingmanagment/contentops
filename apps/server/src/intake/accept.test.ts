@@ -384,7 +384,8 @@ describe('duplicates (SPEC §6.2)', () => {
     expect(decided).toContainEqual(
       expect.objectContaining({
         how: 'duplicate',
-        file_key: expect.stringMatching(/^LIFE-\d{3}\/pic01$/),
+        item_id: expect.stringMatching(/^LIFE-\d{3}$/),
+        file_key: 'pic01',
       }),
     )
   })

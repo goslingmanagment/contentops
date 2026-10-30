@@ -1,5 +1,8 @@
+import { randomUUID } from 'node:crypto'
 import { CatalogIndexSchema } from '@contentops/contracts/domain/catalog'
 import { ItemDetailSchema } from '@contentops/contracts/domain/item'
+import { SYSTEM_ACTOR, withActorTx } from '@contentops/db'
+import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   createCatalogItems,
@@ -272,6 +275,18 @@ describe('search', () => {
   it('finds descriptions, old paths and chronology on the server', async () => {
     expect(found(await search('диване'))).toEqual(['PPV-073'])
     expect(found(await search('party'))).toEqual(['PPV-073'])
+    // A camera name kept as the path alias of a file (intake): found as typed, underscore and all.
+    await withActorTx(
+      server.db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test', requestId: randomUUID() },
+      (tx) =>
+        tx.execute(sql`
+      INSERT INTO aliases (model_id, kind, value_raw, asset_id)
+      SELECT m.model_id, 'legacy_path', 'disk:/1. PPV/Вечеринка/IMG_4821(used2).MOV', m.asset_id
+        FROM item_memberships m JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id
+       WHERE i.type = 'PPV' AND i.number = 73 AND m.role = 'master' LIMIT 1`),
+    )
+    expect(found(await search('IMG_4821'))).toEqual(['PPV-073'])
     const timeline = await search('зеркала')
     expect(timeline.timeline).toEqual([{ item_id: 'PPV-073', t_s: 250, label: 'танец у зеркала' }])
   })
