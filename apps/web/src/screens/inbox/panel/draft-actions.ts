@@ -65,6 +65,7 @@ function backToTarget(note: ReadyNote): string {
 const ERROR_PRIMARY: Record<DraftErrorKind, { kind: PrimaryKind; label: string }> = {
   master_failed: { kind: 'retry', label: 'Повторить' },
   source_broken: { kind: 'accept', label: 'Принять как есть' },
+  fetch_failed: { kind: 'retry', label: 'Повторить' },
   archive_unreadable: { kind: 'retry', label: 'Повторить' },
   vanished: { kind: 'wait', label: 'Ждать' },
   upload_failed: { kind: 'reupload', label: 'Загрузить заново' },
