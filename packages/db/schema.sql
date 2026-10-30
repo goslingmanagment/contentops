@@ -2,6 +2,391 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 
+CREATE TABLE public.asset_versions (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    asset_id uuid NOT NULL,
+    version_no integer NOT NULL,
+    master_sha256 bytea NOT NULL,
+    source_sha256 bytea,
+    source_revision_id uuid,
+    work_id uuid,
+    duration_ms bigint,
+    width integer,
+    height integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT asset_versions_source_sha256_check CHECK ((octet_length(source_sha256) = 32)),
+    CONSTRAINT asset_versions_version_no_check CHECK ((version_no >= 1))
+);
+
+ALTER TABLE public.asset_versions OWNER TO contentops_migrate;
+
+CREATE TABLE public.inbox_drafts (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    group_id uuid NOT NULL,
+    source_revision_id uuid,
+    web_upload_id uuid,
+    from_version_id uuid,
+    origin text NOT NULL,
+    state text DEFAULT 'discovered'::text NOT NULL,
+    outcome text,
+    priority integer DEFAULT 0 NOT NULL,
+    discovered_at timestamp with time zone DEFAULT now() NOT NULL,
+    ready_at timestamp with time zone,
+    decided_at timestamp with time zone,
+    decided_by uuid,
+    md5 bytea,
+    byte_size bigint,
+    path text,
+    preview_url_at timestamp with time zone,
+    source_sha256 bytea,
+    source_blob_sha256 bytea,
+    master_sha256 bytea,
+    master_verified_at timestamp with time zone,
+    master_is_source boolean DEFAULT false NOT NULL,
+    proposed_role text,
+    proposed_ordinal integer,
+    proposed_life_use text,
+    target_item_id uuid,
+    target_asset_id uuid,
+    duplicate_of_version_id uuid,
+    blocked_reason text,
+    applied_item_id uuid,
+    applied_version_id uuid,
+    reject_reason text,
+    rejected_at timestamp with time zone,
+    reopened_at timestamp with time zone,
+    reopen_count integer DEFAULT 0 NOT NULL,
+    error text,
+    search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('russian'::regconfig, translate(COALESCE(path, ''::text), '/._-'::text, '    '::text))) STORED,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT inbox_drafts_accept_applied CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (applied_item_id IS NOT NULL))),
+    CONSTRAINT inbox_drafts_accept_verified CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (master_verified_at IS NOT NULL))),
+    CONSTRAINT inbox_drafts_alias_target CHECK (((outcome <> 'alias'::text) OR (duplicate_of_version_id IS NOT NULL))),
+    CONSTRAINT inbox_drafts_blocked_reason_check CHECK ((blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text]))),
+    CONSTRAINT inbox_drafts_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT inbox_drafts_md5_check CHECK ((octet_length(md5) = 16)),
+    CONSTRAINT inbox_drafts_one_input CHECK ((num_nonnulls(source_revision_id, web_upload_id, from_version_id) = 1)),
+    CONSTRAINT inbox_drafts_origin_check CHECK ((origin = ANY (ARRAY['disk_scan'::text, 'web_upload'::text, 'legacy_import'::text, 'archive'::text, 'derived'::text]))),
+    CONSTRAINT inbox_drafts_outcome CHECK (((state = 'resolved'::text) = (outcome IS NOT NULL))),
+    CONSTRAINT inbox_drafts_outcome_check CHECK ((outcome = ANY (ARRAY['new_item'::text, 'append'::text, 'alias'::text, 'rejected'::text]))),
+    CONSTRAINT inbox_drafts_proposed_life_use_check CHECK ((proposed_life_use = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text]))),
+    CONSTRAINT inbox_drafts_proposed_ordinal_check CHECK (((proposed_ordinal >= 1) AND (proposed_ordinal <= 999))),
+    CONSTRAINT inbox_drafts_proposed_role_check CHECK ((proposed_role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text]))),
+    CONSTRAINT inbox_drafts_rejected_at CHECK (((outcome <> 'rejected'::text) OR (rejected_at IS NOT NULL))),
+    CONSTRAINT inbox_drafts_reopen_count_check CHECK ((reopen_count >= 0)),
+    CONSTRAINT inbox_drafts_source_sha256_check CHECK ((octet_length(source_sha256) = 32)),
+    CONSTRAINT inbox_drafts_state_check CHECK ((state = ANY (ARRAY['discovered'::text, 'processing'::text, 'ready'::text, 'resolved'::text]))),
+    CONSTRAINT inbox_drafts_verified_master CHECK (((master_verified_at IS NULL) OR (master_sha256 IS NOT NULL)))
+);
+
+ALTER TABLE public.inbox_drafts OWNER TO contentops_migrate;
+
+CREATE TABLE public.web_uploads (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    upload_id text NOT NULL,
+    principal_id uuid NOT NULL,
+    client_filename text NOT NULL,
+    declared_kind text NOT NULL,
+    target_item_id uuid,
+    size_expected bigint NOT NULL,
+    bytes_received bigint DEFAULT 0 NOT NULL,
+    sha256 bytea,
+    state text DEFAULT 'receiving'::text NOT NULL,
+    tmp_key text NOT NULL,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT web_uploads_bytes_received_check CHECK ((bytes_received >= 0)),
+    CONSTRAINT web_uploads_declared_kind_check CHECK ((declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text]))),
+    CONSTRAINT web_uploads_progress CHECK ((bytes_received <= size_expected)),
+    CONSTRAINT web_uploads_registered CHECK (((state <> 'registered'::text) OR (sha256 IS NOT NULL))),
+    CONSTRAINT web_uploads_size_expected_check CHECK ((size_expected >= 0)),
+    CONSTRAINT web_uploads_state_check CHECK ((state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text, 'registered'::text, 'failed'::text, 'abandoned'::text])))
+);
+
+ALTER TABLE public.web_uploads OWNER TO contentops_migrate;
+
+CREATE TABLE public.work_operations (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    model_id uuid,
+    kind text NOT NULL,
+    work_key text NOT NULL,
+    account_id uuid,
+    dataset text,
+    scope text,
+    window_from timestamp with time zone,
+    window_to timestamp with time zone,
+    pipeline_version text,
+    recipe_digest text,
+    state text DEFAULT 'pending'::text NOT NULL,
+    paused_reason text,
+    priority integer DEFAULT 0 NOT NULL,
+    attempt_no integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    lease_owner text,
+    lease_until timestamp with time zone,
+    fence_generation bigint DEFAULT 0 NOT NULL,
+    heartbeat_at timestamp with time zone,
+    input_sha256 bytea,
+    output_sha256 bytea,
+    output_ref text,
+    progress_num bigint,
+    progress_den bigint,
+    progress_note text,
+    checkpoint jsonb,
+    failure_kind text,
+    error_code text,
+    error_text text,
+    report jsonb,
+    stream_key text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    draft_id uuid,
+    source_revision_id uuid,
+    asset_version_id uuid,
+    manifest_id uuid,
+    receipt_id uuid,
+    generation_id uuid,
+    CONSTRAINT work_operations_attempt_no_check CHECK ((attempt_no >= 0)),
+    CONSTRAINT work_operations_failure_kind_check CHECK ((failure_kind = ANY (ARRAY['transient'::text, 'permanent'::text]))),
+    CONSTRAINT work_operations_finished_at CHECK (((state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL))),
+    CONSTRAINT work_operations_global_kinds CHECK (((model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text])))),
+    CONSTRAINT work_operations_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
+    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text]))),
+    CONSTRAINT work_operations_model_targets CHECK (((model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0))),
+    CONSTRAINT work_operations_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
+    CONSTRAINT work_operations_paused_reason_format CHECK ((paused_reason ~ '^switch_off:.+$'::text)),
+    CONSTRAINT work_operations_running_lease CHECK (((state <> 'running'::text) OR ((lease_owner IS NOT NULL) AND (lease_until IS NOT NULL)))),
+    CONSTRAINT work_operations_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text, 'succeeded'::text, 'failed'::text, 'cancelled'::text])))
+);
+
+ALTER TABLE public.work_operations OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.blob_is_referenced(sha bytea) RETURNS boolean
+    LANGUAGE sql STABLE PARALLEL SAFE
+    RETURN ((EXISTS (SELECT 1 FROM public.asset_versions v WHERE (v.master_sha256 = blob_is_referenced.sha))) OR (EXISTS (SELECT 1 FROM public.inbox_drafts d WHERE ((d.master_sha256 = blob_is_referenced.sha) AND (d.state <> 'resolved'::text)))) OR (EXISTS (SELECT 1 FROM public.inbox_drafts d WHERE ((d.source_blob_sha256 = blob_is_referenced.sha) AND (d.state <> 'resolved'::text)))) OR (EXISTS (SELECT 1 FROM public.web_uploads u WHERE ((u.sha256 = blob_is_referenced.sha) AND (u.state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text]))))) OR (EXISTS (SELECT 1 FROM public.work_operations w WHERE ((w.output_sha256 = blob_is_referenced.sha) AND (w.state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text]))))));
+
+ALTER FUNCTION public.blob_is_referenced(sha bytea) OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.catalog_tsquery(q text) RETURNS tsquery
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    RETURN (websearch_to_tsquery('russian'::regconfig, q) || websearch_to_tsquery('english'::regconfig, q));
+
+ALTER FUNCTION public.catalog_tsquery(q text) OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.role_fits_type(item_type text, role text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    RETURN COALESCE(CASE item_type WHEN 'PPV'::text THEN (role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'thumb'::text])) WHEN 'SET'::text THEN (role = ANY (ARRAY['raw'::text, 'ed'::text])) WHEN 'SXT'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) WHEN 'CUS'::text THEN (role = ANY (ARRAY['master'::text, 'pic'::text])) WHEN 'FYP'::text THEN (role = 'master'::text) WHEN 'LIFE'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) WHEN 'RAW'::text THEN (role = 'raw'::text) WHEN 'PRM'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) ELSE NULL::boolean END, false);
+
+ALTER FUNCTION public.role_fits_type(item_type text, role text) OWNER TO contentops_migrate;
+
+CREATE TABLE public.aliases (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    kind text NOT NULL,
+    value_raw text NOT NULL,
+    value_norm text GENERATED ALWAYS AS (lower(NORMALIZE(value_raw, NFC))) STORED NOT NULL,
+    item_id uuid,
+    asset_id uuid,
+    source_object_id uuid,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT aliases_kind_check CHECK ((kind = ANY (ARRAY['legacy_path'::text, 'legacy_name'::text, 'legacy_id'::text, 'sub_handle'::text, 'merged_id'::text, 'vault_album'::text, 'tg_card'::text, 'resource_id'::text, 'registry_row'::text]))),
+    CONSTRAINT aliases_one_target CHECK ((num_nonnulls(item_id, asset_id) = 1))
+);
+
+ALTER TABLE public.aliases OWNER TO contentops_migrate;
+
+CREATE TABLE public.chronology_entries (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    item_id uuid NOT NULL,
+    asset_version_id uuid NOT NULL,
+    at_ms bigint NOT NULL,
+    end_ms bigint,
+    text text NOT NULL,
+    source text NOT NULL,
+    frame_artifact_id uuid,
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('russian'::regconfig, text)) STORED,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT chronology_entries_at_ms_check CHECK ((at_ms >= 0)),
+    CONSTRAINT chronology_entries_source_check CHECK ((source = ANY (ARRAY['ai'::text, 'human'::text, 'import'::text]))),
+    CONSTRAINT chronology_entries_span CHECK (((end_ms IS NULL) OR (end_ms > at_ms)))
+);
+
+ALTER TABLE public.chronology_entries OWNER TO contentops_migrate;
+
+CREATE TABLE public.content_items (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    type text NOT NULL,
+    number integer NOT NULL,
+    title text,
+    title_en text,
+    description text,
+    ppv_kind text,
+    raw_purpose text,
+    shot_on date,
+    cover_membership_id uuid,
+    has_second_person boolean,
+    name_in_media text,
+    created_from_group_id uuid,
+    origin text NOT NULL,
+    promo_channel_id uuid,
+    merged_into_item_id uuid,
+    deleted_at timestamp with time zone,
+    deleted_by uuid,
+    delete_reason text,
+    search_tsv tsvector GENERATED ALWAYS AS (((setweight(to_tsvector('russian'::regconfig, COALESCE(title, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(title_en, ''::text)), 'A'::"char")) || setweight(to_tsvector('russian'::regconfig, COALESCE(description, ''::text)), 'B'::"char"))) STORED,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT content_items_merged_deleted CHECK (((merged_into_item_id IS NULL) OR (deleted_at IS NOT NULL))),
+    CONSTRAINT content_items_name_in_media CHECK (((name_in_media IS NULL) OR (type = 'CUS'::text))),
+    CONSTRAINT content_items_name_in_media_check CHECK ((name_in_media = ANY (ARRAY['yes'::text, 'no'::text, 'unknown'::text]))),
+    CONSTRAINT content_items_number_range CHECK (((number >= 1) AND (number <= 999999))),
+    CONSTRAINT content_items_origin_check CHECK ((origin = ANY (ARRAY['intake'::text, 'import'::text, 'manual'::text]))),
+    CONSTRAINT content_items_ppv_kind CHECK (((type = 'PPV'::text) = (ppv_kind IS NOT NULL))),
+    CONSTRAINT content_items_ppv_kind_check CHECK ((ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text]))),
+    CONSTRAINT content_items_promo_channel CHECK (((type = 'PRM'::text) = (promo_channel_id IS NOT NULL))),
+    CONSTRAINT content_items_raw_purpose CHECK (((type = 'RAW'::text) = (raw_purpose IS NOT NULL))),
+    CONSTRAINT content_items_raw_purpose_check CHECK ((raw_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text]))),
+    CONSTRAINT content_items_type_check CHECK ((type = ANY (ARRAY['PPV'::text, 'SET'::text, 'SXT'::text, 'CUS'::text, 'FYP'::text, 'LIFE'::text, 'RAW'::text, 'PRM'::text])))
+);
+
+ALTER TABLE public.content_items OWNER TO contentops_migrate;
+
+CREATE TABLE public.item_memberships (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    item_id uuid NOT NULL,
+    item_type text NOT NULL,
+    asset_id uuid NOT NULL,
+    variant_no integer DEFAULT 0 NOT NULL,
+    kind text NOT NULL,
+    role text NOT NULL,
+    ordinal integer,
+    display_position integer,
+    selected boolean DEFAULT false NOT NULL,
+    life_use text,
+    pinned_version_id uuid,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    added_by uuid,
+    removed_at timestamp with time zone,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT item_memberships_kind_check CHECK ((kind = ANY (ARRAY['owned'::text, 'reference'::text]))),
+    CONSTRAINT item_memberships_life_use CHECK (((life_use IS NULL) OR (item_type = 'LIFE'::text))),
+    CONSTRAINT item_memberships_life_use_check CHECK ((life_use = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text]))),
+    CONSTRAINT item_memberships_ordinal CHECK (((role = ANY (ARRAY['pic'::text, 'raw'::text, 'ed'::text, 'clip'::text])) = (ordinal IS NOT NULL))),
+    CONSTRAINT item_memberships_ordinal_range CHECK (((ordinal >= 1) AND (ordinal <= 999))),
+    CONSTRAINT item_memberships_pinned CHECK (((pinned_version_id IS NULL) OR (kind = 'reference'::text))),
+    CONSTRAINT item_memberships_reference_in_prm CHECK (((kind = 'owned'::text) OR (item_type = 'PRM'::text))),
+    CONSTRAINT item_memberships_removed_position CHECK (((removed_at IS NULL) OR (display_position IS NULL))),
+    CONSTRAINT item_memberships_role_check CHECK ((role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text]))),
+    CONSTRAINT item_memberships_role_fits_type CHECK (((kind = 'reference'::text) OR public.role_fits_type(item_type, role))),
+    CONSTRAINT item_memberships_variant CHECK (((kind = 'reference'::text) OR (variant_no = 0) OR ((item_type = 'FYP'::text) AND (role = 'master'::text))))
+);
+
+ALTER TABLE public.item_memberships OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.catalog_search(p_model_id uuid, q text) RETURNS TABLE(item_id uuid, rank real)
+    LANGUAGE sql STABLE PARALLEL SAFE
+    BEGIN ATOMIC
+ WITH query AS (
+          SELECT public.catalog_tsquery(catalog_search.q) AS ts,
+             lower(NORMALIZE(catalog_search.q, NFC)) AS norm,
+             (('%'::text || replace(replace(replace(lower(NORMALIZE(catalog_search.q, NFC)), '\'::text, '\\'::text), '%'::text, '\%'::text), '_'::text, '\_'::text)) || '%'::text) AS pattern
+         ), hits AS (
+          SELECT i_1.id AS item_id,
+             ts_rank(i_1.search_tsv, query.ts) AS rank
+            FROM public.content_items i_1,
+             query
+           WHERE ((i_1.model_id = catalog_search.p_model_id) AND (i_1.search_tsv @@ query.ts))
+         UNION ALL
+          SELECT COALESCE(a.item_id, owner.item_id) AS "coalesce",
+                 CASE
+                     WHEN (a.value_norm = query.norm) THEN 1.0
+                     ELSE 0.5
+                 END AS "case"
+            FROM ((public.aliases a
+              CROSS JOIN query)
+              LEFT JOIN public.item_memberships owner ON (((owner.model_id = a.model_id) AND (owner.asset_id = a.asset_id) AND (owner.kind = 'owned'::text) AND (owner.removed_at IS NULL))))
+           WHERE ((a.model_id = catalog_search.p_model_id) AND (query.norm <> ''::text) AND (a.value_norm ~~ query.pattern))
+         UNION ALL
+          SELECT c.item_id,
+             ts_rank(c.tsv, query.ts) AS ts_rank
+            FROM public.chronology_entries c,
+             query
+           WHERE ((c.model_id = catalog_search.p_model_id) AND (c.tsv @@ query.ts))
+         )
+  SELECT h.item_id,
+     max(h.rank) AS max
+    FROM (hits h
+      JOIN public.content_items i ON (((i.model_id = catalog_search.p_model_id) AND (i.id = h.item_id))))
+   WHERE (i.deleted_at IS NULL)
+   GROUP BY h.item_id
+   ORDER BY (max(h.rank)) DESC, h.item_id;
+END;
+
+ALTER FUNCTION public.catalog_search(p_model_id uuid, q text) OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.check_sealed_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE
+  parent_table text := TG_ARGV[0];
+  child_table text := TG_ARGV[1];
+  fk_column text := TG_ARGV[2];
+  parent_id uuid;
+  expected integer;
+  actual integer;
+  top integer;
+BEGIN
+  IF TG_TABLE_NAME = parent_table THEN
+    parent_id := NEW.id;
+  ELSE
+    parent_id := (to_jsonb(NEW) ->> fk_column)::uuid;
+  END IF;
+  EXECUTE format('SELECT entry_count FROM %I WHERE model_id = $1 AND id = $2', parent_table)
+    INTO expected USING NEW.model_id, parent_id;
+  EXECUTE format('SELECT count(*), max(position) FROM %I WHERE model_id = $1 AND %I = $2',
+                 child_table, fk_column)
+    INTO actual, top USING NEW.model_id, parent_id;
+  IF actual IS DISTINCT FROM expected OR top IS DISTINCT FROM expected THEN
+    RAISE EXCEPTION '% %: % rows up to position %, sealed with %',
+      parent_table, parent_id, actual, top, expected
+      USING ERRCODE = 'CO004';
+  END IF;
+  RETURN NULL;
+END
+$_$;
+
+ALTER FUNCTION public.check_sealed_count() OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.check_tag_scope() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM tags WHERE id = NEW.tag_id AND model_id IS NOT NULL
+                                    AND model_id <> NEW.model_id) THEN
+    RAISE EXCEPTION 'tag % belongs to another model', NEW.tag_id
+      USING ERRCODE = 'CO006';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.check_tag_scope() OWNER TO contentops_migrate;
+
 CREATE FUNCTION public.forbid_change() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -35,6 +420,29 @@ END
 $$;
 
 ALTER FUNCTION public.forbid_update_delete() OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.inbox_draft_transition() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.state = 'resolved'
+     AND (NEW.state, NEW.outcome) IS DISTINCT FROM (OLD.state, OLD.outcome) THEN
+    IF OLD.outcome <> 'rejected' OR NEW.state <> 'ready' THEN
+      RAISE EXCEPTION 'draft %: % (%) → % is not allowed', OLD.id, OLD.state, OLD.outcome, NEW.state
+        USING ERRCODE = 'CO005';
+    END IF;
+    PERFORM 1 FROM blobs WHERE sha256 IN (OLD.master_sha256, OLD.source_blob_sha256) FOR SHARE;
+    IF EXISTS (SELECT 1 FROM blobs WHERE sha256 IN (OLD.master_sha256, OLD.source_blob_sha256)
+                                     AND state <> 'present') THEN
+      RAISE EXCEPTION 'draft %: its bytes were removed, it cannot reopen', OLD.id
+        USING ERRCODE = 'CO005';
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.inbox_draft_transition() OWNER TO contentops_migrate;
 
 CREATE FUNCTION public.jsonb_has_secret(doc jsonb) RETURNS boolean
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
@@ -123,6 +531,50 @@ $$;
 
 ALTER FUNCTION public.log_row_change() OWNER TO contentops_migrate;
 
+CREATE FUNCTION public.public_item_id(item_type text, item_number integer) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    RETURN ((item_type || '-'::text) || lpad((item_number)::text, GREATEST(CASE WHEN (item_type = ANY (ARRAY['FYP'::text, 'RAW'::text])) THEN 4 ELSE 3 END, length((item_number)::text)), '0'::text));
+
+ALTER FUNCTION public.public_item_id(item_type text, item_number integer) OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.set_once() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  col text;
+  old_row jsonb := to_jsonb(OLD);
+  new_row jsonb := to_jsonb(NEW);
+BEGIN
+  FOREACH col IN ARRAY TG_ARGV LOOP
+    IF NOT old_row ? col THEN
+      RAISE EXCEPTION 'set_once on %: no column %', TG_TABLE_NAME, col;
+    END IF;
+    IF jsonb_typeof(old_row -> col) <> 'null' AND old_row -> col IS DISTINCT FROM new_row -> col THEN
+      RAISE EXCEPTION 'column %.% is already set', TG_TABLE_NAME, col
+        USING ERRCODE = 'CO003';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.set_once() OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.storage_operation_transition() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.state IN ('committed', 'failed', 'cancelled') AND NEW.state <> OLD.state
+     OR NEW.state = 'cancelled' AND OLD.state NOT IN ('intent', 'cancelled') THEN
+    RAISE EXCEPTION 'storage operation %: % → % is not allowed', OLD.id, OLD.state, NEW.state
+      USING ERRCODE = 'CO005';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.storage_operation_transition() OWNER TO contentops_migrate;
+
 CREATE TABLE public.accounts (
     model_id uuid NOT NULL,
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -183,6 +635,28 @@ ALTER TABLE public.action_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     CACHE 1
 );
 
+CREATE TABLE public.annotation_fields (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    item_id uuid,
+    version_id uuid,
+    group_id uuid,
+    draft_id uuid,
+    field text NOT NULL,
+    value_version bigint DEFAULT 0 NOT NULL,
+    confirmed_value_version bigint,
+    confirmed_at timestamp with time zone,
+    confirmed_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by uuid,
+    CONSTRAINT annotation_fields_confirmed CHECK ((((confirmed_at IS NULL) = (confirmed_value_version IS NULL)) AND ((confirmed_value_version IS NULL) OR (confirmed_value_version <= value_version)))),
+    CONSTRAINT annotation_fields_field_check CHECK ((field = ANY (ARRAY['title'::text, 'title_en'::text, 'description'::text, 'tags'::text, 'chronology'::text, 'purpose'::text, 'second_person'::text]))),
+    CONSTRAINT annotation_fields_one_target CHECK ((num_nonnulls(item_id, version_id, group_id, draft_id) = 1)),
+    CONSTRAINT annotation_fields_value_version_check CHECK ((value_version >= 0))
+);
+
+ALTER TABLE public.annotation_fields OWNER TO contentops_migrate;
+
 CREATE TABLE public.api_tokens (
     id uuid DEFAULT uuidv7() NOT NULL,
     principal_id uuid NOT NULL,
@@ -197,6 +671,409 @@ CREATE TABLE public.api_tokens (
 );
 
 ALTER TABLE public.api_tokens OWNER TO contentops_migrate;
+
+CREATE TABLE public.asset_manifest_entries (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    manifest_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    item_id uuid NOT NULL,
+    membership_id uuid,
+    asset_id uuid NOT NULL,
+    asset_version_id uuid NOT NULL,
+    handle_snapshot text NOT NULL,
+    selected_snapshot boolean,
+    life_use_snapshot text,
+    CONSTRAINT asset_manifest_entries_life_use_snapshot_check CHECK ((life_use_snapshot = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text]))),
+    CONSTRAINT asset_manifest_entries_position_check CHECK (("position" >= 1))
+);
+
+ALTER TABLE public.asset_manifest_entries OWNER TO contentops_migrate;
+
+CREATE TABLE public.asset_manifests (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    purpose text NOT NULL,
+    origin_item_id uuid,
+    entry_count integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT asset_manifests_entry_count_check CHECK ((entry_count > 0)),
+    CONSTRAINT asset_manifests_purpose_check CHECK ((purpose = ANY (ARRAY['plan'::text, 'download'::text, 'delivery'::text, 'submission'::text])))
+);
+
+ALTER TABLE public.asset_manifests OWNER TO contentops_migrate;
+
+CREATE TABLE public.assets (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    created_in_item_id uuid NOT NULL,
+    media_kind text NOT NULL,
+    current_version_id uuid NOT NULL,
+    variant_kind text DEFAULT 'none'::text NOT NULL,
+    variant_no integer DEFAULT 0 NOT NULL,
+    uniq_level text,
+    retired_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT assets_media_kind_check CHECK ((media_kind = ANY (ARRAY['video'::text, 'image'::text]))),
+    CONSTRAINT assets_uniq_level CHECK (((variant_kind = 'uniq'::text) = (uniq_level IS NOT NULL))),
+    CONSTRAINT assets_uniq_level_check CHECK ((uniq_level = ANY (ARRAY['soft'::text, 'trim'::text, 'mirror'::text]))),
+    CONSTRAINT assets_variant_kind_check CHECK ((variant_kind = ANY (ARRAY['none'::text, 'uniq'::text]))),
+    CONSTRAINT assets_variant_no CHECK (((variant_kind = 'uniq'::text) = (variant_no > 0))),
+    CONSTRAINT assets_variant_no_check CHECK ((variant_no >= 0))
+);
+
+ALTER TABLE public.assets OWNER TO contentops_migrate;
+
+CREATE TABLE public.blob_phashes (
+    sha256 bytea NOT NULL,
+    algorithm text NOT NULL,
+    algo_version text NOT NULL,
+    normalization text NOT NULL,
+    phash bit(64) NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT blob_phashes_sha256_check CHECK ((octet_length(sha256) = 32))
+);
+
+ALTER TABLE public.blob_phashes OWNER TO contentops_migrate;
+
+CREATE TABLE public.blob_probes (
+    sha256 bytea NOT NULL,
+    kind text NOT NULL,
+    recipe_digest text NOT NULL,
+    duration_ms bigint,
+    width integer,
+    height integer,
+    rotation integer,
+    fps_num integer,
+    fps_den integer,
+    video_codec text,
+    pix_fmt text,
+    bit_rate bigint,
+    is_hdr boolean,
+    audio_tracks jsonb,
+    shot_at timestamp with time zone,
+    shot_at_local timestamp without time zone,
+    shot_tz text,
+    camera jsonb,
+    raw jsonb,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT blob_probes_kind_check CHECK ((kind = ANY (ARRAY['ffprobe'::text, 'exif'::text]))),
+    CONSTRAINT blob_probes_sha256_check CHECK ((octet_length(sha256) = 32))
+);
+
+ALTER TABLE public.blob_probes OWNER TO contentops_migrate;
+
+CREATE TABLE public.blobs (
+    sha256 bytea NOT NULL,
+    byte_size bigint NOT NULL,
+    mime text NOT NULL,
+    ext text NOT NULL,
+    media_kind text NOT NULL,
+    storage_key text NOT NULL,
+    state text DEFAULT 'present'::text NOT NULL,
+    registered_at timestamp with time zone DEFAULT now() NOT NULL,
+    purged_at timestamp with time zone,
+    verified_at timestamp with time zone,
+    CONSTRAINT blobs_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT blobs_ext_format CHECK ((ext ~ '^[a-z0-9]{1,10}$'::text)),
+    CONSTRAINT blobs_media_kind_check CHECK ((media_kind = ANY (ARRAY['video'::text, 'image'::text]))),
+    CONSTRAINT blobs_purged_at CHECK (((state <> 'purged'::text) OR (purged_at IS NOT NULL))),
+    CONSTRAINT blobs_sha256_check CHECK ((octet_length(sha256) = 32)),
+    CONSTRAINT blobs_state_check CHECK ((state = ANY (ARRAY['present'::text, 'purged'::text, 'missing'::text, 'corrupt'::text])))
+);
+
+ALTER TABLE public.blobs OWNER TO contentops_migrate;
+
+CREATE TABLE public.item_tags (
+    model_id uuid NOT NULL,
+    item_id uuid NOT NULL,
+    tag_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source text NOT NULL,
+    group_at_import text,
+    added_at timestamp with time zone DEFAULT now() NOT NULL,
+    added_by uuid,
+    CONSTRAINT item_tags_group_at_import_check CHECK ((group_at_import = ANY (ARRAY['action'::text, 'attribute'::text, 'mood'::text]))),
+    CONSTRAINT item_tags_source_check CHECK ((source = ANY (ARRAY['ai'::text, 'human'::text, 'import'::text])))
+);
+
+ALTER TABLE public.item_tags OWNER TO contentops_migrate;
+
+CREATE TABLE public.promo_channels (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    code text NOT NULL,
+    title text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    archived_at timestamp with time zone,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT promo_channels_code_format CHECK ((code ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text))
+);
+
+ALTER TABLE public.promo_channels OWNER TO contentops_migrate;
+
+CREATE TABLE public.provenance (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    relation text NOT NULL,
+    child_item_id uuid,
+    child_version_id uuid,
+    parent_item_id uuid,
+    parent_version_id uuid,
+    params jsonb,
+    basis text,
+    work_id uuid,
+    voided_by_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT provenance_not_self CHECK (((NOT (child_item_id = parent_item_id)) AND (NOT (child_version_id = parent_version_id)))),
+    CONSTRAINT provenance_one_child CHECK ((num_nonnulls(child_item_id, child_version_id) = 1)),
+    CONSTRAINT provenance_one_parent CHECK ((num_nonnulls(parent_item_id, parent_version_id) = 1)),
+    CONSTRAINT provenance_relation_check CHECK ((relation = ANY (ARRAY['montage_from'::text, 'uniq_from'::text, 'teaser_from'::text, 'frame_from'::text, 'processed_from'::text, 'ppv_from_custom'::text, 'extracted_from'::text, 'remaster_from'::text, 'split_from'::text, 'merged_from'::text, 'reencoded_from'::text])))
+);
+
+ALTER TABLE public.provenance OWNER TO contentops_migrate;
+
+CREATE TABLE public.rendition_generations (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    master_sha256 bytea,
+    kind text NOT NULL,
+    recipe_digest text NOT NULL,
+    meta_stripped boolean DEFAULT false NOT NULL,
+    is_active boolean DEFAULT false NOT NULL,
+    input_kind text NOT NULL,
+    input_sha256 bytea NOT NULL,
+    state text DEFAULT 'building'::text NOT NULL,
+    work_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    ready_at timestamp with time zone,
+    bound_at timestamp with time zone,
+    CONSTRAINT rendition_generations_bound CHECK (((bound_at IS NULL) OR (master_sha256 IS NOT NULL))),
+    CONSTRAINT rendition_generations_input_kind_check CHECK ((input_kind = ANY (ARRAY['source'::text, 'master'::text]))),
+    CONSTRAINT rendition_generations_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
+    CONSTRAINT rendition_generations_kind_check CHECK ((kind = ANY (ARRAY['preview'::text, 'poster'::text, 'thumb320'::text, 'thumb640'::text, 'preview2048'::text, 'frames'::text, 'platform'::text]))),
+    CONSTRAINT rendition_generations_master_input CHECK (((input_kind = 'source'::text) OR (master_sha256 = input_sha256))),
+    CONSTRAINT rendition_generations_master_sha256_check CHECK ((octet_length(master_sha256) = 32)),
+    CONSTRAINT rendition_generations_ready_at CHECK (((state <> 'ready'::text) OR (ready_at IS NOT NULL))),
+    CONSTRAINT rendition_generations_state_check CHECK ((state = ANY (ARRAY['building'::text, 'ready'::text, 'failed'::text, 'evicted'::text])))
+);
+
+ALTER TABLE public.rendition_generations OWNER TO contentops_migrate;
+
+CREATE TABLE public.source_revisions (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source_object_id uuid NOT NULL,
+    sequence_no integer NOT NULL,
+    md5 bytea,
+    remote_sha256 bytea,
+    content_hash bytea,
+    remote_rev text,
+    byte_size bigint NOT NULL,
+    remote_created_at timestamp with time zone,
+    remote_modified_at timestamp with time zone,
+    detected_at timestamp with time zone DEFAULT now() NOT NULL,
+    scan_work_id uuid,
+    previous_id uuid,
+    source_sha256 bytea,
+    verified_at timestamp with time zone,
+    verified_route text,
+    frozen_by_work_id uuid,
+    CONSTRAINT source_revisions_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT source_revisions_content_hash_check CHECK ((octet_length(content_hash) = 32)),
+    CONSTRAINT source_revisions_md5_check CHECK ((octet_length(md5) = 16)),
+    CONSTRAINT source_revisions_remote_sha256_check CHECK ((octet_length(remote_sha256) = 32)),
+    CONSTRAINT source_revisions_sequence_no_check CHECK ((sequence_no >= 1)),
+    CONSTRAINT source_revisions_source_sha256_check CHECK ((octet_length(source_sha256) = 32)),
+    CONSTRAINT source_revisions_verified CHECK ((((source_sha256 IS NULL) = (verified_at IS NULL)) AND ((verified_at IS NULL) = (verified_route IS NULL)))),
+    CONSTRAINT source_revisions_verified_route_check CHECK ((verified_route = ANY (ARRAY['download'::text, 'local_copy'::text, 'upload'::text])))
+);
+
+ALTER TABLE public.source_revisions OWNER TO contentops_migrate;
+
+CREATE TABLE public.tags (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    model_id uuid,
+    slug text NOT NULL,
+    label_ru text NOT NULL,
+    tag_group text,
+    merged_into_tag_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT tags_tag_group_check CHECK ((tag_group = ANY (ARRAY['action'::text, 'attribute'::text, 'mood'::text])))
+);
+
+ALTER TABLE public.tags OWNER TO contentops_migrate;
+
+CREATE VIEW public.catalog_index WITH (security_invoker='true') AS
+ SELECT i.model_id,
+    i.id AS item_id,
+    public.public_item_id(i.type, i.number) AS public_id,
+    i.type,
+    i.number,
+    i.title,
+    i.title_en,
+    COALESCE(tg.slugs, '{}'::text[]) AS tags,
+        CASE
+            WHEN ((af.confirmed > 0) AND (af.confirmed = af.total)) THEN 'confirmed'::text
+            WHEN (af.confirmed > 0) THEN 'partial'::text
+            ELSE 'draft'::text
+        END AS markup_state,
+    cv.version_id AS cover_version_id,
+    cv.width AS cover_width,
+    cv.height AS cover_height,
+    cv.thumb320_generation_id AS cover_thumb320_generation_id,
+    cv.thumb640_generation_id AS cover_thumb640_generation_id,
+    m.duration_ms,
+    m.photo_count,
+    m.video_count,
+    m.version_count,
+    COALESCE(m.has_teaser, false) AS has_teaser,
+    m.size_bytes,
+    COALESCE(arrival.arrived_at, i.created_at) AS arrived_at,
+    i.shot_on,
+    i.ppv_kind,
+    i.raw_purpose,
+    ppv.public_id AS ppv_made_as,
+    i.name_in_media,
+    i.has_second_person,
+        CASE
+            WHEN (i.type = 'SET'::text) THEN COALESCE(m.selected_count, 0)
+            ELSE NULL::integer
+        END AS selected_count,
+        CASE
+            WHEN (i.type = 'SET'::text) THEN COALESCE(m.processed_count, 0)
+            ELSE NULL::integer
+        END AS processed_count,
+        CASE
+            WHEN (i.type = 'LIFE'::text) THEN COALESCE(m.life_unassigned, 0)
+            ELSE NULL::integer
+        END AS life_unassigned,
+        CASE
+            WHEN (i.type = 'LIFE'::text) THEN COALESCE(m.life_chat_count, 0)
+            ELSE NULL::integer
+        END AS life_chat_count,
+        CASE
+            WHEN (i.type = 'LIFE'::text) THEN COALESCE(m.life_feed_count, 0)
+            ELSE NULL::integer
+        END AS life_feed_count,
+    ((i.type = 'CUS'::text) AND (COALESCE(m.video_count, 0) = 0) AND (COALESCE(m.photo_count, 0) > 0)) AS photo_custom,
+    COALESCE(al.aliases, '{}'::text[]) AS aliases,
+    pc.code AS promo_channel_code,
+    i.created_at,
+    i.updated_at
+   FROM ((((((((public.content_items i
+     LEFT JOIN public.promo_channels pc ON (((pc.model_id = i.model_id) AND (pc.id = i.promo_channel_id))))
+     LEFT JOIN LATERAL ( SELECT array_agg(DISTINCT COALESCE(merged.slug, t.slug) ORDER BY COALESCE(merged.slug, t.slug)) AS slugs
+           FROM ((public.item_tags it
+             JOIN public.tags t ON ((t.id = it.tag_id)))
+             LEFT JOIN public.tags merged ON ((merged.id = t.merged_into_tag_id)))
+          WHERE ((it.model_id = i.model_id) AND (it.item_id = i.id))) tg ON (true))
+     LEFT JOIN LATERAL ( SELECT count(*) AS total,
+            count(*) FILTER (WHERE (f.confirmed_value_version = f.value_version)) AS confirmed
+           FROM public.annotation_fields f
+          WHERE ((f.model_id = i.model_id) AND ((f.item_id = i.id) OR (f.version_id IN ( SELECT a.current_version_id
+                   FROM (public.item_memberships im
+                     JOIN public.assets a ON (((a.model_id = im.model_id) AND (a.id = im.asset_id))))
+                  WHERE ((im.model_id = i.model_id) AND (im.item_id = i.id) AND (im.kind = 'owned'::text) AND (im.removed_at IS NULL))))))) af ON (true))
+     LEFT JOIN LATERAL ( SELECT v.id AS version_id,
+            v.width,
+            v.height,
+            ( SELECT g.id
+                   FROM public.rendition_generations g
+                  WHERE ((g.master_sha256 = v.master_sha256) AND (g.kind = 'thumb320'::text) AND g.is_active AND (g.state = 'ready'::text) AND (NOT g.meta_stripped))
+                  ORDER BY g.ready_at DESC
+                 LIMIT 1) AS thumb320_generation_id,
+            ( SELECT g.id
+                   FROM public.rendition_generations g
+                  WHERE ((g.master_sha256 = v.master_sha256) AND (g.kind = 'thumb640'::text) AND g.is_active AND (g.state = 'ready'::text) AND (NOT g.meta_stripped))
+                  ORDER BY g.ready_at DESC
+                 LIMIT 1) AS thumb640_generation_id
+           FROM ((public.item_memberships im
+             JOIN public.assets a ON (((a.model_id = im.model_id) AND (a.id = im.asset_id))))
+             JOIN public.asset_versions v ON (((v.model_id = a.model_id) AND (v.id = COALESCE(im.pinned_version_id, a.current_version_id)))))
+          WHERE ((im.model_id = i.model_id) AND (im.item_id = i.id) AND ((im.id = i.cover_membership_id) OR ((i.cover_membership_id IS NULL) AND (im.removed_at IS NULL))))
+          ORDER BY im.display_position, im.added_at, im.id
+         LIMIT 1) cv ON (true))
+     LEFT JOIN LATERAL ( SELECT (count(*) FILTER (WHERE ((a.media_kind = 'image'::text) AND (im.variant_no = 0))))::integer AS photo_count,
+            (count(*) FILTER (WHERE ((a.media_kind = 'video'::text) AND (im.variant_no = 0))))::integer AS video_count,
+            max(v.version_no) FILTER (WHERE (im.kind = 'owned'::text)) AS version_count,
+            bool_or(((im.kind = 'owned'::text) AND (im.role = 'teaser'::text))) AS has_teaser,
+            COALESCE(max(v.duration_ms) FILTER (WHERE ((im.kind = 'owned'::text) AND (im.role = 'master'::text) AND (im.variant_no = 0))), (sum(v.duration_ms) FILTER (WHERE ((a.media_kind = 'video'::text) AND (im.variant_no = 0))))::bigint) AS duration_ms,
+            (sum(b.byte_size))::bigint AS size_bytes,
+            (count(*) FILTER (WHERE im.selected))::integer AS selected_count,
+            (count(*) FILTER (WHERE (im.role = 'ed'::text)))::integer AS processed_count,
+            (count(*) FILTER (WHERE (im.life_use IS NULL)))::integer AS life_unassigned,
+            (count(*) FILTER (WHERE (im.life_use = ANY (ARRAY['chats'::text, 'both'::text]))))::integer AS life_chat_count,
+            (count(*) FILTER (WHERE (im.life_use = ANY (ARRAY['feed'::text, 'both'::text]))))::integer AS life_feed_count
+           FROM (((public.item_memberships im
+             JOIN public.assets a ON (((a.model_id = im.model_id) AND (a.id = im.asset_id))))
+             JOIN public.asset_versions v ON (((v.model_id = a.model_id) AND (v.id = COALESCE(im.pinned_version_id, a.current_version_id)))))
+             JOIN public.blobs b ON ((b.sha256 = v.master_sha256)))
+          WHERE ((im.model_id = i.model_id) AND (im.item_id = i.id) AND (im.removed_at IS NULL))) m ON (true))
+     LEFT JOIN LATERAL ( SELECT min(COALESCE(r.remote_created_at, r.detected_at)) AS arrived_at
+           FROM ((public.item_memberships im
+             JOIN public.asset_versions v ON (((v.model_id = im.model_id) AND (v.asset_id = im.asset_id))))
+             JOIN public.source_revisions r ON (((r.model_id = v.model_id) AND (r.id = v.source_revision_id))))
+          WHERE ((im.model_id = i.model_id) AND (im.item_id = i.id) AND (im.kind = 'owned'::text))) arrival ON (true))
+     LEFT JOIN LATERAL ( SELECT public.public_item_id(c.type, c.number) AS public_id
+           FROM (public.provenance p
+             JOIN public.content_items c ON (((c.model_id = p.model_id) AND (c.id = p.child_item_id))))
+          WHERE ((p.model_id = i.model_id) AND (p.parent_item_id = i.id) AND (p.relation = 'ppv_from_custom'::text) AND (p.voided_by_id IS NULL) AND (c.deleted_at IS NULL))
+          ORDER BY c.number
+         LIMIT 1) ppv ON ((i.type = 'CUS'::text)))
+     LEFT JOIN LATERAL ( SELECT array_agg(DISTINCT a.value_raw ORDER BY a.value_raw) AS aliases
+           FROM public.aliases a
+          WHERE ((a.model_id = i.model_id) AND (a.item_id = i.id) AND (a.kind = ANY (ARRAY['legacy_id'::text, 'merged_id'::text, 'vault_album'::text])))) al ON (true))
+  WHERE (i.deleted_at IS NULL);
+
+ALTER VIEW public.catalog_index OWNER TO contentops_migrate;
+
+CREATE TABLE public.download_receipt_entries (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    receipt_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    asset_id uuid NOT NULL,
+    asset_version_id uuid NOT NULL,
+    rendition_artifact_id uuid,
+    issued_master boolean DEFAULT false NOT NULL,
+    export_key text,
+    file_name text NOT NULL,
+    file_name_norm text GENERATED ALWAYS AS (lower(NORMALIZE(file_name, NFC))) STORED NOT NULL,
+    output_sha256 bytea NOT NULL,
+    byte_size bigint NOT NULL,
+    duration_ms bigint,
+    width integer,
+    height integer,
+    CONSTRAINT download_receipt_entries_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT download_receipt_entries_one_file CHECK (((num_nonnulls(rendition_artifact_id, export_key) + (issued_master)::integer) = 1)),
+    CONSTRAINT download_receipt_entries_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
+    CONSTRAINT download_receipt_entries_position_check CHECK (("position" >= 1))
+);
+
+ALTER TABLE public.download_receipt_entries OWNER TO contentops_migrate;
+
+CREATE TABLE public.download_receipts (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    principal_id uuid NOT NULL,
+    kind text NOT NULL,
+    manifest_id uuid NOT NULL,
+    account_code_snapshot text,
+    slot_date_snapshot date,
+    meta_stripped boolean NOT NULL,
+    zip_key text,
+    entry_count integer NOT NULL,
+    corrects_id uuid,
+    issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT download_receipts_entry_count_check CHECK ((entry_count > 0)),
+    CONSTRAINT download_receipts_kind_check CHECK ((kind = ANY (ARRAY['master'::text, 'platform'::text, 'edit'::text, 'promo'::text])))
+);
+
+ALTER TABLE public.download_receipts OWNER TO contentops_migrate;
 
 CREATE TABLE public.id_counters (
     model_id uuid NOT NULL,
@@ -230,6 +1107,83 @@ CREATE TABLE public.idempotency_keys (
 
 ALTER TABLE public.idempotency_keys OWNER TO contentops_migrate;
 
+CREATE TABLE public.inbox_draft_candidates (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    draft_id uuid NOT NULL,
+    kind text NOT NULL,
+    order_id uuid,
+    item_id uuid,
+    version_id uuid,
+    score double precision,
+    signals jsonb,
+    evidence_refs jsonb,
+    conflicts_with uuid[],
+    chosen boolean DEFAULT false NOT NULL,
+    chosen_at timestamp with time zone,
+    chosen_by uuid,
+    dismissed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT inbox_draft_candidates_kind_check CHECK ((kind = ANY (ARRAY['order'::text, 'existing_item'::text, 'exact_duplicate'::text, 'similar_photo'::text, 'legacy_id'::text, 'source_parent'::text, 'content_type'::text])))
+);
+
+ALTER TABLE public.inbox_draft_candidates OWNER TO contentops_migrate;
+
+CREATE TABLE public.inbox_groups (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source_id uuid NOT NULL,
+    group_key text NOT NULL,
+    "grouping" text NOT NULL,
+    folder_object_id uuid,
+    evidence jsonb,
+    discovered_at timestamp with time zone DEFAULT now() NOT NULL,
+    closed_at timestamp with time zone,
+    proposed_type text,
+    proposed_title text,
+    proposed_title_en text,
+    proposed_description text,
+    proposed_tags jsonb,
+    proposed_ppv_kind text,
+    proposed_purpose text,
+    has_second_person boolean,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT inbox_groups_grouping_check CHECK (("grouping" = ANY (ARRAY['folder'::text, 'exif_day'::text, 'upload_cluster'::text, 'single'::text, 'manual'::text]))),
+    CONSTRAINT inbox_groups_proposed_ppv_kind_check CHECK ((proposed_ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text]))),
+    CONSTRAINT inbox_groups_proposed_purpose_check CHECK ((proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text]))),
+    CONSTRAINT inbox_groups_proposed_type_check CHECK ((proposed_type = ANY (ARRAY['PPV'::text, 'SET'::text, 'SXT'::text, 'CUS'::text, 'FYP'::text, 'LIFE'::text, 'RAW'::text, 'PRM'::text])))
+);
+
+ALTER TABLE public.inbox_groups OWNER TO contentops_migrate;
+
+CREATE TABLE public.master_checks (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source_sha256 bytea NOT NULL,
+    master_sha256 bytea,
+    recipe_digest text NOT NULL,
+    work_id uuid NOT NULL,
+    attempt integer NOT NULL,
+    decision text,
+    verdict text NOT NULL,
+    enc_ms bigint,
+    verify_ms bigint,
+    src_frames bigint,
+    dst_frames bigint,
+    crf integer,
+    report jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT master_checks_attempt_check CHECK ((attempt >= 1)),
+    CONSTRAINT master_checks_decision CHECK (((decision IS NOT NULL) OR (verdict = 'unreadable'::text))),
+    CONSTRAINT master_checks_decision_check CHECK ((decision = ANY (ARRAY['encode'::text, 'copy'::text, 'skipped_hdr'::text, 'skipped_av1'::text, 'skipped_lowrate'::text, 'skipped_audio'::text]))),
+    CONSTRAINT master_checks_master_sha256_check CHECK ((octet_length(master_sha256) = 32)),
+    CONSTRAINT master_checks_source_sha256_check CHECK ((octet_length(source_sha256) = 32)),
+    CONSTRAINT master_checks_verdict_check CHECK ((verdict = ANY (ARRAY['ok'::text, 'unreadable'::text, 'bigger_than_source'::text, 'timing_drift'::text, 'timing_uncomparable'::text, 'audio_mismatch'::text, 'audio_offset'::text, 'audio_tracks_lost'::text, 'encode_failed'::text, 'frame_mismatch'::text, 'result_decode_errors'::text, 'publish_failed'::text, 'source_decode_errors'::text, 'source_truncated'::text, 'metadata_mismatch'::text])))
+);
+
+ALTER TABLE public.master_checks OWNER TO contentops_migrate;
+
 CREATE TABLE public.models (
     id uuid DEFAULT uuidv7() NOT NULL,
     code text NOT NULL,
@@ -244,6 +1198,54 @@ CREATE TABLE public.models (
 );
 
 ALTER TABLE public.models OWNER TO contentops_migrate;
+
+CREATE TABLE public.pipeline_versions (
+    version text NOT NULL,
+    ffmpeg text NOT NULL,
+    svtav1 text NOT NULL,
+    libvips text NOT NULL,
+    sharp text NOT NULL,
+    phash_algo text NOT NULL,
+    master_recipe jsonb NOT NULL,
+    rendition_recipes jsonb NOT NULL,
+    recipe_digests jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    activated_at timestamp with time zone,
+    is_current boolean DEFAULT false NOT NULL,
+    CONSTRAINT pipeline_versions_current_activated CHECK (((NOT is_current) OR (activated_at IS NOT NULL))),
+    CONSTRAINT pipeline_versions_recipe_digests_object CHECK ((jsonb_typeof(recipe_digests) = 'object'::text))
+);
+
+ALTER TABLE public.pipeline_versions OWNER TO contentops_migrate;
+
+CREATE TABLE public.platform_texts (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    item_id uuid NOT NULL,
+    platform text NOT NULL,
+    account_id uuid,
+    locale text NOT NULL,
+    variant_no integer DEFAULT 1 NOT NULL,
+    title text,
+    body text,
+    value_version bigint DEFAULT 1 NOT NULL,
+    confirmed_value_version bigint,
+    confirmed_at timestamp with time zone,
+    confirmed_by uuid,
+    source text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by uuid,
+    CONSTRAINT platform_texts_account CHECK (((account_id IS NULL) OR (platform <> 'generic'::text))),
+    CONSTRAINT platform_texts_confirmed CHECK ((((confirmed_at IS NULL) = (confirmed_value_version IS NULL)) AND ((confirmed_value_version IS NULL) OR (confirmed_value_version <= value_version)))),
+    CONSTRAINT platform_texts_locale_format CHECK ((locale ~ '^[a-z]{2}$'::text)),
+    CONSTRAINT platform_texts_platform_check CHECK ((platform = ANY (ARRAY['generic'::text, 'fansly'::text, 'onlyfans'::text]))),
+    CONSTRAINT platform_texts_source_check CHECK ((source = ANY (ARRAY['ai'::text, 'human'::text, 'import'::text]))),
+    CONSTRAINT platform_texts_value_version_check CHECK ((value_version >= 0)),
+    CONSTRAINT platform_texts_variant_no_check CHECK ((variant_no >= 1))
+);
+
+ALTER TABLE public.platform_texts OWNER TO contentops_migrate;
 
 CREATE TABLE public.policy_settings (
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -297,18 +1299,54 @@ CREATE TABLE public.principals (
 
 ALTER TABLE public.principals OWNER TO contentops_migrate;
 
-CREATE TABLE public.promo_channels (
-    model_id uuid NOT NULL,
+CREATE TABLE public.rendition_artifacts (
     id uuid DEFAULT uuidv7() NOT NULL,
-    code text NOT NULL,
-    title text NOT NULL,
+    generation_id uuid NOT NULL,
+    name text NOT NULL,
+    output_sha256 bytea NOT NULL,
+    byte_size bigint NOT NULL,
+    mime text NOT NULL,
+    width integer,
+    height integer,
+    duration_ms bigint,
+    frame_ms bigint,
+    storage_key text NOT NULL,
+    state text DEFAULT 'ready'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    archived_at timestamp with time zone,
-    row_version bigint DEFAULT 1 NOT NULL,
-    CONSTRAINT promo_channels_code_format CHECK ((code ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text))
+    last_used_at timestamp with time zone,
+    CONSTRAINT rendition_artifacts_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT rendition_artifacts_name_format CHECK ((name ~ '^(platform\.mp4|preview\.mp4|poster\.webp|thumb-320\.webp|thumb-640\.webp|preview-2048\.webp|frames/[0-9]{4,6}\.webp)$'::text)),
+    CONSTRAINT rendition_artifacts_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
+    CONSTRAINT rendition_artifacts_state_check CHECK ((state = ANY (ARRAY['ready'::text, 'evicted'::text, 'missing'::text])))
 );
 
-ALTER TABLE public.promo_channels OWNER TO contentops_migrate;
+ALTER TABLE public.rendition_artifacts OWNER TO contentops_migrate;
+
+CREATE TABLE public.review_cases (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    kind text NOT NULL,
+    state text DEFAULT 'open'::text NOT NULL,
+    dedup_key text NOT NULL,
+    draft_id uuid,
+    item_id uuid,
+    version_id uuid,
+    source_object_id uuid,
+    blob_sha256 bytea,
+    counterpart_model_id uuid,
+    details jsonb,
+    resolution jsonb,
+    resolved_at timestamp with time zone,
+    resolved_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT review_cases_blob_sha256_check CHECK ((octet_length(blob_sha256) = 32)),
+    CONSTRAINT review_cases_kind_check CHECK ((kind = ANY (ARRAY['cross_model_duplicate'::text, 'legacy_unparsed'::text, 'merge_split'::text, 'unreadable_input'::text]))),
+    CONSTRAINT review_cases_resolved CHECK (((state = 'open'::text) = (resolved_at IS NULL))),
+    CONSTRAINT review_cases_state_check CHECK ((state = ANY (ARRAY['open'::text, 'resolved'::text, 'dismissed'::text])))
+);
+
+ALTER TABLE public.review_cases OWNER TO contentops_migrate;
 
 CREATE TABLE public.schema_migrations (
     version integer NOT NULL,
@@ -335,6 +1373,78 @@ CREATE TABLE public.sessions (
 
 ALTER TABLE public.sessions OWNER TO contentops_migrate;
 
+CREATE TABLE public.source_objects (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source_id uuid NOT NULL,
+    resource_id text,
+    upload_id text,
+    current_path text NOT NULL,
+    current_name text NOT NULL,
+    is_dir boolean DEFAULT false NOT NULL,
+    parent_id uuid,
+    archive_revision_id uuid,
+    archive_entry_no integer,
+    current_revision_id uuid,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    gone_since timestamp with time zone,
+    CONSTRAINT source_objects_archive_entry_no_check CHECK ((archive_entry_no >= 0)),
+    CONSTRAINT source_objects_archive_member CHECK (((archive_revision_id IS NULL) = (archive_entry_no IS NULL)))
+);
+
+ALTER TABLE public.source_objects OWNER TO contentops_migrate;
+
+CREATE TABLE public.source_paths (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source_object_id uuid NOT NULL,
+    path_raw text NOT NULL,
+    path_nfc text GENERATED ALWAYS AS (NORMALIZE(path_raw, NFC)) STORED NOT NULL,
+    name text NOT NULL,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.source_paths OWNER TO contentops_migrate;
+
+CREATE TABLE public.sources (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    kind text NOT NULL,
+    label text NOT NULL,
+    credentials_ref text,
+    read_only boolean DEFAULT true NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT sources_cloud_read_only CHECK (((kind <> ALL (ARRAY['yandex_disk'::text, 'dropbox'::text])) OR read_only)),
+    CONSTRAINT sources_credentials_ref_format CHECK ((credentials_ref ~ '^[A-Z][A-Z0-9_]*$'::text)),
+    CONSTRAINT sources_kind_check CHECK ((kind = ANY (ARRAY['yandex_disk'::text, 'dropbox'::text, 'web_upload'::text, 'legacy_metadata'::text])))
+);
+
+ALTER TABLE public.sources OWNER TO contentops_migrate;
+
+CREATE TABLE public.storage_operations (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    kind text NOT NULL,
+    blob_sha256 bytea NOT NULL,
+    from_key text,
+    to_key text,
+    state text DEFAULT 'intent'::text NOT NULL,
+    owner text,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    CONSTRAINT storage_operations_blob_sha256_check CHECK ((octet_length(blob_sha256) = 32)),
+    CONSTRAINT storage_operations_finished_at CHECK (((state = ANY (ARRAY['committed'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL))),
+    CONSTRAINT storage_operations_kind_check CHECK ((kind = ANY (ARRAY['put'::text, 'purge'::text]))),
+    CONSTRAINT storage_operations_state_check CHECK ((state = ANY (ARRAY['intent'::text, 'started'::text, 'fs_done'::text, 'committed'::text, 'failed'::text, 'cancelled'::text])))
+);
+
+ALTER TABLE public.storage_operations OWNER TO contentops_migrate;
+
 CREATE TABLE public.surfaces (
     model_id uuid NOT NULL,
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -348,57 +1458,6 @@ CREATE TABLE public.surfaces (
 );
 
 ALTER TABLE public.surfaces OWNER TO contentops_migrate;
-
-CREATE TABLE public.work_operations (
-    id uuid DEFAULT uuidv7() NOT NULL,
-    model_id uuid,
-    kind text NOT NULL,
-    work_key text NOT NULL,
-    account_id uuid,
-    dataset text,
-    scope text,
-    window_from timestamp with time zone,
-    window_to timestamp with time zone,
-    pipeline_version text,
-    recipe_digest text,
-    state text DEFAULT 'pending'::text NOT NULL,
-    paused_reason text,
-    priority integer DEFAULT 0 NOT NULL,
-    attempt_no integer DEFAULT 0 NOT NULL,
-    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
-    lease_owner text,
-    lease_until timestamp with time zone,
-    fence_generation bigint DEFAULT 0 NOT NULL,
-    heartbeat_at timestamp with time zone,
-    input_sha256 bytea,
-    output_sha256 bytea,
-    output_ref text,
-    progress_num bigint,
-    progress_den bigint,
-    progress_note text,
-    checkpoint jsonb,
-    failure_kind text,
-    error_code text,
-    error_text text,
-    report jsonb,
-    stream_key text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
-    CONSTRAINT work_operations_attempt_no_check CHECK ((attempt_no >= 0)),
-    CONSTRAINT work_operations_failure_kind_check CHECK ((failure_kind = ANY (ARRAY['transient'::text, 'permanent'::text]))),
-    CONSTRAINT work_operations_finished_at CHECK (((state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL))),
-    CONSTRAINT work_operations_global_kinds CHECK (((model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text])))),
-    CONSTRAINT work_operations_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
-    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text]))),
-    CONSTRAINT work_operations_model_targets CHECK (((model_id IS NOT NULL) OR (account_id IS NULL))),
-    CONSTRAINT work_operations_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
-    CONSTRAINT work_operations_paused_reason_format CHECK ((paused_reason ~ '^switch_off:.+$'::text)),
-    CONSTRAINT work_operations_running_lease CHECK (((state <> 'running'::text) OR ((lease_owner IS NOT NULL) AND (lease_until IS NOT NULL)))),
-    CONSTRAINT work_operations_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text, 'succeeded'::text, 'failed'::text, 'cancelled'::text])))
-);
-
-ALTER TABLE public.work_operations OWNER TO contentops_migrate;
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_code_key UNIQUE (code);
@@ -415,11 +1474,89 @@ ALTER TABLE ONLY public.accounts
 ALTER TABLE ONLY public.action_log
     ADD CONSTRAINT action_log_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.aliases
+    ADD CONSTRAINT aliases_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.aliases
+    ADD CONSTRAINT aliases_value UNIQUE NULLS NOT DISTINCT (model_id, kind, value_norm, item_id, asset_id);
+
+ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_target UNIQUE NULLS NOT DISTINCT (model_id, item_id, version_id, group_id, draft_id, field);
+
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (id);
 
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_token_hash_key UNIQUE (token_hash);
+
+ALTER TABLE ONLY public.asset_manifest_entries
+    ADD CONSTRAINT asset_manifest_entries_model_id_manifest_id_position_key UNIQUE (model_id, manifest_id, "position");
+
+ALTER TABLE ONLY public.asset_manifest_entries
+    ADD CONSTRAINT asset_manifest_entries_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.asset_manifests
+    ADD CONSTRAINT asset_manifests_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.asset_versions
+    ADD CONSTRAINT asset_versions_model_id_asset_id_id_key UNIQUE (model_id, asset_id, id);
+
+ALTER TABLE ONLY public.asset_versions
+    ADD CONSTRAINT asset_versions_model_id_asset_id_version_no_key UNIQUE (model_id, asset_id, version_no);
+
+ALTER TABLE ONLY public.asset_versions
+    ADD CONSTRAINT asset_versions_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.assets
+    ADD CONSTRAINT assets_model_id_id_variant_no_key UNIQUE (model_id, id, variant_no);
+
+ALTER TABLE ONLY public.assets
+    ADD CONSTRAINT assets_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.blob_phashes
+    ADD CONSTRAINT blob_phashes_pkey PRIMARY KEY (sha256, algorithm, algo_version, normalization);
+
+ALTER TABLE ONLY public.blob_probes
+    ADD CONSTRAINT blob_probes_pkey PRIMARY KEY (sha256, kind, recipe_digest);
+
+ALTER TABLE ONLY public.blobs
+    ADD CONSTRAINT blobs_pkey PRIMARY KEY (sha256);
+
+ALTER TABLE ONLY public.blobs
+    ADD CONSTRAINT blobs_storage_key_key UNIQUE (storage_key);
+
+ALTER TABLE ONLY public.chronology_entries
+    ADD CONSTRAINT chronology_entries_model_id_asset_version_id_at_ms_key UNIQUE (model_id, asset_version_id, at_ms);
+
+ALTER TABLE ONLY public.chronology_entries
+    ADD CONSTRAINT chronology_entries_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_created_from_group UNIQUE (model_id, created_from_group_id);
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_model_id_id_type_key UNIQUE (model_id, id, type);
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_number UNIQUE (model_id, type, number);
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.download_receipt_entries
+    ADD CONSTRAINT download_receipt_entries_model_id_asset_version_id_id_key UNIQUE (model_id, asset_version_id, id);
+
+ALTER TABLE ONLY public.download_receipt_entries
+    ADD CONSTRAINT download_receipt_entries_model_id_receipt_id_position_key UNIQUE (model_id, receipt_id, "position");
+
+ALTER TABLE ONLY public.download_receipt_entries
+    ADD CONSTRAINT download_receipt_entries_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.download_receipts
+    ADD CONSTRAINT download_receipts_pkey PRIMARY KEY (model_id, id);
 
 ALTER TABLE ONLY public.id_counters
     ADD CONSTRAINT id_counters_pkey PRIMARY KEY (model_id, type);
@@ -430,11 +1567,65 @@ ALTER TABLE ONLY public.idempotency_keys
 ALTER TABLE ONLY public.idempotency_keys
     ADD CONSTRAINT idempotency_keys_principal_id_operation_key_key UNIQUE (principal_id, operation, key);
 
+ALTER TABLE ONLY public.inbox_draft_candidates
+    ADD CONSTRAINT inbox_draft_candidates_link UNIQUE NULLS NOT DISTINCT (model_id, draft_id, kind, order_id, item_id, version_id);
+
+ALTER TABLE ONLY public.inbox_draft_candidates
+    ADD CONSTRAINT inbox_draft_candidates_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_source_revision UNIQUE (model_id, source_revision_id);
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_web_upload UNIQUE (model_id, web_upload_id);
+
+ALTER TABLE ONLY public.inbox_groups
+    ADD CONSTRAINT inbox_groups_model_id_source_id_group_key_key UNIQUE (model_id, source_id, group_key);
+
+ALTER TABLE ONLY public.inbox_groups
+    ADD CONSTRAINT inbox_groups_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.item_memberships
+    ADD CONSTRAINT item_memberships_display_position UNIQUE (model_id, item_id, display_position) DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY public.item_memberships
+    ADD CONSTRAINT item_memberships_model_id_item_id_asset_id_key UNIQUE (model_id, item_id, asset_id);
+
+ALTER TABLE ONLY public.item_memberships
+    ADD CONSTRAINT item_memberships_model_id_item_id_id_key UNIQUE (model_id, item_id, id);
+
+ALTER TABLE ONLY public.item_memberships
+    ADD CONSTRAINT item_memberships_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.item_tags
+    ADD CONSTRAINT item_tags_id_key UNIQUE (id);
+
+ALTER TABLE ONLY public.item_tags
+    ADD CONSTRAINT item_tags_pkey PRIMARY KEY (model_id, item_id, tag_id);
+
+ALTER TABLE ONLY public.master_checks
+    ADD CONSTRAINT master_checks_attempt UNIQUE (source_sha256, recipe_digest, work_id, attempt);
+
+ALTER TABLE ONLY public.master_checks
+    ADD CONSTRAINT master_checks_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.models
     ADD CONSTRAINT models_code_key UNIQUE (code);
 
 ALTER TABLE ONLY public.models
     ADD CONSTRAINT models_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.pipeline_versions
+    ADD CONSTRAINT pipeline_versions_pkey PRIMARY KEY (version);
+
+ALTER TABLE ONLY public.platform_texts
+    ADD CONSTRAINT platform_texts_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.platform_texts
+    ADD CONSTRAINT platform_texts_variant UNIQUE NULLS NOT DISTINCT (model_id, item_id, platform, account_id, locale, variant_no);
 
 ALTER TABLE ONLY public.policy_settings
     ADD CONSTRAINT policy_settings_pkey PRIMARY KEY (id);
@@ -457,6 +1648,33 @@ ALTER TABLE ONLY public.promo_channels
 ALTER TABLE ONLY public.promo_channels
     ADD CONSTRAINT promo_channels_pkey PRIMARY KEY (model_id, id);
 
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_link UNIQUE NULLS NOT DISTINCT (model_id, relation, child_item_id, child_version_id, parent_item_id, parent_version_id);
+
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.rendition_artifacts
+    ADD CONSTRAINT rendition_artifacts_generation_id_name_key UNIQUE (generation_id, name);
+
+ALTER TABLE ONLY public.rendition_artifacts
+    ADD CONSTRAINT rendition_artifacts_id_output_sha256_key UNIQUE (id, output_sha256);
+
+ALTER TABLE ONLY public.rendition_artifacts
+    ADD CONSTRAINT rendition_artifacts_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.rendition_artifacts
+    ADD CONSTRAINT rendition_artifacts_storage_key_key UNIQUE (storage_key);
+
+ALTER TABLE ONLY public.rendition_generations
+    ADD CONSTRAINT rendition_generations_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.review_cases
+    ADD CONSTRAINT review_cases_model_id_kind_dedup_key_key UNIQUE (model_id, kind, dedup_key);
+
+ALTER TABLE ONLY public.review_cases
+    ADD CONSTRAINT review_cases_pkey PRIMARY KEY (model_id, id);
+
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
 
@@ -466,6 +1684,39 @@ ALTER TABLE ONLY public.sessions
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_token_hash_key UNIQUE (token_hash);
 
+ALTER TABLE ONLY public.source_objects
+    ADD CONSTRAINT source_objects_model_id_archive_revision_id_archive_entry_n_key UNIQUE (model_id, archive_revision_id, archive_entry_no);
+
+ALTER TABLE ONLY public.source_objects
+    ADD CONSTRAINT source_objects_model_id_source_id_resource_id_key UNIQUE (model_id, source_id, resource_id);
+
+ALTER TABLE ONLY public.source_objects
+    ADD CONSTRAINT source_objects_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.source_paths
+    ADD CONSTRAINT source_paths_model_id_source_object_id_path_nfc_key UNIQUE (model_id, source_object_id, path_nfc);
+
+ALTER TABLE ONLY public.source_paths
+    ADD CONSTRAINT source_paths_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.source_revisions
+    ADD CONSTRAINT source_revisions_model_id_source_object_id_id_key UNIQUE (model_id, source_object_id, id);
+
+ALTER TABLE ONLY public.source_revisions
+    ADD CONSTRAINT source_revisions_model_id_source_object_id_sequence_no_key UNIQUE (model_id, source_object_id, sequence_no);
+
+ALTER TABLE ONLY public.source_revisions
+    ADD CONSTRAINT source_revisions_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.sources
+    ADD CONSTRAINT sources_model_id_label_key UNIQUE (model_id, label);
+
+ALTER TABLE ONLY public.sources
+    ADD CONSTRAINT sources_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.storage_operations
+    ADD CONSTRAINT storage_operations_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.surfaces
     ADD CONSTRAINT surfaces_account_id_kind_key UNIQUE (account_id, kind);
 
@@ -474,6 +1725,18 @@ ALTER TABLE ONLY public.surfaces
 
 ALTER TABLE ONLY public.surfaces
     ADD CONSTRAINT surfaces_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_slug UNIQUE NULLS NOT DISTINCT (model_id, slug);
+
+ALTER TABLE ONLY public.web_uploads
+    ADD CONSTRAINT web_uploads_model_id_upload_id_key UNIQUE (model_id, upload_id);
+
+ALTER TABLE ONLY public.web_uploads
+    ADD CONSTRAINT web_uploads_pkey PRIMARY KEY (model_id, id);
 
 ALTER TABLE ONLY public.work_operations
     ADD CONSTRAINT work_operations_model_id_id_key UNIQUE (model_id, id);
@@ -494,11 +1757,113 @@ CREATE INDEX action_log_model_at ON public.action_log USING btree (model_id, at 
 
 CREATE INDEX action_log_subject ON public.action_log USING btree (model_id, subject_kind, subject_id, at DESC);
 
+CREATE INDEX aliases_value_norm ON public.aliases USING btree (model_id, value_norm);
+
+CREATE INDEX aliases_value_trgm ON public.aliases USING gin (value_norm public.gin_trgm_ops);
+
+CREATE INDEX annotation_fields_version ON public.annotation_fields USING btree (model_id, version_id) WHERE (version_id IS NOT NULL);
+
+CREATE INDEX asset_manifest_entries_version ON public.asset_manifest_entries USING btree (model_id, asset_version_id);
+
+CREATE INDEX asset_versions_master ON public.asset_versions USING btree (master_sha256);
+
+CREATE UNIQUE INDEX assets_uniq_variant ON public.assets USING btree (model_id, created_in_item_id, variant_no) WHERE (variant_kind = 'uniq'::text);
+
+CREATE INDEX blob_probes_duration_size ON public.blob_probes USING btree (duration_ms, width, height);
+
+CREATE INDEX blob_probes_shot_at ON public.blob_probes USING btree (shot_at);
+
+CREATE INDEX chronology_entries_item ON public.chronology_entries USING btree (model_id, item_id, at_ms);
+
+CREATE INDEX chronology_entries_search ON public.chronology_entries USING gin (tsv);
+
+CREATE INDEX content_items_live_type ON public.content_items USING btree (model_id, type) WHERE (deleted_at IS NULL);
+
+CREATE INDEX content_items_search ON public.content_items USING gin (search_tsv);
+
+CREATE INDEX content_items_shot_on ON public.content_items USING btree (model_id, shot_on);
+
+CREATE INDEX content_items_title_trgm ON public.content_items USING gin (title public.gin_trgm_ops, title_en public.gin_trgm_ops);
+
+CREATE INDEX content_items_updated ON public.content_items USING btree (model_id, updated_at DESC);
+
+CREATE INDEX download_receipt_entries_name ON public.download_receipt_entries USING btree (model_id, file_name_norm);
+
+CREATE INDEX download_receipt_entries_version ON public.download_receipt_entries USING btree (model_id, asset_version_id, receipt_id);
+
+CREATE UNIQUE INDEX download_receipts_corrects ON public.download_receipts USING btree (model_id, corrects_id) WHERE (corrects_id IS NOT NULL);
+
+CREATE INDEX download_receipts_issued ON public.download_receipts USING btree (model_id, issued_at DESC);
+
+CREATE UNIQUE INDEX inbox_draft_candidates_chosen ON public.inbox_draft_candidates USING btree (model_id, draft_id, kind) WHERE chosen;
+
+CREATE INDEX inbox_drafts_blocked ON public.inbox_drafts USING btree (model_id, blocked_reason) WHERE (blocked_reason IS NOT NULL);
+
+CREATE INDEX inbox_drafts_group ON public.inbox_drafts USING btree (model_id, group_id);
+
+CREATE INDEX inbox_drafts_master ON public.inbox_drafts USING btree (master_sha256);
+
+CREATE INDEX inbox_drafts_queue ON public.inbox_drafts USING btree (model_id, state, priority DESC, discovered_at);
+
+CREATE INDEX inbox_drafts_search ON public.inbox_drafts USING gin (search_tsv);
+
+CREATE INDEX inbox_drafts_source_blob ON public.inbox_drafts USING btree (source_blob_sha256);
+
+CREATE INDEX inbox_drafts_source_sha256 ON public.inbox_drafts USING btree (source_sha256);
+
+CREATE INDEX item_memberships_asset ON public.item_memberships USING btree (model_id, asset_id, removed_at);
+
+CREATE UNIQUE INDEX item_memberships_handle ON public.item_memberships USING btree (model_id, item_id, role, ordinal, variant_no) NULLS NOT DISTINCT WHERE (kind = 'owned'::text);
+
+CREATE INDEX item_memberships_item ON public.item_memberships USING btree (model_id, item_id, removed_at, display_position);
+
+CREATE UNIQUE INDEX item_memberships_one_owner ON public.item_memberships USING btree (model_id, asset_id) WHERE ((kind = 'owned'::text) AND (removed_at IS NULL));
+
+CREATE INDEX item_tags_tag ON public.item_tags USING btree (model_id, tag_id);
+
+CREATE INDEX master_checks_master ON public.master_checks USING btree (master_sha256);
+
+CREATE UNIQUE INDEX pipeline_versions_one_current ON public.pipeline_versions USING btree (is_current) WHERE is_current;
+
 CREATE UNIQUE INDEX principal_grants_live_key ON public.principal_grants USING btree (principal_id, model_id) WHERE (revoked_at IS NULL);
+
+CREATE INDEX provenance_child_item ON public.provenance USING btree (model_id, child_item_id);
+
+CREATE INDEX provenance_child_version ON public.provenance USING btree (model_id, child_version_id);
+
+CREATE INDEX provenance_parent_item ON public.provenance USING btree (model_id, parent_item_id);
+
+CREATE INDEX provenance_parent_version ON public.provenance USING btree (model_id, parent_version_id);
+
+CREATE INDEX provenance_ppv_from_custom ON public.provenance USING btree (model_id, parent_item_id) WHERE (relation = 'ppv_from_custom'::text);
+
+CREATE UNIQUE INDEX provenance_voided_by ON public.provenance USING btree (model_id, voided_by_id) WHERE (voided_by_id IS NOT NULL);
+
+CREATE UNIQUE INDEX rendition_generations_active_key ON public.rendition_generations USING btree (master_sha256, kind, recipe_digest, meta_stripped) WHERE is_active;
+
+CREATE INDEX rendition_generations_input ON public.rendition_generations USING btree (input_sha256);
+
+CREATE INDEX source_objects_last_seen ON public.source_objects USING btree (model_id, last_seen_at);
+
+CREATE INDEX source_objects_path_trgm ON public.source_objects USING gin (current_path public.gin_trgm_ops);
+
+CREATE INDEX source_revisions_remote_sha256 ON public.source_revisions USING btree (model_id, remote_sha256);
+
+CREATE INDEX source_revisions_source_sha256 ON public.source_revisions USING btree (model_id, source_sha256);
+
+CREATE UNIQUE INDEX storage_operations_active ON public.storage_operations USING btree (blob_sha256) WHERE (state = ANY (ARRAY['intent'::text, 'started'::text, 'fs_done'::text]));
+
+CREATE INDEX web_uploads_sha256 ON public.web_uploads USING btree (sha256) WHERE (sha256 IS NOT NULL);
+
+CREATE INDEX web_uploads_unfinished ON public.web_uploads USING btree (model_id, created_at) WHERE (state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text]));
+
+CREATE INDEX work_operations_draft ON public.work_operations USING btree (model_id, draft_id) WHERE (draft_id IS NOT NULL);
 
 CREATE INDEX work_operations_due ON public.work_operations USING btree (next_attempt_at, priority) WHERE (state = ANY (ARRAY['pending'::text, 'retry_wait'::text]));
 
 CREATE INDEX work_operations_lease ON public.work_operations USING btree (lease_until) WHERE (state = 'running'::text);
+
+CREATE INDEX work_operations_output ON public.work_operations USING btree (output_sha256) WHERE (output_sha256 IS NOT NULL);
 
 CREATE UNIQUE INDEX work_operations_stream_key ON public.work_operations USING btree (model_id, kind, stream_key) NULLS NOT DISTINCT WHERE ((stream_key IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])));
 
@@ -508,11 +1873,81 @@ CREATE TRIGGER accounts_journal AFTER INSERT OR DELETE OR UPDATE ON public.accou
 
 CREATE TRIGGER action_log_append_only BEFORE DELETE OR UPDATE ON public.action_log FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
+CREATE TRIGGER aliases_fixed BEFORE UPDATE ON public.aliases FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'kind', 'value_raw');
+
+CREATE TRIGGER aliases_journal AFTER INSERT OR DELETE OR UPDATE ON public.aliases FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER annotation_fields_fixed BEFORE UPDATE ON public.annotation_fields FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'field');
+
+CREATE TRIGGER annotation_fields_journal AFTER INSERT OR DELETE OR UPDATE ON public.annotation_fields FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER asset_manifest_entries_append_only BEFORE DELETE OR UPDATE ON public.asset_manifest_entries FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE CONSTRAINT TRIGGER asset_manifest_entries_sealed AFTER INSERT ON public.asset_manifest_entries DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_sealed_count('asset_manifests', 'asset_manifest_entries', 'manifest_id');
+
+CREATE TRIGGER asset_manifests_append_only BEFORE DELETE OR UPDATE ON public.asset_manifests FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE CONSTRAINT TRIGGER asset_manifests_sealed AFTER INSERT ON public.asset_manifests DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_sealed_count('asset_manifests', 'asset_manifest_entries', 'manifest_id');
+
+CREATE TRIGGER asset_versions_append_only BEFORE DELETE OR UPDATE ON public.asset_versions FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE TRIGGER assets_fixed BEFORE UPDATE ON public.assets FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'created_in_item_id', 'media_kind', 'variant_kind', 'variant_no', 'uniq_level');
+
+CREATE TRIGGER assets_journal AFTER INSERT OR DELETE OR UPDATE ON public.assets FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER blobs_fixed BEFORE UPDATE ON public.blobs FOR EACH ROW EXECUTE FUNCTION public.forbid_change('sha256', 'byte_size', 'ext', 'media_kind', 'storage_key');
+
+CREATE TRIGGER chronology_entries_fixed BEFORE UPDATE ON public.chronology_entries FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'item_id', 'asset_version_id');
+
+CREATE TRIGGER chronology_entries_journal AFTER INSERT OR DELETE OR UPDATE ON public.chronology_entries FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER content_items_fixed BEFORE UPDATE ON public.content_items FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'type', 'number');
+
+CREATE TRIGGER content_items_journal AFTER INSERT OR DELETE OR UPDATE ON public.content_items FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER download_receipt_entries_append_only BEFORE DELETE OR UPDATE ON public.download_receipt_entries FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE CONSTRAINT TRIGGER download_receipt_entries_sealed AFTER INSERT ON public.download_receipt_entries DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_sealed_count('download_receipts', 'download_receipt_entries', 'receipt_id');
+
+CREATE TRIGGER download_receipts_append_only BEFORE DELETE OR UPDATE ON public.download_receipts FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE CONSTRAINT TRIGGER download_receipts_sealed AFTER INSERT ON public.download_receipts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_sealed_count('download_receipts', 'download_receipt_entries', 'receipt_id');
+
 CREATE TRIGGER id_counters_fixed BEFORE UPDATE ON public.id_counters FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'type');
 
 CREATE TRIGGER id_counters_journal AFTER INSERT OR DELETE OR UPDATE ON public.id_counters FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'type');
 
+CREATE TRIGGER inbox_draft_candidates_fixed BEFORE UPDATE ON public.inbox_draft_candidates FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'draft_id', 'kind', 'order_id', 'item_id', 'version_id');
+
+CREATE TRIGGER inbox_draft_candidates_journal AFTER INSERT OR DELETE OR UPDATE ON public.inbox_draft_candidates FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER inbox_drafts_fixed BEFORE UPDATE ON public.inbox_drafts FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_revision_id', 'web_upload_id', 'from_version_id', 'origin');
+
+CREATE TRIGGER inbox_drafts_journal AFTER INSERT OR DELETE OR UPDATE ON public.inbox_drafts FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER inbox_drafts_transition BEFORE UPDATE ON public.inbox_drafts FOR EACH ROW EXECUTE FUNCTION public.inbox_draft_transition();
+
+CREATE TRIGGER inbox_groups_fixed BEFORE UPDATE ON public.inbox_groups FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_id', 'group_key');
+
+CREATE TRIGGER inbox_groups_journal AFTER INSERT OR DELETE OR UPDATE ON public.inbox_groups FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER item_memberships_fixed BEFORE UPDATE ON public.item_memberships FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'item_id', 'item_type', 'asset_id', 'variant_no', 'kind');
+
+CREATE TRIGGER item_memberships_journal AFTER INSERT OR DELETE OR UPDATE ON public.item_memberships FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER item_tags_fixed BEFORE UPDATE ON public.item_tags FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'item_id', 'tag_id', 'id');
+
+CREATE TRIGGER item_tags_journal AFTER INSERT OR DELETE OR UPDATE ON public.item_tags FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'item_id', 'tag_id');
+
+CREATE TRIGGER item_tags_tag_scope BEFORE INSERT ON public.item_tags FOR EACH ROW EXECUTE FUNCTION public.check_tag_scope();
+
 CREATE TRIGGER models_journal AFTER INSERT OR DELETE OR UPDATE ON public.models FOR EACH ROW EXECUTE FUNCTION public.log_row_change('id');
+
+CREATE TRIGGER pipeline_versions_fixed BEFORE UPDATE ON public.pipeline_versions FOR EACH ROW EXECUTE FUNCTION public.forbid_change('version', 'ffmpeg', 'svtav1', 'libvips', 'sharp', 'phash_algo', 'master_recipe', 'rendition_recipes', 'recipe_digests');
+
+CREATE TRIGGER platform_texts_fixed BEFORE UPDATE ON public.platform_texts FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'item_id', 'platform', 'account_id', 'locale', 'variant_no');
+
+CREATE TRIGGER platform_texts_journal AFTER INSERT OR DELETE OR UPDATE ON public.platform_texts FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
 CREATE TRIGGER policy_settings_fixed BEFORE UPDATE ON public.policy_settings FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'account_id', 'item_type', 'key');
 
@@ -526,11 +1961,55 @@ CREATE TRIGGER promo_channels_fixed BEFORE UPDATE ON public.promo_channels FOR E
 
 CREATE TRIGGER promo_channels_journal AFTER INSERT OR DELETE OR UPDATE ON public.promo_channels FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
+CREATE TRIGGER provenance_fixed BEFORE UPDATE ON public.provenance FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'relation', 'child_item_id', 'child_version_id', 'parent_item_id', 'parent_version_id');
+
+CREATE TRIGGER provenance_journal AFTER INSERT OR DELETE OR UPDATE ON public.provenance FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER rendition_artifacts_fixed BEFORE UPDATE ON public.rendition_artifacts FOR EACH ROW EXECUTE FUNCTION public.forbid_change('id', 'generation_id', 'name', 'output_sha256', 'storage_key');
+
+CREATE TRIGGER rendition_generations_bound_once BEFORE UPDATE ON public.rendition_generations FOR EACH ROW EXECUTE FUNCTION public.set_once('master_sha256', 'bound_at');
+
+CREATE TRIGGER rendition_generations_fixed BEFORE UPDATE ON public.rendition_generations FOR EACH ROW EXECUTE FUNCTION public.forbid_change('id', 'kind', 'recipe_digest', 'meta_stripped', 'input_kind', 'input_sha256');
+
+CREATE TRIGGER review_cases_fixed BEFORE UPDATE ON public.review_cases FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'kind', 'dedup_key');
+
+CREATE TRIGGER review_cases_journal AFTER INSERT OR DELETE OR UPDATE ON public.review_cases FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER source_objects_fixed BEFORE UPDATE ON public.source_objects FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_id', 'resource_id', 'upload_id', 'archive_revision_id', 'archive_entry_no');
+
+CREATE TRIGGER source_objects_journal AFTER INSERT OR DELETE OR UPDATE ON public.source_objects FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER source_paths_fixed BEFORE UPDATE ON public.source_paths FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_object_id', 'path_raw', 'name');
+
+CREATE TRIGGER source_paths_journal AFTER INSERT OR DELETE OR UPDATE ON public.source_paths FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER source_revisions_fixed BEFORE UPDATE ON public.source_revisions FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_object_id', 'sequence_no', 'md5', 'remote_sha256', 'content_hash', 'remote_rev', 'byte_size', 'remote_created_at', 'remote_modified_at', 'detected_at', 'scan_work_id', 'previous_id');
+
+CREATE TRIGGER source_revisions_journal AFTER INSERT OR DELETE OR UPDATE ON public.source_revisions FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER source_revisions_verified_once BEFORE UPDATE ON public.source_revisions FOR EACH ROW EXECUTE FUNCTION public.set_once('source_sha256', 'verified_at', 'verified_route', 'frozen_by_work_id');
+
+CREATE TRIGGER sources_fixed BEFORE UPDATE ON public.sources FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'kind');
+
+CREATE TRIGGER sources_journal AFTER INSERT OR DELETE OR UPDATE ON public.sources FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER storage_operations_fixed BEFORE UPDATE ON public.storage_operations FOR EACH ROW EXECUTE FUNCTION public.forbid_change('id', 'kind', 'blob_sha256', 'from_key', 'to_key');
+
+CREATE TRIGGER storage_operations_transition BEFORE UPDATE OF state ON public.storage_operations FOR EACH ROW EXECUTE FUNCTION public.storage_operation_transition();
+
 CREATE TRIGGER surfaces_fixed BEFORE UPDATE ON public.surfaces FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'account_id', 'kind');
 
 CREATE TRIGGER surfaces_journal AFTER INSERT OR DELETE OR UPDATE ON public.surfaces FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
-CREATE TRIGGER work_operations_inputs_fixed BEFORE UPDATE ON public.work_operations FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'kind', 'work_key', 'account_id', 'dataset', 'scope', 'window_from', 'window_to');
+CREATE TRIGGER tags_fixed BEFORE UPDATE ON public.tags FOR EACH ROW EXECUTE FUNCTION public.forbid_change('id', 'model_id');
+
+CREATE TRIGGER tags_journal AFTER INSERT OR DELETE OR UPDATE ON public.tags FOR EACH ROW EXECUTE FUNCTION public.log_row_change('id');
+
+CREATE TRIGGER web_uploads_fixed BEFORE UPDATE ON public.web_uploads FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'upload_id', 'principal_id', 'size_expected');
+
+CREATE TRIGGER web_uploads_journal AFTER INSERT OR DELETE OR UPDATE ON public.web_uploads FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER work_operations_inputs_fixed BEFORE UPDATE ON public.work_operations FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'kind', 'work_key', 'account_id', 'dataset', 'scope', 'window_from', 'window_to', 'draft_id', 'source_revision_id', 'asset_version_id', 'manifest_id', 'receipt_id', 'generation_id');
 
 CREATE TRIGGER work_operations_success_final BEFORE DELETE OR UPDATE ON public.work_operations FOR EACH ROW WHEN ((old.state = 'succeeded'::text)) EXECUTE FUNCTION public.forbid_update_delete();
 
@@ -549,8 +2028,131 @@ ALTER TABLE ONLY public.action_log
 ALTER TABLE ONLY public.action_log
     ADD CONSTRAINT action_log_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.work_operations(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.aliases
+    ADD CONSTRAINT aliases_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.aliases
+    ADD CONSTRAINT aliases_model_id_asset_id_fkey FOREIGN KEY (model_id, asset_id) REFERENCES public.assets(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.aliases
+    ADD CONSTRAINT aliases_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.aliases
+    ADD CONSTRAINT aliases_model_id_source_object_id_fkey FOREIGN KEY (model_id, source_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_model_id_draft_id_fkey FOREIGN KEY (model_id, draft_id) REFERENCES public.inbox_drafts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_model_id_group_id_fkey FOREIGN KEY (model_id, group_id) REFERENCES public.inbox_groups(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_model_id_version_id_fkey FOREIGN KEY (model_id, version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_manifest_entries
+    ADD CONSTRAINT asset_manifest_entries_model_id_asset_id_asset_version_id_fkey FOREIGN KEY (model_id, asset_id, asset_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_manifest_entries
+    ADD CONSTRAINT asset_manifest_entries_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_manifest_entries
+    ADD CONSTRAINT asset_manifest_entries_model_id_manifest_id_fkey FOREIGN KEY (model_id, manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_manifest_entries
+    ADD CONSTRAINT asset_manifest_entries_model_id_membership_id_fkey FOREIGN KEY (model_id, membership_id) REFERENCES public.item_memberships(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_manifests
+    ADD CONSTRAINT asset_manifests_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_manifests
+    ADD CONSTRAINT asset_manifests_model_id_origin_item_id_fkey FOREIGN KEY (model_id, origin_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_versions
+    ADD CONSTRAINT asset_versions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_versions
+    ADD CONSTRAINT asset_versions_master_sha256_fkey FOREIGN KEY (master_sha256) REFERENCES public.blobs(sha256) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_versions
+    ADD CONSTRAINT asset_versions_model_id_asset_id_fkey FOREIGN KEY (model_id, asset_id) REFERENCES public.assets(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_versions
+    ADD CONSTRAINT asset_versions_model_id_source_revision_id_fkey FOREIGN KEY (model_id, source_revision_id) REFERENCES public.source_revisions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.asset_versions
+    ADD CONSTRAINT asset_versions_model_id_work_id_fkey FOREIGN KEY (model_id, work_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.assets
+    ADD CONSTRAINT assets_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.assets
+    ADD CONSTRAINT assets_current_version_fkey FOREIGN KEY (model_id, id, current_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY public.assets
+    ADD CONSTRAINT assets_model_id_created_in_item_id_fkey FOREIGN KEY (model_id, created_in_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.chronology_entries
+    ADD CONSTRAINT chronology_entries_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.chronology_entries
+    ADD CONSTRAINT chronology_entries_frame_artifact_id_fkey FOREIGN KEY (frame_artifact_id) REFERENCES public.rendition_artifacts(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.chronology_entries
+    ADD CONSTRAINT chronology_entries_model_id_asset_version_id_fkey FOREIGN KEY (model_id, asset_version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.chronology_entries
+    ADD CONSTRAINT chronology_entries_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_cover_fkey FOREIGN KEY (model_id, id, cover_membership_id) REFERENCES public.item_memberships(model_id, item_id, id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_deleted_by_fkey FOREIGN KEY (deleted_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_model_id_created_from_group_id_fkey FOREIGN KEY (model_id, created_from_group_id) REFERENCES public.inbox_groups(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_model_id_merged_into_item_id_fkey FOREIGN KEY (model_id, merged_into_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.content_items
+    ADD CONSTRAINT content_items_model_id_promo_channel_id_fkey FOREIGN KEY (model_id, promo_channel_id) REFERENCES public.promo_channels(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.download_receipt_entries
+    ADD CONSTRAINT download_receipt_entries_model_id_asset_id_asset_version_i_fkey FOREIGN KEY (model_id, asset_id, asset_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.download_receipt_entries
+    ADD CONSTRAINT download_receipt_entries_model_id_receipt_id_fkey FOREIGN KEY (model_id, receipt_id) REFERENCES public.download_receipts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.download_receipt_entries
+    ADD CONSTRAINT download_receipt_entries_rendition_artifact_id_output_sha2_fkey FOREIGN KEY (rendition_artifact_id, output_sha256) REFERENCES public.rendition_artifacts(id, output_sha256) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.download_receipts
+    ADD CONSTRAINT download_receipts_model_id_corrects_id_fkey FOREIGN KEY (model_id, corrects_id) REFERENCES public.download_receipts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.download_receipts
+    ADD CONSTRAINT download_receipts_model_id_manifest_id_fkey FOREIGN KEY (model_id, manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.download_receipts
+    ADD CONSTRAINT download_receipts_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.id_counters
     ADD CONSTRAINT id_counters_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
@@ -563,6 +2165,96 @@ ALTER TABLE ONLY public.idempotency_keys
 
 ALTER TABLE ONLY public.idempotency_keys
     ADD CONSTRAINT idempotency_keys_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_draft_candidates
+    ADD CONSTRAINT inbox_draft_candidates_chosen_by_fkey FOREIGN KEY (chosen_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_draft_candidates
+    ADD CONSTRAINT inbox_draft_candidates_model_id_draft_id_fkey FOREIGN KEY (model_id, draft_id) REFERENCES public.inbox_drafts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_draft_candidates
+    ADD CONSTRAINT inbox_draft_candidates_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_draft_candidates
+    ADD CONSTRAINT inbox_draft_candidates_model_id_version_id_fkey FOREIGN KEY (model_id, version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_master_sha256_fkey FOREIGN KEY (master_sha256) REFERENCES public.blobs(sha256) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_applied_item_id_fkey FOREIGN KEY (model_id, applied_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_applied_version_id_fkey FOREIGN KEY (model_id, applied_version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_duplicate_of_version_id_fkey FOREIGN KEY (model_id, duplicate_of_version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_from_version_id_fkey FOREIGN KEY (model_id, from_version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_group_id_fkey FOREIGN KEY (model_id, group_id) REFERENCES public.inbox_groups(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_source_revision_id_fkey FOREIGN KEY (model_id, source_revision_id) REFERENCES public.source_revisions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_target_asset_id_fkey FOREIGN KEY (model_id, target_asset_id) REFERENCES public.assets(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_target_item_id_fkey FOREIGN KEY (model_id, target_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_model_id_web_upload_id_fkey FOREIGN KEY (model_id, web_upload_id) REFERENCES public.web_uploads(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_drafts
+    ADD CONSTRAINT inbox_drafts_source_blob_sha256_fkey FOREIGN KEY (source_blob_sha256) REFERENCES public.blobs(sha256) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_groups
+    ADD CONSTRAINT inbox_groups_model_id_folder_object_id_fkey FOREIGN KEY (model_id, folder_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_groups
+    ADD CONSTRAINT inbox_groups_model_id_source_id_fkey FOREIGN KEY (model_id, source_id) REFERENCES public.sources(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_memberships
+    ADD CONSTRAINT item_memberships_added_by_fkey FOREIGN KEY (added_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_memberships
+    ADD CONSTRAINT item_memberships_model_id_asset_id_pinned_version_id_fkey FOREIGN KEY (model_id, asset_id, pinned_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_memberships
+    ADD CONSTRAINT item_memberships_model_id_asset_id_variant_no_fkey FOREIGN KEY (model_id, asset_id, variant_no) REFERENCES public.assets(model_id, id, variant_no) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_memberships
+    ADD CONSTRAINT item_memberships_model_id_item_id_item_type_fkey FOREIGN KEY (model_id, item_id, item_type) REFERENCES public.content_items(model_id, id, type) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_tags
+    ADD CONSTRAINT item_tags_added_by_fkey FOREIGN KEY (added_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_tags
+    ADD CONSTRAINT item_tags_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.item_tags
+    ADD CONSTRAINT item_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.master_checks
+    ADD CONSTRAINT master_checks_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.work_operations(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.platform_texts
+    ADD CONSTRAINT platform_texts_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.platform_texts
+    ADD CONSTRAINT platform_texts_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.platform_texts
+    ADD CONSTRAINT platform_texts_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.platform_texts
+    ADD CONSTRAINT platform_texts_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.policy_settings
     ADD CONSTRAINT policy_settings_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
@@ -585,23 +2277,153 @@ ALTER TABLE ONLY public.principal_grants
 ALTER TABLE ONLY public.promo_channels
     ADD CONSTRAINT promo_channels_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_model_id_child_item_id_fkey FOREIGN KEY (model_id, child_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_model_id_child_version_id_fkey FOREIGN KEY (model_id, child_version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_model_id_parent_item_id_fkey FOREIGN KEY (model_id, parent_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_model_id_parent_version_id_fkey FOREIGN KEY (model_id, parent_version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_model_id_voided_by_id_fkey FOREIGN KEY (model_id, voided_by_id) REFERENCES public.provenance(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.provenance
+    ADD CONSTRAINT provenance_model_id_work_id_fkey FOREIGN KEY (model_id, work_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.rendition_artifacts
+    ADD CONSTRAINT rendition_artifacts_generation_id_fkey FOREIGN KEY (generation_id) REFERENCES public.rendition_generations(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.rendition_generations
+    ADD CONSTRAINT rendition_generations_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.work_operations(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.review_cases
+    ADD CONSTRAINT review_cases_counterpart_model_id_fkey FOREIGN KEY (counterpart_model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.review_cases
+    ADD CONSTRAINT review_cases_model_id_draft_id_fkey FOREIGN KEY (model_id, draft_id) REFERENCES public.inbox_drafts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.review_cases
+    ADD CONSTRAINT review_cases_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.review_cases
+    ADD CONSTRAINT review_cases_model_id_source_object_id_fkey FOREIGN KEY (model_id, source_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.review_cases
+    ADD CONSTRAINT review_cases_model_id_version_id_fkey FOREIGN KEY (model_id, version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.review_cases
+    ADD CONSTRAINT review_cases_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.sessions(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.source_objects
+    ADD CONSTRAINT source_objects_model_id_archive_revision_id_fkey FOREIGN KEY (model_id, archive_revision_id) REFERENCES public.source_revisions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_objects
+    ADD CONSTRAINT source_objects_model_id_id_current_revision_id_fkey FOREIGN KEY (model_id, id, current_revision_id) REFERENCES public.source_revisions(model_id, source_object_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_objects
+    ADD CONSTRAINT source_objects_model_id_parent_id_fkey FOREIGN KEY (model_id, parent_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_objects
+    ADD CONSTRAINT source_objects_model_id_source_id_fkey FOREIGN KEY (model_id, source_id) REFERENCES public.sources(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_paths
+    ADD CONSTRAINT source_paths_model_id_source_object_id_fkey FOREIGN KEY (model_id, source_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_revisions
+    ADD CONSTRAINT source_revisions_model_id_frozen_by_work_id_fkey FOREIGN KEY (model_id, frozen_by_work_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_revisions
+    ADD CONSTRAINT source_revisions_model_id_previous_id_fkey FOREIGN KEY (model_id, previous_id) REFERENCES public.source_revisions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_revisions
+    ADD CONSTRAINT source_revisions_model_id_scan_work_id_fkey FOREIGN KEY (model_id, scan_work_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.source_revisions
+    ADD CONSTRAINT source_revisions_model_id_source_object_id_fkey FOREIGN KEY (model_id, source_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.sources
+    ADD CONSTRAINT sources_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.surfaces
     ADD CONSTRAINT surfaces_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_merged_into_tag_id_fkey FOREIGN KEY (merged_into_tag_id) REFERENCES public.tags(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.web_uploads
+    ADD CONSTRAINT web_uploads_model_id_target_item_id_fkey FOREIGN KEY (model_id, target_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.web_uploads
+    ADD CONSTRAINT web_uploads_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.web_uploads
+    ADD CONSTRAINT web_uploads_sha256_fkey FOREIGN KEY (sha256) REFERENCES public.blobs(sha256) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.work_operations
+    ADD CONSTRAINT work_operations_generation_id_fkey FOREIGN KEY (generation_id) REFERENCES public.rendition_generations(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.work_operations
     ADD CONSTRAINT work_operations_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.work_operations
+    ADD CONSTRAINT work_operations_model_id_asset_version_id_fkey FOREIGN KEY (model_id, asset_version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.work_operations
+    ADD CONSTRAINT work_operations_model_id_draft_id_fkey FOREIGN KEY (model_id, draft_id) REFERENCES public.inbox_drafts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.work_operations
     ADD CONSTRAINT work_operations_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.work_operations
+    ADD CONSTRAINT work_operations_model_id_manifest_id_fkey FOREIGN KEY (model_id, manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.work_operations
+    ADD CONSTRAINT work_operations_model_id_receipt_id_fkey FOREIGN KEY (model_id, receipt_id) REFERENCES public.download_receipts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.work_operations
+    ADD CONSTRAINT work_operations_model_id_source_revision_id_fkey FOREIGN KEY (model_id, source_revision_id) REFERENCES public.source_revisions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.work_operations
+    ADD CONSTRAINT work_operations_output_sha256_fkey FOREIGN KEY (output_sha256) REFERENCES public.blobs(sha256) ON DELETE RESTRICT;
 
 REVOKE USAGE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.asset_versions TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_drafts TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.web_uploads TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.work_operations TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.aliases TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.chronology_entries TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.content_items TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.item_memberships TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.accounts TO contentops_app;
 
@@ -609,13 +2431,55 @@ GRANT SELECT,INSERT ON TABLE public.action_log TO contentops_app;
 
 GRANT SELECT,USAGE ON SEQUENCE public.action_log_id_seq TO contentops_app;
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.annotation_fields TO contentops_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.api_tokens TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.asset_manifest_entries TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.asset_manifests TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.assets TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.blob_phashes TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.blob_probes TO contentops_app;
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.blobs TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.item_tags TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.promo_channels TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.provenance TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rendition_generations TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.source_revisions TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tags TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.catalog_index TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.download_receipt_entries TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.download_receipts TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.id_counters TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_keys TO contentops_app;
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_draft_candidates TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_groups TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.master_checks TO contentops_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.models TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.pipeline_versions TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.platform_texts TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.policy_settings TO contentops_app;
 
@@ -623,15 +2487,23 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.principal_grants TO contentops
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.principals TO contentops_app;
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.promo_channels TO contentops_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rendition_artifacts TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_cases TO contentops_app;
 
 GRANT SELECT ON TABLE public.schema_migrations TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sessions TO contentops_app;
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.surfaces TO contentops_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.source_objects TO contentops_app;
 
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.work_operations TO contentops_app;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.source_paths TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sources TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.storage_operations TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.surfaces TO contentops_app;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE contentops_migrate IN SCHEMA public GRANT SELECT,USAGE ON SEQUENCES TO contentops_app;
 

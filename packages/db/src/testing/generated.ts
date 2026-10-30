@@ -12,9 +12,11 @@ export const PACKAGE_DIR = fileURLToPath(new URL('../../', import.meta.url))
 
 /**
  * Files produced from the migrations by `pnpm --filter @contentops/db generate`
- * and compared with the repo by `generated.test.ts`; never edited by hand.
+ * and compared with the repo by `generated.test.ts`; never edited by hand. The mirror holds
+ * tables only: drizzle-kit 0.31 turns a composite FK into a relation on `model_id` alone
+ * (and repeats keys), so its `relations.ts` is not kept; joins are written in SQL.
  */
-export const GENERATED_FILES = ['schema.sql', 'drizzle/schema.ts', 'drizzle/relations.ts'] as const
+export const GENERATED_FILES = ['schema.sql', 'drizzle/schema.ts'] as const
 export type GeneratedFile = (typeof GENERATED_FILES)[number]
 
 const MIRROR_HEADER =
@@ -39,11 +41,9 @@ export async function renderGenerated(
       maxBuffer: 16 * 1024 * 1024,
     })
     const schema = await readFile(join(out, 'schema.ts'), 'utf8')
-    const relations = await readFile(join(out, 'relations.ts'), 'utf8')
     return {
       'schema.sql': schemaSql,
       'drizzle/schema.ts': MIRROR_HEADER + fixMirrorSchema(schema),
-      'drizzle/relations.ts': MIRROR_HEADER + fixMirrorRelations(relations),
     }
   } finally {
     await rm(out, { recursive: true, force: true })
@@ -51,24 +51,63 @@ export async function renderGenerated(
 }
 
 /**
- * drizzle-kit 0.31 cannot introspect `bytea` and leaves `unknown(…)`; the mirror maps it
- * to a custom type with `Buffer` values, as node-postgres returns them.
+ * Types drizzle-kit 0.31 cannot introspect: it leaves `unknown(…)` after a TODO comment.
+ * The mirror maps each to a custom type with the values node-postgres returns.
  */
+const CUSTOM_TYPES: Record<string, { name: string; declaration: string }> = {
+  bytea: {
+    name: 'bytea',
+    declaration:
+      "const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' })",
+  },
+  tsvector: {
+    name: 'tsvector',
+    declaration:
+      "const tsvector = customType<{ data: string; driverData: string }>({ dataType: () => 'tsvector' })",
+  },
+  'bit(64)': {
+    name: 'bit64',
+    declaration:
+      "const bit64 = customType<{ data: string; driverData: string }>({ dataType: () => 'bit(64)' })",
+  },
+}
+
 function fixMirrorSchema(source: string): string {
-  let fixed = source.replace(/^\s*\/\/ TODO: failed to parse database type 'bytea'\n/gm, '')
-  if (fixed.includes('unknown(')) {
-    fixed = fixed.replace(/\bunknown\(/g, 'bytea(')
-    fixed = fixed.replace(
+  const used = new Set<string>()
+  const lines = source.split('\n')
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    const todo = /^\s*\/\/ TODO: failed to parse database type '([^']+)'$/.exec(line)
+    if (!todo) {
+      out.push(line)
+      continue
+    }
+    const custom = CUSTOM_TYPES[todo[1] ?? '']
+    if (!custom) throw new Error(`mirror: no custom type for ${todo[1]}`)
+    used.add(todo[1] ?? '')
+    i += 1
+    out.push((lines[i] ?? '').replace(/\bunknown\(/, `${custom.name}(`))
+  }
+  // Tables that reference each other (`source_objects` ↔ `source_revisions`) make TypeScript
+  // infer each extras callback from the other; a declared return type breaks the cycle.
+  let fixed = out
+    .join('\n')
+    .replaceAll('}, (table) => [', '}, (table): PgTableExtraConfigValue[] => [')
+    .replace(
       'import { sql } from "drizzle-orm"\n',
-      'import { sql } from "drizzle-orm"\n' +
-        'import { customType } from "drizzle-orm/pg-core"\n\n' +
-        "const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' })\n",
+      'import { sql } from "drizzle-orm"\nimport type { PgTableExtraConfigValue } from "drizzle-orm/pg-core"\n',
+    )
+  if (fixed.includes('unknown(')) throw new Error('mirror: unknown(…) without a TODO comment')
+  // Imported for single-column self references, which pull writes as table FKs instead.
+  if (fixed.split('AnyPgColumn').length === 2) fixed = fixed.replace('type AnyPgColumn, ', '')
+  if (used.size > 0) {
+    const declarations = [...used].sort().map((type) => CUSTOM_TYPES[type]?.declaration)
+    fixed = fixed.replace(
+      'import type { PgTableExtraConfigValue } from "drizzle-orm/pg-core"\n',
+      'import type { PgTableExtraConfigValue } from "drizzle-orm/pg-core"\n' +
+        `import { customType } from "drizzle-orm/pg-core"\n\n${declarations.join('\n')}\n`,
     )
   }
   return `${fixed.trim()}\n`
-}
-
-/** Node type stripping needs explicit extensions in relative imports. */
-function fixMirrorRelations(source: string): string {
-  return `${source.replace(/from "\.\/schema"/g, 'from "./schema.ts"').trim()}\n`
 }

@@ -95,8 +95,9 @@
 Изменения 11.09.2026 по таблицам — в схеме §9.2; там, где схема §9 говорит иначе, она сильнее.
 Колонки 13 таблиц `0001_foundation` (схема §9.5) и состояния `storage_operations` сведены
 со схемой §9 30.09.2026. С 30.10.2026 колонки, ключи и ограничения этих 13 таблиц задают
-`packages/db/migrations/0001_foundation.sql` и золотой `packages/db/schema.sql`; описание
-ниже — смысл и решения.
+`packages/db/migrations/0001_foundation.sql` и золотой `packages/db/schema.sql`, а 32 таблиц
+этапа 2а — `0002_bytes_sources.sql` и `0003_catalog.sql` (выборы — схема §9.2 «Миграции 0002
+и 0003»); описание ниже — смысл и решения.
 
 Сквозные соглашения: `created_at timestamptz NOT NULL DEFAULT now()`;
 `created_by` → `principals` там, где действие инициировал человек или агент;
@@ -458,11 +459,12 @@ CHECK `kind NOT IN ('yandex_disk', 'dropbox') OR read_only` — инвариан
 **`source_objects`** — внешний ресурс (§4, §6.1). `id`, `model_id`, `source_id`,
 `resource_id?` (ID файла у источника: `resource_id` Я.Диска или `id` Dropbox), `upload_id?`
 (веб), `current_path`, `current_name`, `is_dir`,
-`parent_id?`, `archive_parent_id?`, `archive_entry_no?` (член распакованного архива:
-`(архив, номер входа)`, а не только имя — одинаковые имена внутри ZIP различимы),
+`parent_id?`, `archive_revision_id?`, `archive_entry_no?` (член распакованного архива:
+`(ревизия архива, номер входа)`, а не только имя — одинаковые имена внутри ZIP различимы,
+схема §9.7),
 `current_revision_id?`, `first_seen_at`, `last_seen_at`, `gone_since?`.
 Частичные UNIQUE `(model_id, source_id, resource_id)` и
-`(model_id, archive_parent_id, archive_entry_no)`; путь не уникален — на старом пути
+`(model_id, archive_revision_id, archive_entry_no)`; путь не уникален — на старом пути
 может появиться новый ресурс. Индексы `(model_id, last_seen_at)`, GIN `pg_trgm` по
 `current_path` (поиск по старому пути, §11.2).
 
@@ -552,8 +554,10 @@ UNIQUE NULLS NOT DISTINCT `(model_id, draft_id, kind, order_id, item_id, version
 processed_frames | master_version | other`), `target_item_id?`, `plan_row_id?`
 (задача; исходники берутся из её `input_manifest_id`), `size_expected`,
 `bytes_received`, `sha256?`, `state` (`receiving | received | verified |
-registered | failed | abandoned`), `tmp_key`, `draft_id?`, `error`, `created_at`,
-`completed_at`. UNIQUE `(model_id, upload_id)`; частичный индекс незавершённых.
+registered | failed | abandoned`), `tmp_key`, `error`, `created_at`,
+`completed_at`. UNIQUE `(model_id, upload_id)`; частичный индекс незавершённых. Черновик
+загрузки — `inbox_drafts.web_upload_id` (UNIQUE: одна загрузка — один черновик); обратной
+ссылки нет.
 Порядок: файл докачан и сверен → блоб в `blobs/` → черновик обычной приёмки.
 
 **`work_operations`** — фоновая работа в доменной таблице (§5, §12.0).
@@ -684,7 +688,8 @@ slot_at)` — норма и дыры; `(model_id, item_id, slot_at DESC)` — «
 
 **`download_receipts`** — квитанция выдачи (§7, §9.3, naming §6). `id`, `model_id`,
 `principal_id`, `kind` (`master | platform | edit | promo`),
-`manifest_id?` (закрытый состав) или `asset_version_id?` (одиночное скачивание),
+`manifest_id` (закрытый состав; одиночное скачивание с карточки — состав из одной версии,
+схема §9.2), `entry_count`, `corrects_id?` (исправление, у прежней один преемник),
 `plan_row_id?`, `account_code_snapshot?`, `slot_date_snapshot?`,
 `meta_stripped`, `zip_key?` (ZIP в папке выдач, ниже), `issued_at`, `delivery_id?`; состояния нет: квитанция
 вставляется целиком и не меняется (схема §9.2). Индекс `(model_id, issued_at DESC)`.
@@ -1284,6 +1289,64 @@ LLM.
   `(model_id, subject_kind, subject_id, at DESC)`, `(model_id, at DESC)`, `(actor_id, at
   DESC)`. Механика — схема §9.3.
 - **`sessions`, `api_tokens`**: без изменений, отдельно.
+- **Миграции 0002 и 0003** (этап 2а, 30.10.2026) — где норма молчала, выбран самый простой
+  вариант, который держит инварианты:
+  - `0002_bytes_sources` — `pipeline_versions`, байты и производные (`blobs`, `blob_probes`,
+    `blob_phashes`, `master_checks`, `storage_operations`, `rendition_generations`,
+    `rendition_artifacts`), источники (`sources`, `source_objects`, `source_paths`,
+    `source_revisions`) и FK `work_operations.output_sha256 → blobs`; `0003_catalog` —
+    каталог, приёмка, квитанции выдачи, типизированные цели работ, `blob_is_referenced`,
+    поиск и `catalog_index`. Колонки и FK на заказы (`inbox_groups.custom_order_id`,
+    `inbox_draft_candidates.order_id`) добавляет `0004_orders`.
+  - Отпечатки, а не ссылки (FK на `blobs` нет): `blob_probes.sha256`, `blob_phashes.sha256`,
+    `master_checks.*`, `storage_operations.blob_sha256` (иначе операция удаления держала бы
+    свой же блоб), `rendition_generations.master_sha256`, `review_cases.blob_sha256`.
+    `blob_is_referenced(sha256)` держит: мастер любой версии; `master_sha256` и
+    `source_blob_sha256` черновика, пока он не `resolved`; `web_uploads.sha256`, пока загрузка
+    не дошла до черновика (`receiving | received | verified`); выход работы в `pending |
+    running | retry_wait`. Тест сверяет список с каждым FK на `blobs (sha256)`. Строку
+    `blobs` прикладная роль не удаляет (REVOKE DELETE).
+  - Записанное однажды (функция `set_once`, NULL → значение): у ревизии `source_sha256`,
+    `verified_at`, `verified_route`, `frozen_by_work_id` (три первых — только вместе); у
+    поколения производной `master_sha256` и `bound_at`. Наблюдённые колонки ревизии, ключ
+    поколения и байты артефакта — `forbid_change`.
+  - `storage_operations`: отменить можно только `intent`, завершённая операция не меняется
+    (триггер, код `CO005`); переходы между шагами — в коде.
+  - Роль подходит типу — функция `role_fits_type(type, role)` по naming §3 (`cap` — файл
+    скачивания, ни одному типу не подходит); `_uN` — только у мастера FYP; ссылка
+    (`reference`) — только в `PRM`; `pinned_version_id` — только у ссылки. Сводка — в
+    `values.rolesByType`, тест сверяет каждую пару.
+  - `content_items`: `raw_purpose` обязателен ровно у RAW, `name_in_media` — только у CUS,
+    `promo_channel_id` — ровно у PRM; триграммы по `title` и `title_en`. Публичный ID с
+    паддингом — функция `public_item_id(type, number)`.
+  - Квитанция выдачи всегда ссылается на закрытый состав (`manifest_id NOT NULL`, одиночное
+    скачивание — состав из одной версии); строка — ровно один выданный файл: артефакт,
+    мастер как есть или файл папки выдач; `UNIQUE (model_id, asset_version_id, id)` — цель
+    FK совпадений Hub (схема §9.6). Состав и квитанция сверяются отложенным триггером
+    `check_sealed_count` (число строк = `entry_count`, позиции `1..N`, код `CO004`).
+  - Черновик: `master_verified_at` только с `master_sha256`; принятие (`new_item | append`)
+    — с `applied_item_id`; `alias` — с `duplicate_of_version_id`; `rejected` — с
+    `rejected_at`. Возврат из `resolved` — триггер `inbox_draft_transition`: только из
+    `rejected`, только в `ready`, только пока байты черновика `present` (замок `FOR SHARE`
+    на строках `blobs`, код `CO005`).
+  - Тег чужой модели отклоняет триггер `item_tags_tag_scope` (код `CO006`); у `item_tags`
+    есть `id` — субъект журнала, ключ по-прежнему `(model_id, item_id, tag_id)`.
+  - Ссылки, где норма не задала форму: `asset_manifest_entries.membership_id`,
+    `source_revisions.previous_id`, `provenance.voided_by_id` (исправление, один преемник) —
+    составные FK `(model_id, …)` без доп. колонок. `master_checks.work_id` обязателен.
+    `annotation_fields.value_version` начинается с 0 (поле подтверждено пустым).
+  - Поиск: `search_tsv` объекта — `russian` по `title` и описанию, `english` по `title_en`
+    (конфигурация `russian` и сама стеммит латиницу как английскую); функции
+    `catalog_tsquery(q)` и `catalog_search(model_id, q)` — объекты модели по названиям и
+    описанию, по подстроке алиаса (без учёта регистра, NFC) и по хронологии, без tombstone.
+  - `catalog_index` (`security_invoker`): поля SPEC §12.0, кроме даты сдачи и ссылки на
+    заказ (с `0004_orders`); теги — slug (после слияния тега — slug выжившего);
+    «SteadyContent» — общий тег вендора `steadycontent`, отдельной колонки нет; обложка —
+    `cover_membership_id`, иначе первое живое членство; миниатюры — ID активных готовых
+    поколений `thumb320` / `thumb640`.
+  - Зеркало Drizzle — только таблицы: drizzle-kit 0.31 превращает составной FK в связь по
+    одному `model_id` и повторяет ключи, поэтому `relations.ts` не порождается; соединения
+    пишутся в SQL.
 
 ### 9.3. Транзакции и протоколы
 
@@ -1295,8 +1358,10 @@ LLM.
   DELETE пишут строку целиком, UPDATE — только отличающиеся ключи (`before` — старые
   значения, `after` — новые, ключ строки всегда); `SET LOCAL app.actor_type / actor_id /
   actor_label / action / request_id` обязательны — без них триггер отклоняет запись.
-  Триггера нет на `work_operations`, текущих строках Hub, `principals`, токенах (их
-  журналы — наблюдения и типизированные события). Типизированные события пишет код:
+  Триггера нет на `work_operations`, текущих строках Hub, `principals`, токенах и на
+  общих технических таблицах без модели — байты, их описания, проверки мастеров, операции
+  с файлами, производные, версии конвейера (их журналы — наблюдения и типизированные события
+  работ, которые их пишут). Типизированные события пишет код:
   исходы попыток работ (попытка, поколение, исход, время), смысл вставленных фактов,
   администрирование людей и токенов без секретов, отказ и ошибка — отдельной записью
   после отката. Полнота гарантируется каталогом БД (тест: у каждой изменяемой таблицы

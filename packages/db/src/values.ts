@@ -1,8 +1,10 @@
 /**
  * Every value list of the database, one list in code (schema §1 p. 12, §4).
  * Columns hold `text` + CHECK; `values.test.ts` compares each CHECK with these arrays.
- * Lists that §4 calls preliminary (work state, failure kind, idempotency state) close
- * before the `schema-freeze` tag.
+ * Lists that §4 calls preliminary (work state, failure kind, idempotency state, draft state
+ * and outcome, blob state, review case kind, master check verdict) close before the
+ * `schema-freeze` tag. Lists inside SQL functions (`role_fits_type`, `public_item_id`,
+ * `blob_is_referenced`) are compared by behaviour in `catalog.test.ts`.
  */
 
 /** Public ID types (SPEC §4.1). */
@@ -196,6 +198,7 @@ export const killSwitchKeys = [
   'hub.auto_match',
   'hub.publish',
   'ydisk.scan',
+  'dropbox.scan',
   'agents.enabled',
   'fyper.enabled',
 ] as const
@@ -253,9 +256,328 @@ export function isPolicyKey(key: string): boolean {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Bytes and derivatives (schema §3.3, §9.1, §9.2)
+// ---------------------------------------------------------------------------
+
+/** Closed (schema §4). */
+export const mediaKinds = ['video', 'image'] as const
+export type MediaKind = (typeof mediaKinds)[number]
+
+/** Preliminary (schema §4): `purging` lives in `storage_operations`, not here. */
+export const blobStates = ['present', 'purged', 'missing', 'corrupt'] as const
+export type BlobState = (typeof blobStates)[number]
+
+/** ffprobe and EXIF, one row per bytes and tool recipe. */
+export const probeKinds = ['ffprobe', 'exif'] as const
+export type ProbeKind = (typeof probeKinds)[number]
+
+/** How a master was made (schema §9.2); `copy` — a manager's web upload; empty only for `unreadable`. */
+export const masterDecisions = [
+  'encode',
+  'copy',
+  'skipped_hdr',
+  'skipped_av1',
+  'skipped_lowrate',
+  'skipped_audio',
+] as const
+export type MasterDecision = (typeof masterDecisions)[number]
+
+/** Verdict of the master check (preliminary, schema §4): outcomes of `compress-library.sh`. */
+export const masterCheckVerdicts = [
+  'ok',
+  'unreadable',
+  'bigger_than_source',
+  'timing_drift',
+  'timing_uncomparable',
+  'audio_mismatch',
+  'audio_offset',
+  'audio_tracks_lost',
+  'encode_failed',
+  'frame_mismatch',
+  'result_decode_errors',
+  'publish_failed',
+  'source_decode_errors',
+  'source_truncated',
+  'metadata_mismatch',
+] as const
+export type MasterCheckVerdict = (typeof masterCheckVerdicts)[number]
+
+export const storageOperationKinds = ['put', 'purge'] as const
+export type StorageOperationKind = (typeof storageOperationKinds)[number]
+
+/** Steps of a file operation, each its own commit; only an `intent` can be cancelled. */
+export const storageOperationStates = [
+  'intent',
+  'started',
+  'fs_done',
+  'committed',
+  'failed',
+  'cancelled',
+] as const
+export type StorageOperationState = (typeof storageOperationStates)[number]
+/** One live operation per blob. */
+export const activeStorageOperationStates = ['intent', 'started', 'fs_done'] as const
+export const finishedStorageOperationStates = ['committed', 'failed', 'cancelled'] as const
+
+/** Closed (schema §4): the derivative manifest of SPEC §9.3. */
+export const renditionKinds = [
+  'preview',
+  'poster',
+  'thumb320',
+  'thumb640',
+  'preview2048',
+  'frames',
+  'platform',
+] as const
+export type RenditionKind = (typeof renditionKinds)[number]
+
+export const renditionInputKinds = ['source', 'master'] as const
+export type RenditionInputKind = (typeof renditionInputKinds)[number]
+
+export const renditionStates = ['building', 'ready', 'failed', 'evicted'] as const
+export type RenditionState = (typeof renditionStates)[number]
+
+export const artifactStates = ['ready', 'evicted', 'missing'] as const
+export type ArtifactState = (typeof artifactStates)[number]
+
+// ---------------------------------------------------------------------------
+// Sources (schema §3.4, §9.7; SPEC §6.1)
+// ---------------------------------------------------------------------------
+
+export const sourceKinds = ['yandex_disk', 'dropbox', 'web_upload', 'legacy_metadata'] as const
+export type SourceKind = (typeof sourceKinds)[number]
+
+/** Cloud folders of a model: one source interface, always read-only (SPEC §2.1 p. 6). */
+export const cloudSourceKinds = ['yandex_disk', 'dropbox'] as const
+
+/** How the bytes of a revision were read and checked. */
+export const verifiedRoutes = ['download', 'local_copy', 'upload'] as const
+export type VerifiedRoute = (typeof verifiedRoutes)[number]
+
+// ---------------------------------------------------------------------------
+// Catalog (schema §3.2, §9.2; naming §3)
+// ---------------------------------------------------------------------------
+
+/** Closed (schema §4, naming §3). `cap` is a download sidecar and fits no type. */
+export const assetRoles = ['master', 'teaser', 'pic', 'raw', 'ed', 'clip', 'thumb', 'cap'] as const
+export type AssetRole = (typeof assetRoles)[number]
+
+/** Roles with a number: `pic07`, `raw12`, `ed03`, `clip02`. */
+export const ordinalRoles = ['pic', 'raw', 'ed', 'clip'] as const
+
+/** Roles a file may own in an object of the type (naming §3); SQL `role_fits_type()`. */
+export const rolesByType = {
+  PPV: ['master', 'teaser', 'pic', 'thumb'],
+  SET: ['raw', 'ed'],
+  SXT: ['pic', 'clip'],
+  CUS: ['master', 'pic'],
+  FYP: ['master'],
+  LIFE: ['pic', 'clip'],
+  RAW: ['raw'],
+  PRM: ['pic', 'clip'],
+} as const satisfies Record<ContentType, readonly AssetRole[]>
+
+/** Minimal padding of the public number (SPEC §4.1); SQL `public_item_id()`. */
+export const idPadding = {
+  PPV: 3,
+  SET: 3,
+  SXT: 3,
+  CUS: 3,
+  FYP: 4,
+  LIFE: 3,
+  RAW: 4,
+  PRM: 3,
+} as const satisfies Record<ContentType, number>
+
+/** `reference` — a file of another object inside a `PRM` collection. */
+export const membershipKinds = ['owned', 'reference'] as const
+export type MembershipKind = (typeof membershipKinds)[number]
+
+/** `uniq` — a unique version `uN` of a FYP, `variant_no > 0`. */
+export const variantKinds = ['none', 'uniq'] as const
+export type VariantKind = (typeof variantKinds)[number]
+
+/** Purpose of a LIFE frame: the feed, chats or both. */
+export const lifeUses = ['feed', 'chats', 'both'] as const
+export type LifeUse = (typeof lifeUses)[number]
+
+/** Bundle on the wall or PPV in DMs. */
+export const ppvKinds = ['bundle', 'dm'] as const
+export type PpvKind = (typeof ppvKinds)[number]
+
+/** Purpose of a RAW batch. */
+export const rawPurposes = ['fyp', 'ppv', 'mass_dm', 'unknown'] as const
+export type RawPurpose = (typeof rawPurposes)[number]
+
+/** «Имя фана в ролике»: есть / нет / не знаю. */
+export const nameInMediaValues = ['yes', 'no', 'unknown'] as const
+export type NameInMedia = (typeof nameInMediaValues)[number]
+
+export const itemOrigins = ['intake', 'import', 'manual'] as const
+export type ItemOrigin = (typeof itemOrigins)[number]
+
+export const manifestPurposes = ['plan', 'download', 'delivery', 'submission'] as const
+export type ManifestPurpose = (typeof manifestPurposes)[number]
+
+export const aliasKinds = [
+  'legacy_path',
+  'legacy_name',
+  'legacy_id',
+  'sub_handle',
+  'merged_id',
+  'vault_album',
+  'tg_card',
+  'resource_id',
+  'registry_row',
+] as const
+export type AliasKind = (typeof aliasKinds)[number]
+
+/** Closed (schema §4). */
+export const provenanceRelations = [
+  'montage_from',
+  'uniq_from',
+  'teaser_from',
+  'frame_from',
+  'processed_from',
+  'ppv_from_custom',
+  'extracted_from',
+  'remaster_from',
+  'split_from',
+  'merged_from',
+  'reencoded_from',
+] as const
+export type ProvenanceRelation = (typeof provenanceRelations)[number]
+
+/** Closed (schema §4): actions, attributes, mood. */
+export const tagGroups = ['action', 'attribute', 'mood'] as const
+export type TagGroup = (typeof tagGroups)[number]
+
+/** Who wrote a tag, a chronology line or a platform text. */
+export const annotationSources = ['ai', 'human', 'import'] as const
+export type AnnotationSource = (typeof annotationSources)[number]
+
+/** Closed (schema §4): fields with a status of their own. */
+export const annotationFieldKeys = [
+  'title',
+  'title_en',
+  'description',
+  'tags',
+  'chronology',
+  'purpose',
+  'second_person',
+] as const
+export type AnnotationFieldKey = (typeof annotationFieldKeys)[number]
+
+/** Summary state of the markup in `catalog_index`. */
+export const markupStates = ['draft', 'partial', 'confirmed'] as const
+export type MarkupState = (typeof markupStates)[number]
+
+/** `generic` — a text for any page; a page variant names its platform and account. */
+export const textPlatforms = ['generic', 'fansly', 'onlyfans'] as const
+export type TextPlatform = (typeof textPlatforms)[number]
+
+// ---------------------------------------------------------------------------
+// Intake (schema §3.4, §9.2, §9.7; SPEC §5, §6.1)
+// ---------------------------------------------------------------------------
+
+/** One grouping rule (SPEC §6.1); `manual` — a file made «a separate object». */
+export const groupings = ['folder', 'exif_day', 'upload_cluster', 'single', 'manual'] as const
+export type Grouping = (typeof groupings)[number]
+
+export const draftOrigins = [
+  'disk_scan',
+  'web_upload',
+  'legacy_import',
+  'archive',
+  'derived',
+] as const
+export type DraftOrigin = (typeof draftOrigins)[number]
+
+/** Preliminary (SPEC §5, §13). */
+export const draftStates = ['discovered', 'processing', 'ready', 'resolved'] as const
+export type DraftState = (typeof draftStates)[number]
+
+/** Preliminary (SPEC §5, §13). Only `new_item` issues a number. */
+export const draftOutcomes = ['new_item', 'append', 'alias', 'rejected'] as const
+export type DraftOutcome = (typeof draftOutcomes)[number]
+
+/** Outcomes that accept bytes into the catalog: they need a verified master. */
+export const acceptedDraftOutcomes = ['new_item', 'append'] as const
+
+export const draftBlockedReasons = [
+  'ambiguous_order',
+  'video_in_set',
+  'id_collision',
+  'cross_model_dup',
+  'master_failed',
+  'needs_type',
+  'source_unavailable',
+  'deferred',
+] as const
+export type DraftBlockedReason = (typeof draftBlockedReasons)[number]
+
+export const candidateKinds = [
+  'order',
+  'existing_item',
+  'exact_duplicate',
+  'similar_photo',
+  'legacy_id',
+  'source_parent',
+  'content_type',
+] as const
+export type CandidateKind = (typeof candidateKinds)[number]
+
+export const uploadDeclaredKinds = [
+  'fyp_edit',
+  'teaser',
+  'processed_frames',
+  'master_version',
+  'other',
+] as const
+export type UploadDeclaredKind = (typeof uploadDeclaredKinds)[number]
+
+export const uploadStates = [
+  'receiving',
+  'received',
+  'verified',
+  'registered',
+  'failed',
+  'abandoned',
+] as const
+export type UploadState = (typeof uploadStates)[number]
+/** An upload in progress holds its blob until it becomes a draft. */
+export const unfinishedUploadStates = ['receiving', 'received', 'verified'] as const
+
+/** Preliminary (schema §4). */
+export const reviewCaseKinds = [
+  'cross_model_duplicate',
+  'legacy_unparsed',
+  'merge_split',
+  'unreadable_input',
+] as const
+export type ReviewCaseKind = (typeof reviewCaseKinds)[number]
+
+export const reviewCaseStates = ['open', 'resolved', 'dismissed'] as const
+export type ReviewCaseState = (typeof reviewCaseStates)[number]
+
+// ---------------------------------------------------------------------------
+// Issue (schema §3.5)
+// ---------------------------------------------------------------------------
+
+export const receiptKinds = ['master', 'platform', 'edit', 'promo'] as const
+export type ReceiptKind = (typeof receiptKinds)[number]
+
 /** Codes of `RAISE` in the migration functions. */
 export const dbErrorCodes = {
   journalContextMissing: 'CO001',
   immutableRow: 'CO002',
+  /** A fixed column changed, or a set-once column was overwritten. */
   immutableColumn: 'CO003',
+  /** A sealed manifest or receipt does not hold exactly `entry_count` rows at commit. */
+  sealedCountMismatch: 'CO004',
+  /** A transition the schema forbids: reopening an accepted draft, cancelling a started operation. */
+  transitionRefused: 'CO005',
+  /** A private tag of another model. */
+  foreignTag: 'CO006',
 } as const
