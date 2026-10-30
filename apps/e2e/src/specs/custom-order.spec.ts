@@ -2,14 +2,12 @@ import type { Locator, Page } from '@playwright/test'
 import { apiAs, expect, makeMedia, test } from '../fixtures.ts'
 
 /**
- * PLAN 4б «сквозной сценарий КМ по заказу, сдаче и правке», DESIGN §6.6, SPEC §8.2: Диана
- * заводит заказ из текста карточки, ролик приходит веб-загрузкой «Другое» в «Приехало» и
- * принимается кастомом, сдача привязывается к заказу, по заказу добавляется правка,
- * исправление приходит новой версией мастера того же кастома, правка отмечается выполненной,
- * заказ закрывается. Прежняя версия, сдача и требование правки остаются в истории.
- *
- * Сдача из «Приехало» идёт через «Принять» и «Привязать сдачу…»: выбрать заказ у своей
- * загрузки в панели решения пока нельзя (◆ «Какой заказ?» ставит только подбор заказа).
+ * PLAN 4б «сквозной сценарий КМ по заказу, сдаче и правке», DESIGN §6.6 по шагам, SPEC §8.2:
+ * Диана заводит заказ из текста карточки; ролик приходит веб-загрузкой «Другое» в «Приехало»,
+ * она выбирает заказ и нажимает «Принять как сдачу»; добавляет правку; исправление приходит
+ * новой версией мастера того же кастома и становится второй сдачей того же заказа; правка —
+ * «Выполнена → новая версия»; заказ закрыт; «Переделка в PPV» → «Сделать PPV» → «в личку»,
+ * «Взять мастер как есть» → «Создать PPV». Прежняя версия, сдачи и правка остаются в истории.
  */
 
 /** The card of this run: its message id is the order's address. */
@@ -55,7 +53,9 @@ async function upload(page: Page, file: string, kind?: string): Promise<void> {
   await expect(dialog).toBeHidden()
 }
 
-test('КМ: заказ → сдача из «Приехало» → правка → исправление → закрыт', async ({ km }) => {
+test('КМ: заказ → сдача из «Приехало» → правка → исправление → закрыт → PPV из кастома', async ({
+  km,
+}) => {
   test.setTimeout(300_000)
   const panel = orderPanel(km)
 
@@ -73,6 +73,11 @@ test('КМ: заказ → сдача из «Приехало» → правка
     await expect(dialog.getByLabel('Покупатель')).toHaveValue(`фан №${RUN}`)
     await expect(dialog.getByRole('combobox', { name: 'Страница' })).toHaveText('Fansly 2')
     await expect(dialog.getByRole('checkbox', { name: /видео · 3–5 мин/ })).toBeChecked()
+    // The fan's name does not sound in the video: the PPV can take the master as it is.
+    await dialog
+      .getByRole('radiogroup', { name: 'Имя фана в ролике' })
+      .getByRole('radio', { name: 'нет' })
+      .click()
     await dialog.getByRole('button', { name: 'Сохранить' }).click()
     await expect(dialog).toBeHidden()
     const toast = km.getByRole('status').filter({ hasText: `Заказ заведён · ${TITLE}` })
@@ -89,7 +94,7 @@ test('КМ: заказ → сдача из «Приехало» → правка
 
   const delivery = `e2e-delivery-${RUN}.mp4`
   let custom = ''
-  await test.step('сдача приходит веб-загрузкой «Другое» и принимается кастомом', async () => {
+  await test.step('сдача: веб-загрузка «Другое», в «Приехало» — заказ и «Принять как сдачу»', async () => {
     await upload(km, makeMedia('video', delivery, 2))
     await expect(trayLine(km, delivery)).toContainText('в Приехало')
     // «Загружено вами · 1 видео» is not unique: the group is found by the file name.
@@ -110,10 +115,13 @@ test('КМ: заказ → сдача из «Приехало» → правка
     await expect(
       decision.getByRole('radiogroup', { name: 'Тип' }).getByRole('radio', { name: 'Кастом' }),
     ).toBeChecked()
-    // The master is built by the media worker before «Принять» opens.
-    const accept = decision.getByRole('button', { name: 'Принять', exact: true })
+    // «Заказ» of the custom: the open orders of the model, this one by its title.
+    await decision.getByRole('combobox', { name: 'Заказ' }).click()
+    await km.getByRole('option', { name: new RegExp(`^«${TITLE}»`) }).click()
+    await expect(decision.getByRole('link', { name: new RegExp(`«${TITLE}»`) })).toBeVisible()
+    // The master is built by the media worker before the button opens.
+    const accept = decision.getByRole('button', { name: 'Принять как сдачу' })
     await expect(accept).toBeEnabled({ timeout: 150_000 })
-    await expect(decision.getByText('готово', { exact: true })).toBeVisible()
     await accept.click()
     const accepted = km.getByRole('status').filter({ hasText: /Принято → CUS-\d+/ })
     await expect(accepted).toBeVisible()
@@ -121,20 +129,10 @@ test('КМ: заказ → сдача из «Приехало» → правка
     expect(custom).toMatch(/^CUS-\d+$/)
   })
 
-  await test.step('сдача привязана к заказу: часть «видео» сдана', async () => {
+  await test.step('заказ ✓: сдача из «Приехало» записана, часть «видео» сдана', async () => {
     await km.goto(ORDER_URL)
-    await panel.getByRole('button', { name: 'Привязать сдачу…' }).click()
-    await km.getByPlaceholder('Номер или название кастома').fill(custom)
-    await km.getByRole('option', { name: new RegExp(`^${custom}\\b`) }).click()
-    await expect(
-      km.getByRole('status').filter({ hasText: `Сдача ${custom} привязана` }),
-    ).toBeVisible()
     await expect(orderStatus(panel)).toHaveText(/^сдано/)
-    const deliveries = panel
-      .getByRole('list')
-      .filter({ has: km.getByRole('link', { name: custom }) })
-    await expect(deliveries.first()).toBeVisible()
-    await expect(panel.getByText('связала: Диана · подтвердила: Диана')).toBeVisible()
+    await expect(panel.getByRole('link', { name: custom }).first()).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Закрыть заказ' })).toBeEnabled()
   })
 
@@ -163,17 +161,18 @@ test('КМ: заказ → сдача из «Приехало» → правка
     await expect(master.getByRole('button', { name: /Мастер v1 до правки/ })).toBeVisible()
   })
 
-  await test.step('правка выполнена, заказ закрыт; история на месте', async () => {
+  await test.step('исправление — вторая сдача того же заказа', async () => {
     await km.getByRole('main').getByRole('button', { name: 'Открыть заказ' }).click()
     await expect(km).toHaveURL(ORDER_URL)
-    // The fix came as a new version of the same object: the KM checked it.
+    await expect(panel.getByRole('link', { name: custom })).toHaveCount(2)
+  })
+
+  await test.step('правка выполнена новой версией, заказ закрыт; история на месте', async () => {
     await panel.getByRole('button', { name: 'Выполнена' }).first().click()
-    await km.getByRole('menuitem', { name: 'проверено КМ' }).click()
+    await km.getByRole('menuitem', { name: 'новая версия' }).click()
     await expect(km.getByRole('status').filter({ hasText: 'Правка выполнена' })).toBeVisible()
     const revision = panel.getByRole('listitem').filter({ hasText: `«${REVISION}»` })
-    await expect(revision.locator('[data-slot="status-word"]')).toHaveText(
-      'выполнена · проверила Диана',
-    )
+    await expect(revision.locator('[data-slot="status-word"]')).toHaveText(/^выполнена/)
     await expect(orderStatus(panel)).toHaveText(/^сдано/)
 
     await panel.getByRole('button', { name: 'Закрыть заказ' }).click()
@@ -194,5 +193,34 @@ test('КМ: заказ → сдача из «Приехало» → правка
     await expect(
       km.getByRole('listbox', { name: 'Заказы' }).getByRole('option', { name: new RegExp(TITLE) }),
     ).toBeVisible()
+  })
+
+  await test.step('PPV из кастома: «в личку», мастер как есть, связь пишется сама', async () => {
+    await km.goto('/lora/library/customs?view=to-ppv')
+    // Customs without the fan's name come first, the latest delivered on top.
+    const row = km
+      .getByRole('main')
+      .locator('div')
+      .filter({ has: km.getByText(custom, { exact: true }) })
+      .filter({ has: km.getByRole('button', { name: 'Сделать PPV' }) })
+      .last()
+    await expect(row).toContainText('имени нет')
+    await row.getByRole('button', { name: 'Сделать PPV' }).click()
+    const dialog = km.getByRole('dialog', { name: `Сделать PPV из ${custom}` })
+    await dialog.getByRole('radio', { name: 'в личку' }).click()
+    await expect(dialog.getByRole('radio', { name: 'Взять мастер как есть' })).toBeChecked()
+    await dialog.getByRole('button', { name: 'Создать PPV' }).click()
+    const made = km.getByRole('status').filter({ hasText: /Принято → PPV-\d+/ })
+    await expect(made).toBeVisible()
+    const ppv = /PPV-\d+/.exec((await made.textContent()) ?? '')?.[0] ?? ''
+    await expect(dialog).toBeHidden()
+    await expect(km.getByRole('link', { name: `→ ${ppv}` })).toBeVisible()
+
+    // The PPV is a new object over the same master, «в личку», linked to the custom.
+    await km.goto(`/lora/i/${ppv}`)
+    const card = km.getByRole('main')
+    await expect(card.getByText(/^В личку · /)).toBeVisible()
+    await expect(card.getByRole('heading', { level: 1 })).toHaveText(`e2e танец ${RUN}`)
+    await expect(card).toContainText(`PPV из кастома${`e2e танец ${RUN}`} · ${custom}`)
   })
 })

@@ -14,6 +14,7 @@ import {
 } from '../catalog/file-writes'
 import { findItem, type ItemRow, modelOf, publicIdOfRow } from '../catalog/ids'
 import { addLink, confirmLink, removeLink } from '../catalog/links'
+import { makePpvFromCustom } from '../catalog/make-ppv'
 import { changeTags, confirmMarkup, updateField } from '../catalog/markup-writes'
 import { changeType, extractShoot, mergeRaw, removeItem, restoreItem } from '../catalog/structure'
 import { checkItemVersion, lockItem, logItemAction, touchItem } from '../catalog/writes'
@@ -166,6 +167,13 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
         onItem({ ctx, body: null, id: params.id }, (tx, model, item) =>
           removeLink(tx, model, item, params.link),
         ),
+      // «Сделать PPV» из кастома, «Взять мастер как есть» (DESIGN §6.6).
+      makePpv: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx.model)
+          const item = await lockItem(tx, model, params.id)
+          return makePpvFromCustom(tx, model, item, body, actor)
+        }),
       changeType: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx.model)

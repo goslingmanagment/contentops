@@ -1,5 +1,6 @@
 import type { AcceptCommand } from '@contentops/contracts/commands/inbox'
 import type { AcceptResult } from '@contentops/contracts/domain/inbox'
+import { orderTitleOf } from '@contentops/contracts/order-card'
 import { setJournalItem, type Tx, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { findItem, type ItemRow, publicIdOf } from '../catalog/ids'
@@ -446,6 +447,26 @@ function nextStep(type: DbType): string | null {
   }
 }
 
+/** The title of an order, as the orders API words it (from its brief). */
+async function orderTitle(tx: Tx, modelId: string, orderId: string): Promise<string | null> {
+  const { rows } = await tx.execute<{ brief: string }>(sql`
+    SELECT brief FROM custom_orders WHERE model_id = ${modelId}::uuid AND id = ${orderId}::uuid`)
+  return rows[0] ? orderTitleOf(rows[0].brief) || null : null
+}
+
+/** The open order a CUS was delivered for: its latest live delivery; closed orders take none. */
+async function openOrderOf(tx: Tx, modelId: string, itemId: string): Promise<string | null> {
+  const { rows } = await tx.execute<{ order_id: string }>(sql`
+    SELECT d.order_id FROM custom_order_deliveries d
+      JOIN custom_orders o ON o.model_id = d.model_id AND o.id = d.order_id
+     WHERE d.model_id = ${modelId}::uuid AND d.item_id = ${itemId}::uuid AND d.retracts_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM custom_order_deliveries r WHERE r.retracts_id = d.id)
+       AND o.status NOT IN ('closed', 'cancelled')
+     ORDER BY d.linked_at DESC, d.id DESC
+     LIMIT 1`)
+  return rows[0]?.order_id ?? null
+}
+
 /** Sealed composition of the delivered versions and the delivery rows of the order (§8.2). */
 async function recordDelivery(
   tx: Tx,
@@ -551,12 +572,19 @@ export async function acceptGroup(
     await setJournalItem(tx, item.id)
   } else {
     const number = await issueNumber(tx, model.id, type)
+    // A delivery without its own title is called as the order is (DESIGN §6.6: the PPV made
+    // from it later takes this title without typing).
+    const title =
+      group.proposed_title ??
+      (type === 'CUS' && group.custom_order_id
+        ? await orderTitle(tx, model.id, group.custom_order_id)
+        : null)
     const { rows } = await tx.execute<{ id: string }>(sql`
       INSERT INTO content_items (
         model_id, type, number, title, title_en, description, ppv_kind, raw_purpose,
         has_second_person, name_in_media, created_from_group_id, origin, created_by
       ) VALUES (
-        ${model.id}::uuid, ${type}, ${number}, ${group.proposed_title}, ${group.proposed_title_en},
+        ${model.id}::uuid, ${type}, ${number}, ${title}, ${group.proposed_title_en},
         ${group.proposed_description},
         ${type === 'PPV' ? (group.proposed_ppv_kind ?? 'bundle') : null},
         ${type === 'RAW' ? (group.proposed_purpose ?? 'unknown') : null},
@@ -648,9 +676,19 @@ export async function acceptGroup(
     await touchItem(tx, model, target)
   }
 
-  if (group.custom_order_id && item.type === 'CUS') {
-    await recordDelivery(tx, model.id, group.custom_order_id, item, created, drafts, actor)
-    await markDeliveredParts(tx, model, group.custom_order_id, actor)
+  // A delivery of the order: the group's own order, or — for a new master version of a CUS
+  // (the fix after a revision) — the open order the CUS was delivered for: «версии после
+  // правок — к тому же заказу» (SPEC §4), a second delivery with `{master v2}` (schema §9.2).
+  const orderId =
+    item.type !== 'CUS'
+      ? null
+      : (group.custom_order_id ??
+        (target && options.extend?.role === 'master_version'
+          ? await openOrderOf(tx, model.id, item.id)
+          : null))
+  if (orderId) {
+    await recordDelivery(tx, model.id, orderId, item, created, drafts, actor)
+    await markDeliveredParts(tx, model, orderId, actor)
   }
 
   for (const { draft, of } of twins) {

@@ -189,7 +189,7 @@ async function registerUpload(
 }
 
 /** The model's source «веб-загрузка» (schema §3.4 `sources.kind`), made on the first upload. */
-async function webSource(tx: Tx, modelId: string): Promise<string> {
+export async function webSource(tx: Tx, modelId: string): Promise<string> {
   const find = async () => {
     const { rows } = await tx.execute<{ id: string }>(sql`
       SELECT id FROM sources WHERE model_id = ${modelId}::uuid AND kind = 'web_upload'
