@@ -19,6 +19,14 @@
   long-poll timed out`), и узел после перезапуска ВМ висел offline. Запасной вход, если
   узел offline: `ssh -o HostKeyAlias=100.75.114.22 -J winpc dmitriy@10.77.0.2`.
 
+- Провайдер ПК режет TLS 1.3 к Cloudflare (Docker Hub, npm, API ИИ), если в приветствии есть
+  постквантовый обмен ключей (X25519MLKEM768, по умолчанию у OpenSSL 3.5, Go и Node 24):
+  соединение открывается, ответа нет (`TLS handshake timeout`). Windows (Schannel) и мак это
+  не задевает. Поэтому в ВМ dockerd идёт с `GODEBUG=tlsmlkem=0`
+  (`/etc/systemd/system/docker.service.d/tls-classic.conf`, 30.10), Node в образе — только с
+  классическими группами (`OPENSSL_CONF`, Dockerfile), а `curl` из ВМ к таким адресам — с
+  `--curves X25519:P-256`.
+
 ## Что не трогать
 
 - **Копия Я.Диска** `C:\Users\dmsrg\Yandex.Disk` (в ВМ — `/mnt/ydisk`): ничего не удалять,
