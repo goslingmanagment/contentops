@@ -332,6 +332,18 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
+  packages/sources:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.6
+        version: 24.13.6
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.1
+        version: 5.0.1
+
   packages/ui:
     dependencies:
       '@contentops/contracts':
