@@ -22,8 +22,9 @@
 - Провайдер ПК режет TLS 1.3 к Cloudflare (Docker Hub, npm, API ИИ), если в приветствии есть
   постквантовый обмен ключей (X25519MLKEM768, по умолчанию у OpenSSL 3.5, Go и Node 24):
   соединение открывается, ответа нет (`TLS handshake timeout`). Windows (Schannel) и мак это
-  не задевает. Поэтому в ВМ dockerd идёт с `GODEBUG=tlsmlkem=0`
-  (`/etc/systemd/system/docker.service.d/tls-classic.conf`, 30.10), Node в образе — только с
+  не задевает. Поэтому в ВМ `GODEBUG=tlsmlkem=0` у dockerd
+  (`/etc/systemd/system/docker.service.d/tls-classic.conf`) и у клиента `docker` (`/etc/environment`:
+  сборка берёт токен Docker Hub на стороне клиента), 30.10; Node в образе — только с
   классическими группами (`OPENSSL_CONF`, Dockerfile), а `curl` из ВМ к таким адресам — с
   `--curves X25519:P-256`.
 
