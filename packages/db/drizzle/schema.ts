@@ -865,8 +865,8 @@ export const placementAssets = pgTable("placement_assets", {
 			name: "placement_assets_model_id_receipt_entry_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.assetVersionId, table.modelId, table.placementId], name: "placement_assets_pkey"}),
-	unique("placement_assets_position").on(table.modelId, table.placementId, table.position),
 	unique("placement_assets_model_id_id_key").on(table.id, table.modelId),
+	unique("placement_assets_position").on(table.modelId, table.placementId, table.position),
 	check("placement_assets_position_check", sql`"position" >= 1`),
 	check("placement_assets_match_strength_check", sql`match_strength = ANY (ARRAY['none'::text, 'candidate'::text, 'exact'::text])`),
 ]);
@@ -1764,7 +1764,7 @@ export const reviewCases = pgTable("review_cases", {
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "review_cases_pkey"}),
 	unique("review_cases_model_id_kind_dedup_key_key").on(table.dedupKey, table.kind, table.modelId),
-	check("review_cases_kind_check", sql`kind = ANY (ARRAY['cross_model_duplicate'::text, 'legacy_unparsed'::text, 'merge_split'::text, 'unreadable_input'::text])`),
+	check("review_cases_kind_check", sql`kind = ANY (ARRAY['cross_model_duplicate'::text, 'legacy_unparsed'::text, 'merge_split'::text, 'unreadable_input'::text, 'smm_folder'::text, 'number_hole'::text])`),
 	check("review_cases_state_check", sql`state = ANY (ARRAY['open'::text, 'resolved'::text, 'dismissed'::text])`),
 	check("review_cases_blob_sha256_check", sql`octet_length(blob_sha256) = 32`),
 	check("review_cases_resolved", sql`(state = 'open'::text) = (resolved_at IS NULL)`),
@@ -1863,9 +1863,9 @@ export const placementEvidence = pgTable("placement_evidence", {
 			name: "placement_evidence_model_id_legacy_claim_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "placement_evidence_pkey"}),
+	unique("placement_evidence_corrects_once").on(table.correctsId),
 	unique("placement_evidence_model_id_placement_id_id_key").on(table.id, table.modelId, table.placementId),
 	unique("placement_evidence_dedup").on(table.dedupKey, table.modelId, table.placementId, table.source),
-	unique("placement_evidence_corrects_once").on(table.correctsId),
 	check("placement_evidence_source_check", sql`source = ANY (ARRAY['hub'::text, 'manual'::text, 'import'::text])`),
 	check("placement_evidence_kind_check", sql`kind = ANY (ARRAY['observed'::text, 'manual_confirm'::text, 'reused_pair'::text, 'manual_reject'::text, 'legacy_claim'::text, 'outside_catalog'::text, 'retract'::text])`),
 	check("placement_evidence_strength_check", sql`strength = ANY (ARRAY['claim'::text, 'candidate'::text, 'exact'::text])`),
@@ -1988,6 +1988,16 @@ export const promoDeliveries = pgTable("promo_deliveries", {
 	index("promo_deliveries_created").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("promo_deliveries_package").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.packageItemId.asc().nullsLast().op("uuid_ops"), table.createdAt.asc().nullsLast().op("uuid_ops")),
 	foreignKey({
+			columns: [table.modelId, table.channelId],
+			foreignColumns: [promoChannels.id, promoChannels.modelId],
+			name: "promo_deliveries_model_id_channel_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.contractorId],
+			foreignColumns: [contractors.id, contractors.modelId],
+			name: "promo_deliveries_model_id_contractor_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
 			columns: [table.preparedBy],
 			foreignColumns: [principals.id],
 			name: "promo_deliveries_prepared_by_fkey"
@@ -2001,16 +2011,6 @@ export const promoDeliveries = pgTable("promo_deliveries", {
 			columns: [table.modelId, table.packageItemId, table.packageItemType],
 			foreignColumns: [contentItems.id, contentItems.modelId, contentItems.type],
 			name: "promo_deliveries_package_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.channelId],
-			foreignColumns: [promoChannels.id, promoChannels.modelId],
-			name: "promo_deliveries_model_id_channel_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.contractorId],
-			foreignColumns: [contractors.id, contractors.modelId],
-			name: "promo_deliveries_model_id_contractor_id_fkey"
 		}).onDelete("restrict"),
 	foreignKey({
 			columns: [table.modelId, table.manifestId],
@@ -2194,7 +2194,7 @@ export const legacyClaims = pgTable("legacy_claims", {
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "legacy_claims_pkey"}),
 	unique("legacy_claims_key").on(table.claimKey, table.modelId, table.parserVersion, table.sourceObjectId),
-	check("legacy_claims_claim_kind_check", sql`claim_kind = ANY (ARRAY['number'::text, 'used'::text, 'posted'::text, 'date'::text, 'role'::text, 'registry_row'::text, 'duration'::text, 'unknown'::text])`),
+	check("legacy_claims_claim_kind_check", sql`claim_kind = ANY (ARRAY['number'::text, 'used'::text, 'posted'::text, 'date'::text, 'role'::text, 'registry_row'::text, 'duration'::text, 'title'::text, 'tag'::text, 'origin'::text, 'unknown'::text])`),
 	check("legacy_claims_resolution_check", sql`resolution = ANY (ARRAY['pending'::text, 'resolved'::text, 'ignored'::text])`),
 	check("legacy_claims_resolved_version", sql`(resolved_asset_id IS NULL) = (resolved_version_id IS NULL)`),
 	check("legacy_claims_resolved", sql`CHECK (
@@ -2505,26 +2505,6 @@ export const postingPlanRows = pgTable("posting_plan_rows", {
 	index("posting_plan_rows_tasks").using("btree", table.modelId.asc().nullsLast().op("date_ops"), table.assigneeId.asc().nullsLast().op("date_ops"), table.slotDate.asc().nullsLast().op("uuid_ops")),
 	index("posting_plan_rows_uniq_waiting").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.itemId.asc().nullsLast().op("uuid_ops"), table.uniqVariantNo.asc().nullsLast().op("uuid_ops")).where(sql`((manifest_id IS NULL) AND (uniq_variant_no IS NOT NULL))`),
 	foreignKey({
-			columns: [table.modelId, table.itemId, table.releaseId],
-			foreignColumns: [ppvReleases.id, ppvReleases.itemId, ppvReleases.modelId],
-			name: "posting_plan_rows_model_id_release_id_item_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.manifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_manifest_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.markedManifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_marked_manifest_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.inputManifestId],
-			foreignColumns: [assetManifests.id, assetManifests.modelId],
-			name: "posting_plan_rows_model_id_input_manifest_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
 			columns: [table.assigneeId],
 			foreignColumns: [principals.id],
 			name: "posting_plan_rows_assignee_id_fkey"
@@ -2553,6 +2533,26 @@ export const postingPlanRows = pgTable("posting_plan_rows", {
 			columns: [table.modelId, table.accountId, table.surfaceId],
 			foreignColumns: [surfaces.accountId, surfaces.id, surfaces.modelId],
 			name: "posting_plan_rows_model_id_account_id_surface_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.itemId, table.releaseId],
+			foreignColumns: [ppvReleases.id, ppvReleases.itemId, ppvReleases.modelId],
+			name: "posting_plan_rows_model_id_release_id_item_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.manifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.markedManifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_marked_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.inputManifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "posting_plan_rows_model_id_input_manifest_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "posting_plan_rows_pkey"}),
 	check("posting_plan_rows_release_surface_kind_check", sql`release_surface_kind = ANY (ARRAY['wall'::text, 'story'::text, 'vault'::text, 'mass_dm'::text])`),

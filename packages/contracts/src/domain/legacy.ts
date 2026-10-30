@@ -105,3 +105,18 @@ export const LegacyReviewSchema = z.object({
   disputes: z.array(DisputeSchema),
 })
 export type LegacyReview = z.infer<typeof LegacyReviewSchema>
+
+/** A vault album title the agent read in Hub: evidence for SXT-010/011 (SPEC §6.4). */
+export const VaultAlbumEvidenceSchema = z.object({
+  title: z.string().min(1),
+  /** Where it was read: `hub:fansly:<album id>`. */
+  source: z.string().min(1),
+})
+export type VaultAlbumEvidenceInput = z.infer<typeof VaultAlbumEvidenceSchema>
+
+/** `PUT /api/v1/<model>/legacy/inputs`: what the import will read besides the snapshot. */
+export const LegacyInputsSchema = z.object({
+  registry_rows: z.int().nonnegative(),
+  vault_albums: z.int().nonnegative(),
+})
+export type LegacyInputs = z.infer<typeof LegacyInputsSchema>

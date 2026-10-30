@@ -201,6 +201,7 @@ interface WorkRowView extends Record<string, unknown> {
   work_key: string
   state: string
   scope: string | null
+  dataset: string | null
   progress_num: string | null
   progress_den: string | null
   progress_note: string | null
@@ -237,6 +238,8 @@ function operationKind(row: WorkRowView): OperationKind {
       return 'make_cover'
     case 'verify_blobs':
       return 'verify_blobs'
+    case 'import_parse':
+      return row.dataset === 'plan' ? 'legacy_plan' : 'legacy_parse'
     default:
       return 'platform_copy'
   }
@@ -253,7 +256,7 @@ async function operationView(
 ): Promise<Operation> {
   if (!isUuid(id)) throw notFound('Такой операции нет')
   const { rows } = await q.execute<WorkRowView>(sql`
-    SELECT id, kind, work_key, state, scope, progress_num, progress_den, progress_note, report,
+    SELECT id, kind, work_key, state, scope, dataset, progress_num, progress_den, progress_note, report,
            checkpoint, error_text, created_at::text AS created_at, finished_at::text AS finished_at
       FROM work_operations
      WHERE id = ${id}::uuid AND model_id IS NOT DISTINCT FROM ${model?.id ?? null}::uuid`)
@@ -262,7 +265,7 @@ async function operationView(
   let group = [row]
   if (row.scope?.startsWith('op:') && model) {
     const all = await q.execute<WorkRowView>(sql`
-      SELECT id, kind, work_key, state, scope, progress_num, progress_den, progress_note, report,
+      SELECT id, kind, work_key, state, scope, dataset, progress_num, progress_den, progress_note, report,
              checkpoint, error_text, created_at::text AS created_at, finished_at::text AS finished_at
         FROM work_operations WHERE model_id = ${model.id}::uuid AND scope = ${row.scope}`)
     group = all.rows
@@ -306,7 +309,7 @@ async function operationView(
           request_id: requestId,
         }
       : null,
-    ...(row.kind === 'verify_blobs' ? { report: row.report } : {}),
+    ...(row.kind === 'verify_blobs' || row.kind === 'import_parse' ? { report: row.report } : {}),
   }
 }
 

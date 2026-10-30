@@ -79,4 +79,33 @@ export const aliases: Record<string, Alias> = {
       return { flags: { model: one(flags, 'model'), order: orderAddress(ref) } }
     },
   },
+  /**
+   * The dry run of the legacy import (PLAN этап 3 `import plan`): the parse of the latest frozen
+   * snapshot, nothing written but the report in the operation. `--wait` prints it.
+   */
+  'import.plan': {
+    summary: 'dry run of the legacy import over the latest snapshot (report in the operation)',
+    route: 'legacy.plan',
+    flags: {
+      model: 'model code',
+      snapshot: 'work id of a finished snapshot (default: the latest)',
+    },
+    toRoute: (flags) => {
+      const snapshot = optional(flags, 'snapshot')
+      return { flags: { model: one(flags, 'model'), ...(snapshot ? { snapshot } : {}) } }
+    },
+  },
+  /** The metadata pass of stage 3 (SPEC §6.3): claims, number claims, cases, the reserve. */
+  'import.parse': {
+    summary: 'metadata pass of the legacy import: claims, number claims, cases, number reserve',
+    route: 'legacy.parse',
+    flags: {
+      model: 'model code',
+      snapshot: 'work id of a finished snapshot (default: the latest)',
+    },
+    toRoute: (flags) => {
+      const snapshot = optional(flags, 'snapshot')
+      return { flags: { model: one(flags, 'model'), ...(snapshot ? { snapshot } : {}) } }
+    },
+  },
 }

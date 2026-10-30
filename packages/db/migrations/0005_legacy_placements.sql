@@ -26,8 +26,11 @@ CREATE TABLE legacy_claims (
   -- Natural key of the observed input and the position of the fragment (schema §9.7).
   claim_key text NOT NULL,
   raw_fragment text NOT NULL,
+  -- `title`, `tag`, `origin` — the tail of a custom name, folder tags and origin evidence
+  -- (`IMG_*`, `copy_*`, `lv_0_*`), added with the parser `packages/legacy` (schema §3.4).
   claim_kind text NOT NULL CHECK (claim_kind IN (
-    'number', 'used', 'posted', 'date', 'role', 'registry_row', 'duration', 'unknown'
+    'number', 'used', 'posted', 'date', 'role', 'registry_row', 'duration', 'title', 'tag',
+    'origin', 'unknown'
   )),
   payload jsonb NOT NULL DEFAULT '{}',
   parse_work_id uuid NOT NULL,

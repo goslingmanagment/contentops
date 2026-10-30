@@ -727,8 +727,11 @@ CREATE UNIQUE INDEX inbox_draft_candidates_chosen ON inbox_draft_candidates (mod
 CREATE TABLE review_cases (
   model_id uuid NOT NULL,
   id uuid NOT NULL DEFAULT uuidv7(),
+  -- `smm_folder` — an SMM folder a person marks as a contractor pack or a vendor shoot,
+  -- `number_hole` — a number no source names (SXT-010/011, SPEC §6.4): decisions of stage 3.
   kind text NOT NULL CHECK (kind IN (
-    'cross_model_duplicate', 'legacy_unparsed', 'merge_split', 'unreadable_input'
+    'cross_model_duplicate', 'legacy_unparsed', 'merge_split', 'unreadable_input', 'smm_folder',
+    'number_hole'
   )),
   state text NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'resolved', 'dismissed')),
   dedup_key text NOT NULL,

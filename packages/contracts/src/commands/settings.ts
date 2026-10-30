@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { IntegrationSwitchesSchema } from '../domain/integrations'
-import { LabelTargetSchema } from '../domain/legacy'
+import { LabelTargetSchema, VaultAlbumEvidenceSchema } from '../domain/legacy'
 import { ThresholdSchema, ThresholdScopeSchema } from '../domain/system'
 
 export const UpdateIntegrationCommandSchema = z.object({ switches: IntegrationSwitchesSchema })
@@ -52,3 +52,13 @@ export const ResolveDisputeCommandSchema = z.object({
   folders: z.record(z.string(), z.string()).optional(),
 })
 export type ResolveDisputeCommand = z.infer<typeof ResolveDisputeCommandSchema>
+
+/**
+ * Inputs of the legacy import (SPEC §6.3–6.4): the PPV registry export as text (Markdown, CSV
+ * or TSV) and the vault album titles read in Hub. A field left out stays; `null` removes it.
+ */
+export const UpdateLegacyInputsCommandSchema = z.object({
+  registry: z.string().nullable().optional(),
+  vault_albums: z.array(VaultAlbumEvidenceSchema).nullable().optional(),
+})
+export type UpdateLegacyInputsCommand = z.infer<typeof UpdateLegacyInputsCommandSchema>

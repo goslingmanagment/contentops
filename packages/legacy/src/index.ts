@@ -26,5 +26,6 @@ export {
   type VaultAlbumEvidence,
 } from './plan.ts'
 export { parsePpvRegistry, type RegistryClaim, registryRows, splitTags } from './registry.ts'
+export { type LegacyPlanReport, planMarkdown, summarizePlan } from './report.ts'
 export { PARSER_VERSION, relativePath } from './text.ts'
 export * from './types.ts'

@@ -134,6 +134,15 @@
   Оборванный или частичный проход ничего не закрепляет и повторяется сам. Реестр готового
   снимка: `docker compose exec -T worker node dist/ops.js freeze-export lora [ГГГГ-ММ-ДД] >
   реестр.jsonl`.
+- Разбор старых имён по снимку (SPEC §6.3–6.4) — командами CLI с токеном агента или
+  владельца: выгрузка реестра PPV — `pnpm contentops legacy inputs --model lora --body
+  @inputs.json` (`{"registry": "<таблица Markdown, CSV или TSV>"}`; там же `vault_albums`);
+  сухой прогон — `pnpm contentops import plan --model lora --wait --json` (отчёт в операции,
+  ничего не пишет); его отчёт для чтения — `docker compose exec -T worker node dist/ops.js
+  import-report lora > прогон.md` — с настоящими именами, в git не класть; проход —
+  `pnpm contentops import parse --model lora --wait`: заявки, номера, спорное в «Разбор
+  старого», затем резерв счётчиков. До прохода приёмка не выдаёт номера типов с легаси
+  (`number_not_issued`); повтор с той же версией правил ничего не меняет.
 - Без диска E: (или любого из `REQUIRE_HOST_MOUNTS`) `ops/up.sh` поднимает `db`, `web` и
   `proxy`, а воркеры — нет; `/healthz` красный с `volumes`. Проверка в контейнере — файл-метка
   `.contentops-volume` в корне хранилища: её пишет `ops/up.sh` после `mountpoint -q`; без

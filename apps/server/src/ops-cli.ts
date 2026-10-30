@@ -6,6 +6,7 @@ import { createDb, createPool, type Db, SYSTEM_ACTOR, withActorTx } from '@conte
 import { sql } from 'drizzle-orm'
 import { loadConfig } from './config'
 import { enqueueFreeze, freezeRegister } from './intake/freeze'
+import { importReportMarkdown } from './legacy/export'
 import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
@@ -29,6 +30,12 @@ import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs
  *
  * `freeze` puts the work `scan:freeze:<date>` (the model's today by default; a repeat finds the
  * same work). `freeze-export` prints the register of a finished snapshot as JSON lines.
+ *
+ * The legacy import itself runs by the API and the CLI (`contentops import plan|parse`); its
+ * report as Markdown, for the owner to read, only by this command and never into git — it
+ * holds the real names of the disk:
+ *
+ *   docker compose exec -T worker node dist/ops.js import-report <model> [work id] > plan.md
  */
 
 const USAGE = `usage:
@@ -37,7 +44,8 @@ const USAGE = `usage:
   ops.js stage <file> --model <code>       (test runs before stage 3)
   ops.js render <sha256> --model <code> [--keep-metadata]
   ops.js freeze <model> <source label> [YYYY-MM-DD] [--wait]
-  ops.js freeze-export <model> [YYYY-MM-DD]`
+  ops.js freeze-export <model> [YYYY-MM-DD]
+  ops.js import-report <model> [work id]   (the last dry run, or this import work)`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
@@ -195,6 +203,12 @@ async function main(argv: string[]): Promise<number> {
           await new Promise((resolve) => process.stdout.once('drain', resolve))
         }
       }
+      return 0
+    }
+    if (command === 'import-report') {
+      const [model, work] = positionals
+      if (!model) throw new Error(USAGE)
+      process.stdout.write(await importReportMarkdown(db, model, work ?? null))
       return 0
     }
     if (command === 'stage' || command === 'render') {

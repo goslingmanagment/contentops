@@ -570,6 +570,8 @@ export const reviewCaseKinds = [
   'legacy_unparsed',
   'merge_split',
   'unreadable_input',
+  'smm_folder',
+  'number_hole',
 ] as const
 export type ReviewCaseKind = (typeof reviewCaseKinds)[number]
 
@@ -623,6 +625,9 @@ export const legacyClaimKinds = [
   'role',
   'registry_row',
   'duration',
+  'title',
+  'tag',
+  'origin',
   'unknown',
 ] as const
 export type LegacyClaimKind = (typeof legacyClaimKinds)[number]

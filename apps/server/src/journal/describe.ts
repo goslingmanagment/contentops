@@ -199,6 +199,19 @@ const WORDING: Record<string, Wording> = {
   },
   'orders.close': { verb: 'закрыл', rest: 'заказ: {subject}', noun: 'закрытие заказа' },
   'orders.cancel': { verb: 'снял', rest: 'заказ: {subject}', noun: 'снятие заказа' },
+  // Legacy import (stage 3): the runs, their inputs and the reserve the pass writes.
+  'legacy.parse': { verb: 'запустил', rest: 'разбор старых имён', noun: 'разбор старых имён' },
+  'legacy.plan': { verb: 'запустил', rest: 'сухой прогон импорта', noun: 'сухой прогон' },
+  'legacy.inputs': {
+    verb: 'изменил',
+    rest: 'входы импорта: реестр PPV и альбомы vault',
+    noun: 'входы импорта',
+  },
+  'legacy.reserve': {
+    verb: 'записал',
+    rest: 'старые номера и поднял счётчики: {subject}',
+    noun: 'резерв номеров',
+  },
 }
 
 /** Why an object is in «Недавние»: «правка разметки», «подтверждение разметки». */

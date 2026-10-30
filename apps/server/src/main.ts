@@ -17,6 +17,7 @@ import { intakeMediaHandlers } from './intake/media'
 import { scanHandler, scanStreams } from './intake/scan'
 import { envSourceFactory } from './intake/source-client'
 import { startStagingSweep } from './intake/staging'
+import { importParseHandler } from './legacy/parse'
 import { createLogger } from './logger'
 import { startGenerationCollector } from './media/collector'
 import { createMediaEnv } from './media/pipeline'
@@ -233,6 +234,8 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     // Discovery from the cloud folders of the models (SPEC §6.1).
     ...intakeMediaHandlers(role, env),
     ...(role === 'worker' ? intakeHandlers(config, store, mediaHandlers(role, env).export) : {}),
+    // The legacy pass of stage 3 and its dry run (SPEC §6.3).
+    ...(role === 'worker' ? { import_parse: importParseHandler() } : {}),
   }
   const runner = new WorkRunner({
     db,
