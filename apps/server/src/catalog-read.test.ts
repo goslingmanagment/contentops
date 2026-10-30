@@ -152,6 +152,8 @@ describe('catalog index', () => {
     expect(again.statusCode).toBe(304)
     expect(again.body).toBe('')
     expect(again.headers.etag).toBe(etag)
+    // nginx gzips the index and marks its ETag weak; the browser sends that form back.
+    expect((await get('/api/v1/lora/index', { 'if-none-match': `W/${etag}` })).statusCode).toBe(304)
   })
 
   it('changes its ETag when an object changes', async () => {

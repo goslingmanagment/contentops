@@ -30,8 +30,7 @@ export interface PoolOptions {
 /**
  * node-postgres pool; every session works in UTC (SPEC §12.1) and without JIT: the plans of
  * the catalog index cross `jit_above_cost`, and LLVM compilation took 580 of the 760 ms of
- * `/index` on the full-volume catalog — without it the query takes 200 ms
- * (docs/reference/infrastructure.md §5).
+ * `/index` on the full-volume catalog (docs/reference/infrastructure.md §5).
  */
 export function createPool(url: string, options: PoolOptions = {}): pg.Pool {
   const pool = new pg.Pool({

@@ -410,18 +410,28 @@ LEFT JOIN LATERAL (
     LEFT JOIN tags merged ON merged.id = t.merged_into_tag_id
    WHERE it.model_id = i.model_id AND it.item_id = i.id
 ) tg ON true
+-- Fields of the object and of its files' current versions: two index lookups, not an OR
+-- that scans every field of the model for each object (docs/reference/infrastructure.md §5).
+-- A field has exactly one target (annotation_fields_one_target): nothing is counted twice.
 LEFT JOIN LATERAL (
   SELECT count(*) AS total,
          count(*) FILTER (WHERE f.confirmed_value_version = f.value_version) AS confirmed
-    FROM annotation_fields f
-   WHERE f.model_id = i.model_id
-     AND (f.item_id = i.id OR f.version_id IN (
-       SELECT a.current_version_id
-         FROM item_memberships im
-         JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id
-        WHERE im.model_id = i.model_id AND im.item_id = i.id
-          AND im.kind = 'owned' AND im.removed_at IS NULL
-     ))
+    FROM (
+      SELECT f.value_version, f.confirmed_value_version
+        FROM annotation_fields f
+       WHERE f.model_id = i.model_id AND f.item_id = i.id
+      UNION ALL
+      SELECT f.value_version, f.confirmed_value_version
+        FROM annotation_fields f
+       WHERE f.model_id = i.model_id
+         AND f.version_id IN (
+           SELECT a.current_version_id
+             FROM item_memberships im
+             JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id
+            WHERE im.model_id = i.model_id AND im.item_id = i.id
+              AND im.kind = 'owned' AND im.removed_at IS NULL
+         )
+    ) f
 ) af ON true
 LEFT JOIN LATERAL (
   SELECT v.id AS version_id, v.width, v.height,
