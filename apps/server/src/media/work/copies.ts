@@ -10,6 +10,7 @@ import {
   type UniqLevel,
 } from '@contentops/media'
 import { sql } from 'drizzle-orm'
+import { sealWaitingVersionRows } from '../../plan/composition'
 import { locateInput, probeVideoCached } from '../inputs'
 import type { MediaEnv } from '../pipeline'
 import {
@@ -254,6 +255,8 @@ export function uniqRenderHandler(env: MediaEnv): WorkHandler {
             VALUES (${model}::uuid, 'uniq_from', ${versionId}::uuid, ${ctx.work.assetVersionId}::uuid,
                     ${JSON.stringify({ ...built.params, profile: env.platform.id, recipe: built.recipe.digest })}::jsonb,
                     'uniq_render', ${ctx.work.id}::uuid)`)
+          // Plan rows that asked for this version get it now (SPEC §4, 4а).
+          await sealWaitingVersionRows(tx, model, parent.item_id, n)
         },
       }
     } catch (error) {

@@ -284,6 +284,23 @@ async function policies(q: Queryable): Promise<PolicyRow[]> {
   return rows
 }
 
+/** The integrations of the models as «Интеграции» shows them, for the plan's Hub lines. */
+export async function integrationViews(
+  q: Queryable,
+  services: Pick<Services, 'secrets' | 'sourceEnv'>,
+  models: readonly string[],
+): Promise<IntegrationView[]> {
+  const list = await entries(q, models)
+  const rows = await policies(q)
+  const context: ViewContext = {
+    secrets: services.secrets,
+    env: services.sourceEnv,
+    health: await scanHealth(q),
+  }
+  const now = new Date().toISOString()
+  return list.map((entry) => view(entry, rows, context, now))
+}
+
 const WORD = (on: boolean) => (on ? 'включено' : 'выключено')
 
 export function integrationHandlers({

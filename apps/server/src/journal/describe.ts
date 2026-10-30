@@ -62,6 +62,37 @@ const WORDING: Record<string, Wording> = {
     noun: 'добавление страницы',
   },
   'plan.updateNorm': { verb: 'изменил', rest: 'норму {subject}', noun: 'изменение нормы' },
+  // Plan (4а): `{subject}` is «PPV-073 · Fansly 1 · стена 22.09 20:00».
+  'plan.createRows': { verb: 'поставил', rest: 'в план {subject}', noun: 'постановка в план' },
+  'plan.createRelease': { verb: 'поставил', rest: 'выпуск: {subject}', noun: 'выпуск PPV' },
+  'plan.undoCreate': { verb: 'удалил', rest: 'строку {subject}', noun: 'удаление строки' },
+  'plan.updateRow': { verb: 'изменил', rest: 'строку {subject}', noun: 'правка строки' },
+  'plan.mark': { verb: 'отметил', rest: '{subject}', noun: 'отметка' },
+  'plan.markMany': { verb: 'отметил', rest: '{subject}', noun: 'отметка' },
+  'plan.markConfirm': {
+    verb: 'подтвердил',
+    rest: 'вручную {subject}',
+    noun: 'ручное подтверждение',
+  },
+  'plan.markConfirmMany': {
+    verb: 'подтвердил',
+    rest: 'вручную {subject}',
+    noun: 'ручное подтверждение',
+  },
+  'plan.unmark': { verb: 'снял', rest: 'отметку {subject}', noun: 'снятие отметки' },
+  'plan.cancel': { verb: 'отменил', rest: 'строку {subject}', noun: 'отмена строки' },
+  'plan.move': { verb: 'переставил', rest: 'строку {subject}', noun: 'перенос строки' },
+  'plan.download': { verb: 'скачал', rest: 'архив плана {subject}', noun: 'архив плана' },
+  'objects.alreadyUploaded': {
+    verb: 'отметил',
+    rest: 'залитым {subject}',
+    noun: 'уже залито',
+  },
+  'objects.uploadNow': {
+    verb: 'поставил',
+    rest: 'на сегодня {subject} · залить сейчас',
+    noun: 'залить сейчас',
+  },
   'admin.updateIntegration': {
     verb: 'переключил',
     rest: '{subject}',

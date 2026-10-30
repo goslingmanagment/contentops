@@ -294,4 +294,50 @@ describe('«всё выключено»', () => {
     expect(accepted.statusCode).toBe(200)
     expect(accepted.json()).toMatchObject({ item_id: 'SET-001', how: 'new' })
   })
+
+  it('puts an object into the plan and marks it by hand: Hub is off, the KM confirms', async () => {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
+    const created = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/plan/rows',
+      as: owner,
+      key: newKey(),
+      body: {
+        rows: [
+          {
+            item_id: 'PPV-073',
+            account: 'lora-1',
+            surface: 'wall',
+            date: today,
+            time: null,
+            fyp_version: null,
+            assignee: null,
+            note: null,
+            requires_new_upload: false,
+            awaiting_montage: null,
+            marked: null,
+          },
+        ],
+      },
+    })
+    expect(created.statusCode, created.body).toBe(201)
+    const [row] = created.json().rows
+    expect(row).toMatchObject({ mark_button: 'mark_confirm', verdict: { word: 'в плане' } })
+    const confirmed = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/plan/rows/${row.id}:mark-confirm`,
+      as: owner,
+      key: newKey(),
+      body: { stated_occurred_at: null },
+    })
+    expect(confirmed.statusCode, confirmed.body).toBe(200)
+    expect(confirmed.json().verdict).toMatchObject({
+      sign: 'done',
+      word: 'подтверждено',
+      detail: 'вручную, Дмитрий',
+    })
+    const page = await call(server.app, { method: 'GET', url: '/api/v1/lora/i/PPV-073', as: owner })
+    const lora1 = page.json().pages.find((entry: { account: string }) => entry.account === 'lora-1')
+    expect(lora1.summary).toMatchObject({ word: 'подтверждено', placed_on: ['wall'] })
+  })
 })

@@ -90,6 +90,23 @@ beforeAll(async () => {
         { role: 'pic', sha256: [shaBytes(photo)], width: 32, height: 64 },
       ],
     },
+    {
+      type: 'life',
+      number: 191,
+      title: 'Завтрак',
+      secondPerson: false,
+      files: [
+        { role: 'pic', sha256: [shaBytes(photo)], lifeUse: 'chats' },
+        { role: 'pic', sha256: [shaBytes(photo)], lifeUse: 'both' },
+      ],
+    },
+    {
+      type: 'set',
+      number: 74,
+      title: 'Кружево',
+      secondPerson: false,
+      files: [{ role: 'ed', sha256: [shaBytes(photo)], selected: true }],
+    },
   ])
   generation = await createGeneration(server.db, {
     kind: 'thumb640',
@@ -322,5 +339,99 @@ describe('previews by generation', () => {
       (await call(server.app, { method: 'GET', url: other, as: foreign.session })).statusCode,
     ).toBe(404)
     expect((await call(server.app, { method: 'GET', url: other, as: owner })).statusCode).toBe(404)
+  })
+})
+
+describe('plan archive (DESIGN §4.11: «Скачать всё за день»)', () => {
+  it('one ZIP by page over the rows of the day, a receipt per row with its suffix', async () => {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Moscow' })
+    const rows = (
+      await call(server.app, {
+        method: 'POST',
+        url: '/api/v1/lora/plan/rows',
+        as: owner,
+        key: newKey(),
+        body: {
+          rows: [
+            { item_id: 'LIFE-191', account: 'lora-1', surface: 'vault', date: today, time: null },
+            { item_id: 'SET-074', account: 'lora-1', surface: 'wall', date: today, time: '20:00' },
+          ].map((row) => ({
+            ...row,
+            fyp_version: null,
+            assignee: null,
+            note: null,
+            requires_new_upload: false,
+            awaiting_montage: null,
+            marked: null,
+          })),
+        },
+      })
+    ).json().rows as { id: string }[]
+    expect(rows).toHaveLength(2)
+    const response = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/plan/downloads',
+      as: owner,
+      key: newKey(),
+      body: {
+        scope: 'day',
+        date: today,
+        week: null,
+        release_id: null,
+        account: null,
+        strip_metadata: false,
+      },
+    })
+    expect(response.statusCode, response.body).toBe(202)
+    const status = () =>
+      call(server.app, { method: 'GET', url: response.json().status_url, as: owner })
+    expect((await status()).json()).toMatchObject({ state: 'running', kind: 'zip_day' })
+    const env = await createMediaEnv({
+      db: server.db,
+      store: server.store,
+      lp: 4,
+      owner: 'worker:test',
+      log: () => {},
+      versions: FAKE_VERSIONS,
+      activate: false,
+    })
+    const runner = new WorkRunner({
+      db: server.db,
+      role: 'worker',
+      handlers: { export: exportHandler(env) },
+      pollMs: 20,
+    })
+    runner.start()
+    const done = await vi.waitFor(
+      async () => {
+        const answer = (await status()).json()
+        if (answer.state !== 'done') throw new Error(answer.state)
+        return answer
+      },
+      { timeout: 10_000, interval: 50 },
+    )
+    await runner.stop()
+    expect(done.result).toMatchObject({ file_name: `lora_day_${today}.zip` })
+    const { rows: receipts } = await server.db.execute<{
+      plan_row_id: string
+      zip_key: string
+      names: string[]
+    }>(sql`
+      SELECT r.plan_row_id, r.zip_key, array_agg(e.file_name ORDER BY e.position) AS names
+        FROM download_receipts r JOIN download_receipt_entries e ON e.receipt_id = r.id
+       WHERE r.plan_row_id IS NOT NULL GROUP BY r.id, r.plan_row_id, r.zip_key
+       ORDER BY min(e.file_name)`)
+    expect(receipts.map((receipt) => receipt.plan_row_id).sort()).toEqual(
+      rows.map((row) => row.id).sort(),
+    )
+    expect(new Set(receipts.map((receipt) => receipt.zip_key)).size).toBe(1)
+    expect(receipts.flatMap((receipt) => receipt.names)).toEqual([
+      `LIFE-191_zavtrak_pic01__lora-1_${today}.jpg`,
+      `LIFE-191_zavtrak_pic02__lora-1_${today}.jpg`,
+      `SET-074_kruzhevo_ed01__lora-1_${today}_2000.jpg`,
+    ])
+    const file = await call(server.app, { method: 'GET', url: done.result.download_url, as: owner })
+    expect(file.statusCode).toBe(200)
+    expect(String(file.headers['content-disposition'])).toContain(`lora_day_${today}.zip`)
   })
 })

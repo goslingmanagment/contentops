@@ -115,6 +115,11 @@ function thresholdList(stored: readonly PolicyRow[]): Threshold[] {
   })
 }
 
+/** Every threshold with its exceptions, as the screen and the plan rules read them. */
+export async function readThresholds(q: Queryable): Promise<Threshold[]> {
+  return thresholdList(await rows(q))
+}
+
 interface Target {
   modelId: string | null
   accountId: string | null

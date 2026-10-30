@@ -12,6 +12,8 @@ import { modelHandlers } from './models'
 import { normHandlers } from './norm'
 import { orderHandlers } from './orders'
 import { peopleHandlers } from './people'
+import { planHandlers } from './plan'
+import { planObjectHandlers } from './plan-objects'
 import { promoHandlers } from './promo'
 import { systemHandlers } from './system'
 import { tagHandlers } from './tags'
@@ -41,6 +43,8 @@ export function createHandlers(services: Services): HandlerRegistry {
     agentHandlers(services),
     modelHandlers(services),
     normHandlers(services),
+    planHandlers(services),
+    planObjectHandlers(services),
     journalHandlers(services),
     integrationHandlers(services),
     thresholdHandlers(services),

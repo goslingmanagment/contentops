@@ -2,6 +2,7 @@ import type { ItemsQuerySchema } from '@contentops/contracts/api/routes/objects'
 import type { CatalogEntry, RecentItem } from '@contentops/contracts/domain/catalog'
 import type { MarkupReviewItem } from '@contentops/contracts/domain/markup-review'
 import { DEFAULT_PAGE_LIMIT } from '@contentops/contracts/domain/pagination'
+import type { PageSummaryEntry } from '@contentops/contracts/domain/placement'
 import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { z } from 'zod'
@@ -15,6 +16,8 @@ import { instant, requireActor } from '../commands'
 import { type ModelScope, withContentTag } from '../context'
 import type { HandlerRegistry } from '../handlers'
 import { reasonOf } from '../journal/describe'
+import { loadState } from '../plan/state'
+import { pageSummaries } from '../plan/summaries'
 import type { Services } from '../services'
 
 /**
@@ -44,9 +47,7 @@ async function listItems(db: Queryable, model: ModelScope, query: ItemsQuery) {
   const digest = filterDigest(model.code, { ...query, cursor: undefined, limit: undefined })
   const cursor = readCursor(query.cursor, digest)
   const limit = query.limit ?? DEFAULT_PAGE_LIMIT
-  // Nothing is placed before the placements of stage 3: «залито на странице» finds nothing.
-  const placed = (query.where ?? []).some((condition) => condition.endsWith(':yes'))
-  if (placed) return { items: [], next_cursor: null }
+  const where = query.where ?? []
   const rows = await catalogEntries(
     db,
     model,
@@ -55,9 +56,38 @@ async function listItems(db: Queryable, model: ModelScope, query: ItemsQuery) {
       ${query.kind ? sql`AND c.ppv_kind = ${query.kind}` : sql``}
       ${query.tag?.length ? sql`AND c.tags @> ${sql.param(query.tag)}::text[]` : sql``}
       ${cursor ? sql`AND (c.created_at, c.item_id) < (${cursor[0]}::timestamptz, ${cursor[1]}::uuid)` : sql``}`,
-    sql`ORDER BY c.created_at DESC, c.item_id DESC LIMIT ${limit + 1}`,
+    where.length > 0
+      ? sql`ORDER BY c.created_at DESC, c.item_id DESC`
+      : sql`ORDER BY c.created_at DESC, c.item_id DESC LIMIT ${limit + 1}`,
   )
-  return pageOf(rows, limit, plain, (row) => [row.created_at, row.uid], digest)
+  // «Где залито» (`lora-2:no`, `lora-1:yes`): a placement of any level on the page, from the
+  // same page summaries as «Ещё не залито» (SPEC §7).
+  const filtered =
+    where.length > 0 ? matchingWhere(rows, pageSummaries(await loadState(db, model)), where) : rows
+  return pageOf(
+    filtered.slice(0, limit + 1),
+    limit,
+    plain,
+    (row) => [row.created_at, row.uid],
+    digest,
+  )
+}
+
+function matchingWhere<T extends { id: string }>(
+  rows: readonly T[],
+  summaries: readonly PageSummaryEntry[],
+  where: readonly string[],
+): T[] {
+  const placed = new Set(
+    summaries.filter((entry) => entry.placed_on.length > 0).map((e) => `${e.item_id}|${e.account}`),
+  )
+  return rows.filter((row) =>
+    where.every((condition) => {
+      const [account, answer] = condition.split(':')
+      const yes = placed.has(`${row.id}|${account ?? ''}`)
+      return answer === 'yes' ? yes : !yes
+    }),
+  )
 }
 
 const RECENT_LIMIT = 20
@@ -168,16 +198,6 @@ export function catalogHandlers({ db }: Services): HandlerRegistry {
           etag,
           generated_at: new Date().toISOString(),
           items,
-        })
-      },
-      pageSummaries: ({ ctx }) => {
-        const model = modelOf(ctx.model)
-        const etag = contentTag('p', [])
-        return withContentTag(ctx, etag, {
-          model: model.code,
-          etag,
-          generated_at: new Date().toISOString(),
-          entries: [],
         })
       },
       list: ({ query, ctx }) => listItems(db, modelOf(ctx.model), query),

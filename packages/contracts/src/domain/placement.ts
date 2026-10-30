@@ -64,13 +64,22 @@ export const HubCoverageSchema = z.object({
 })
 export type HubCoverage = z.infer<typeof HubCoverageSchema>
 
-export const CancelReasonSchema = z.enum(['late', 'replaced', 'paused'])
+/** `second_person` — set by the system when the flag came after the row (SPEC §7). */
+export const CancelReasonSchema = z.enum(['late', 'replaced', 'paused', 'second_person'])
 export type CancelReason = z.infer<typeof CancelReasonSchema>
+
+/** Reasons a person picks after «Отменить строку» (DESIGN §3.8). */
+export const PICKED_CANCEL_REASONS = [
+  'late',
+  'replaced',
+  'paused',
+] as const satisfies readonly CancelReason[]
 
 export const CANCEL_REASON_LABEL: Record<CancelReason, string> = {
   late: 'не успели',
   replaced: 'заменили',
   paused: 'пауза',
+  second_person: 'второй человек в кадре',
 }
 
 export const MarkKindSchema = z.enum(['posted', 'scheduled'])

@@ -1,11 +1,11 @@
 import {
   CANCEL_REASON_LABEL,
   type CancelReason,
-  CancelReasonSchema,
   type DownloadAnswer,
   type DownloadKind,
   type MoveRowCommand,
   type PersonRef,
+  PICKED_CANCEL_REASONS,
   type PlanRow,
   type UpdateRowCommand,
 } from '@contentops/contracts'
@@ -17,7 +17,7 @@ import { accountLabel } from '@/lib/words'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { rowsWord, slotText } from '../plan-text'
 
-const REASONS = CancelReasonSchema.options
+const REASONS = PICKED_CANCEL_REASONS
 
 interface MoveRequest {
   row: PlanRow

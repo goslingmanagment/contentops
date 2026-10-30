@@ -17,18 +17,28 @@ import { checkItemVersion, lockItems, logItemAction, touchItem } from './writes'
  * sub-handles stay as aliases (`RAW-0035/raw03`).
  */
 
-/** What holds an object in place: promo references now; plan rows, placements and order
- * deliveries join with their stages (3, 4а, 2в). */
+/**
+ * What holds an object in place (SPEC §4.1): promo references, plan rows (cancelled ones too —
+ * they are history) and placements; order deliveries join with 4б.
+ */
 async function usesOf(tx: Tx, model: ModelScope, item: ItemRow): Promise<string[]> {
-  const { rows } = await tx.execute<{ promo: number }>(sql`
-    SELECT count(DISTINCT ref.item_id)::int AS promo
-      FROM item_memberships own
-      JOIN item_memberships ref ON ref.model_id = own.model_id AND ref.asset_id = own.asset_id
-                               AND ref.kind = 'reference' AND ref.removed_at IS NULL
-     WHERE own.model_id = ${model.id}::uuid AND own.item_id = ${item.id}::uuid
-       AND own.kind = 'owned' AND own.removed_at IS NULL`)
-  const promo = rows[0]?.promo ?? 0
-  return promo > 0 ? [`в промо-подборках: ${promo}`] : []
+  const { rows } = await tx.execute<{ promo: number; plan: number; placed: number }>(sql`
+    SELECT (SELECT count(DISTINCT ref.item_id)::int
+              FROM item_memberships own
+              JOIN item_memberships ref ON ref.model_id = own.model_id AND ref.asset_id = own.asset_id
+                                       AND ref.kind = 'reference' AND ref.removed_at IS NULL
+             WHERE own.model_id = ${model.id}::uuid AND own.item_id = ${item.id}::uuid
+               AND own.kind = 'owned' AND own.removed_at IS NULL) AS promo,
+           (SELECT count(*)::int FROM posting_plan_rows r
+             WHERE r.model_id = ${model.id}::uuid AND r.item_id = ${item.id}::uuid) AS plan,
+           (SELECT count(*)::int FROM placements p
+             WHERE p.model_id = ${model.id}::uuid AND p.item_id = ${item.id}::uuid) AS placed`)
+  const counts = rows[0] ?? { promo: 0, plan: 0, placed: 0 }
+  return [
+    ...(counts.promo > 0 ? [`в промо-подборках: ${counts.promo}`] : []),
+    ...(counts.plan > 0 ? [`в плане: ${counts.plan}`] : []),
+    ...(counts.placed > 0 ? [`размещений: ${counts.placed}`] : []),
+  ]
 }
 
 async function requireUnused(tx: Tx, model: ModelScope, item: ItemRow, what: string) {

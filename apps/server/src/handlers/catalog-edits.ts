@@ -1,5 +1,6 @@
 import { FAN_NAME_LABEL } from '@contentops/contracts/domain/catalog'
 import type { BatchResult } from '@contentops/contracts/domain/pagination'
+import { plural } from '@contentops/contracts/format'
 import type { Tx } from '@contentops/db'
 import { setJournalItem } from '@contentops/db'
 import { sql } from 'drizzle-orm'
@@ -29,13 +30,57 @@ import type { Services } from '../services'
 
 const yesNo = (value: boolean | null) => (value === null ? 'не проверено' : value ? 'да' : 'нет')
 
-/** «Второй человек в кадре» and «Имя фана в ролике». No plan rows on OnlyFans exist before 4а. */
+/** Open (unmarked, not cancelled) rows of the objects on OnlyFans pages. */
+async function openOnlyFansRows(tx: Tx, model: ModelScope, itemIds: readonly string[]) {
+  if (itemIds.length === 0) return 0
+  const { rows } = await tx.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM posting_plan_rows r
+      JOIN accounts a ON a.model_id = r.model_id AND a.id = r.account_id
+     WHERE r.model_id = ${model.id}::uuid AND r.item_id = ANY(${sql.param([...itemIds])}::uuid[])
+       AND a.platform = 'onlyfans' AND r.marked_at IS NULL AND r.cancelled_at IS NULL`)
+  return rows[0]?.n ?? 0
+}
+
+/**
+ * A flag set after the plan cancels the open OnlyFans rows of the object (SPEC §7; the
+ * database does it, trigger `content_items_second_person_late`): the person agrees first —
+ * «Снимет 2 строки на OnlyFans · Снять и отметить».
+ */
+async function requireConsent(
+  tx: Tx,
+  model: ModelScope,
+  items: readonly ItemRow[],
+  consent: boolean | undefined,
+) {
+  const flagged = items.filter((item) => item.has_second_person !== true)
+  const rows = await openOnlyFansRows(
+    tx,
+    model,
+    flagged.map((item) => item.id),
+  )
+  if (rows > 0 && !consent) {
+    throw new ApiProblem(
+      'second_person_onlyfans',
+      `Снимет ${rows} ${plural(rows, ['строку', 'строки', 'строк'])} на OnlyFans`,
+      { rows },
+    )
+  }
+}
+
+/** «Второй человек в кадре» and «Имя фана в ролике». */
 async function setFlags(
   tx: Tx,
   model: ModelScope,
   item: ItemRow,
-  flags: { second_person?: boolean; fan_name?: 'yes' | 'no' | 'unknown' },
+  flags: {
+    second_person?: boolean
+    fan_name?: 'yes' | 'no' | 'unknown'
+    cancel_onlyfans_rows?: boolean
+  },
 ) {
+  if (flags.second_person === true) {
+    await requireConsent(tx, model, [item], flags.cancel_onlyfans_rows)
+  }
   if (flags.fan_name !== undefined && item.type !== 'CUS') {
     throw new ApiProblem('invalid_request', 'Имя фана в ролике — у кастома', { field: 'fan_name' })
   }
@@ -197,10 +242,21 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
           })
         }),
       secondPerson: ({ body, ctx }) =>
-        command({ ctx, body }, (tx) => {
+        command({ ctx, body }, async (tx) => {
           const model = modelOf(ctx.model)
+          if (body.second_person) {
+            const items = []
+            for (const id of new Set(body.items)) {
+              const item = await findItem(tx, model, id).catch(() => null)
+              if (item) items.push(item)
+            }
+            await requireConsent(tx, model, items, body.cancel_onlyfans_rows)
+          }
           return eachItem(tx, model, body.items, (item) =>
-            setFlags(tx, model, item, { second_person: body.second_person }),
+            setFlags(tx, model, item, {
+              second_person: body.second_person,
+              cancel_onlyfans_rows: true,
+            }),
           )
         }),
     },

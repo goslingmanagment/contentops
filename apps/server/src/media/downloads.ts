@@ -110,6 +110,8 @@ export interface DownloadPlan {
   receiptKind: 'master' | 'platform' | 'edit' | 'promo'
   metaStripped: boolean
   slot: NameSlot | null
+  /** The plan row the files are for (schema §3.5): the receipt keeps it with the suffix. */
+  planRowId?: string | null
   /** Several files go as one ZIP under this name. */
   zipName: string | null
   files: PlannedFile[]
@@ -159,7 +161,7 @@ export function mainVideo(files: readonly FileRow[]): FileRow | undefined {
   )
 }
 
-interface Choice {
+export interface Choice {
   file: FileRow
   /** Name role and number; set frames for posting are renumbered `ed01…` (naming §11). */
   role: NameRole
@@ -222,9 +224,13 @@ export interface PlanInput {
   digests: PipelineDigests
   /** Files picked on the card (`files:download`): each under its own handle and format. */
   picks?: readonly FileRow[]
+  planRowId?: string | null
 }
 
-function nameOf(input: PlanInput, pick: Choice, ext: string): string {
+/** What a name needs: the object, the kind and the slot of the plan row (naming §5–6). */
+export type NameInput = Pick<PlanInput, 'modelCode' | 'item' | 'kind' | 'slot'>
+
+function nameOf(input: NameInput, pick: Choice, ext: string): string {
   if (input.kind === 'fan') return fanFileName(input.modelCode)
   const main = pick.file.role === 'master'
   return exportName({
@@ -250,6 +256,26 @@ export function issuedExt(kind: DownloadKind, file: FileRow, strip: boolean): st
   }
   if (strip && !['jpg', 'png'].includes(file.ext)) return 'jpg'
   return file.ext
+}
+
+/** The name of one issued file. */
+export function issuedName(input: NameInput, pick: Choice, strip: boolean): string {
+  return nameOf(input, pick, issuedExt(input.kind, pick.file, strip))
+}
+
+/** Several files go as one ZIP named after the first (naming §6). */
+export function zipNameOf(input: NameInput, picks: readonly Choice[]): string | null {
+  const first = picks[0]
+  return picks.length > 1 && first
+    ? exportName({
+        id: input.item.public_id,
+        title: input.item.title ?? '',
+        title_en: input.item.title_en,
+        role: first.role,
+        slot: input.slot,
+        ext: 'zip',
+      })
+    : null
 }
 
 /**
@@ -344,24 +370,13 @@ export async function planDownload(tx: Tx, input: PlanInput): Promise<DownloadPl
     })
     files.push({
       position: index + 1,
-      name: nameOf(input, pick, issuedExt(input.kind, file, strip)),
+      name: issuedName(input, pick, strip),
       file,
       handle: handleOf(file),
       supply,
     })
   }
-  const first = picks[0]
-  const zipName =
-    files.length > 1 && first
-      ? exportName({
-          id: input.item.public_id,
-          title: input.item.title ?? '',
-          title_en: input.item.title_en,
-          role: first.role,
-          slot: input.slot,
-          ext: 'zip',
-        })
-      : null
+  const zipName = files.length > 1 ? zipNameOf(input, picks) : null
   return {
     receiptId,
     modelId: input.modelId,
@@ -373,6 +388,7 @@ export async function planDownload(tx: Tx, input: PlanInput): Promise<DownloadPl
     receiptKind: RECEIPT_KIND[input.kind],
     metaStripped: strip,
     slot: input.slot,
+    planRowId: input.planRowId ?? null,
     zipName,
     files,
   }
@@ -472,10 +488,11 @@ export async function sealReceipt(
   await tx.execute(sql`
     INSERT INTO download_receipts (model_id, id, principal_id, kind, manifest_id,
                                    account_code_snapshot, slot_date_snapshot, meta_stripped, zip_key,
-                                   entry_count)
+                                   entry_count, plan_row_id)
     VALUES (${plan.modelId}::uuid, ${plan.receiptId}::uuid, ${plan.principalId}::uuid,
             ${plan.receiptKind}, ${manifestId}::uuid, ${plan.slot?.account ?? null},
-            ${plan.slot?.date ?? null}::date, ${plan.metaStripped}, ${zipKey}, ${issued.length})`)
+            ${plan.slot?.date ?? null}::date, ${plan.metaStripped}, ${zipKey}, ${issued.length},
+            ${plan.planRowId ?? null}::uuid)`)
   for (const entry of issued) {
     await tx.execute(sql`
       INSERT INTO download_receipt_entries (model_id, receipt_id, position, asset_id, asset_version_id,

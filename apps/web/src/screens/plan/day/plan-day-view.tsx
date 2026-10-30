@@ -104,7 +104,7 @@ export function PlanDayView({ date }: { date: LocalDate }) {
         surface: gap.surface,
         date: gap.date,
         time: gap.time,
-        kind: gap.kind,
+        kind: gap.kind === 'release' ? undefined : gap.kind,
       }),
     openCheck: (account) => {
       const [only, ...more] = unplannedCaseIds(check.data, account, date)
