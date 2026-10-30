@@ -20,12 +20,6 @@ export interface PostgresInfo {
   containerId: string
 }
 
-declare module 'vitest' {
-  export interface ProvidedContext {
-    contentopsPostgres: PostgresInfo
-  }
-}
-
 export type DbRole = 'super' | 'migrate' | 'app'
 
 /** Test passwords of the two roles; real ones come from `.env` on the host. */

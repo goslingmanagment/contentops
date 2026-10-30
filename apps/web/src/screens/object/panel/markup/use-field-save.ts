@@ -79,10 +79,14 @@ export function useFieldSave(key: MarkupFieldKey) {
   undoRef.current = (saved, previous) =>
     void versionedSave({ value: previous, previous: null }, fieldOf(saved, key)?.version ?? 1)
 
+  /**
+   * `base` — версия поля, с которой человек начал ввод: если за это время поле изменил
+   * другой, сервер ответит 412 и встанет строка конфликта, а не тихая перезапись (§3.10).
+   */
   const save = useCallback(
-    (value: MarkupValue) => {
+    (value: MarkupValue, base?: number) => {
       const field = fieldOf(detail, key)
-      return versionedSave({ value, previous: field?.field ?? null }, field?.version ?? 1)
+      return versionedSave({ value, previous: field?.field ?? null }, base ?? field?.version ?? 1)
     },
     [detail, key, versionedSave],
   )

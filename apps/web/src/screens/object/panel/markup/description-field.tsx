@@ -28,11 +28,15 @@ export function DescriptionField() {
   const save = useFieldSave('description')
   const saved = field?.field.key === 'description' ? field.field.value : ''
   // Введённое держится, пока сервер не вернул это же значение: фон не сбрасывает ввод.
-  const [draft, setDraft] = useState<string | null>(null)
+  // Чужая правка того же поля ввод тоже не сбрасывает: сохранение уйдёт с версией, с
+  // которой начат ввод, и сервер ответит конфликтом (SPEC §12.0, DESIGN §3.10).
+  const [draft, setDraft] = useState<{ text: string; base: number } | null>(null)
   const [seen, setSeen] = useState(saved)
   if (seen !== saved) {
     setSeen(saved)
-    setDraft(null)
+    if (draft === null || draft.text.trim() === saved) {
+      setDraft(null)
+    }
   }
 
   return (
@@ -51,18 +55,20 @@ export function DescriptionField() {
           <Textarea
             aria-labelledby={labelId}
             rows={2}
-            value={draft ?? saved}
+            value={draft?.text ?? saved}
             placeholder={descriptionHint(detail.files)}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) =>
+              setDraft({ text: event.target.value, base: draft?.base ?? field?.version ?? 1 })
+            }
             onBlur={() => {
               if (draft === null) {
                 return
               }
-              if (draft.trim() === saved) {
+              if (draft.text.trim() === saved) {
                 setDraft(null)
                 return
               }
-              save.save({ key: 'description', value: draft.trim() })
+              save.save({ key: 'description', value: draft.text.trim() }, draft.base)
             }}
             className="min-h-16"
           />

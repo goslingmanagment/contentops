@@ -24,6 +24,13 @@ export {
   withClient,
 } from './postgres.ts'
 
+// Here, not in `postgres.ts`: the browser scenarios (`apps/e2e`) start the server without Vitest.
+declare module 'vitest' {
+  export interface ProvidedContext {
+    contentopsPostgres: PostgresInfo
+  }
+}
+
 export interface TestDatabase {
   name: string
   info: PostgresInfo

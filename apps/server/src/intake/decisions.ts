@@ -4,6 +4,7 @@ import { enqueueWork, type Tx, type values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
+import { lockOrder } from '../orders/writes'
 import { acceptGroup, lockGroupForDecision, lockOpenDrafts, rejectGroup } from './accept'
 import { queueMedia } from './fetch'
 import { bindFrame, ordinalOfHandle, rawFrame } from './frames'
@@ -179,19 +180,23 @@ export async function decide(
          WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
       await clear('needs_type')
       break
-    case 'which_order':
+    case 'which_order': {
+      // The order by its address (`tg-…`, as the orders API gives it) or its stored id; an
+      // unknown one is 404, never a failed cast.
+      const orderId = body.order_id === null ? null : (await lockOrder(tx, model, body.order_id)).id
       await tx.execute(sql`
-        UPDATE inbox_groups SET custom_order_id = ${body.order_id}::uuid,
-               proposed_type = CASE WHEN ${body.order_id}::uuid IS NULL THEN proposed_type ELSE 'CUS' END
+        UPDATE inbox_groups SET custom_order_id = ${orderId}::uuid,
+               proposed_type = CASE WHEN ${orderId}::uuid IS NULL THEN proposed_type ELSE 'CUS' END
          WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
-      if (body.order_id) {
+      if (orderId) {
         await tx.execute(sql`
           UPDATE inbox_draft_candidates SET chosen = true, chosen_at = now(), chosen_by = ${actor.id}::uuid
            WHERE model_id = ${model.id}::uuid AND draft_id = ANY (${sql.param(ids)}::uuid[])
-             AND kind = 'order' AND order_id = ${body.order_id}::uuid AND NOT chosen`)
+             AND kind = 'order' AND order_id = ${orderId}::uuid AND NOT chosen`)
       }
       await clear('ambiguous_order')
       break
+    }
     case 'video_in_set': {
       const videos = drafts.filter((draft) => draft.media_kind === 'video').map((draft) => draft.id)
       if (videos.length === 0) throw new ApiProblem('invalid_request', 'Видео в группе нет')

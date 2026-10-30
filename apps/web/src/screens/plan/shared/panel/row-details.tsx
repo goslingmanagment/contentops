@@ -87,7 +87,10 @@ export function RowDetails({
       {checkCase && account ? (
         <PairBlock checkCase={checkCase} platformLabel={account.label} />
       ) : null}
-      <RowFiles row={row} accountLabel={accountLabel(model.accounts, row.account)} />
+      {/* «Только чтение» не скачивает (DESIGN §2.3): файлов строки с кнопками у него нет. */}
+      {canAct ? (
+        <RowFiles row={row} accountLabel={accountLabel(model.accounts, row.account)} />
+      ) : null}
       {release ? <ReleaseLine release={release} onSelect={() => onSelectRelease(release)} /> : null}
     </>
   )

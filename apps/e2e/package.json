@@ -1,0 +1,22 @@
+{
+  "name": "@contentops/e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "End-to-end browser scenarios (Playwright) on the whole stack: PostgreSQL, the server roles with the media workers, the production build of the interface.",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "e2e": "playwright test",
+    "stack": "node src/stack.ts"
+  },
+  "devDependencies": {
+    "@contentops/contracts": "workspace:*",
+    "@contentops/db": "workspace:*",
+    "@playwright/test": "1.64.1",
+    "@types/node": "^24.13.6",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
+  }
+}
