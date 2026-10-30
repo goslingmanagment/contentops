@@ -387,6 +387,196 @@ $$;
 
 ALTER FUNCTION public.check_tag_scope() OWNER TO contentops_migrate;
 
+CREATE FUNCTION public.custom_order_delivery_lock() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  order_status text;
+  target_part text;
+  target_retracts uuid;
+BEGIN
+  SELECT status INTO order_status FROM custom_orders
+   WHERE model_id = NEW.model_id AND id = NEW.order_id
+     FOR NO KEY UPDATE;
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+  IF order_status IN ('closed', 'cancelled') THEN
+    RAISE EXCEPTION 'order %: % takes no delivery or retraction', NEW.order_id, order_status
+      USING ERRCODE = 'CO005';
+  END IF;
+  IF NEW.retracts_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+  SELECT part, retracts_id INTO target_part, target_retracts FROM custom_order_deliveries
+   WHERE model_id = NEW.model_id AND order_id = NEW.order_id AND id = NEW.retracts_id;
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+  IF target_retracts IS NOT NULL THEN
+    RAISE EXCEPTION 'delivery %: a retraction is not retracted', NEW.retracts_id
+      USING ERRCODE = 'CO005';
+  END IF;
+  IF target_part = 'video' THEN
+    UPDATE custom_orders SET video_completed_at = NULL, video_completed_by = NULL
+     WHERE model_id = NEW.model_id AND id = NEW.order_id AND video_completed_at IS NOT NULL;
+  ELSE
+    UPDATE custom_orders SET photos_completed_at = NULL, photos_completed_by = NULL
+     WHERE model_id = NEW.model_id AND id = NEW.order_id AND photos_completed_at IS NOT NULL;
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.custom_order_delivery_lock() OWNER TO contentops_migrate;
+
+CREATE TABLE public.asset_manifest_entries (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    manifest_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    item_id uuid NOT NULL,
+    membership_id uuid,
+    asset_id uuid NOT NULL,
+    asset_version_id uuid NOT NULL,
+    handle_snapshot text NOT NULL,
+    selected_snapshot boolean,
+    life_use_snapshot text,
+    CONSTRAINT asset_manifest_entries_life_use_snapshot_check CHECK ((life_use_snapshot = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text]))),
+    CONSTRAINT asset_manifest_entries_position_check CHECK (("position" >= 1))
+);
+
+ALTER TABLE public.asset_manifest_entries OWNER TO contentops_migrate;
+
+CREATE TABLE public.assets (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    created_in_item_id uuid NOT NULL,
+    media_kind text NOT NULL,
+    current_version_id uuid NOT NULL,
+    variant_kind text DEFAULT 'none'::text NOT NULL,
+    variant_no integer DEFAULT 0 NOT NULL,
+    uniq_level text,
+    retired_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT assets_media_kind_check CHECK ((media_kind = ANY (ARRAY['video'::text, 'image'::text]))),
+    CONSTRAINT assets_uniq_level CHECK (((variant_kind = 'uniq'::text) = (uniq_level IS NOT NULL))),
+    CONSTRAINT assets_uniq_level_check CHECK ((uniq_level = ANY (ARRAY['soft'::text, 'trim'::text, 'mirror'::text]))),
+    CONSTRAINT assets_variant_kind_check CHECK ((variant_kind = ANY (ARRAY['none'::text, 'uniq'::text]))),
+    CONSTRAINT assets_variant_no CHECK (((variant_kind = 'uniq'::text) = (variant_no > 0))),
+    CONSTRAINT assets_variant_no_check CHECK ((variant_no >= 0))
+);
+
+ALTER TABLE public.assets OWNER TO contentops_migrate;
+
+CREATE TABLE public.custom_order_deliveries (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    order_id uuid NOT NULL,
+    part text,
+    item_id uuid,
+    item_type text DEFAULT 'CUS'::text NOT NULL,
+    manifest_id uuid,
+    draft_id uuid,
+    delivered_at timestamp with time zone,
+    basis jsonb,
+    evidence_refs jsonb DEFAULT '[]'::jsonb NOT NULL,
+    linked_at timestamp with time zone DEFAULT now() NOT NULL,
+    linked_by uuid,
+    confirmed_by uuid,
+    retracts_id uuid,
+    retract_reason text,
+    CONSTRAINT custom_order_deliveries_item_type_check CHECK ((item_type = 'CUS'::text)),
+    CONSTRAINT custom_order_deliveries_not_self CHECK ((retracts_id <> id)),
+    CONSTRAINT custom_order_deliveries_part_check CHECK ((part = ANY (ARRAY['video'::text, 'photos'::text]))),
+    CONSTRAINT custom_order_deliveries_shape CHECK (
+CASE
+    WHEN (retracts_id IS NULL) THEN ((num_nulls(part, item_id, manifest_id, delivered_at, basis) = 0) AND (retract_reason IS NULL))
+    ELSE ((num_nonnulls(part, item_id, manifest_id, delivered_at, basis, draft_id, confirmed_by) = 0) AND (retract_reason IS NOT NULL))
+END)
+);
+
+ALTER TABLE public.custom_order_deliveries OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.custom_order_live_files(p_model_id uuid, p_order_id uuid, p_part text) RETURNS integer
+    LANGUAGE sql STABLE PARALLEL SAFE
+    RETURN (SELECT (count(DISTINCT e.asset_id))::integer AS count FROM ((public.custom_order_deliveries d JOIN public.asset_manifest_entries e ON (((e.model_id = d.model_id) AND (e.manifest_id = d.manifest_id)))) JOIN public.assets a ON (((a.model_id = e.model_id) AND (a.id = e.asset_id)))) WHERE ((d.model_id = custom_order_live_files.p_model_id) AND (d.order_id = custom_order_live_files.p_order_id) AND (d.part = custom_order_live_files.p_part) AND (a.media_kind = CASE custom_order_live_files.p_part WHEN 'video'::text THEN 'video'::text ELSE 'image'::text END) AND (NOT (EXISTS (SELECT 1 FROM public.custom_order_deliveries r WHERE (r.retracts_id = d.id))))));
+
+ALTER FUNCTION public.custom_order_live_files(p_model_id uuid, p_order_id uuid, p_part text) OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.custom_order_revision_lock() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  order_status text;
+BEGIN
+  SELECT status INTO order_status FROM custom_orders
+   WHERE model_id = NEW.model_id AND id = NEW.order_id
+     FOR NO KEY UPDATE;
+  IF order_status = 'closed' AND NOT NEW.done THEN
+    RAISE EXCEPTION 'order %: closed, a revision cannot be open', NEW.order_id
+      USING ERRCODE = 'CO005';
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.custom_order_revision_lock() OWNER TO contentops_migrate;
+
+CREATE FUNCTION public.custom_order_status() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  parts_done boolean;
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.status IN ('closed', 'cancelled') THEN
+    IF NEW.status <> OLD.status
+       OR (NEW.expects_video, NEW.expects_photos, NEW.photo_count, NEW.video_completed_at,
+           NEW.photos_completed_at)
+          IS DISTINCT FROM
+          (OLD.expects_video, OLD.expects_photos, OLD.photo_count, OLD.video_completed_at,
+           OLD.photos_completed_at) THEN
+      RAISE EXCEPTION 'order %: % is final', OLD.id, OLD.status
+        USING ERRCODE = 'CO005';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  -- A mark of a part that was not ordered is left to CHECK `custom_orders_*_mark`.
+  IF NEW.video_completed_at IS NOT NULL AND NEW.expects_video
+     AND custom_order_live_files(NEW.model_id, NEW.id, 'video') = 0 THEN
+    RAISE EXCEPTION 'order %: the video part has no live delivery', NEW.id
+      USING ERRCODE = 'CO005';
+  END IF;
+  IF NEW.photos_completed_at IS NOT NULL AND NEW.expects_photos
+     AND custom_order_live_files(NEW.model_id, NEW.id, 'photos') < coalesce(NEW.photo_count, 1) THEN
+    RAISE EXCEPTION 'order %: % of % photos delivered',
+      NEW.id, custom_order_live_files(NEW.model_id, NEW.id, 'photos'), coalesce(NEW.photo_count, 1)
+      USING ERRCODE = 'CO005';
+  END IF;
+
+  parts_done := (NOT NEW.expects_video OR NEW.video_completed_at IS NOT NULL)
+            AND (NOT NEW.expects_photos OR NEW.photos_completed_at IS NOT NULL);
+  IF NEW.status IN ('open', 'delivered') THEN
+    NEW.status := CASE WHEN parts_done THEN 'delivered' ELSE 'open' END;
+  ELSIF NEW.status = 'closed' THEN
+    IF NOT parts_done THEN
+      RAISE EXCEPTION 'order %: not every ordered part is delivered', NEW.id
+        USING ERRCODE = 'CO005';
+    END IF;
+    IF EXISTS (SELECT 1 FROM custom_order_revisions
+                WHERE model_id = NEW.model_id AND order_id = NEW.id AND NOT done) THEN
+      RAISE EXCEPTION 'order %: a revision is open', NEW.id
+        USING ERRCODE = 'CO005';
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.custom_order_status() OWNER TO contentops_migrate;
+
 CREATE FUNCTION public.forbid_change() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -672,24 +862,6 @@ CREATE TABLE public.api_tokens (
 
 ALTER TABLE public.api_tokens OWNER TO contentops_migrate;
 
-CREATE TABLE public.asset_manifest_entries (
-    model_id uuid NOT NULL,
-    id uuid DEFAULT uuidv7() NOT NULL,
-    manifest_id uuid NOT NULL,
-    "position" integer NOT NULL,
-    item_id uuid NOT NULL,
-    membership_id uuid,
-    asset_id uuid NOT NULL,
-    asset_version_id uuid NOT NULL,
-    handle_snapshot text NOT NULL,
-    selected_snapshot boolean,
-    life_use_snapshot text,
-    CONSTRAINT asset_manifest_entries_life_use_snapshot_check CHECK ((life_use_snapshot = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text]))),
-    CONSTRAINT asset_manifest_entries_position_check CHECK (("position" >= 1))
-);
-
-ALTER TABLE public.asset_manifest_entries OWNER TO contentops_migrate;
-
 CREATE TABLE public.asset_manifests (
     model_id uuid NOT NULL,
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -703,28 +875,6 @@ CREATE TABLE public.asset_manifests (
 );
 
 ALTER TABLE public.asset_manifests OWNER TO contentops_migrate;
-
-CREATE TABLE public.assets (
-    model_id uuid NOT NULL,
-    id uuid DEFAULT uuidv7() NOT NULL,
-    created_in_item_id uuid NOT NULL,
-    media_kind text NOT NULL,
-    current_version_id uuid NOT NULL,
-    variant_kind text DEFAULT 'none'::text NOT NULL,
-    variant_no integer DEFAULT 0 NOT NULL,
-    uniq_level text,
-    retired_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_by uuid,
-    CONSTRAINT assets_media_kind_check CHECK ((media_kind = ANY (ARRAY['video'::text, 'image'::text]))),
-    CONSTRAINT assets_uniq_level CHECK (((variant_kind = 'uniq'::text) = (uniq_level IS NOT NULL))),
-    CONSTRAINT assets_uniq_level_check CHECK ((uniq_level = ANY (ARRAY['soft'::text, 'trim'::text, 'mirror'::text]))),
-    CONSTRAINT assets_variant_kind_check CHECK ((variant_kind = ANY (ARRAY['none'::text, 'uniq'::text]))),
-    CONSTRAINT assets_variant_no CHECK (((variant_kind = 'uniq'::text) = (variant_no > 0))),
-    CONSTRAINT assets_variant_no_check CHECK ((variant_no >= 0))
-);
-
-ALTER TABLE public.assets OWNER TO contentops_migrate;
 
 CREATE TABLE public.blob_phashes (
     sha256 bytea NOT NULL,
@@ -785,6 +935,53 @@ CREATE TABLE public.blobs (
 );
 
 ALTER TABLE public.blobs OWNER TO contentops_migrate;
+
+CREATE TABLE public.custom_orders (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    account_id uuid,
+    tg_chat text NOT NULL,
+    tg_topic bigint,
+    tg_message_id bigint NOT NULL,
+    card_author text NOT NULL,
+    card_at timestamp with time zone NOT NULL,
+    buyer_name text,
+    brief text NOT NULL,
+    ordered_duration_raw text,
+    duration_min_s integer,
+    duration_max_s integer,
+    expects_video boolean NOT NULL,
+    expects_photos boolean NOT NULL,
+    photo_count integer,
+    due_at timestamp with time zone,
+    status text DEFAULT 'open'::text NOT NULL,
+    name_in_media text DEFAULT 'unknown'::text NOT NULL,
+    video_completed_at timestamp with time zone,
+    video_completed_by uuid,
+    photos_completed_at timestamp with time zone,
+    photos_completed_by uuid,
+    closed_at timestamp with time zone,
+    closed_by uuid,
+    cancelled_at timestamp with time zone,
+    cancelled_by uuid,
+    cancel_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT custom_orders_cancelled CHECK (((status = 'cancelled'::text) = ((cancelled_at IS NOT NULL) AND (cancel_reason IS NOT NULL)))),
+    CONSTRAINT custom_orders_closed CHECK (((status = 'closed'::text) = (closed_at IS NOT NULL))),
+    CONSTRAINT custom_orders_duration CHECK ((duration_max_s >= COALESCE(duration_min_s, 0))),
+    CONSTRAINT custom_orders_duration_min_s_check CHECK ((duration_min_s >= 0)),
+    CONSTRAINT custom_orders_name_in_media_check CHECK ((name_in_media = ANY (ARRAY['yes'::text, 'no'::text, 'unknown'::text]))),
+    CONSTRAINT custom_orders_parts CHECK ((expects_video OR expects_photos)),
+    CONSTRAINT custom_orders_photo_count CHECK (((photo_count IS NULL) OR ((photo_count > 0) AND expects_photos))),
+    CONSTRAINT custom_orders_photos_mark CHECK ((((photos_completed_at IS NULL) OR expects_photos) AND ((photos_completed_by IS NULL) OR (photos_completed_at IS NOT NULL)))),
+    CONSTRAINT custom_orders_status_check CHECK ((status = ANY (ARRAY['open'::text, 'delivered'::text, 'closed'::text, 'cancelled'::text]))),
+    CONSTRAINT custom_orders_video_mark CHECK ((((video_completed_at IS NULL) OR expects_video) AND ((video_completed_by IS NULL) OR (video_completed_at IS NOT NULL))))
+);
+
+ALTER TABLE public.custom_orders OWNER TO contentops_migrate;
 
 CREATE TABLE public.item_tags (
     model_id uuid NOT NULL,
@@ -937,7 +1134,7 @@ CREATE VIEW public.catalog_index WITH (security_invoker='true') AS
     i.ppv_kind,
     i.raw_purpose,
     ppv.public_id AS ppv_made_as,
-    i.name_in_media,
+    COALESCE(cd.name_in_media, i.name_in_media) AS name_in_media,
     i.has_second_person,
         CASE
             WHEN (i.type = 'SET'::text) THEN COALESCE(m.selected_count, 0)
@@ -963,8 +1160,10 @@ CREATE VIEW public.catalog_index WITH (security_invoker='true') AS
     COALESCE(al.aliases, '{}'::text[]) AS aliases,
     pc.code AS promo_channel_code,
     i.created_at,
-    i.updated_at
-   FROM ((((((((public.content_items i
+    i.updated_at,
+    cd.order_id,
+    cd.delivered_at
+   FROM (((((((((public.content_items i
      LEFT JOIN public.promo_channels pc ON (((pc.model_id = i.model_id) AND (pc.id = i.promo_channel_id))))
      LEFT JOIN LATERAL ( SELECT array_agg(DISTINCT COALESCE(merged.slug, t.slug) ORDER BY COALESCE(merged.slug, t.slug)) AS slugs
            FROM ((public.item_tags it
@@ -1027,9 +1226,60 @@ CREATE VIEW public.catalog_index WITH (security_invoker='true') AS
      LEFT JOIN LATERAL ( SELECT array_agg(DISTINCT a.value_raw ORDER BY a.value_raw) AS aliases
            FROM public.aliases a
           WHERE ((a.model_id = i.model_id) AND (a.item_id = i.id) AND (a.kind = ANY (ARRAY['legacy_id'::text, 'merged_id'::text, 'vault_album'::text])))) al ON (true))
+     LEFT JOIN LATERAL ( SELECT d.order_id,
+            d.delivered_at,
+            o.name_in_media
+           FROM (public.custom_order_deliveries d
+             JOIN public.custom_orders o ON (((o.model_id = d.model_id) AND (o.id = d.order_id))))
+          WHERE ((d.model_id = i.model_id) AND (d.item_id = i.id) AND (NOT (EXISTS ( SELECT 1
+                   FROM public.custom_order_deliveries r
+                  WHERE (r.retracts_id = d.id)))))
+          ORDER BY d.delivered_at, d.id
+         LIMIT 1) cd ON ((i.type = 'CUS'::text)))
   WHERE (i.deleted_at IS NULL);
 
 ALTER VIEW public.catalog_index OWNER TO contentops_migrate;
+
+CREATE TABLE public.custom_order_messages (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    order_id uuid NOT NULL,
+    tg_ref text NOT NULL,
+    kind text NOT NULL,
+    message_at timestamp with time zone NOT NULL,
+    author text NOT NULL,
+    excerpt text NOT NULL,
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    recorded_by uuid,
+    CONSTRAINT custom_order_messages_kind_check CHECK ((kind = ANY (ARRAY['card'::text, 'repost'::text, 'delivery'::text, 'revision'::text, 'confirmation'::text, 'note'::text])))
+);
+
+ALTER TABLE public.custom_order_messages OWNER TO contentops_migrate;
+
+CREATE TABLE public.custom_order_revisions (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    order_id uuid NOT NULL,
+    requirement text NOT NULL,
+    request_tg_ref text NOT NULL,
+    request_ordinal integer DEFAULT 1 NOT NULL,
+    requested_at timestamp with time zone NOT NULL,
+    done boolean DEFAULT false NOT NULL,
+    done_basis text,
+    fixed_delivery_id uuid,
+    done_at timestamp with time zone,
+    done_by uuid,
+    reopened_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT custom_order_revisions_done_at CHECK ((done = (done_at IS NOT NULL))),
+    CONSTRAINT custom_order_revisions_done_basis CHECK (((NOT done) OR (done_basis IS NOT NULL))),
+    CONSTRAINT custom_order_revisions_request_ordinal_check CHECK ((request_ordinal >= 1))
+);
+
+ALTER TABLE public.custom_order_revisions OWNER TO contentops_migrate;
 
 CREATE TABLE public.download_receipt_entries (
     model_id uuid NOT NULL,
@@ -1150,6 +1400,7 @@ CREATE TABLE public.inbox_groups (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     row_version bigint DEFAULT 1 NOT NULL,
+    custom_order_id uuid,
     CONSTRAINT inbox_groups_grouping_check CHECK (("grouping" = ANY (ARRAY['folder'::text, 'exif_day'::text, 'upload_cluster'::text, 'single'::text, 'manual'::text]))),
     CONSTRAINT inbox_groups_proposed_ppv_kind_check CHECK ((proposed_ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text]))),
     CONSTRAINT inbox_groups_proposed_purpose_check CHECK ((proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text]))),
@@ -1546,6 +1797,36 @@ ALTER TABLE ONLY public.content_items
 ALTER TABLE ONLY public.content_items
     ADD CONSTRAINT content_items_pkey PRIMARY KEY (model_id, id);
 
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_manifest UNIQUE (model_id, order_id, manifest_id);
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_model_id_order_id_id_key UNIQUE (model_id, order_id, id);
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_retracts_once UNIQUE (retracts_id);
+
+ALTER TABLE ONLY public.custom_order_messages
+    ADD CONSTRAINT custom_order_messages_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.custom_order_messages
+    ADD CONSTRAINT custom_order_messages_ref UNIQUE (model_id, order_id, tg_ref, kind);
+
+ALTER TABLE ONLY public.custom_order_revisions
+    ADD CONSTRAINT custom_order_revisions_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.custom_order_revisions
+    ADD CONSTRAINT custom_order_revisions_request UNIQUE (model_id, order_id, request_tg_ref, request_ordinal);
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_card UNIQUE NULLS NOT DISTINCT (model_id, tg_chat, tg_topic, tg_message_id);
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_pkey PRIMARY KEY (model_id, id);
+
 ALTER TABLE ONLY public.download_receipt_entries
     ADD CONSTRAINT download_receipt_entries_model_id_asset_version_id_id_key UNIQUE (model_id, asset_version_id, id);
 
@@ -1787,6 +2068,14 @@ CREATE INDEX content_items_title_trgm ON public.content_items USING gin (title p
 
 CREATE INDEX content_items_updated ON public.content_items USING btree (model_id, updated_at DESC);
 
+CREATE INDEX custom_order_deliveries_item ON public.custom_order_deliveries USING btree (model_id, item_id) WHERE (item_id IS NOT NULL);
+
+CREATE INDEX custom_orders_brief_trgm ON public.custom_orders USING gin (brief public.gin_trgm_ops);
+
+CREATE INDEX custom_orders_buyer ON public.custom_orders USING btree (model_id, lower(buyer_name));
+
+CREATE INDEX custom_orders_status ON public.custom_orders USING btree (model_id, status, due_at);
+
 CREATE INDEX download_receipt_entries_name ON public.download_receipt_entries USING btree (model_id, file_name_norm);
 
 CREATE INDEX download_receipt_entries_version ON public.download_receipt_entries USING btree (model_id, asset_version_id, receipt_id);
@@ -1904,6 +2193,26 @@ CREATE TRIGGER chronology_entries_journal AFTER INSERT OR DELETE OR UPDATE ON pu
 CREATE TRIGGER content_items_fixed BEFORE UPDATE ON public.content_items FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'type', 'number');
 
 CREATE TRIGGER content_items_journal AFTER INSERT OR DELETE OR UPDATE ON public.content_items FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER custom_order_deliveries_append_only BEFORE DELETE OR UPDATE ON public.custom_order_deliveries FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE TRIGGER custom_order_deliveries_lock BEFORE INSERT ON public.custom_order_deliveries FOR EACH ROW EXECUTE FUNCTION public.custom_order_delivery_lock();
+
+CREATE TRIGGER custom_order_messages_fixed BEFORE UPDATE ON public.custom_order_messages FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'order_id');
+
+CREATE TRIGGER custom_order_messages_journal AFTER INSERT OR DELETE OR UPDATE ON public.custom_order_messages FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER custom_order_revisions_fixed BEFORE UPDATE ON public.custom_order_revisions FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'order_id');
+
+CREATE TRIGGER custom_order_revisions_journal AFTER INSERT OR DELETE OR UPDATE ON public.custom_order_revisions FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER custom_order_revisions_lock BEFORE INSERT OR UPDATE ON public.custom_order_revisions FOR EACH ROW EXECUTE FUNCTION public.custom_order_revision_lock();
+
+CREATE TRIGGER custom_orders_fixed BEFORE UPDATE ON public.custom_orders FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id');
+
+CREATE TRIGGER custom_orders_journal AFTER INSERT OR DELETE OR UPDATE ON public.custom_orders FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER custom_orders_status BEFORE INSERT OR UPDATE ON public.custom_orders FOR EACH ROW EXECUTE FUNCTION public.custom_order_status();
 
 CREATE TRIGGER download_receipt_entries_append_only BEFORE DELETE OR UPDATE ON public.download_receipt_entries FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
@@ -2136,6 +2445,66 @@ ALTER TABLE ONLY public.content_items
 ALTER TABLE ONLY public.content_items
     ADD CONSTRAINT content_items_model_id_promo_channel_id_fkey FOREIGN KEY (model_id, promo_channel_id) REFERENCES public.promo_channels(model_id, id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_confirmed_by_fkey FOREIGN KEY (confirmed_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_linked_by_fkey FOREIGN KEY (linked_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_model_id_draft_id_fkey FOREIGN KEY (model_id, draft_id) REFERENCES public.inbox_drafts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_model_id_item_id_item_type_fkey FOREIGN KEY (model_id, item_id, item_type) REFERENCES public.content_items(model_id, id, type) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_model_id_manifest_id_fkey FOREIGN KEY (model_id, manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_model_id_order_id_fkey FOREIGN KEY (model_id, order_id) REFERENCES public.custom_orders(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_deliveries
+    ADD CONSTRAINT custom_order_deliveries_model_id_order_id_retracts_id_fkey FOREIGN KEY (model_id, order_id, retracts_id) REFERENCES public.custom_order_deliveries(model_id, order_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_messages
+    ADD CONSTRAINT custom_order_messages_model_id_order_id_fkey FOREIGN KEY (model_id, order_id) REFERENCES public.custom_orders(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_messages
+    ADD CONSTRAINT custom_order_messages_recorded_by_fkey FOREIGN KEY (recorded_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_revisions
+    ADD CONSTRAINT custom_order_revisions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_revisions
+    ADD CONSTRAINT custom_order_revisions_done_by_fkey FOREIGN KEY (done_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_revisions
+    ADD CONSTRAINT custom_order_revisions_model_id_order_id_fixed_delivery_id_fkey FOREIGN KEY (model_id, order_id, fixed_delivery_id) REFERENCES public.custom_order_deliveries(model_id, order_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_order_revisions
+    ADD CONSTRAINT custom_order_revisions_model_id_order_id_fkey FOREIGN KEY (model_id, order_id) REFERENCES public.custom_orders(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_cancelled_by_fkey FOREIGN KEY (cancelled_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_closed_by_fkey FOREIGN KEY (closed_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_photos_completed_by_fkey FOREIGN KEY (photos_completed_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.custom_orders
+    ADD CONSTRAINT custom_orders_video_completed_by_fkey FOREIGN KEY (video_completed_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.download_receipt_entries
     ADD CONSTRAINT download_receipt_entries_model_id_asset_id_asset_version_i_fkey FOREIGN KEY (model_id, asset_id, asset_version_id) REFERENCES public.asset_versions(model_id, asset_id, id) ON DELETE RESTRICT;
 
@@ -2176,6 +2545,9 @@ ALTER TABLE ONLY public.inbox_draft_candidates
     ADD CONSTRAINT inbox_draft_candidates_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.inbox_draft_candidates
+    ADD CONSTRAINT inbox_draft_candidates_model_id_order_id_fkey FOREIGN KEY (model_id, order_id) REFERENCES public.custom_orders(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_draft_candidates
     ADD CONSTRAINT inbox_draft_candidates_model_id_version_id_fkey FOREIGN KEY (model_id, version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.inbox_drafts
@@ -2213,6 +2585,9 @@ ALTER TABLE ONLY public.inbox_drafts
 
 ALTER TABLE ONLY public.inbox_drafts
     ADD CONSTRAINT inbox_drafts_source_blob_sha256_fkey FOREIGN KEY (source_blob_sha256) REFERENCES public.blobs(sha256) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_groups
+    ADD CONSTRAINT inbox_groups_model_id_custom_order_id_fkey FOREIGN KEY (model_id, custom_order_id) REFERENCES public.custom_orders(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.inbox_groups
     ADD CONSTRAINT inbox_groups_model_id_folder_object_id_fkey FOREIGN KEY (model_id, folder_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
@@ -2425,6 +2800,12 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.content_items TO contentops_ap
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.item_memberships TO contentops_app;
 
+GRANT SELECT,INSERT ON TABLE public.asset_manifest_entries TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.assets TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.custom_order_deliveries TO contentops_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.accounts TO contentops_app;
 
 GRANT SELECT,INSERT ON TABLE public.action_log TO contentops_app;
@@ -2435,17 +2816,15 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.annotation_fields TO contentop
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.api_tokens TO contentops_app;
 
-GRANT SELECT,INSERT ON TABLE public.asset_manifest_entries TO contentops_app;
-
 GRANT SELECT,INSERT ON TABLE public.asset_manifests TO contentops_app;
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.assets TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.blob_phashes TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.blob_probes TO contentops_app;
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.blobs TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.custom_orders TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.item_tags TO contentops_app;
 
@@ -2460,6 +2839,10 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.source_revisions TO contentops
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tags TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.catalog_index TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.custom_order_messages TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.custom_order_revisions TO contentops_app;
 
 GRANT SELECT,INSERT ON TABLE public.download_receipt_entries TO contentops_app;
 

@@ -90,6 +90,11 @@ const LISTS: Record<string, readonly string[]> = {
   review_cases_kind_check: v.reviewCaseKinds,
   review_cases_state_check: v.reviewCaseStates,
   download_receipts_kind_check: v.receiptKinds,
+  // 0004_orders
+  custom_orders_status_check: v.orderStatuses,
+  custom_orders_name_in_media_check: v.nameInMediaValues,
+  custom_order_messages_kind_check: v.orderMessageKinds,
+  custom_order_deliveries_part_check: v.orderParts,
 }
 
 let pool: pg.Pool

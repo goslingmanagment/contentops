@@ -60,6 +60,7 @@ const APPEND_ONLY = [
   'asset_manifest_entries',
   'asset_manifests',
   'asset_versions',
+  'custom_order_deliveries',
   'download_receipt_entries',
   'download_receipts',
 ]
@@ -82,6 +83,9 @@ const FIXED_COLUMNS: Record<string, string[]> = {
   blobs: ['sha256', 'byte_size', 'ext', 'media_kind', 'storage_key'],
   chronology_entries: ['model_id', 'id', 'item_id', 'asset_version_id'],
   content_items: ['model_id', 'id', 'type', 'number'],
+  custom_order_messages: ['model_id', 'id', 'order_id'],
+  custom_order_revisions: ['model_id', 'id', 'order_id'],
+  custom_orders: ['model_id', 'id'],
   id_counters: ['model_id', 'type'],
   inbox_draft_candidates: [
     'model_id',

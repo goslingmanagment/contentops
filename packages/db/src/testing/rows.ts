@@ -183,14 +183,21 @@ export const FACTORIES: Record<string, Factory> = {
   }),
 
   // 0003_catalog
-  inbox_groups: async (client, modelId) => ({
-    model_id: modelId,
-    source_id: await idOf(client, 'sources', modelId),
-    group_key: `folder:${tag()}`,
-    grouping: 'folder',
-  }),
+  inbox_groups: async (client, modelId, testing = []) => {
+    const row: Row = {
+      model_id: modelId,
+      source_id: await idOf(client, 'sources', modelId),
+      group_key: `folder:${tag()}`,
+      grouping: 'folder',
+    }
+    if (testing.includes('custom_order_id')) {
+      row.custom_order_id = await idOf(client, 'custom_orders', modelId)
+    }
+    return row
+  },
+  /** A CUS: an order delivery points at one through the type copy. */
   content_items: async (client, modelId, testing = []) => {
-    const row: Row = { model_id: modelId, type: 'SET', number: nextNumber(), origin: 'manual' }
+    const row: Row = { model_id: modelId, type: 'CUS', number: nextNumber(), origin: 'manual' }
     if (testing.includes('promo_channel_id')) {
       row.type = 'PRM'
       row.promo_channel_id = await idOf(client, 'promo_channels', modelId)
@@ -235,11 +242,11 @@ export const FACTORIES: Record<string, Factory> = {
     return {
       model_id: modelId,
       item_id: await idOf(client, 'content_items', modelId),
-      item_type: 'SET',
+      item_type: 'CUS',
       asset_id: await idOf(client, 'assets', modelId),
       variant_no: 0,
       kind: 'owned',
-      role: 'raw',
+      role: 'pic',
       ordinal: 1,
     }
   },
@@ -347,11 +354,18 @@ export const FACTORIES: Record<string, Factory> = {
       [column]: await idOf(client, targets[column] ?? '', modelId),
     }
   },
-  inbox_draft_candidates: async (client, modelId) => ({
-    model_id: modelId,
-    draft_id: await idOf(client, 'inbox_drafts', modelId),
-    kind: 'existing_item',
-  }),
+  inbox_draft_candidates: async (client, modelId, testing = []) => {
+    const row: Row = {
+      model_id: modelId,
+      draft_id: await idOf(client, 'inbox_drafts', modelId),
+      kind: 'existing_item',
+    }
+    if (testing.includes('order_id')) {
+      row.kind = 'order'
+      row.order_id = await idOf(client, 'custom_orders', modelId)
+    }
+    return row
+  },
   review_cases: async (_client, modelId) => ({
     model_id: modelId,
     kind: 'legacy_unparsed',
@@ -377,6 +391,67 @@ export const FACTORIES: Record<string, Factory> = {
       file_name: 'SET-001_raw01.jpg',
       output_sha256: randomBytes(32),
       byte_size: 1,
+    }
+  },
+
+  // 0004_orders
+  custom_orders: async (client, modelId, testing = []) => ({
+    model_id: modelId,
+    account_id: testing.includes('account_id') ? await idOf(client, 'accounts', modelId) : null,
+    tg_chat: '-100',
+    tg_topic: 3,
+    tg_message_id: nextNumber(),
+    card_author: 'автор',
+    card_at: new Date().toISOString(),
+    brief: 'ТЗ',
+    ordered_duration_raw: '10 минут',
+    expects_video: true,
+    expects_photos: false,
+  }),
+  custom_order_messages: async (client, modelId) => ({
+    model_id: modelId,
+    order_id: await idOf(client, 'custom_orders', modelId),
+    tg_ref: `tg:-100/3/${nextNumber()}`,
+    kind: 'note',
+    message_at: new Date().toISOString(),
+    author: 'автор',
+    excerpt: 'текст',
+  }),
+  /** A delivery of the video part; with `retracts_id` — a retraction of one. */
+  custom_order_deliveries: async (client, modelId, testing = []) => {
+    const orderId = await idOf(client, 'custom_orders', modelId)
+    const delivery: Row = {
+      model_id: modelId,
+      order_id: orderId,
+      part: 'video',
+      item_id: await idOf(client, 'content_items', modelId),
+      manifest_id: await idOf(client, 'asset_manifests', modelId),
+      delivered_at: new Date().toISOString(),
+      basis: { reply: true },
+    }
+    if (testing.includes('draft_id'))
+      delivery.draft_id = await idOf(client, 'inbox_drafts', modelId)
+    if (!testing.includes('retracts_id')) return delivery
+    const retracted = await insert(client, 'custom_order_deliveries', delivery)
+    return {
+      model_id: modelId,
+      order_id: orderId,
+      retracts_id: retracted.id,
+      retract_reason: 'не тот заказ',
+    }
+  },
+  /** An open revision; with `fixed_delivery_id` — bound to a delivery of its order. */
+  custom_order_revisions: async (client, modelId, testing = []) => {
+    const fixed = testing.includes('fixed_delivery_id')
+      ? await make(client, 'custom_order_deliveries', modelId)
+      : null
+    return {
+      model_id: modelId,
+      order_id: fixed ? fixed.order_id : await idOf(client, 'custom_orders', modelId),
+      requirement: 'без музыки',
+      request_tg_ref: `tg:-100/3/${nextNumber()}`,
+      requested_at: new Date().toISOString(),
+      fixed_delivery_id: fixed ? fixed.id : null,
     }
   },
 }
