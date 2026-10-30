@@ -26,6 +26,7 @@ const SIGN_BY_LEVEL: Record<PlacementLevel, Sign | null> = {
   unknown: null,
   not_found_in_walk: null,
   not_published: 'trouble',
+  history_candidate: null,
   blocked_second_person: 'trouble',
   cancelled: null,
   outside_catalog: null,
@@ -53,6 +54,7 @@ const PLACED_LEVELS: ReadonlySet<PlacementLevel> = new Set<PlacementLevel>([
   'vault_missing',
   'vault_stale',
   'cannot_verify',
+  'history_candidate',
 ])
 
 export function isPlacedLevel(level: PlacementLevel): boolean {

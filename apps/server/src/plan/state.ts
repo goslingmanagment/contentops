@@ -20,6 +20,8 @@ import { itemTypeOfDb } from '../catalog/ids'
 import type { ModelScope } from '../context'
 import { pageNorms } from '../handlers/norm'
 import { readThresholds } from '../handlers/thresholds'
+import { hubEvidence, rowHubEvidence } from '../hub/match/evidence'
+import { coverageOf, type HubFacts, loadHubFacts } from '../hub/match/facts'
 import {
   accountOf,
   type EvidenceRecord,
@@ -55,6 +57,8 @@ export interface PlanState {
   thresholds: Threshold[]
   /** Week norms of the pages (SPEC §4: JSON of the page). */
   norms: WeekNorm[]
+  /** Hub on the pages: switches, the poll, coverage, vault albums (SPEC §7, §8). */
+  hub: HubFacts
 }
 
 export interface LoadOptions {
@@ -68,13 +72,15 @@ export async function loadState(
   model: ModelScope,
   options: LoadOptions = {},
 ): Promise<PlanState> {
-  const [view, people, rows, placements, thresholds, norms] = await Promise.all([
+  const now = options.now ?? new Date().toISOString()
+  const [view, people, rows, placements, thresholds, norms, hub] = await Promise.all([
     modelView(q, model),
     loadPeople(q),
     loadRows(q, model, options.rows),
     loadPlacements(q, model),
     readThresholds(q),
     pageNorms(q, model),
+    loadHubFacts(q, model.id, new Date(now)),
   ])
   const evidence = new Map<string, EvidenceRecord[]>()
   for (const row of standingEvidence(
@@ -92,12 +98,13 @@ export async function loadState(
     model,
     view,
     people,
-    now: options.now ?? new Date().toISOString(),
+    now,
     rows,
     placements,
     evidence,
     thresholds,
     norms,
+    hub,
   }
 }
 
@@ -115,19 +122,24 @@ export function threshold(
 }
 
 /**
- * Hub coverage of a page. ContentOps reads Hub from stage 5 on; until then no page is checked
- * by Hub, which also makes «Отметить и подтвердить» the button of every page and surface but
- * the Fansly stories and mass messages (SPEC §7 «Ручное подтверждение»: «все страницы до
- * этапа 5»).
+ * Hub coverage of a page and surface (SPEC §7, §8): without a Hub page or before its first poll
+ * — «не настроено», which keeps «Отметить и подтвердить»; receiving or matching off —
+ * «выключено»; the poll down or stale — «временно недоступно», the button does not come back;
+ * working — `unproven` until entry E7 proves the coverage of posts.
  */
-export function hubCoverage(_state: PlanState, _account: string): HubCoverage {
-  return { state: 'unset', since: null, visible_from: null }
+export function hubCoverage(
+  state: PlanState,
+  account: string,
+  surface: string = 'wall',
+): HubCoverage {
+  return coverageOf(state.hub.pages.get(account), surface, state.now)
 }
 
-function contractEvidence(state: PlanState, list: readonly EvidenceRecord[]): Evidence[] {
+export function contractEvidence(state: PlanState, list: readonly EvidenceRecord[]): Evidence[] {
   return list.flatMap((row): Evidence[] => {
     const base = { id: row.id, recorded_at: row.recorded_at }
     const by = personName(state.people, row.recorded_by)
+    const agent = state.people.get(row.recorded_by ?? '')?.kind === 'agent'
     switch (row.kind) {
       case 'manual_confirm':
         return [
@@ -136,10 +148,23 @@ function contractEvidence(state: PlanState, list: readonly EvidenceRecord[]): Ev
             kind: 'manual_confirm',
             by,
             basis: row.payload.basis === 'inspected_pair' ? 'pair' : 'report',
+            ...(agent ? { by_agent: true } : {}),
           },
         ]
+      case 'observed':
+      case 'reused_pair':
+        return hubEvidence(row, state.hub)
       case 'manual_reject':
-        return [{ ...base, kind: 'manual_reject', by, rejects: row.corrects_id }]
+        return [
+          {
+            ...base,
+            kind: 'manual_reject',
+            by,
+            rejects:
+              row.corrects_id ??
+              (typeof row.payload.rejects === 'string' ? row.payload.rejects : null),
+          },
+        ]
       case 'outside_catalog':
         return [{ ...base, kind: 'outside_catalog', by }]
       case 'legacy_claim':
@@ -152,7 +177,6 @@ function contractEvidence(state: PlanState, list: readonly EvidenceRecord[]): Ev
           },
         ]
       default:
-        // Hub evidence is read from stage 5 on.
         return []
     }
   })
@@ -216,23 +240,32 @@ function baseFacts(
   surface: RowRecord['surface'],
 ): Omit<PlacementFacts, 'plan' | 'evidence'> {
   const page = accountOf(state.view, account)
+  const hub = hubCoverage(state, account, surface)
   return {
     now: state.now,
     account: { code: account, label: page.label, platform: page.platform },
     surface: surfaceOfDb(surface),
-    hub: hubCoverage(state, account),
+    hub,
     thresholds: {
       wait_hub_hours: threshold(state, 'wait_hub_hours', { account }) ?? 8,
-      not_published_hours: threshold(state, 'not_published_hours', { account }),
+      // «Не вышло» by posts only with entry E7; the vault says «заливка не найдена» instead.
+      not_published_hours:
+        hub.state === 'complete' && surface !== 'vault'
+          ? threshold(state, 'not_published_hours', { account })
+          : null,
     },
   }
 }
 
 export function rowFacts(state: PlanState, row: RowRecord, extras: RowExtras = {}): PlacementFacts {
+  const base = baseFacts(state, row.account, row.surface)
+  const own = contractEvidence(state, rowEvidence(state, row.id))
+  const vault = rowHubEvidence(state, row, own)
   return {
-    ...baseFacts(state, row.account, row.surface),
+    ...base,
+    hub: vault.reason ? { ...base.hub, reason: vault.reason } : base.hub,
     plan: planFacts(state, row, extras),
-    evidence: contractEvidence(state, rowEvidence(state, row.id)),
+    evidence: [...own, ...vault.evidence],
   }
 }
 
@@ -248,10 +281,26 @@ export function placementFacts(state: PlanState, placement: PlacementRecord): Pl
   const row = placement.plan_row_id
     ? state.rows.find((candidate) => candidate.id === placement.plan_row_id)
     : undefined
+  const own = contractEvidence(state, state.evidence.get(placement.id) ?? [])
+  const missing =
+    placement.external_album_ref && placement.external_media_ref
+      ? state.hub.missing.get(`${placement.external_album_ref}|${placement.external_media_ref}`)
+      : undefined
   return {
     ...baseFacts(state, placement.account, placement.surface),
     plan: row ? planFacts(state, row) : null,
-    evidence: contractEvidence(state, state.evidence.get(placement.id) ?? []),
+    evidence: missing
+      ? [
+          // A file a full walk no longer finds holds no placement (SPEC §7, 30.10.2026).
+          ...own.filter((entry) => entry.kind !== 'hub_exact'),
+          {
+            id: `walk:${placement.id}`,
+            recorded_at: missing,
+            kind: 'walk_not_found' as const,
+            walked_from: missing.slice(0, 10),
+          },
+        ]
+      : own,
   }
 }
 

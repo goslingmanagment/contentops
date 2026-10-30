@@ -4,6 +4,7 @@ import { agentHandlers } from './agents'
 import { authHandlers } from './auth'
 import { catalogHandlers } from './catalog'
 import { catalogEditHandlers } from './catalog-edits'
+import { checkHandlers } from './check'
 import { inboxHandlers } from './inbox'
 import { integrationHandlers } from './integrations'
 import { journalHandlers } from './journal'
@@ -48,6 +49,7 @@ export function createHandlers(services: Services): HandlerRegistry {
     planHandlers(services),
     planObjectHandlers(services),
     planPublishHandlers(services),
+    checkHandlers(services),
     journalHandlers(services),
     integrationHandlers(services),
     thresholdHandlers(services),

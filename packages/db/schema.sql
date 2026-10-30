@@ -1974,7 +1974,7 @@ CREATE TABLE public.placements (
     CONSTRAINT placements_occurrence_kind_check CHECK ((occurrence_kind = ANY (ARRAY['post'::text, 'vault_member'::text, 'manual'::text]))),
     CONSTRAINT placements_origin_check CHECK ((origin = ANY (ARRAY['plan'::text, 'hub'::text, 'manual'::text, 'import'::text]))),
     CONSTRAINT placements_out_of_catalog CHECK (((NOT out_of_catalog) OR (item_id IS NULL))),
-    CONSTRAINT placements_surface_source_check CHECK ((surface_source = ANY (ARRAY['hub'::text, 'km_mark'::text, 'km'::text, 'plan'::text, 'import'::text]))),
+    CONSTRAINT placements_surface_source_check CHECK ((surface_source = ANY (ARRAY['hub'::text, 'km_mark'::text, 'km'::text, 'plan'::text, 'import'::text, 'hub_hint'::text]))),
     CONSTRAINT placements_time CHECK (((planned_at IS NOT NULL) OR (occurred_at IS NOT NULL) OR (event_precision = 'unknown'::text))),
     CONSTRAINT placements_views_check CHECK ((views >= 0))
 );

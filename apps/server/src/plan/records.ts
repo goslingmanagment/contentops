@@ -212,6 +212,11 @@ export interface PlacementRecord {
   stats_at: string | null
   out_of_catalog: boolean
   manual_key: string | null
+  external_post_ref: string | null
+  external_album_ref: string | null
+  external_media_ref: string | null
+  surface_source: string
+  likes: string | null
 }
 
 export interface EvidenceRecord {
@@ -233,6 +238,8 @@ export interface EvidenceRecord {
   recorded_by: string | null
   corrects_id: string | null
   legacy_fragment: string | null
+  external_ref: string | null
+  matched_version_id: string | null
 }
 
 export async function loadPlacements(
@@ -245,7 +252,8 @@ export async function loadPlacements(
            i.type AS item_type, i.number AS item_number, p.plan_row_id,
            p.planned_at::text AS planned_at, p.occurred_at::text AS occurred_at,
            p.event_precision, p.origin, p.caption, p.views::text AS views,
-           p.stats_at::text AS stats_at, p.out_of_catalog, p.manual_key
+           p.stats_at::text AS stats_at, p.out_of_catalog, p.manual_key, p.external_post_ref,
+           p.external_album_ref, p.external_media_ref, p.surface_source, p.likes::text AS likes
       FROM placements p
       JOIN accounts a ON a.model_id = p.model_id AND a.id = p.account_id
       JOIN surfaces s ON s.model_id = p.model_id AND s.id = p.surface_id
@@ -269,7 +277,7 @@ export async function loadEvidence(
   const { rows } = await q.execute<EvidenceRecord & Record<string, unknown>>(sql`
     SELECT e.id, e.placement_id, e.source, e.kind, e.strength, e.payload,
            e.event_at::text AS event_at, e.recorded_at::text AS recorded_at, e.recorded_by,
-           e.corrects_id, c.raw_fragment AS legacy_fragment
+           e.corrects_id, c.raw_fragment AS legacy_fragment, e.external_ref, e.matched_version_id
       FROM placement_evidence e
       LEFT JOIN legacy_claims c ON c.model_id = e.model_id AND c.id = e.legacy_claim_id
      WHERE e.model_id = ${model.id}::uuid
@@ -282,10 +290,32 @@ export async function loadEvidence(
   }))
 }
 
-/** Evidence that still stands: a retraction takes back the row it corrects, and itself. */
-export function standingEvidence(evidence: readonly EvidenceRecord[]): EvidenceRecord[] {
-  const corrected = new Set(evidence.flatMap((row) => (row.corrects_id ? [row.corrects_id] : [])))
-  return evidence.filter((row) => row.kind !== 'retract' && !corrected.has(row.id))
+/**
+ * Evidence that still stands: a retraction takes back the row it corrects, and itself; a «Не
+ * то» takes back the candidate it answers while it is not retracted itself («Отменить»).
+ */
+export function standingEvidence<
+  T extends {
+    id: string
+    kind: string
+    corrects_id: string | null
+    payload?: Record<string, unknown>
+  },
+>(evidence: readonly T[]): T[] {
+  const retracted = new Set(
+    evidence.flatMap((row) => (row.kind === 'retract' && row.corrects_id ? [row.corrects_id] : [])),
+  )
+  const effective = evidence.filter((row) => row.kind !== 'retract' && !retracted.has(row.id))
+  const corrected = new Set(
+    effective.flatMap((row) => {
+      const rejects = row.kind === 'manual_reject' ? row.payload?.rejects : undefined
+      return [
+        ...(row.corrects_id ? [row.corrects_id] : []),
+        ...(typeof rejects === 'string' ? [rejects] : []),
+      ]
+    }),
+  )
+  return effective.filter((row) => !corrected.has(row.id))
 }
 
 // ---------------------------------------------------------------------------

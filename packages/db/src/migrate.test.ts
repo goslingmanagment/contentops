@@ -65,7 +65,7 @@ describe('runMigrations', () => {
       runMigrations({ databaseUrl: db.url('migrate'), appliedBy: 'b' }),
     ])
     const files = await loadMigrations()
-    expect(results.flatMap((r) => r.applied.map((m) => m.version)).sort()).toEqual(
+    expect(results.flatMap((r) => r.applied.map((m) => m.version)).sort((a, b) => a - b)).toEqual(
       files.map((f) => f.version),
     )
     expect(results.some((r) => r.applied.length === 0)).toBe(true)

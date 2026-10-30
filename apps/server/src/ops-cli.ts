@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util'
 import { createDb, createPool, type Db, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { loadConfig } from './config'
+import { enqueueHistoryPass } from './hub/match/auto'
 import { enqueueFreeze, freezeRegister } from './intake/freeze'
 import { importReportMarkdown } from './legacy/export'
 import { BlobStore } from './media/storage'
@@ -36,6 +37,11 @@ import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs
  * holds the real names of the disk:
  *
  *   docker compose exec -T worker node dist/ops.js import-report <model> [plan|reconcile|<work>] > x.md
+ *
+ * The history pass of the Fansly pages with «Автосверка» on, again after a batch of the library
+ * (SPEC §7; stages 7, 9a and «Старый формат» 9b) — one `hub_history` work per page:
+ *
+ *   docker compose exec worker node dist/ops.js hub-history <model> [page]
  */
 
 const USAGE = `usage:
@@ -45,7 +51,8 @@ const USAGE = `usage:
   ops.js render <sha256> --model <code> [--keep-metadata]
   ops.js freeze <model> <source label> [YYYY-MM-DD] [--wait]
   ops.js freeze-export <model> [YYYY-MM-DD]
-  ops.js import-report <model> [plan|reconcile|<work id>]   (Markdown, out of git)`
+  ops.js import-report <model> [plan|reconcile|<work id>]   (Markdown, out of git)
+  ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
@@ -194,6 +201,13 @@ async function main(argv: string[]): Promise<number> {
       const done = await waitFor(db, work.id, 'freeze')
       out({ operation_id: work.id, ...done })
       return done.state === 'succeeded' ? 0 : 1
+    }
+    if (command === 'hub-history') {
+      const [model, account] = positionals
+      if (!model) throw new Error(USAGE)
+      const queued = await enqueueHistoryPass(db, { model, account: account ?? null })
+      out(queued)
+      return 0
     }
     if (command === 'freeze-export') {
       const [model, date] = positionals

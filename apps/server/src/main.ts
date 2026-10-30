@@ -12,6 +12,7 @@ import type { ToolVersions } from '@contentops/media'
 import type { Logger } from 'pino'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
+import { hubHistoryHandler } from './hub/match/auto'
 import { hubPublishHandler, publicationStreams } from './hub/publish'
 import { storedMedia } from './hub/publish-media'
 import { envHubClient, hubStreams, hubSyncHandler } from './hub/sync'
@@ -184,8 +185,9 @@ async function waitForStorage(config: Config, logger: Logger): Promise<void> {
 }
 
 /**
- * The hourly Hub poll of the pages (SPEC §8.1) and the publication of plan rows through Hub
- * (SPEC §7, 5б), role `worker`; nothing reaches Hub without the key.
+ * The hourly Hub poll of the pages (SPEC §8.1) with matching after it, the history pass (SPEC
+ * §7) and the publication of plan rows through Hub (SPEC §7, 5б), role `worker`; nothing
+ * reaches Hub without the key.
  */
 function hubHandlers(
   config: Config,
@@ -196,6 +198,7 @@ function hubHandlers(
   return {
     hub_sync: hubSyncHandler({ client }),
     hub_publish: hubPublishHandler({ client, media: storedMedia(store, versions) }),
+    hub_history: hubHistoryHandler(),
   }
 }
 

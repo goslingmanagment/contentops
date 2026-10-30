@@ -656,7 +656,7 @@ export const occurredSources = ['hub', 'km', 'import'] as const
 export type OccurredSource = (typeof occurredSources)[number]
 
 /** Where the surface of a placement comes from (schema §9.6); `import` — the legacy rule. */
-export const surfaceSources = ['hub', 'km_mark', 'km', 'plan', 'import'] as const
+export const surfaceSources = ['hub', 'km_mark', 'km', 'plan', 'import', 'hub_hint'] as const
 export type SurfaceSource = (typeof surfaceSources)[number]
 
 export const placementOrigins = ['plan', 'hub', 'manual', 'import'] as const

@@ -3,7 +3,7 @@ import { formatClock, formatDate, pastVerb } from './format'
 import { confirmation } from './placement/confirmation'
 import { allOf, latest, openEvidence, QUESTION_KINDS } from './placement/evidence'
 import { signOfLevel } from './placement/levels'
-import type { Outcome } from './placement/outcome'
+import { dateOf, type Outcome } from './placement/outcome'
 import { fromPlan } from './placement/plan-outcome'
 import { question } from './placement/questions'
 import { hubSilenceReason } from './placement/surfaces'
@@ -88,6 +88,16 @@ function outcomeOf(facts: PlacementFacts, evidence: readonly Evidence[]): Outcom
   const open = question(facts, evidence)
   if (open) return open
   if (plan) return fromPlan(facts, plan)
+  const history = latest(evidence, 'hub_history')
+  if (history) {
+    return {
+      level: 'history_candidate',
+      word: 'похоже, выходило',
+      detail: formatDate(dateOf(history.post_at), factsToday(facts)),
+      reason: `Hub: похожий пост ${formatDate(dateOf(history.post_at), factsToday(facts))} по имени или длительности и размерам, не подтверждение`,
+      date: dateOf(history.post_at),
+    }
+  }
   const walk = latest(evidence, 'walk_not_found')
   if (walk) {
     const reason = `Не найден при обходе от ${formatDate(walk.walked_from, factsToday(facts))}`
