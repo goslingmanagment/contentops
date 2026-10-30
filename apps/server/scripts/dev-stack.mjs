@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const ROOT = new URL('../../..', import.meta.url).pathname
-const CONTAINER = 'contentops-dev-pg'
+const CONTAINER = process.env.DEV_PG_CONTAINER ?? 'contentops-dev-pg'
 const IMAGE = 'postgres:18.6'
 const PORT = process.env.DEV_PG_PORT ?? '54329'
 const OWNER_PASSWORD = process.env.CONTENTOPS_OWNER_PASSWORD ?? 'contentops-dev'

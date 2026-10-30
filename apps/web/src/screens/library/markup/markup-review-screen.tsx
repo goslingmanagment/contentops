@@ -52,9 +52,9 @@ function linesOf(
 }
 
 /**
- * «Разметка на проверку» `/<модель>/library/markup` (DESIGN §4.20): появляется, когда
- * работает разметка ИИ. Строки показывают значения полей; «Подтвердить всю разметку · N»
- * подтверждает ровно те версии, что видны.
+ * «Разметка на проверку» `/<модель>/library/markup` (DESIGN §4.20): папка в корне появляется,
+ * когда работает разметка ИИ; черновики импорта видны здесь и до неё. Строки показывают
+ * значения полей; «Подтвердить всю разметку · N» подтверждает ровно те версии, что видны.
  */
 export function MarkupReviewScreen() {
   const model = useCurrentModel()
@@ -105,8 +105,9 @@ export function MarkupReviewScreen() {
     onOpenFrames: setFramesOf,
   }
   const aiOff = ai !== undefined && ai.state !== 'working'
+  const drafts = review.data !== undefined && review.data.length > 0
   const body = (() => {
-    if (aiOff) {
+    if (aiOff && !drafts) {
       return (
         <div className="flex flex-1 items-center justify-center">
           <IntegrationPhrase line={ai.line} withOwnerAction />
@@ -177,7 +178,7 @@ export function MarkupReviewScreen() {
       <FieldHeader
         crumbs={[{ label: 'Библиотека', href: rootHref }]}
         title="Разметка на проверку"
-        count={review.data && !aiOff ? lines.length : undefined}
+        count={review.data && (drafts || !aiOff) ? lines.length : undefined}
         info={{ open: panel.open, onToggle: panel.toggle }}
         menu={menu}
         selectionBar={

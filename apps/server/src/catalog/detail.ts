@@ -132,9 +132,13 @@ function fileRole(type: DbItemType, row: MembershipRow): FileRole {
   }
 }
 
+/** Ordered files (photos, frames, clips, materials) count 1… in the order of the object. */
+const ORDERED_ROLES = new Set<MembershipRow['role']>(['pic', 'raw', 'ed', 'clip'])
+
 function fileOf(
   item: ItemRow,
   row: MembershipRow,
+  position: number | null,
   versions: readonly VersionRow[],
   processed: ReadonlySet<number>,
   owners: ReadonlyMap<string, ItemRow>,
@@ -161,7 +165,7 @@ function fileOf(
             ? 'обработанный'
             : FILE_ROLE_LABEL[role],
     media: row.media_kind === 'image' ? 'photo' : 'video',
-    position: row.display_position,
+    position,
     file_name: `${key}.${row.ext}`,
     duration_s: row.duration_ms ? Math.round(row.duration_ms / 1000) : null,
     width: row.width ?? 1080,
@@ -379,7 +383,10 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
     rows.flatMap((row) => (row.role === 'ed' && row.ordinal !== null ? [row.ordinal] : [])),
   )
   const base = rows.filter((row) => !(row.kind === 'owned' && row.variant_no > 0))
-  const files = base.map((row) => fileOf(item, row, versions, processed, owners))
+  let rank = 0
+  const files = base.map((row) =>
+    fileOf(item, row, ORDERED_ROLES.has(row.role) ? ++rank : null, versions, processed, owners),
+  )
   const fypVersions: FypVersion[] = rows
     .filter((row) => row.kind === 'owned' && row.variant_no > 0)
     .map((row) => ({
