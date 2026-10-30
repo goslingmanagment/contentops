@@ -14,7 +14,7 @@ import {
 } from '../catalog/file-writes'
 import { findItem, type ItemRow, modelOf, publicIdOfRow } from '../catalog/ids'
 import { addLink, confirmLink, removeLink } from '../catalog/links'
-import { makePpvFromCustom } from '../catalog/make-ppv'
+import { makeMasterFromRaw, makePpvFromCustom } from '../catalog/make-ppv'
 import { changeTags, confirmMarkup, updateField } from '../catalog/markup-writes'
 import { changeType, extractShoot, mergeRaw, removeItem, restoreItem } from '../catalog/structure'
 import { checkItemVersion, lockItem, logItemAction, touchItem } from '../catalog/writes'
@@ -221,6 +221,13 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
         command({ ctx, body }, async (tx, actor) => ({
           item_id: await mergeRaw(tx, modelOf(ctx.model), params.id, body.into, ctx, actor),
         })),
+      // «Сделать мастером PPV» из сырья (DESIGN §4.5).
+      makeMaster: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx.model)
+          const item = await lockItem(tx, model, params.id)
+          return makeMasterFromRaw(tx, model, item, body, actor)
+        }),
       extractShoot: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx.model)
