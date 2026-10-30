@@ -167,7 +167,7 @@ item_type, key)`; CHECK: строка без модели не несёт `accou
 модель+аккаунт+тип → модель+аккаунт → модель+тип → модель → глобально; SQL NULL —
 не задано, то есть выключено; JSON `null` отклоняется; валидатор на каждый ключ;
 сидов нет. Выключатели SPEC §8: `hub.receive`, `hub.auto_match`, `hub.publish`
-(публикация через Hub, с 5б), `ydisk.scan`, `agents.enabled`, `agents.token.<id>`,
+(публикация через Hub, с 5б), `ydisk.scan`, `dropbox.scan`, `agents.enabled`, `agents.token.<id>`,
 `fyper.enabled`, `annotation.*` (SPEC §8.3). Пороги и настройки: `too_early_days`,
 `phash_suggest_threshold`, `intake_auto_accept`,
 `hub_candidate_tolerance`, `hub_exact_duration_ms`, `hub_wait_window`,
@@ -441,15 +441,17 @@ UNIQUE `(generation_id, name)`; UNIQUE `(id, output_sha256)` — для квит
 ### 3.4. Источники, приёмка, фон
 
 **`sources`** — откуда приходят байты и метаданные (§4, §6.1, §6.3). `id`,
-`model_id`, `kind` (`yandex_disk | web_upload | legacy_metadata`, схема §9.7), `label`,
+`model_id`, `kind` (`yandex_disk | dropbox | web_upload | legacy_metadata`, схема §9.7; оба
+облачных — за одним интерфейсом источника, SPEC §6.1), `label`,
 `credentials_ref` (имя переменной окружения; сам токен в БД
 не хранится), `read_only`, `enabled`. UNIQUE `(model_id, label)`;
-CHECK `kind <> 'yandex_disk' OR read_only` — инвариант §2.1 п. 6 в схеме.
+CHECK `kind NOT IN ('yandex_disk', 'dropbox') OR read_only` — инвариант §2.1 п. 6 в схеме.
 Локальная копия легаси — не вид источника: путь — переменная `LEGACY_SOURCE_ROOT`, байты
 читаются как та же ревизия Я.Диска (`verified_route = local_copy`).
 
 **`source_objects`** — внешний ресурс (§4, §6.1). `id`, `model_id`, `source_id`,
-`resource_id?` (Я.Диск), `upload_id?` (веб), `current_path`, `current_name`, `is_dir`,
+`resource_id?` (ID файла у источника: `resource_id` Я.Диска или `id` Dropbox), `upload_id?`
+(веб), `current_path`, `current_name`, `is_dir`,
 `parent_id?`, `archive_parent_id?`, `archive_entry_no?` (член распакованного архива:
 `(архив, номер входа)`, а не только имя — одинаковые имена внутри ZIP различимы),
 `current_revision_id?`, `first_seen_at`, `last_seen_at`, `gone_since?`.
@@ -464,10 +466,12 @@ UNIQUE `(model_id, source_object_id, path_nfc)`. Переименование д
 алиас у привязанного ассета, не новый черновик.
 
 **`source_revisions`** — наблюдённое состояние байтов (§6.1 «новое и
-изменившееся»). `id`, `model_id`, `source_object_id`, `sequence_no`, `md5?`,
-`byte_size`, `remote_created_at?` (время заливки на Я.Диск: по нему дата прихода и срок
-старых кастомов), `remote_modified_at?`, `detected_at`, `scan_work_id?`, `source_sha256?`,
-`verified_at?` (MD5 сошёлся, SHA-256 посчитан), `verified_route`
+изменившееся»). `id`, `model_id`, `source_object_id`, `sequence_no`, `md5?` (Я.Диск),
+`content_hash?` и `remote_rev?` (Dropbox), `byte_size`, `remote_created_at?` (время
+появления в источнике: `created` Я.Диска, `server_modified` Dropbox; по нему дата прихода
+и срок старых кастомов), `remote_modified_at?`, `detected_at`, `scan_work_id?`, `source_sha256?`,
+`verified_at?` (сумма источника сошлась: MD5 Я.Диска или `content_hash` Dropbox; SHA-256
+посчитан), `verified_route`
 (`download | local_copy | upload`), `previous_id?`, `frozen_by_work_id?` (ревизию закрепил
 снимок `scan:freeze`, SPEC §6.3: снимок — эти строки в базе, полнота листинга каталогов — в
 `report` работы).
@@ -480,7 +484,7 @@ source_object_id, id)`; уникальности по MD5 или SHA нет: A�
 Локальная копия легаси — способ чтения той же ревизии Я.Диска, не второй источник.
 
 **`inbox_groups`** — папка или кластер как единица принятия (§4, §6.1, §6.3). `id`,
-`model_id`, `source_id`, `group_key` — у Я.Диска всегда с `resource_id` папки, не путь:
+`model_id`, `source_id`, `group_key` — всегда с ID папки у источника, не путь:
 `folder:<id папки>`, `exif-day:<id папки>:2026-08-07`, `upload-window:<id папки>:…`,
 `single:<id файла>`, `split:<uuid>`; `grouping` (`folder | exif_day | upload_cluster |
 single | manual`; правило группировки — одно, SPEC §6.1; `manual` — новый файл в принятой
@@ -1448,8 +1452,9 @@ Testcontainers одноразовые, стенд — `docker compose down -v`; 
 
 Третья арена того же дня, оба «да». Норма — SPEC §6.3–6.4; здесь — колонки.
 
-- `source_revisions.remote_sha256?` — хэш от API Я.Диска: группировка дублей до
-  скачивания и цель проверки локальной копии; `source_sha256` остаётся локально
+- `source_revisions.remote_sha256?` — хэш от API Я.Диска (у Dropbox его нет: дубль
+  ищется после скачивания по `source_sha256`): группировка дублей до скачивания и цель
+  проверки локальной копии; `source_sha256` остаётся локально
   посчитанным; индекс `(model_id, remote_sha256)` — точный дубль ищется среди всех
   черновиков, и непринятых тоже.
 - `sources.kind` + `legacy_metadata` — закреплённый экспорт реестра PPV как источник со
