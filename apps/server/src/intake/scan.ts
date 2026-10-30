@@ -39,6 +39,8 @@ export interface ScanReport extends ApplyStats {
   incomplete_dirs?: number
   losses?: number
   cursor: string | null
+  /** The scan did nothing: this snapshot of the source is not finished yet (SPEC §6.3). */
+  waiting_for_snapshot?: string
 }
 
 /** Streams of the scheduler: two per configured cloud source of an active model. */
@@ -98,6 +100,21 @@ async function lastReport(db: Db, sourceId: string, where = sql`true`): Promise<
   return rows[0]?.report ?? null
 }
 
+/**
+ * The snapshot of the source that is queued or under way (SPEC §6.3). Until it pins its
+ * revisions an ordinary scan would take the whole old disk as new files — groups, drafts and
+ * downloads of everything — and with no cursor yet its first window is a full traversal: so
+ * it waits. The snapshot outranks nothing in the queue (`priority` 5 < 15, 20).
+ */
+async function unfinishedSnapshot(db: Db, sourceId: string): Promise<string | null> {
+  const { rows } = await db.execute<{ work_key: string }>(sql`
+    SELECT work_key FROM work_operations
+     WHERE kind = 'scan' AND scope = ${sourceId} AND dataset = ${FREEZE_DATASET}
+       AND state IN ('pending', 'running', 'retry_wait')
+     ORDER BY created_at LIMIT 1`)
+  return rows[0]?.work_key ?? null
+}
+
 /** Source errors as work outcomes (SPEC §8): a refused token stops, 429 waits, 5xx retries. */
 export function scanFailure(error: unknown): unknown {
   if (!isSourceError(error)) return error
@@ -136,6 +153,21 @@ export function scanHandler(factory: SourceFactory): WorkHandler {
       }
     }
     const previous = await lastReport(db, source.id)
+    const snapshot = await unfinishedSnapshot(db, source.id)
+    if (snapshot) {
+      const mode: ScanMode = work.dataset === 'full' ? 'full' : 'recent'
+      const report: ScanReport = {
+        mode,
+        cursor: previous?.cursor ?? null,
+        files: 0,
+        dirs: 0,
+        revisions: 0,
+        drafts: 0,
+        moved: 0,
+        waiting_for_snapshot: snapshot,
+      }
+      return { report }
+    }
     const folders = new Map<string, FolderRef>()
     const apply = async (entries: readonly SourceEntry[]) => {
       await resolveFolders(db, client, source, entries, folders, signal)
