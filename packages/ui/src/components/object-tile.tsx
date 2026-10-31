@@ -41,14 +41,21 @@ export interface ObjectTileProps {
   /** Три серых колонки строки списка: длительность или кадры, дата прихода, где залито. */
   columns?: readonly [string, string, string]
   selected?: boolean
+  /**
+   * Полное название в подсказке у обрезанного многоточием. Выключается, когда у плитки
+   * своя подсказка («Недавние»: причина при наведении), чтобы не всплывали обе.
+   */
+  titleHint?: boolean
   /** Галочка выбора без открытия (появляется при наведении). */
   onSelectedChange?: (selected: boolean) => void
   className?: string
 }
 
+// `break-words`: название из одного длинного слова (`Нейлоновые_колготки_и_каблуки`)
+// переносится и обрезается многоточием, а не уходит за край плитки.
 const titleClass: Record<ObjectTileView, string> = {
-  large: 'h-10 text-base line-clamp-2',
-  tile: 'h-9 text-sm line-clamp-2',
+  large: 'h-10 text-base line-clamp-2 break-words',
+  tile: 'h-9 text-sm line-clamp-2 break-words',
   row: 'truncate text-base',
 }
 
@@ -74,6 +81,7 @@ function ObjectCard({
   placementHint,
   placementTitle,
   selected = false,
+  titleHint = true,
   onSelectedChange,
   className,
 }: ObjectTileProps) {
@@ -104,7 +112,9 @@ function ObjectCard({
         }
       />
       <div className="flex min-w-0 flex-col px-0.5">
-        <p className={titleClass[view]}>{title}</p>
+        <p className={titleClass[view]} title={titleHint ? title : undefined}>
+          {title}
+        </p>
         <p
           className={cn(
             'truncate text-muted-foreground tabular-nums',
@@ -129,6 +139,7 @@ function ObjectRow({
   sign,
   columns,
   selected = false,
+  titleHint = true,
   onSelectedChange,
   className,
 }: ObjectTileProps) {
@@ -155,7 +166,9 @@ function ObjectRow({
         className="w-10 shrink-0 rounded-md"
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <p className={titleClass.row}>{title}</p>
+        <p className={titleClass.row} title={titleHint ? title : undefined}>
+          {title}
+        </p>
         <p className="flex min-w-0 items-center gap-2 text-ink-3 text-sm tabular-nums">
           <span className="shrink-0">{id}</span>
           {sign ? (
@@ -167,9 +180,13 @@ function ObjectRow({
       </div>
       {columns ? (
         <div className="flex shrink-0 items-center gap-6 text-muted-foreground text-sm tabular-nums">
-          <span className="w-20 truncate text-right">{columns[0]}</span>
+          <span className="w-20 truncate text-right" title={columns[0]}>
+            {columns[0]}
+          </span>
           <span className="w-20 truncate">{columns[1]}</span>
-          <span className="w-44 truncate">{columns[2]}</span>
+          <span className="w-44 truncate" title={columns[2]}>
+            {columns[2]}
+          </span>
         </div>
       ) : null}
     </div>

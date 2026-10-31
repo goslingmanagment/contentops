@@ -9,10 +9,15 @@ interface TitleFieldProps {
   /** `title_en` — короткое английское название для имени скачивания (naming §4). */
   fieldKey?: 'title' | 'title_en'
   label?: string
+  /**
+   * Подсказка в пустом поле для того, кто может его заполнить. «не заполнено» уже стоит
+   * справа от подписи (§5.4) — второй раз на месте значения оно не пишется.
+   */
+  hint?: string
 }
 
 /** «Название» в разметке: то же поле, что в шапке, правка на месте. */
-export function TitleField({ fieldKey = 'title', label = 'Название' }: TitleFieldProps) {
+export function TitleField({ fieldKey = 'title', label = 'Название', hint }: TitleFieldProps) {
   const { canAct } = useObjectPage()
   const field = useMarkupField(fieldKey)
   const save = useFieldSave(fieldKey)
@@ -49,7 +54,7 @@ export function TitleField({ fieldKey = 'title', label = 'Название' }: T
             onClick={() => setEditing({ base: field?.version ?? 1 })}
             className="-mx-2 min-h-9 rounded-lg px-2 text-left transition-colors duration-120 enabled:hover:bg-accent"
           >
-            {value || <span className="text-ink-3">не заполнено</span>}
+            {value || <span className="text-ink-3">{(canAct && hint) || 'не заполнено'}</span>}
           </button>
         )
       }

@@ -29,6 +29,7 @@ export function FolderList({ folders }: { folders: readonly LibraryFolder[] }) {
                   seed={cover.seed}
                   kind={cover.kind}
                   family={cover.family}
+                  src={cover.src}
                   aspect="1:1"
                   showCaptions={false}
                   className="w-10 shrink-0 rounded-md"

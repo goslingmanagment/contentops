@@ -34,18 +34,15 @@ function isEmptyChannel(channel: PromoChannel): boolean {
   return channel.collection_count === 0 && channel.covers.length === 0
 }
 
-/** «22 подборки · 6 каналов» у каналов, число передач у «Передач». */
-function headerMeta(
-  view: PromoView,
-  channels: readonly PromoChannel[] | undefined,
-  handoffs: readonly Handoff[] | undefined,
-): string | undefined {
-  if (view === 'handoffs') {
-    return handoffs && handoffs.length > 0 ? formatNumber(handoffs.length) : undefined
-  }
+/**
+ * «22 подборки · 5 каналов» — у обоих видов: вид меняет вкладку, а не заголовок, и вкладки
+ * не переезжают (DESIGN §3.2). Каналы — те, где есть подборки, как на папке Промо в корне.
+ */
+function headerMeta(channels: readonly PromoChannel[] | undefined): string | undefined {
   if (!channels || channels.every(isEmptyChannel)) return undefined
   const collections = channels.reduce((sum, channel) => sum + channel.collection_count, 0)
-  return `${collectionsWord(collections)} · ${channelsWord(channels.length)}`
+  const filled = channels.filter((channel) => channel.collection_count > 0).length
+  return `${collectionsWord(collections)} · ${channelsWord(filled)}`
 }
 
 /**
@@ -59,7 +56,7 @@ export function PromoRootScreen() {
   const channels = usePromoChannels(model.code)
   const handoffs = usePromoHandoffs(model.code)
   const index = useCatalogIndex(model.code)
-  const crumbs = usePromoCrumbs(view === 'channels' ? 'library' : 'promo')
+  const crumbs = usePromoCrumbs('library')
 
   const collections = useMemo(
     () =>
@@ -76,8 +73,8 @@ export function PromoRootScreen() {
     <FieldLayout>
       <FieldHeader
         crumbs={crumbs}
-        title={view === 'channels' ? 'Промо' : 'Передачи'}
-        meta={headerMeta(view, channels.data, handoffs.data)}
+        title="Промо"
+        meta={headerMeta(channels.data)}
         nav={<PromoViewSwitch value={view} />}
       />
       <RefreshStrip active={query.isFetching && query.data !== undefined} />

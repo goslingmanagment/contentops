@@ -114,12 +114,12 @@ const META_BY_TYPE: Record<ItemType, MetaParts> = {
     vaultAlbum(detail),
   ],
   fyp: (entry, detail, today) => ['Фуп', duration(entry), fromShoot(detail, today)],
-  life: (entry, _detail, today) => [
+  life: (entry, detail, today) => [
     'Лайф',
     count(entry.photo_count, PHOTOS),
     count(entry.video_count, VIDEOS),
     formatDate(entry.shot_on ?? entry.arrived_on, today),
-    entry.life_unassigned ? `без назначения ${formatNumber(entry.life_unassigned)}` : null,
+    lifeUnassigned(detail),
   ],
   raw: (entry, detail, today) => [
     entry.shot_on ? `Съёмка ${formatDateWords(entry.shot_on, today)}` : 'Съёмка',
@@ -136,6 +136,16 @@ const META_BY_TYPE: Record<ItemType, MetaParts> = {
     count(mediaCount(entry, detail, 'photo'), PHOTOS),
     entry.size_bytes ? formatBytes(entry.size_bytes) : null,
   ],
+}
+
+/**
+ * «без назначения 4» — по кадрам, как в подписи «Кадры» ниже: видео лайфа назначения не
+ * получают. Счёт индекса (`life_unassigned`) включает и видео, поэтому до карточки не пишется.
+ */
+function lifeUnassigned(detail: ItemDetail | null): string | null {
+  const unassigned =
+    detail?.files.filter((file) => file.role === 'photo' && file.assignment === null).length ?? 0
+  return unassigned > 0 ? `без назначения ${formatNumber(unassigned)}` : null
 }
 
 function metaParts(entry: CatalogEntry, detail: ItemDetail | null, today: LocalDate): string[] {

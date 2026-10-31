@@ -1,5 +1,4 @@
 import type { Account, CatalogEntry, ItemId, RecentItem } from '@contentops/contracts'
-import { formatDate } from '@contentops/contracts'
 import { CollectionOption } from '@contentops/ui/components/collection-option'
 import { ObjectTile, type ObjectTileView } from '@contentops/ui/components/object-tile'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@contentops/ui/components/tooltip'
@@ -10,8 +9,8 @@ import { useCallback, useId, useMemo, useRef } from 'react'
 import { useToday } from '@/data/api-session'
 import type { PageSummariesView } from '@/data/catalog'
 import { itemCover } from '@/lib/item-cover'
-import { lengthText } from '@/objects/item-facts'
-import { placedPagesText, tileSignOf } from '@/objects/placement-text'
+import { tileSignOf } from '@/objects/placement-text'
+import { entryColumns } from '../shared/entry-columns'
 
 export interface RecentObject {
   entry: CatalogEntry
@@ -147,12 +146,9 @@ export function RecentStrip({
                       countLabel={cover.countLabel}
                       versionCount={cover.versionCount}
                       sign={tileSignOf(entrySummaries, accounts)}
-                      columns={[
-                        lengthText(entry),
-                        formatDate(entry.arrived_on, today),
-                        placedPagesText(accounts, entrySummaries),
-                      ]}
+                      columns={entryColumns(entry, accounts, entrySummaries, today)}
                       selected={selected}
+                      titleHint={false}
                       onSelectedChange={(checked) => toggle(entry.id, checked)}
                     />
                   </div>

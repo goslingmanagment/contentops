@@ -41,6 +41,7 @@ export function MemberCard({ member, catalog, channelName, onOpen, onRemove }: M
           seed={cover.seed}
           kind={cover.kind}
           mediaAspect={cover.mediaAspect}
+          src={cover.src}
           className="w-33 shrink-0"
         />
         <div className="flex min-w-0 flex-col gap-1 pt-1">

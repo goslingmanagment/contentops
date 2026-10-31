@@ -7,6 +7,8 @@ export interface MemberCover {
   kind: CoverKind | undefined
   /** Горизонтальный кадр (YouTube) вписывается в ячейку целиком (§7.6). */
   mediaAspect: CoverAspect | undefined
+  /** Настоящая миниатюра; пока её нет — синтетическая по сиду. */
+  src: string | undefined
 }
 
 /**
@@ -18,6 +20,7 @@ export function memberCover(thumb: ThumbRef): MemberCover {
     seed: thumb.key,
     kind: thumbSubject(thumb).type ?? 'promo',
     mediaAspect: thumb.ratio === '16:9' ? '16:9' : undefined,
+    src: thumb.url ?? undefined,
   }
 }
 
@@ -25,7 +28,7 @@ export function memberCover(thumb: ThumbRef): MemberCover {
 export function mosaicOf(thumbs: readonly ThumbRef[]): MosaicTile[] {
   return thumbs.map((thumb) => {
     const cover = memberCover(thumb)
-    return { seed: cover.seed, kind: cover.kind, mediaAspect: cover.mediaAspect }
+    return { seed: cover.seed, kind: cover.kind, mediaAspect: cover.mediaAspect, src: cover.src }
   })
 }
 

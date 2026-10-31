@@ -86,10 +86,10 @@ export function LibraryRootScreen() {
     actions: [
       {
         id: 'deleted',
-        label:
-          data.deletedCount === null
-            ? 'Удалённые объекты'
-            : `Удалённые объекты · ${formatNumber(data.deletedCount)}`,
+        // «· 0» — шум: число стоит, только когда есть что вернуть.
+        label: data.deletedCount
+          ? `Удалённые объекты · ${formatNumber(data.deletedCount)}`
+          : 'Удалённые объекты',
         onSelect: () =>
           void navigate({ to: '/$model/library/deleted', params: { model: model.code } }),
       },
