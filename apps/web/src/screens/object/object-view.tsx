@@ -1,7 +1,7 @@
 import type { ItemDetail } from '@contentops/contracts'
 import { PanelMessage } from '@contentops/ui/components/panel-frame'
 import { useRouter } from '@tanstack/react-router'
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef } from 'react'
 import { useRole } from '@/data/session'
 import { useKeyboardShortcut } from '@/lib/use-keyboard-shortcut'
 import { FieldLayout } from '@/shell/field/field-layout'
@@ -128,6 +128,12 @@ export function ObjectView({ detail, search, onSearchChange, refreshing, query }
     { code: 'Escape', enabled: selection.keys.size > 0 && viewerKeyOf(search) === undefined },
     selection.clear,
   )
+  useSpaceToView(viewKey === undefined, () => {
+    const first = viewerEntries(detail, search)[0]
+    if (first) {
+      openFile(first.key)
+    }
+  })
 
   return (
     <ObjectPageContext value={api}>
@@ -159,5 +165,50 @@ export function ObjectView({ detail, search, onSearchChange, refreshing, query }
         </PendingOperationsProvider>
       </FileSelectionContext>
     </ObjectPageContext>
+  )
+}
+
+/**
+ * `Space` на странице объекта — просмотр с первого файла (DESIGN §4.4), даже если фокус
+ * ещё ни на чём не стоит. Сетка файлов слушает `Space` сама и открывает файл под фокусом;
+ * у кнопок, полей и вкладок `Space` остаётся их клавишей.
+ */
+function useSpaceToView(enabled: boolean, open: () => void) {
+  const onSpace = useEffectEvent(open)
+  useEffect(() => {
+    if (!enabled) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.code !== 'Space' ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        !idleTarget(event.target)
+      ) {
+        return
+      }
+      event.preventDefault()
+      onSpace()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [enabled])
+}
+
+/** Фокус ни на чём, что само понимает `Space`: страница, поле, обёртка без роли. */
+function idleTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return true
+  }
+  return (
+    !target.isContentEditable &&
+    target.closest(
+      'a, button, input, textarea, select, summary, [role], [tabindex]:not([tabindex="-1"])',
+    ) === null
   )
 }

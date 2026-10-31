@@ -62,6 +62,7 @@ export function MemberTile({
         kind={cover.kind}
         aspect={cell}
         mediaAspect={cover.mediaAspect}
+        src={cover.src}
         durationSeconds={member.duration_s ?? undefined}
         overlay={
           onSelectedChange ? (

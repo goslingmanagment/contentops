@@ -11,7 +11,7 @@ import {
   plural,
   RAW_PURPOSE_LABEL,
 } from '@contentops/contracts'
-import { compositionText } from '@/lib/words'
+import { compositionLabel } from '@/lib/words'
 import { placedPagesText } from '@/objects/placement-text'
 
 /**
@@ -30,10 +30,12 @@ const LENGTH: Record<ItemType, (entry: CatalogEntry) => string> = {
   ppv: (entry) => (entry.duration_s === null ? '—' : formatDuration(entry.duration_s)),
   fyp: (entry) => (entry.duration_s === null ? '—' : formatDuration(entry.duration_s)),
   custom: (entry) =>
-    entry.duration_s === null ? (compositionText(entry) ?? '—') : formatDuration(entry.duration_s),
+    entry.duration_s === null ? (compositionLabel(entry) ?? '—') : formatDuration(entry.duration_s),
   set: (entry) => counted(entry.photo_count ?? 0, ['кадр', 'кадра', 'кадров']),
   sexting: (entry) => counted(files(entry), ['файл', 'файла', 'файлов']),
-  life: (entry) => compositionText(entry) ?? '—',
+  // Фото и видео вместе — «18 файлов», как на плитке (§4.2): «16 фото · 2 видео» в колонку 80
+  // не входит, целиком состав — в мета-строке объекта и в панели.
+  life: (entry) => compositionLabel(entry) ?? '—',
   raw: (entry) => counted(files(entry), ['файл', 'файла', 'файлов']),
   promo: (entry) => `${formatNumber(entry.video_count ?? 0)} видео`,
 }

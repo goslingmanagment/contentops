@@ -53,7 +53,10 @@ export function QuickLook({ entry, summaries, tags }: QuickLookProps) {
         <div className="flex gap-4">
           <Thumb {...itemCover(entry)} className="w-33 shrink-0" />
           <div className="flex min-w-0 flex-col gap-1">
-            <p className="text-lg">{entry.title}</p>
+            {/* Длинное название — три строки и многоточие, целиком — в подсказке (§3.4). */}
+            <p className="line-clamp-3 break-words text-lg" title={entry.title}>
+              {entry.title}
+            </p>
             <p className="text-muted-foreground text-sm">{metaLine(entry)}</p>
             <p className="text-ink-3 text-sm tabular-nums">
               пришёл {formatDate(entry.arrived_on, today)}
@@ -84,7 +87,7 @@ export function QuickLook({ entry, summaries, tags }: QuickLookProps) {
           onSelectPage={() =>
             void navigate({ to: '/$model/i/$id', params: { model: model.code, id: entry.id } })
           }
-          className="-ml-2 grid grid-cols-1 gap-y-0 [&>li[aria-hidden]]:hidden"
+          className="-ml-2 grid grid-cols-1 gap-y-0"
         />
       </InfoSection>
       <InfoSection

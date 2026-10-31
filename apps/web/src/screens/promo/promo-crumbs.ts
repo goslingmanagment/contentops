@@ -8,8 +8,8 @@ interface ChannelCrumb {
 }
 
 /**
- * Крошки Промо (DESIGN §3.2) до родителя экрана: у каналов — «Библиотека», у канала и
- * «Передач» — «Библиотека › Промо», у подборки ещё и «› Instagram».
+ * Крошки Промо (DESIGN §3.2) до родителя экрана: у каналов и «Передач» — «Библиотека», у
+ * канала — «Библиотека › Промо», у подборки ещё и «› Instagram».
  */
 export function usePromoCrumbs(parent: 'library' | 'promo' | ChannelCrumb): Crumb[] {
   const links = usePromoLinks()
