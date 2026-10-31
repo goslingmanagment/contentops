@@ -12,7 +12,7 @@ import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
-import { opsAgent, opsPolicy, opsSwitch } from './ops-owner'
+import { opsAgent, opsPerson, opsPolicy, opsSwitch } from './ops-owner'
 import { smokeSetup } from './smoke/setup'
 
 /**
@@ -75,6 +75,7 @@ const USAGE = `usage:
   ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
   ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
+  ops.js person <login> --name <имя> --role manager|reader --models <a,b>   (a temporary password once)
   ops.js switch <integration> <switch>=on|off ...   (ydisk.lora scan=on, agents enabled=on)
   ops.js policy <key> <json|off> [--model <m>] [--page <p>] [--type PPV]   (thresholds, hub_ad_markers…)`
 
@@ -123,6 +124,7 @@ async function main(argv: string[]): Promise<number> {
       token: { type: 'boolean' },
       role: { type: 'string' },
       models: { type: 'string' },
+      name: { type: 'string' },
       page: { type: 'string' },
       type: { type: 'string' },
     },
@@ -262,6 +264,22 @@ async function main(argv: string[]): Promise<number> {
         )
       }
       out(result)
+      return 0
+    }
+    if (command === 'person') {
+      const [login] = positionals
+      if (!login || !values.name || !values.role || !values.models) throw new Error(USAGE)
+      out(
+        await opsPerson(db, {
+          login,
+          name: values.name,
+          role: values.role,
+          models: values.models
+            .split(',')
+            .map((code) => code.trim())
+            .filter(Boolean),
+        }),
+      )
       return 0
     }
     if (command === 'switch') {

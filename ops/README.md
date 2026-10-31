@@ -162,7 +162,9 @@
   ролью КМ или «Только чтение» и моделями (нет — заводится, недостающие модели добавляются,
   другая роль — отказ; владельцем агент не бывает) — `ops.js agent "Оператор" --role manager
   --models lora`, с `--token` — новый токен один раз в stdout (прежние токены агента
-  отзываются); выключатели по коду интеграции — `ops.js switch ydisk.lora scan=on`, `ops.js
+  отзываются); человек с ролью КМ или «Только чтение» (то же, что «Добавить человека»; занятый
+  логин — отказ, новый пароль — `contentops-db reset-password`) — `ops.js person diana --name
+  "Диана" --role manager --models lora`, временный пароль один раз в stdout; выключатели по коду интеграции — `ops.js switch ydisk.lora scan=on`, `ops.js
   switch agents enabled=on`, `ops.js switch hub.lora-1 receive=off`. Токен печатается
   только в stdout: сразу в файл, не на экран. Пороги по ключам схемы и настройки без экрана
   (метки рекламы страницы, партия импорта) — `ops.js policy hub_candidate_tolerance 30`,
