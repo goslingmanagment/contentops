@@ -10,9 +10,17 @@ import {
   values,
   withActorTx,
 } from '@contentops/db'
+import { hash } from '@node-rs/argon2'
 import { sql } from 'drizzle-orm'
-import { newSecret, sha256, TOKEN_PREFIX, TOKEN_PREFIX_LENGTH } from './auth/secrets'
+import {
+  newSecret,
+  sha256,
+  TOKEN_PREFIX,
+  TOKEN_PREFIX_LENGTH,
+  temporaryPassword,
+} from './auth/secrets'
 import { applySwitches, switchesOf } from './handlers/integrations'
+import { genderOfName } from './handlers/people'
 import { modelNames, modelsByCodes } from './handlers/shared'
 
 /**
@@ -142,6 +150,61 @@ export async function opsAgent(
     token: result.token,
     agents_enabled: await isSwitchOn(db, 'agents.enabled'),
   }
+}
+
+export interface OpsPersonResult {
+  login: string
+  id: string
+  name: string
+  role: AgentRole
+  models: string[]
+  /** Shown once, as «Люди и доступ» shows it; the person changes it at the first sign-in. */
+  temporary_password: string
+}
+
+/**
+ * `ops.js person <login> --name <имя> --role manager|reader --models <a,b>` — «Добавить человека»
+ * of «Люди и доступ» (DESIGN §4.19) for a stack whose owner has no browser session: the КМ who
+ * confirms the labels of stage 3. A taken login is refused; a new password —
+ * `contentops-db reset-password`.
+ */
+export async function opsPerson(
+  db: Db,
+  input: { login: string; name: string; role: string; models: readonly string[] },
+): Promise<OpsPersonResult> {
+  const login = input.login.trim().toLowerCase()
+  const name = input.name.trim()
+  if (!login || !name) throw new Error('the person needs a login and --name')
+  const role = AgentRoleSchema.safeParse(input.role)
+  if (!role.success) throw new Error(`role ${input.role}: a person here is manager or reader`)
+  if (input.models.length === 0) throw new Error('the person needs --models')
+  const password = temporaryPassword()
+  const passwordHash = await hash(password)
+  return withActorTx(db, context('person.ops'), async (tx) => {
+    const models = await modelsByCodes(tx, input.models)
+    const { rows: taken } = await tx.execute<{ id: string }>(sql`
+      SELECT id FROM principals WHERE login = ${login}`)
+    if (taken.length > 0) throw new Error(`login ${login} is taken: contentops-db reset-password`)
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO principals (kind, login, display_name, gender, role, password_hash)
+      VALUES ('human', ${login}, ${name}, ${genderOfName(name)}, ${role.data}, ${passwordHash})
+      RETURNING id`)
+    const id = rows[0]?.id
+    if (!id) throw new Error('person insert returned nothing')
+    await tx.execute(sql`
+      INSERT INTO principal_grants (model_id, principal_id)
+      SELECT m.id, ${id}::uuid FROM models m
+       WHERE m.id = ANY(${sql.param(models.map((model) => model.id))}::uuid[])`)
+    const now = await liveModels(tx, id)
+    await logAction(tx, {
+      modelId: null,
+      subjectKind: 'principals',
+      subjectId: id,
+      subjectLabel: name,
+      after: { Логин: login, Роль: ROLE_LABEL[role.data], Модели: await modelNames(tx, now) },
+    })
+    return { login, id, name, role: role.data, models: now, temporary_password: password }
+  })
 }
 
 /**
