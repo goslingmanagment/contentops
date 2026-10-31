@@ -2,7 +2,8 @@ import { isApiError } from '@contentops/contracts'
 import { Skeleton } from '@contentops/ui/components/skeleton'
 import { ListRowSkeleton } from '@contentops/ui/components/skeletons'
 import { EmptyState, ErrorLine } from '@contentops/ui/components/state-lines'
-import { useLayoutEffect, useRef } from 'react'
+import { isTypingTarget } from '@contentops/ui/lib/platform'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useLegacyReview } from '@/data/inbox'
 import { useHistoryScroll } from '@/lib/use-history-state'
 import { FieldLayout } from '@/shell/field/field-layout'
@@ -10,7 +11,7 @@ import { RefreshStrip } from '@/shell/field/refresh-strip'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { InboxForbidden } from '../shared/inbox-forbidden'
 import { InboxHeader } from '../shared/inbox-header'
-import { DisputeGroups } from './dispute-groups'
+import { DisputeGroups, OPEN_CASE } from './dispute-groups'
 import { ImportLine } from './import-line'
 import { LabelMapCard } from './label-map-card'
 import { useLegacyActions } from './use-legacy-actions'
@@ -35,6 +36,19 @@ export function LegacyReviewScreen() {
       scrollRef.current.scrollTop = scroll.initialOffset
     }
   }, [data, scroll.initialOffset])
+
+  // При входе фокус на первом случае, где нужен человек (§3.12): стрелки, цифры и `Enter`
+  // работают без щелчка мышью.
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!data || focused.current) {
+      return
+    }
+    focused.current = true
+    if (!isTypingTarget(document.activeElement)) {
+      scrollRef.current?.querySelector<HTMLElement>(OPEN_CASE)?.focus({ preventScroll: true })
+    }
+  }, [data])
 
   if (isApiError(review.error) && review.error.status === 403) {
     return <InboxForbidden />

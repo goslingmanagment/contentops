@@ -1,4 +1,5 @@
 import { capitalize, type InboxGroup } from '@contentops/contracts'
+import { sourceGenitive } from './group-texts'
 
 /**
  * Откуда группа (DESIGN §4.8): путь Я.Диска — моноширинным; загрузка через браузер места на
@@ -13,8 +14,14 @@ export function groupSource(group: Pick<InboxGroup, 'source_path' | 'uploaded_by
     : { text: group.source_path, path: true }
 }
 
-/** Первый факт «Что это?»: «Корень Я.Диска: 8. Other» или «Загружено через браузер · Диана». */
-export function groupOrigin(group: Pick<InboxGroup, 'root' | 'source_path' | 'uploaded_by'>) {
+/**
+ * Первый факт «Что это?»: «Корень Dropbox: 8. Other» (облако модели) или «Загружено через
+ * браузер · Диана».
+ */
+export function groupOrigin(
+  group: Pick<InboxGroup, 'root' | 'source_path' | 'uploaded_by'>,
+  cloud = 'Я.Диск',
+) {
   const source = groupSource(group)
-  return source.path ? `Корень Я.Диска: ${group.root}` : capitalize(source.text)
+  return source.path ? `Корень ${sourceGenitive(cloud)}: ${group.root}` : capitalize(source.text)
 }

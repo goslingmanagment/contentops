@@ -58,13 +58,16 @@ function changeText(note: TargetNote, entry: CatalogEntry, group: InboxGroup): s
  * не берутся; форма появляется по «Отдельным объектом» / «Принять отдельно».
  */
 export function TargetCard({ group, note }: { group: InboxGroup; note: TargetNote }) {
-  const model = useCurrentModel().code
+  const current = useCurrentModel()
+  const model = current.code
   const index = useCatalogIndex(model).data
   const entry = index?.items.find((candidate) => candidate.id === note.item_id)
   return (
     <InfoSection title={TITLE[note.kind]}>
       {entry ? (
         <TargetRow model={model} entry={entry} change={changeText(note, entry, group)} />
+      ) : index ? (
+        <p className="text-muted-foreground text-sm">{`${note.item_id} у ${current.name_genitive} нет`}</p>
       ) : (
         <Skeleton className="h-16 w-full rounded-lg" />
       )}

@@ -14,6 +14,9 @@ import { BY_LABELS_OPTION, FOLDERS_OPTION } from './use-legacy-actions'
 
 const DIGITS: Readonly<Record<string, number>> = { Digit1: 1, Digit2: 2, Digit3: 3 }
 
+/** Виды, у которых предложение целиком написано на главной кнопке. */
+const PROPOSAL_ON_BUTTON: ReadonlySet<Dispute['kind']> = new Set(['label_from_name', 'number_typo'])
+
 interface DisputeRowProps {
   dispute: Dispute
   open: boolean
@@ -93,7 +96,12 @@ export function DisputeRow({ dispute, open, pending, onToggle, onChoose }: Dispu
     }
   }
   const settled = dispute.resolved !== null || dispute.postponed !== null
-  const secondLine = byFolder ? dispute.proposal : dispute.fragment
+  // У опечатки имя папки уже стоит в заголовке — вторая строка его не повторяет.
+  const repeatsTitle =
+    dispute.kind === 'number_typo' &&
+    dispute.fragment !== null &&
+    dispute.title.includes(dispute.fragment)
+  const secondLine = byFolder ? dispute.proposal : repeatsTitle ? null : dispute.fragment
   return (
     // biome-ignore lint/a11y/useSemanticElements: строка с кнопками внутри не может быть <button>
     <div
@@ -172,7 +180,8 @@ export function DisputeRow({ dispute, open, pending, onToggle, onChoose }: Dispu
       ) : null}
       {open && !byFolder && !settled ? (
         <div className="flex flex-col gap-2 pb-3 pl-27">
-          {dispute.proposal && dispute.kind !== 'label_from_name' ? (
+          {/* У метки и опечатки предложение уже сказано на главной кнопке. */}
+          {dispute.proposal && !PROPOSAL_ON_BUTTON.has(dispute.kind) ? (
             <p className="text-sm">{dispute.proposal}</p>
           ) : null}
           {asking ? (
@@ -229,7 +238,7 @@ function UnclearButton({
         onChoose(unclear)
       }}
     >
-      {unclear.label}
+      {capitalize(unclear.label)}
     </Button>
   )
 }

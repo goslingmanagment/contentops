@@ -136,7 +136,12 @@ export function OrderFormFields({ form, accounts }: OrderFormFieldsProps) {
           <label htmlFor={ids.deadline} className="h-5 text-ink-3 text-sm">
             срок
           </label>
-          <Input id={ids.duration} aria-label="Длительность видео" {...register('duration_raw')} />
+          <Input
+            id={ids.duration}
+            aria-label="Длительность видео"
+            placeholder="длительность"
+            {...register('duration_raw')}
+          />
           <Input
             id={ids.photos}
             type="number"

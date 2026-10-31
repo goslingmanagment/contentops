@@ -3,8 +3,10 @@ import { Button } from '@contentops/ui/components/button'
 import { Thumb } from '@contentops/ui/components/thumb'
 import { FileArchiveIcon } from 'lucide-react'
 import { useState } from 'react'
+import { useCurrentModel } from '@/shell/model/model-context'
 import { batchModelOf, batchSummary } from '../shared/batch'
 import { BatchButtons } from '../shared/batch-buttons'
+import { useSourceName } from '../shared/disk-line'
 import { groupKind } from '../shared/draft-cover'
 import { GroupStateLine } from '../shared/group-state-line'
 import { groupStateView } from '../shared/group-texts'
@@ -24,6 +26,7 @@ interface MultiPanelProps {
 export function MultiPanel({ groups, actions, channelName }: MultiPanelProps) {
   const [rejecting, setRejecting] = useState(false)
   const rejectable = batchModelOf(groups).rejectable
+  const cloud = useSourceName(useCurrentModel().code)
   return (
     <>
       <div className="flex shrink-0 flex-col gap-3 border-border border-b px-5 pt-5 pb-4">
@@ -72,7 +75,7 @@ export function MultiPanel({ groups, actions, channelName }: MultiPanelProps) {
               )}
               <span className="flex min-w-0 flex-col">
                 <span className="truncate">{group.title}</span>
-                <GroupStateLine view={groupStateView(group, channelName)} />
+                <GroupStateLine view={groupStateView(group, channelName, false, cloud)} />
               </span>
             </li>
           )

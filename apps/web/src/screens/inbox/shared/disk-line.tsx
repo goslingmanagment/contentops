@@ -33,7 +33,7 @@ export function diskCheckedText(
 }
 
 /** Имя облака, которое сейчас сканируется у модели: у Лоры новое идёт в Dropbox. */
-function useScannedName(model: string): string {
+export function useSourceName(model: string): string {
   const integrations = useIntegrations().data ?? []
   const working = integrations.find(
     (integration) =>
@@ -56,7 +56,7 @@ interface DiskLineProps {
 export function DiskLine({ model, checkedAt }: DiskLineProps) {
   const now = useClock().now()
   const trouble = useDiskTrouble(model)
-  const name = useScannedName(model)
+  const name = useSourceName(model)
   if (trouble) {
     return <IntegrationPhrase line={trouble.line} withOwnerAction className="max-w-[32rem]" />
   }

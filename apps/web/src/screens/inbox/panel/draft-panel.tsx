@@ -2,7 +2,9 @@ import type { DraftHint, InboxGroup, Instant } from '@contentops/contracts'
 import { ItemMenuButton, type ItemMenuModel } from '@contentops/ui/components/item-menu'
 import { cn } from '@contentops/ui/lib/utils'
 import { type RefObject, useImperativeHandle, useRef, useState } from 'react'
+import { useCurrentModel } from '@/shell/model/model-context'
 import { useUploadTarget } from '@/shell/upload/upload-context'
+import { useSourceName } from '../shared/disk-line'
 import { groupSource } from '../shared/group-source'
 import { GroupStateLine } from '../shared/group-state-line'
 import { groupStateView, metaLine } from '../shared/group-texts'
@@ -56,6 +58,7 @@ export function DraftPanel({
   const filesRef = useRef<HTMLDivElement>(null)
   const barRef = useRef<ActionBarHandle>(null)
   const saver = useDraftSave(group)
+  const cloud = useSourceName(useCurrentModel().code)
   // «Отдельным объектом» / «Принять отдельно»: вместо цели — форма черновика (§4.8).
   const [separate, setSeparate] = useState(false)
   const target = separate ? null : targetNoteOf(group)
@@ -104,7 +107,7 @@ export function DraftPanel({
             className="-mr-1.5"
           />
         </div>
-        <GroupStateLine view={groupStateView(group, channelName, true)} wrap="start" />
+        <GroupStateLine view={groupStateView(group, channelName, true, cloud)} wrap="start" />
         <DraftActionBar
           group={group}
           actions={actions}

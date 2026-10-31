@@ -10,6 +10,8 @@ import { Button } from '@contentops/ui/components/button'
 import { InfoSection } from '@contentops/ui/components/info-panel'
 import { Thumb } from '@contentops/ui/components/thumb'
 import type { ComponentType } from 'react'
+import { useCurrentModel } from '@/shell/model/model-context'
+import { useSourceName } from '../shared/disk-line'
 import { groupKind } from '../shared/draft-cover'
 import { groupOrigin } from '../shared/group-source'
 import { findHint } from '../shared/group-texts'
@@ -64,8 +66,9 @@ function WhichOrder({ group, pending, decide }: DecisionProps) {
 
 function WhatIsIt({ group, now, pending, decide }: DecisionProps) {
   const [file] = group.files
+  const cloud = useSourceName(useCurrentModel().code)
   const facts = [
-    groupOrigin(group),
+    groupOrigin(group, cloud),
     file ? `Имя: ${file.file_name}` : null,
     file?.shot_at ? `Снято: ${formatWhen(file.shot_at, now)}` : null,
   ].filter((fact) => fact !== null)
