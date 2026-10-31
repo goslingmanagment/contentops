@@ -31,7 +31,7 @@ import { type SourceFactory, sourceById } from './source-client'
  * `TMP_ROOT/staging/<sha256>.<ext>` where the media works find them (`locateInput`). The
  * checked hash goes to the revision and the draft; then an exact duplicate resolves itself as
  * an alias (schema §5), anything else gets its derivatives and master queued. Parallelism is
- * the `fetch` slot (`FETCH_JOBS`); the prefetch stays under `FETCH_AHEAD_GB`; intake stops
+ * the `fetch` slot (`FETCH_JOBS`); the prefetch of videos stays under `FETCH_AHEAD_GB`; intake stops
  * below the free space of the pilot (`SPACE_STOP_GB` of C:).
  */
 
@@ -151,7 +151,10 @@ export function fetchHandler(deps: FetchDeps): WorkHandler {
     if (await spaceLow(deps.space)) {
       throw new WorkDeferred(WAIT_SPACE_MS, 'забор остановлен: мало места')
     }
-    if ((await stagedAhead(db)) > deps.fetchAheadGb * GB) {
+    // The budget is the encoder's queue: a photo's master is the file itself, so photos pass
+    // instead of waiting days behind the videos.
+    const photo = mediaKindOf(row.current_path, null) === 'image'
+    if (!photo && (await stagedAhead(db)) > deps.fetchAheadGb * GB) {
       throw new WorkDeferred(WAIT_AHEAD_MS, 'предзабор полон')
     }
     const source = await sourceById(db, row.source_id)

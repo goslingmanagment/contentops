@@ -217,10 +217,12 @@ describe('fetch (SPEC §6.1)', () => {
 })
 
 describe('a full prefetch', () => {
-  it('waits without spending an attempt, however long the encoder takes', async () => {
-    // The drafts staged above are not masters yet: with no prefetch budget the next fetch waits.
-    const path = `${LORA_ROOT}/6. Life/Ждёт/01.jpg`
+  it('holds a video without spending an attempt, however long the encoder takes; a photo passes', async () => {
+    // The drafts staged above are not masters yet: with no prefetch budget the next video waits.
+    const path = `${LORA_ROOT}/6. Life/Ждёт/01.mp4`
+    const photo = `${LORA_ROOT}/6. Life/Ждёт/02.jpg`
     h.dropbox.tree.addFile(path, 3100)
+    h.dropbox.tree.addFile(photo, 3200)
     await scan()
     const full = fetchHandler({
       factory: h.factory,
@@ -241,6 +243,10 @@ describe('a full prefetch', () => {
       SELECT state, attempt_no AS attempts, progress_note AS note FROM work_operations
        WHERE id = ${id}::uuid`)
     expect(rows[0]).toEqual({ state: 'retry_wait', attempts: 0, note: 'предзабор полон' })
+    const { rows: photos } = await h.db.execute<{ state: string }>(sql`
+      SELECT w.state FROM work_operations w JOIN inbox_drafts d ON d.id = w.draft_id
+       WHERE w.kind = 'fetch' AND d.path = ${photo}`)
+    expect(photos).toEqual([{ state: 'succeeded' }])
     const [done] = await fetchAll()
     expect(done?.state).toBe('succeeded')
   })
