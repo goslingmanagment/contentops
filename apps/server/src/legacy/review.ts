@@ -233,7 +233,7 @@ function numberDisputes(units: readonly NumberUnit[], rootOf: (path: string) => 
       fragment: unit.name,
       thumbs: [thumb(unit.object_id)],
       proposal: registry === null ? null : pad(unit.type, registry),
-      options: [option('keep', `оставить ${pad(unit.type, unit.claimed)}`), UNCLEAR],
+      options: [option('keep', `оставить ${pad(unit.type, unit.claimed)} из имени`), UNCLEAR],
       resolved: resolvedOf([unit], 'proposal'),
     })
   }

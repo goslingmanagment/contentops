@@ -4,7 +4,9 @@ import { CollectionOption } from '@contentops/ui/components/collection-option'
 import { ItemContextMenu, type ItemMenuModel } from '@contentops/ui/components/item-menu'
 import { cn } from '@contentops/ui/lib/utils'
 import { type KeyboardEvent, type MouseEvent, type Ref, useId } from 'react'
+import { useCurrentModel } from '@/shell/model/model-context'
 import type { InboxView } from '../search'
+import { useSourceName } from '../shared/disk-line'
 import { groupStateView, metaLine } from '../shared/group-texts'
 import { INTAKE_ROW_COLUMNS, INTAKE_ROW_SPAN, IntakeRow } from './intake-row'
 import type { IntakeSection } from './intake-sections'
@@ -68,6 +70,7 @@ export function IntakeCollection({
   onScroll,
 }: IntakeCollectionProps) {
   const listId = useId()
+  const cloud = useSourceName(useCurrentModel().code)
   const multi = selectedKeys.size > 1
   return (
     <div
@@ -136,7 +139,7 @@ export function IntakeCollection({
                 {section.groups.map((group, offset) => {
                   const index = section.start + offset
                   const selected = selectedKeys.has(group.id)
-                  const state = groupStateView(group, channelName)
+                  const state = groupStateView(group, channelName, false, cloud)
                   return (
                     <CollectionOption
                       key={group.id}

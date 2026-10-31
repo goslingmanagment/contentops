@@ -9,7 +9,7 @@ import {
 import { Button } from '@contentops/ui/components/button'
 import { cn } from '@contentops/ui/lib/utils'
 import { ChevronRightIcon } from 'lucide-react'
-import type { KeyboardEvent } from 'react'
+import { type KeyboardEvent, useState } from 'react'
 import { z } from 'zod'
 import { useHistoryState } from '@/lib/use-history-state'
 import { DisputeRow } from './dispute-row'
@@ -23,15 +23,32 @@ interface DisputeGroup {
   unresolved: number
 }
 
-/** Виды спорного в порядке нормы; пустые не показываются. */
-function groupsOf(disputes: readonly Dispute[]): DisputeGroup[] {
+const isSettled = (dispute: Dispute) => dispute.resolved !== null || dispute.postponed !== null
+
+/**
+ * Виды спорного в порядке нормы; пустые не показываются. Решённое до входа на экран стоит
+ * в конце своей группы: при сотне случаев одного вида нерешённые идут подряд. Решённое
+ * сейчас остаётся на месте и сереет (§1.7).
+ */
+function groupsOf(
+  disputes: readonly Dispute[],
+  settledAtEntry: ReadonlySet<string>,
+): DisputeGroup[] {
   return DisputeKindSchema.options.flatMap((kind) => {
     const inKind = disputes.filter((dispute) => dispute.kind === kind)
+    const ordered = [
+      ...inKind.filter((dispute) => !settledAtEntry.has(dispute.id)),
+      ...inKind.filter((dispute) => settledAtEntry.has(dispute.id)),
+    ]
     return inKind.length > 0
-      ? [{ kind, disputes: inKind, unresolved: inKind.filter((item) => !item.resolved).length }]
+      ? [{ kind, disputes: ordered, unresolved: inKind.filter((item) => !item.resolved).length }]
       : []
   })
 }
+
+/** Где нужен человек: нерешённая строка или свёрнутая группа, где есть нерешённое. */
+export const OPEN_CASE =
+  '[data-dispute-row][data-settled="false"], [data-dispute-group][aria-expanded="false"]:not([data-unresolved="0"])'
 
 /** Стрелки вверх и вниз — между строками спорного, как в любом списке (§3.12). */
 function moveFocus(event: KeyboardEvent<HTMLElement>) {
@@ -59,11 +76,7 @@ function focusNextCase(row: HTMLElement) {
   if (!list) {
     return
   }
-  const candidates = Array.from(
-    list.querySelectorAll<HTMLElement>(
-      '[data-dispute-row][data-settled="false"], [data-dispute-group][aria-expanded="false"]',
-    ),
-  )
+  const candidates = Array.from(list.querySelectorAll<HTMLElement>(OPEN_CASE))
   const next = candidates.find(
     (candidate) =>
       candidate !== row &&
@@ -106,6 +119,9 @@ export function DisputeGroups({ disputes, labels }: DisputeGroupsProps) {
   const toggle = (list: readonly string[], key: string) =>
     list.includes(key) ? list.filter((item) => item !== key) : [...list, key]
   const unresolved = disputes.filter((dispute) => !dispute.resolved).length
+  const [settledAtEntry] = useState(
+    () => new Set(disputes.filter(isSettled).map((dispute) => dispute.id)),
+  )
 
   return (
     <section className="flex flex-col gap-1">
@@ -117,16 +133,18 @@ export function DisputeGroups({ disputes, labels }: DisputeGroupsProps) {
       </h2>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: стрелки ходят по строкам внутри */}
       <div onKeyDown={moveFocus} data-dispute-list="" className="-mx-2 flex flex-col">
-        {groupsOf(disputes).map((group) => {
+        {groupsOf(disputes, settledAtEntry).map((group) => {
           const open = openGroups.includes(group.kind)
           const byLabels =
             group.kind === 'label_from_name' ? boundByLabels(group.disputes, labels) : []
           return (
             <div key={group.kind} className="flex flex-col">
-              <div className="flex items-center gap-2">
+              {/* Заголовок группы закреплён: в длинной группе видно, чей это случай. */}
+              <div className="sticky top-0 z-10 flex items-center gap-2 bg-background">
                 <button
                   type="button"
                   data-dispute-group=""
+                  data-unresolved={group.unresolved}
                   aria-expanded={open}
                   onClick={() => setOpenGroups((current) => toggle(current, group.kind))}
                   className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left transition-colors duration-120 hover:bg-accent"

@@ -119,7 +119,7 @@ export function OrderFields({ order, accounts, update, editable }: OrderFieldsPr
               onValueChange={(account) => save('account', { account }, { account: order.account })}
             >
               <SelectTrigger size="sm" aria-label="Страница" className="-ml-1">
-                <SelectValue />
+                <SelectValue placeholder="не заполнено" />
               </SelectTrigger>
               <SelectContent>
                 {accounts.map((account) => (
@@ -132,7 +132,7 @@ export function OrderFields({ order, accounts, update, editable }: OrderFieldsPr
           ) : order.account ? (
             accountLabel(accounts, order.account)
           ) : (
-            '—'
+            <Unset />
           )}
         </FieldRow>
         {order.brief !== null || editable

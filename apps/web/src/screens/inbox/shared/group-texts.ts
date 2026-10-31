@@ -81,14 +81,25 @@ function withShare(word: string, progress: number | null): string {
   return progress === null ? word : `${word} ${formatPercent(progress)}`
 }
 
-/** Короткое слово ▲ на плитке; в панели к нему добавляется подробность. */
-export const ERROR_WORD: Record<DraftErrorKind, string> = {
-  master_failed: 'Мастер не собрался',
-  source_broken: 'Исходник битый',
-  fetch_failed: 'Не скачался',
-  vanished: 'Пропал с Я.Диска',
-  archive_unreadable: 'Архив не читается',
-  upload_failed: 'Загрузка не прошла проверку',
+/** «Я.Диска», «Dropbox»: имя облака модели после «с» и «корень» (§1.1). */
+export function sourceGenitive(source: string): string {
+  return source === 'Я.Диск' ? 'Я.Диска' : source
+}
+
+/**
+ * Короткое слово ▲ на плитке; в панели к нему добавляется подробность. Облако — то, что
+ * сканируется у модели: «Пропал с Dropbox».
+ */
+function errorWord(error: DraftErrorKind, source: string): string {
+  const words: Record<DraftErrorKind, string> = {
+    master_failed: 'Мастер не собрался',
+    source_broken: 'Исходник битый',
+    fetch_failed: 'Не скачался',
+    vanished: `Пропал с ${sourceGenitive(source)}`,
+    archive_unreadable: 'Архив не читается',
+    upload_failed: 'Загрузка не прошла проверку',
+  }
+  return words[error]
 }
 
 /**
@@ -104,8 +115,9 @@ const ERROR_DETAILED: Record<DraftErrorKind, boolean> = {
   upload_failed: true,
 }
 
-export function errorPhrase(error: DraftErrorKind, detail: string): string {
-  return ERROR_DETAILED[error] && detail ? `${ERROR_WORD[error]}: ${detail}` : ERROR_WORD[error]
+export function errorPhrase(error: DraftErrorKind, detail: string, source = 'Я.Диск'): string {
+  const word = errorWord(error, source)
+  return ERROR_DETAILED[error] && detail ? `${word}: ${detail}` : word
 }
 
 /**
@@ -147,6 +159,8 @@ export function groupStateView(
   group: InboxGroup,
   channelName: (id: string) => string,
   detailed = false,
+  /** Облако модели: «Пропал с Dropbox». */
+  source = 'Я.Диск',
 ): GroupStateView {
   const state = group.state
   switch (state.kind) {
@@ -168,7 +182,9 @@ export function groupStateView(
     case 'error':
       return {
         sign: 'trouble',
-        text: detailed ? errorPhrase(state.error, state.detail) : ERROR_WORD[state.error],
+        text: detailed
+          ? errorPhrase(state.error, state.detail, source)
+          : errorWord(state.error, source),
         progress: null,
       }
     case 'accepted':
