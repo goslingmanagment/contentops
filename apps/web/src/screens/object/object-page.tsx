@@ -55,7 +55,8 @@ export function ObjectPage({ id, search, onSearchChange }: ObjectPageProps) {
   }
   if (item.isError) {
     if (isApiError(item.error) && item.error.status === 404) {
-      return <NotFoundState message={item.error.message} />
+      // «PPV-099 у Лоры нет» (§3.10), как у подборки промо, — не фраза сервера для агента.
+      return <NotFoundState message={`${id} у ${model.name_genitive} нет`} />
     }
     if (isApiError(item.error) && item.error.status === 403) {
       return <ForbiddenState />

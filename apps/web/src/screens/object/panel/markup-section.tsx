@@ -4,6 +4,7 @@ import {
   type ItemDetail,
   type LocalDate,
   type MarkupFieldKey,
+  mainVideo,
   mskDate,
   plural,
 } from '@contentops/contracts'
@@ -104,7 +105,9 @@ export function MarkupSection() {
         <TitleField fieldKey="title_en" label="По-английски" hint="2–5 слов для имени файла" />
         <TagsField />
         <DescriptionField />
-        {detail.entry.duration_s ? <TimelineField /> : null}
+        {/* Хронология — у ролика с мастером (монтажом): у лайфа, секстинга и сырья
+            длительность — сумма клипов, дорожка по ней ничего не значит. */}
+        {mainVideo(detail.files) ? <TimelineField /> : null}
         {detail.entry.type === 'ppv' ? <PlatformTexts /> : null}
       </div>
     </InfoSection>
