@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { InboxGroupSchema, needsOwnAccept } from '@contentops/contracts/domain/inbox'
 import { SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { recordingRetry } from '@contentops/sources/testing'
 import { sql } from 'drizzle-orm'
@@ -730,6 +731,159 @@ describe('a promo pack (SPEC §7.1, DESIGN §4.8)', () => {
       { title: 'Общая', type: 'SET', files: 1 },
       { title: 'Утро', type: 'SET', files: 1 },
     ])
+  })
+})
+
+describe('which order a new custom is (SPEC §8.2, DESIGN §6.1, §6.6)', () => {
+  let cards = 0
+  const newOrder = async (fields: Record<string, unknown>) => {
+    const response = await call(app, {
+      method: 'POST',
+      url: '/api/v1/lora/orders',
+      as: owner,
+      key: newKey(),
+      body: {
+        message_url: `https://t.me/c/2627984998/7/${7000 + ++cards}`,
+        card_author: 'Чаттер',
+        card_at: '2026-10-28T10:00:00Z',
+        buyer: null,
+        account: null,
+        brief: 'Танец у окна',
+        duration_raw: '6 минут',
+        wants_video: true,
+        wants_photos: 0,
+        deadline: null,
+        fan_name: 'unknown',
+        card_text: null,
+        ...fields,
+      },
+    })
+    if (response.statusCode !== 201) throw new Error(`order: ${response.body}`)
+    return response.json() as { id: string; title: string }
+  }
+  const groupView = async (group: string) =>
+    (
+      await call(app, { method: 'GET', url: `/api/v1/lora/inbox/groups/${group}`, as: owner })
+    ).json()
+  /** A file the model uploads after the card. */
+  const upload = (path: string, size: number) =>
+    h.dropbox.tree.addFile(path, size, {
+      created: new Date('2026-11-01T10:00:00Z'),
+      modified: new Date('2026-11-01T10:00:00Z'),
+    })
+  /** The order's id in the database: the API gives its address. */
+  const orderId = async (address: string) => {
+    const message = address.split('-').at(-1) as string
+    const { rows } = await h.db.execute<{ id: string }>(sql`
+      SELECT id FROM custom_orders WHERE tg_message_id = ${Number(message)}`)
+    return rows[0]?.id
+  }
+  const orderRow = async (group: string) => {
+    const { rows } = await h.db.execute<{ order_id: string | null }>(sql`
+      SELECT custom_order_id AS order_id FROM inbox_groups WHERE id = ${group}::uuid`)
+    return rows[0]?.order_id ?? null
+  }
+
+  it('one order by the words of its brief in another alphabet and the length is chosen by itself', async () => {
+    await newOrder({ brief: 'Минет и наездница, в конце скажи go hard', duration_raw: '6 минут' })
+    const path = `${LORA_ROOT}/3. Customs/6-08 го хард.mov`
+    upload(path, 5101)
+    await scan()
+    const { group_id, draft_id } = await groupOfPath(path)
+    expect(await orderRow(group_id)).not.toBeNull()
+    await fetchAll()
+    await makeReady(draft_id)
+    const group = await groupView(group_id)
+    expect(group.state).toMatchObject({
+      kind: 'ready',
+      note: { kind: 'order_part', proposed: true },
+    })
+    expect(group.hints).toEqual([
+      expect.objectContaining({ kind: 'order_match', text: expect.stringContaining('«хард»') }),
+    ])
+    // «Принять N» of the screen leaves it to a person; «Принять как сдачу» links it.
+    expect(needsOwnAccept(InboxGroupSchema.parse(group))).toBe(true)
+    expect((await accept(group_id)).json()).toMatchObject({ how: 'delivery' })
+  })
+
+  it('a second order of the same words turns the choice into a question', async () => {
+    await newOrder({ brief: 'Свечи в ванной с пеной', duration_raw: '3 минуты' })
+    const path = `${LORA_ROOT}/3. Customs/4-30 свечи в ванной.mov`
+    upload(path, 5106)
+    await scan()
+    const { group_id } = await groupOfPath(path)
+    expect(await orderRow(group_id)).not.toBeNull()
+    await newOrder({ brief: 'Свечи в ванной, второй вариант', duration_raw: '3 минуты' })
+    expect(await orderRow(group_id)).toBeNull()
+    const group = await groupView(group_id)
+    expect(group.state).toEqual({ kind: 'decision', decision: 'which_order' })
+    expect(group.candidates).toHaveLength(2)
+    expect(group.hints).toEqual([])
+  })
+
+  it('a custom that came before its order gets it when the order is made', async () => {
+    const path = `${LORA_ROOT}/3. Customs/5-10 шпагат у стены.mov`
+    upload(path, 5102)
+    await scan()
+    const { group_id } = await groupOfPath(path)
+    expect(await orderRow(group_id)).toBeNull()
+    const order = await newOrder({ brief: 'Шпагат у стены в чулках', duration_raw: '5 минут' })
+    expect(await orderRow(group_id)).toBe(await orderId(order.id))
+  })
+
+  it('two orders by the words ask «Какой заказ?» without a choice', async () => {
+    await newOrder({ brief: 'Йога на балконе утром', duration_raw: '3 минуты' })
+    await newOrder({ brief: 'Йога на балконе вечером', duration_raw: '3 минуты' })
+    const path = `${LORA_ROOT}/3. Customs/3-20 йога на балконе.mov`
+    upload(path, 5103)
+    await scan()
+    const { group_id } = await groupOfPath(path)
+    expect(await orderRow(group_id)).toBeNull()
+    const group = await groupView(group_id)
+    expect(group.state).toEqual({ kind: 'decision', decision: 'which_order' })
+    expect(group.candidates).toHaveLength(2)
+  })
+
+  it('a fix of a delivered order with an open revision is «похоже на исправление»', async () => {
+    const order = await newOrder({ brief: 'Танец живота с музыкой', duration_raw: '3 минуты' })
+    // `.mp4`: the test's master of a `.mov` is registered as a photo (see `makeReady`).
+    const first = `${LORA_ROOT}/3. Customs/3-41 танец живота.mp4`
+    upload(first, 5104)
+    await scan()
+    await fetchAll()
+    const one = await groupOfPath(first)
+    expect(await orderRow(one.group_id)).toBe(await orderId(order.id))
+    await makeReady(one.draft_id)
+    const delivered = await accept(one.group_id)
+    expect(delivered.json()).toMatchObject({ how: 'delivery' })
+    const custom = delivered.json().item_id as string
+    const revision = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/orders/${order.id}/revisions`,
+      as: owner,
+      key: newKey(),
+      body: { text: 'без музыки', message_url: null },
+    })
+    expect(revision.statusCode).toBe(201)
+
+    const second = `${LORA_ROOT}/3. Customs/3-39 танец живота без музыки.mp4`
+    upload(second, 5105)
+    await scan()
+    await fetchAll()
+    const two = await groupOfPath(second)
+    await makeReady(two.draft_id)
+    const group = await groupView(two.group_id)
+    expect(group.state).toMatchObject({ kind: 'ready', note: { kind: 'fix_of', item_id: custom } })
+    const fixed = await accept(two.group_id)
+    expect(fixed.json()).toMatchObject({ item_id: custom, how: 'fix', next_step: 'Закрыть заказ' })
+    const { rows } = await h.db.execute<{ versions: number; done: boolean; basis: string }>(sql`
+      SELECT (SELECT count(*)::int FROM asset_versions v
+                JOIN item_memberships m ON m.asset_id = v.asset_id AND m.role = 'master'
+                JOIN content_items i ON i.id = m.item_id
+               WHERE public_item_id(i.type, i.number) = ${custom}) AS versions,
+             r.done, r.done_basis AS basis
+        FROM custom_order_revisions r WHERE r.order_id = ${await orderId(order.id)}::uuid`)
+    expect(rows).toEqual([{ versions: 2, done: true, basis: 'checked' }])
   })
 })
 

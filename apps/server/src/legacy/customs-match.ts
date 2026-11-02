@@ -63,6 +63,15 @@ export interface Candidate {
   lineRef: string | null
 }
 
+/**
+ * `acrossAlphabets` — words of the name match words of the brief written in the other alphabet
+ * too («го хард» and «go hard»): the models name files in Russian, fans write the brief in
+ * English. The intake of new customs asks so; the import keeps its own rule.
+ */
+export interface MatchOptions {
+  acrossAlphabets?: boolean
+}
+
 export type Decision =
   | { kind: 'link'; candidate: Candidate }
   | { kind: 'ask'; candidates: Candidate[] }
@@ -235,13 +244,16 @@ function sameStem(a: string, b: string): boolean {
 }
 
 /** Words of the name found in the brief, when they are at least half of its meaningful words. */
-export function briefWords(name: string, brief: string): string[] {
+export function briefWords(name: string, brief: string, options: MatchOptions = {}): string[] {
   const own = [...new Set(words(name))].filter(
     (word) => word.length >= 4 && !COMMON.has(word) && /\p{L}/u.test(word),
   )
   if (own.length === 0) return []
   const theirs = words(brief).filter((word) => word.length >= 4)
-  const found = own.filter((word) => theirs.some((other) => sameStem(word, other)))
+  const same = (word: string, other: string) =>
+    sameStem(word, other) ||
+    (options.acrossAlphabets === true && sameStem(skeleton(word), skeleton(other)))
+  const found = own.filter((word) => theirs.some((other) => same(word, other)))
   return found.length * 2 >= own.length ? found : []
 }
 
@@ -298,7 +310,11 @@ function ruledOut(custom: CustomFacts, order: OrderFacts): string | null {
 }
 
 /** The orders this custom may belong to, each with what matched. */
-export function candidatesOf(custom: CustomFacts, orders: readonly OrderFacts[]): Candidate[] {
+export function candidatesOf(
+  custom: CustomFacts,
+  orders: readonly OrderFacts[],
+  options: MatchOptions = {},
+): Candidate[] {
   const out: Candidate[] = []
   const nameKeys = words(custom.name).map(skeleton)
   for (const order of orders) {
@@ -318,7 +334,7 @@ export function candidatesOf(custom: CustomFacts, orders: readonly OrderFacts[])
       const shown = words(custom.name).find((word) => sameName(skeleton(word), buyer)) ?? buyer
       signals.push(`покупатель в имени: «${shown}»`)
     }
-    const brief = briefWords(custom.name, order.brief)
+    const brief = briefWords(custom.name, order.brief, options)
     if (brief.length > 0) signals.push(`в ТЗ: ${brief.map((word) => `«${word}»`).join(', ')}`)
     if (signals.length === 0) continue
     if (custom.video && custom.durationS !== null && order.durationRaw) {
@@ -346,15 +362,16 @@ export function decide(
   custom: CustomFacts,
   orders: readonly OrderFacts[],
   others: readonly CustomFacts[],
+  options: MatchOptions = {},
 ): Decision {
-  const candidates = candidatesOf(custom, orders)
+  const candidates = candidatesOf(custom, orders, options)
   if (candidates.length === 0) return { kind: 'none' }
   const [only] = candidates
   if (candidates.length > 1 || !only || only.identity === null) return { kind: 'ask', candidates }
   const rival = others.some(
     (other) =>
       other !== custom &&
-      candidatesOf(other, [only.order]).some((candidate) =>
+      candidatesOf(other, [only.order], options).some((candidate) =>
         only.identity === 'line'
           ? candidate.lineRef !== null && normalName(other.name) === normalName(custom.name)
           : candidate.identity !== null,

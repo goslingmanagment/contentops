@@ -18,6 +18,7 @@ import {
   titleFromFileName,
   typeOfFile,
 } from './grouping'
+import { suggestOrders } from './order-suggest'
 import type { SourceRow } from './source-client'
 
 /**
@@ -176,6 +177,7 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
   const stats = await withActorTx(db, context, async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`scan:${source.id}`}, 0))`)
     const stats = emptyStats()
+    const grown = new Set<string>()
     // Folders first: the group of a file holds its folder object.
     const folders = new Map<string, FolderRef>(input.folders)
     for (const folder of folders.values()) {
@@ -201,8 +203,13 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
       const media = mediaKindOf(entry.name, entry.mediaType)
       if (!media) continue
       const groupId = await groupOf(tx, input, entry, media === 'video')
-      if (await ensureDraft(tx, source, groupId, revision, entry)) stats.drafts += 1
+      if (await ensureDraft(tx, source, groupId, revision, entry)) {
+        stats.drafts += 1
+        grown.add(groupId)
+      }
     }
+    // A custom that came asks which order it is, with what matched (SPEC §8.2).
+    if (grown.size > 0) await suggestOrders(tx, source.modelId, [...grown])
     return stats
   })
   if (input.onFile) for (const file of observed) input.onFile(file)
