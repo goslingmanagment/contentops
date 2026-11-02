@@ -40,6 +40,7 @@ const PROCESS_ACTIONS = [
   'integration.ops',
   'agent.ops',
   'person.ops',
+  'contractor.ops',
   'smoke.setup',
   'upload.purge',
   'bootstrap',
