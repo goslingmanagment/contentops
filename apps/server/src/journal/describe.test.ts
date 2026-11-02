@@ -46,6 +46,7 @@ const PROCESS_ACTIONS = [
   'principal.create',
   'principal.reset_password',
   'repair.secondPersonUnchecked',
+  'repair.shotOnFromExif',
   'work.succeeded',
   'work.retry',
   'work.failed',
