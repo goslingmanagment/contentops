@@ -7,6 +7,7 @@ import {
 } from '@contentops/contracts'
 import { useCallback } from 'react'
 import { useActionToast } from '@/actions/action-toast-context'
+import { useCopy } from '@/actions/use-copy'
 import { useDeliverDownload } from '@/actions/use-deliver-download'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
 import { useApi } from '@/data/api-session'
@@ -73,16 +74,15 @@ export function useObjectActions(entries: readonly CatalogEntry[]) {
     onSuccess: (collection) => toast.show({ message: `Добавлено в ${collection.id}` }),
   })
 
-  const copyIds = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(ids.join(' '))
-      toast.show({
-        message: `Скопировано · ${ids.length === 1 ? ids[0] : `${formatNumber(ids.length)} ID`}`,
-      })
-    } catch (error) {
-      toast.showFailure(error, { failed: 'Не скопировалось' })
-    }
-  }, [ids, toast])
+  const copy = useCopy()
+  const copyIds = useCallback(
+    () =>
+      copy(
+        ids.join(' '),
+        `Скопировано · ${ids.length === 1 ? ids[0] : `${formatNumber(ids.length)} ID`}`,
+      ),
+    [copy, ids],
+  )
 
   return {
     planIds: () => openPlanDialog(ids),

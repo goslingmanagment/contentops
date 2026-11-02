@@ -12,7 +12,7 @@ import { DownloadButton } from '@contentops/ui/components/download-button'
 import { InfoSection } from '@contentops/ui/components/info-panel'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@contentops/ui/components/tooltip'
 import { CopyIcon, DownloadIcon } from 'lucide-react'
-import { useActionToast } from '@/actions/action-toast-context'
+import { useCopy } from '@/actions/use-copy'
 import { useToday } from '@/data/api-session'
 import { useSession } from '@/data/session'
 import { useRowActions } from '../actions/use-row-actions'
@@ -48,24 +48,17 @@ function receiptText(
 export function RowFiles({ row, accountLabel }: RowFilesProps) {
   const today = useToday()
   const actions = useRowActions()
-  const toast = useActionToast()
+  const copy = useCopy()
   const person = useSession().data?.person ?? null
   const manifest = row.manifest
   if (!manifest) {
     return null
   }
-  const copy = copyCaption(row)
+  const caption = copyCaption(row)
   const receipt = receiptText(row, person, today)
   const album = row.surface === 'vault' ? row.album : null
 
-  const copyAlbum = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast.show({ message: `Скопировано · ${text}` })
-    } catch (error) {
-      toast.showFailure(error, { failed: 'Не скопировалось' })
-    }
-  }
+  const copyAlbum = (text: string) => copy(text, `Скопировано · ${text}`)
 
   return (
     <InfoSection title={`Скачать для ${accountLabel}`}>
@@ -74,8 +67,8 @@ export function RowFiles({ row, accountLabel }: RowFilesProps) {
           <li key={file.key} className="flex h-9 items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-base">
               {file.label}
-              {copy && file.key === 'platform' ? (
-                <span className="text-ink-3 text-sm"> · {copy}</span>
+              {caption && file.key === 'platform' ? (
+                <span className="text-ink-3 text-sm"> · {caption}</span>
               ) : null}
             </span>
             <Tooltip>
@@ -102,7 +95,7 @@ export function RowFiles({ row, accountLabel }: RowFilesProps) {
           {
             id: 'platform',
             label: 'Для заливки',
-            hint: copy ?? undefined,
+            hint: caption ?? undefined,
             fileName: manifest.files[0]?.download_name,
           },
         ]}
