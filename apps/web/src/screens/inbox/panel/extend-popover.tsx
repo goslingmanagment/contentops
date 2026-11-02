@@ -162,6 +162,7 @@ function ResultRow({
         seed={cover.seed}
         kind={cover.kind}
         family={cover.family}
+        src={cover.src}
         showCaptions={false}
         className="w-7.5 shrink-0 rounded-md"
       />

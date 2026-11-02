@@ -3,7 +3,7 @@ import { formatClock } from '@contentops/contracts'
 import { Thumb } from '@contentops/ui/components/thumb'
 import { ExternalLinkIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { itemCoverById } from '@/lib/item-cover'
+import { useItemCover } from '@/objects/use-item-cover'
 import { type CompositionCheck, compositionOf, offsetLabel } from '../case-text'
 import { MatchPhrase } from './pair-phrase'
 
@@ -38,13 +38,8 @@ export function PairSides({ pageLabel, ours, theirs }: PairSidesProps) {
 
 /** Наша миниатюра 9:16 высотой 160 без длительности: её говорит текст рядом. */
 export function OurThumb({ itemId }: { itemId: ItemId }) {
-  return (
-    <Thumb
-      {...itemCoverById(itemId)}
-      aspect="9:16"
-      className="h-40 w-auto shrink-0 self-start rounded-lg"
-    />
-  )
+  const cover = useItemCover(itemId)
+  return <Thumb {...cover} aspect="9:16" className="h-40 w-auto shrink-0 self-start rounded-lg" />
 }
 
 interface OurSideProps {

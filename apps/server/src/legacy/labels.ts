@@ -4,6 +4,7 @@ import { logAction, type Queryable, type Tx } from '@contentops/db'
 import type { ProposedAccount } from '@contentops/legacy'
 import { sql } from 'drizzle-orm'
 import { ApiProblem } from '../errors'
+import { legacyThumbs } from './thumbs'
 
 /**
  * «Метки старых имён → страницы» (SPEC §6.3, DESIGN §4.9): the КМ confirms where each label of
@@ -90,6 +91,11 @@ export async function labelMappings(
   if (rows.length === 0) return []
   const targets = await labelTargets(q, model.id)
   const accounts = await accountsOf(q, model.id)
+  const thumbs = await legacyThumbs(
+    q,
+    model,
+    examples.map((example) => example.id),
+  )
   return rows.map((row) => ({
     label: row.label,
     count: row.count,
@@ -97,7 +103,7 @@ export async function labelMappings(
       .filter((example) => example.label === row.label)
       .map((example) => ({
         name: example.name,
-        thumb: { key: `legacy:${example.id}`, ratio: '3:4' as const },
+        thumb: thumbs.get(example.id) ?? { key: `legacy:${example.id}`, ratio: '3:4' as const },
       })),
     target: targets.get(row.label) ?? null,
     proposed: proposedTarget(row.account, model.code, accounts),

@@ -14,7 +14,7 @@ import { useMemo, useState } from 'react'
 import { useHref } from '@/app/use-href'
 import { useToday } from '@/data/api-session'
 import { useCatalogIndex } from '@/data/catalog'
-import { itemCoverById } from '@/lib/item-cover'
+import { useItemCover } from '@/objects/use-item-cover'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { LinkDeliveryPopover } from './link-delivery-popover'
 import { ReasonForm } from './reason-form'
@@ -55,13 +55,10 @@ function DeliveryRow({ order, delivery, actions, editable }: DeliveryRowProps) {
   const model = useCurrentModel().code
   const href = useHref()({ to: '/$model/i/$id', params: { model, id: delivery.item_id } })
   const title = useCatalogIndex(model).data?.byId.get(delivery.item_id)?.title
+  const cover = useItemCover(delivery.item_id)
   return (
     <li className={retracted ? 'flex gap-3 opacity-60' : 'flex gap-3'}>
-      <Thumb
-        {...itemCoverById(delivery.item_id)}
-        showCaptions={false}
-        className="w-10 shrink-0 self-start rounded-md"
-      />
+      <Thumb {...cover} showCaptions={false} className="w-10 shrink-0 self-start rounded-md" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p className="flex min-w-0 items-baseline justify-between gap-2">
           <UiLink href={href} className="min-w-0 truncate underline-offset-4 hover:underline">

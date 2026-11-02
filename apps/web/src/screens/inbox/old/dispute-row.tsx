@@ -124,6 +124,7 @@ export function DisputeRow({ dispute, open, pending, onToggle, onChoose }: Dispu
             <Thumb
               key={thumb.key}
               seed={thumb.key}
+              src={thumb.url}
               showCaptions={false}
               className="w-7.5 rounded-md"
             />

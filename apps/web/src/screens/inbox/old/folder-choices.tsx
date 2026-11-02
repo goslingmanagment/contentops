@@ -38,7 +38,12 @@ export function FolderChoices({ dispute, value, disabled, onChange }: FolderChoi
           key={folder.name}
           className="grid min-h-11 grid-cols-[1.875rem_minmax(8rem,1fr)_auto] items-center gap-3"
         >
-          <Thumb seed={folder.thumb.key} showCaptions={false} className="w-7.5 rounded-md" />
+          <Thumb
+            seed={folder.thumb.key}
+            src={folder.thumb.url}
+            showCaptions={false}
+            className="w-7.5 rounded-md"
+          />
           <span className="truncate font-mono text-sm" title={folder.name}>
             {folder.name}
           </span>

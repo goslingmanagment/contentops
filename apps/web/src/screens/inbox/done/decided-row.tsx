@@ -1,4 +1,4 @@
-import type { InboxGroup } from '@contentops/contracts'
+import type { InboxGroup, ItemId } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { ItemMenuButton, type ItemMenuModel } from '@contentops/ui/components/item-menu'
 import { StatusSign } from '@contentops/ui/components/status-sign'
@@ -6,7 +6,7 @@ import { Thumb } from '@contentops/ui/components/thumb'
 import { cn } from '@contentops/ui/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { useToday } from '@/data/api-session'
-import { itemCoverById } from '@/lib/item-cover'
+import { useItemCover } from '@/objects/use-item-cover'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { groupKind } from '../shared/draft-cover'
 import {
@@ -39,19 +39,10 @@ export function DecidedRow({ group, selected, restoring, onRestore, menu }: Deci
   const model = useCurrentModel().code
   const state = group.state
   if (state.kind === 'accepted') {
-    const cover = itemCoverById(state.item_id)
     const source = acceptedSource(group)
     return (
       <div data-selected={selected} className={ROW}>
-        <Thumb
-          src={group.files[0]?.thumb.url}
-          seed={cover.seed}
-          kind={cover.kind}
-          family={cover.family}
-          aspect="1:1"
-          showCaptions={false}
-          className="w-10 shrink-0 rounded-md"
-        />
+        <AcceptedThumb itemId={state.item_id} fileThumb={group.files[0]?.thumb.url} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-1.5">
             <StatusSign kind="done" />
@@ -116,5 +107,25 @@ export function DecidedRow({ group, selected, restoring, onRestore, menu }: Deci
         Вернуть в работу
       </Button>
     </div>
+  )
+}
+
+/** Принятое — первый файл группы; его миниатюры нет — обложка объекта из индекса. */
+function AcceptedThumb({
+  itemId,
+  fileThumb,
+}: {
+  itemId: ItemId
+  fileThumb: string | null | undefined
+}) {
+  const cover = useItemCover(itemId)
+  return (
+    <Thumb
+      {...cover}
+      src={fileThumb ?? cover.src}
+      aspect="1:1"
+      showCaptions={false}
+      className="w-10 shrink-0 rounded-md"
+    />
   )
 }
