@@ -25,11 +25,11 @@ import {
 } from '../../domain/inbox'
 import { LegacyInputsSchema, LegacyReviewSchema } from '../../domain/legacy'
 import { DownloadAnswerSchema, OperationAcceptedSchema } from '../../domain/operations'
-import { BatchResultSchema } from '../../domain/pagination'
+import { BatchResultSchema, PageQuerySchema } from '../../domain/pagination'
 import { defineRoute, QueryListSchema } from '../route'
 import { FileBodySchema } from './media'
 
-export const InboxQuerySchema = z.object({
+export const InboxQuerySchema = PageQuerySchema.extend({
   /** `active` — «Новое»; `accepted`, `rejected` — «Решённое». */
   state: z.enum(['active', 'accepted', 'rejected']).optional(),
 })

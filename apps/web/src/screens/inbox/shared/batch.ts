@@ -1,5 +1,6 @@
 import { formatBytes, formatNumber, type InboxGroup, needsOwnAccept } from '@contentops/contracts'
 import { groupsWord } from './accept-texts'
+import { videoCount } from './draft-cover'
 
 /**
  * «Принять N» берёт только готовые: тип выбран и номер можно выдать. «Похоже на
@@ -64,9 +65,8 @@ export function batchModelOf(groups: readonly InboxGroup[]): BatchModel {
 
 /** «5 групп · 275 фото · 1,2 ГБ» — сводка выбранного в панели. */
 export function batchSummary(groups: readonly InboxGroup[]): string {
-  const files = groups.flatMap((group) => group.files)
-  const photos = files.filter((file) => file.media === 'photo').length
-  const videos = files.length - photos
+  const videos = groups.reduce((sum, group) => sum + videoCount(group), 0)
+  const photos = groups.reduce((sum, group) => sum + group.file_count, 0) - videos
   const bytes = groups.reduce((sum, group) => sum + group.size_bytes, 0)
   return [
     groupsWord(groups.length),

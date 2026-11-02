@@ -175,6 +175,67 @@ describe('«Приехало» from the source', () => {
     )
   })
 
+  it('pages the list by a cursor; the counts cover every page', async () => {
+    const whole = InboxListSchema.parse((await get('/api/v1/lora/inbox?limit=500')).json())
+    expect(whole.items.length).toBeGreaterThan(2)
+    expect(whole.next_cursor).toBeNull()
+    const seen: string[] = []
+    let cursor: string | null = null
+    do {
+      const page = InboxListSchema.parse(
+        (
+          await get(
+            `/api/v1/lora/inbox?limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+          )
+        ).json(),
+      )
+      expect(page.items.length).toBeLessThanOrEqual(2)
+      expect(page.sections).toEqual(whole.sections)
+      expect(page.count).toBe(whole.count)
+      seen.push(...page.items.map((group) => group.id))
+      cursor = page.next_cursor
+    } while (cursor)
+    expect(seen).toEqual(whole.items.map((group) => group.id))
+    const sections = whole.sections ?? { decision: 0, ready: 0, preparing: 0 }
+    expect(sections.decision + sections.ready + sections.preparing).toBe(whole.items.length)
+    const bad = await get('/api/v1/lora/inbox?cursor=nonsense')
+    expect(bad.statusCode).toBe(400)
+  })
+
+  it('a large group comes to the list with its first files, whole from its own address', async () => {
+    for (let n = 1; n <= 9; n++) {
+      h.dropbox.tree.addFile(
+        `${LORA_ROOT}/4. Sets/Большой/${String(n).padStart(2, '0')}.jpg`,
+        900 + n,
+      )
+    }
+    h.dropbox.tree.addFile(`${LORA_ROOT}/4. Sets/Большой/clip.mov`, 5000)
+    await runWork(h.db, {
+      modelId: h.modelId,
+      kind: 'scan',
+      scope: h.sources.dropbox.id,
+      dataset: 'recent',
+      handlers: { scan: scanHandler(h.factory) },
+    })
+    const list = InboxListSchema.parse((await get('/api/v1/lora/inbox?limit=500')).json())
+    const large = list.items.find((group) => group.title === 'Большой')
+    expect(large).toMatchObject({ file_count: 10, video_count: 1 })
+    // The video is among them, whatever its place: the mosaic of the tile starts with it.
+    expect(large?.files.map((file) => file.file_name)).toEqual([
+      '01.jpg',
+      '02.jpg',
+      '03.jpg',
+      '04.jpg',
+      '05.jpg',
+      'clip.mov',
+    ])
+    const whole = InboxGroupSchema.parse(
+      (await get(`/api/v1/lora/inbox/groups/${large?.id}`)).json(),
+    )
+    expect(whole.files).toHaveLength(10)
+    expect(whole.files.find((file) => file.file_name === '07.jpg')?.role_label).toBe('фото 7')
+  })
+
   it('«Разбор старого» is empty before stage 3', async () => {
     const response = await get('/api/v1/lora/legacy')
     expect(response.statusCode).toBe(200)

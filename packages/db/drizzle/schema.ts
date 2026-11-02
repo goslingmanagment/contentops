@@ -143,11 +143,12 @@ export const workOperations = pgTable("work_operations", {
 	generationId: uuid("generation_id"),
 }, (table): PgTableExtraConfigValue[] => [
 	index("work_operations_draft").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.draftId.asc().nullsLast().op("uuid_ops")).where(sql`(draft_id IS NOT NULL)`),
-	index("work_operations_due").using("btree", table.nextAttemptAt.asc().nullsLast().op("int4_ops"), table.priority.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['pending'::text, 'retry_wait'::text]))`),
+	index("work_operations_due").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.priority.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['pending'::text, 'retry_wait'::text]))`),
+	index("work_operations_fetch_revision").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.sourceRevisionId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")).where(sql`(kind = 'fetch'::text)`),
 	index("work_operations_lease").using("btree", table.leaseUntil.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = 'running'::text)`),
 	index("work_operations_manifest").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.manifestId.asc().nullsLast().op("uuid_ops")).where(sql`(manifest_id IS NOT NULL)`),
 	index("work_operations_output").using("btree", table.outputSha256.asc().nullsLast().op("bytea_ops")).where(sql`(output_sha256 IS NOT NULL)`),
-	uniqueIndex("work_operations_stream_key").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("uuid_ops"), table.streamKey.asc().nullsLast().op("text_ops")).where(sql`((stream_key IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])))`),
+	uniqueIndex("work_operations_stream_key").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("uuid_ops"), table.streamKey.asc().nullsLast().op("text_ops")).where(sql`((stream_key IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])))`),
 	foreignKey({
 			columns: [table.modelId],
 			foreignColumns: [models.id],

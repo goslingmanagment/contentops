@@ -51,14 +51,14 @@ export function groupMenu(
       {
         id: 'split',
         label: 'Разделить…',
-        disabled: group.files.length < 2,
+        disabled: group.file_count < 2,
         onSelect: handlers.split,
       },
       { id: 'merge', label: 'Слить с…', disabled: mergeWith.length === 0, items: mergeWith },
       {
         id: 'download',
         label: 'Скачать исходник',
-        disabled: group.files.length === 0,
+        disabled: group.file_count === 0,
         onSelect: () => handlers.download(group),
       },
     ],

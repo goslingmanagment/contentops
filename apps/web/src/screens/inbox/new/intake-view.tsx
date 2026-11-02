@@ -7,7 +7,7 @@ import { isTypingTarget } from '@contentops/ui/lib/platform'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useClock } from '@/data/api-session'
-import { useInboxList } from '@/data/inbox'
+import { useInboxList, useWholeInboxGroup } from '@/data/inbox'
 import { usePromoChannels } from '@/data/promo'
 import { useHistoryScroll } from '@/lib/use-history-state'
 import { FieldLayout } from '@/shell/field/field-layout'
@@ -64,10 +64,12 @@ export function IntakeView({ viewParam, onViewParamChange, initialGroupId }: Int
 
   // Решённая группа стоит на месте до ухода с экрана (§1.7): разделы помнят первый вид.
   const pins = useRef<SectionPins>(new Map())
+  // Пока загружены не все страницы, у заголовка разделов — число сервера (SPEC §11.2).
+  const totals = list.hasNextPage ? (list.data?.sections ?? null) : null
   const sections = useMemo(() => {
     const items = list.data?.items ?? []
-    return buildSections(items, pinSections(pins.current, items))
-  }, [list.data])
+    return buildSections(items, pinSections(pins.current, items), totals)
+  }, [list.data, totals])
   const groups = useMemo(() => flatten(sections), [sections])
   const fallbackKey =
     (initialGroupId && groups.some((group) => group.id === initialGroupId)
@@ -122,7 +124,8 @@ export function IntakeView({ viewParam, onViewParamChange, initialGroupId }: Int
   )
 
   const { openGroup } = preview
-  const current = selection.current
+  // У большой группы в списке только первые файлы: панель и просмотр берут её целиком.
+  const current = useWholeInboxGroup(model.code, selection.current)
   const openPreview = useCallback(() => {
     if (current) {
       openGroup(current)
@@ -165,6 +168,24 @@ export function IntakeView({ viewParam, onViewParamChange, initialGroupId }: Int
     }
   }, [selection.focusIndex])
 
+  // Следующая страница — когда до конца списка осталось меньше двух экранов.
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = list
+  const onScroll = useCallback(
+    (offset: number) => {
+      scroll.onScrollOffsetChange(offset)
+      const element = listRef.current
+      if (
+        element &&
+        hasNextPage &&
+        !isFetchingNextPage &&
+        element.scrollHeight - offset - element.clientHeight < element.clientHeight * 2
+      ) {
+        void fetchNextPage()
+      }
+    },
+    [scroll, hasNextPage, isFetchingNextPage, fetchNextPage],
+  )
+
   const changeView = (next: ObjectTileView) => {
     const param = next === 'row' ? 'list' : 'large'
     remember(param)
@@ -196,7 +217,7 @@ export function IntakeView({ viewParam, onViewParamChange, initialGroupId }: Int
           </PanelMessage>
         ) : groups.length > 0 ? (
           <DecisionPanel
-            current={selection.current}
+            current={current}
             selected={selection.selectedGroups}
             menuFor={menuFor}
             now={now}
@@ -251,7 +272,7 @@ export function IntakeView({ viewParam, onViewParamChange, initialGroupId }: Int
           }
           onKeyDown={onKeyDown}
           listRef={listRef}
-          onScroll={scroll.onScrollOffsetChange}
+          onScroll={onScroll}
         />
       ) : null}
       {preview.preview ? (

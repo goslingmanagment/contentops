@@ -1,17 +1,24 @@
-import type {
-  AcceptCommand,
-  DecideCommand,
-  InboxGroup,
-  InboxList,
-  ItemId,
-  ItemType,
-  LabelTarget,
-  ModelCode,
-  UpdateDraftCommand,
-  UpdateDraftFilesCommand,
-  VideoInSetDestination,
+import {
+  type AcceptCommand,
+  type DecideCommand,
+  type InboxGroup,
+  type InboxList,
+  type ItemId,
+  type ItemType,
+  inboxSectionOf,
+  type LabelTarget,
+  type ModelCode,
+  type UpdateDraftCommand,
+  type UpdateDraftFilesCommand,
+  type VideoInSetDestination,
 } from '@contentops/contracts'
-import { type QueryKey, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  type InfiniteData,
+  type QueryKey,
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 import { useApi } from './api-session'
 import { queryKeys } from './query-keys'
@@ -19,18 +26,74 @@ import { queryKeys } from './query-keys'
 /** «Приехало» опрашивается раз в 10 с, пока в нём что-то готовится (DESIGN §3.13, п. 8). */
 const INBOX_POLL_MS = 10_000
 
+/**
+ * Групп на странице списка (SPEC §11.2). Сервер считает состояние каждой группы, а файлы,
+ * миниатюры и кандидатов читает только для страницы; опрос перечитывает только загруженные
+ * страницы — обычно одну.
+ */
+const INBOX_PAGE = 100
+
 export type InboxView = 'active' | 'accepted' | 'rejected'
+
+type InboxPages = InfiniteData<InboxList, string | null>
+
+/** Страницы одним списком: числа — с первой, группы — подряд, без повторов. */
+function mergePages(data: InboxPages): InboxList {
+  const [first] = data.pages
+  const seen = new Set<string>()
+  const items = data.pages.flatMap((page) =>
+    page.items.filter((group) => !seen.has(group.id) && seen.add(group.id)),
+  )
+  return {
+    ...(first as InboxList),
+    items,
+    next_cursor: data.pages.at(-1)?.next_cursor ?? null,
+  }
+}
 
 export function useInboxList(model: ModelCode, view: InboxView = 'active') {
   const api = useApi()
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: queryKeys.inbox(model, view),
-    queryFn: ({ signal }) => api.inbox.list({ params: { model }, query: { state: view }, signal }),
+    queryFn: ({ pageParam, signal }) =>
+      api.inbox.list({
+        params: { model },
+        query: { state: view, limit: INBOX_PAGE, ...(pageParam ? { cursor: pageParam } : {}) },
+        signal,
+      }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+    select: mergePages,
     refetchInterval: (query) =>
-      query.state.data?.items.some((group) => group.state.kind === 'preparing')
+      query.state.data?.pages.some((page) =>
+        page.items.some((group) => group.state.kind === 'preparing'),
+      )
         ? INBOX_POLL_MS
         : false,
   })
+}
+
+/**
+ * Группа целиком для панели решения: в списке у большой группы только первые файлы
+ * (`files` короче `file_count`). Состояние и поля — из списка (он свежее, его опрашивают),
+ * файлы — из группы; перечитывается, когда меняется версия группы или стадия подготовки.
+ */
+export function useWholeInboxGroup(model: ModelCode, group: InboxGroup | null): InboxGroup | null {
+  const api = useApi()
+  const partial = group !== null && group.files.length < group.file_count
+  const stage = group?.state.kind === 'preparing' ? group.state.stage : group?.state.kind
+  const whole = useQuery({
+    queryKey: [...queryKeys.inboxGroup(model, group?.id ?? ''), group?.version ?? 0, stage],
+    queryFn: ({ signal }) =>
+      api.inbox.get({ params: { model, group: group?.id as string }, signal }),
+    enabled: partial,
+  })
+  return useMemo(() => {
+    if (!group || !partial || whole.data?.id !== group.id) {
+      return group
+    }
+    return { ...group, files: whole.data.files }
+  }, [group, partial, whole.data])
 }
 
 /** «Разбор старого»: ход по корням, метки и спорное. */
@@ -107,13 +170,16 @@ export function usePutInboxGroup(model: ModelCode) {
   const queryClient = useQueryClient()
   return useCallback(
     (group: InboxGroup) => {
-      queryClient.setQueryData<InboxList>(queryKeys.inbox(model, 'active'), (list) =>
-        list
+      queryClient.setQueryData<InboxPages>(queryKeys.inbox(model, 'active'), (data) =>
+        data
           ? {
-              ...list,
-              items: list.items.map((current) => (current.id === group.id ? group : current)),
+              ...data,
+              pages: data.pages.map((page) => ({
+                ...page,
+                items: page.items.map((current) => (current.id === group.id ? group : current)),
+              })),
             }
-          : list,
+          : data,
       )
     },
     [model, queryClient],
@@ -126,16 +192,53 @@ export function useDropInboxGroups(model: ModelCode) {
   return useCallback(
     (ids: readonly string[]) => {
       const gone = new Set(ids)
-      queryClient.setQueryData<InboxList>(queryKeys.inbox(model, 'active'), (list) => {
-        if (!list) {
-          return list
+      queryClient.setQueryData<InboxPages>(queryKeys.inbox(model, 'active'), (data) => {
+        if (!data) {
+          return data
         }
-        const items = list.items.filter((group) => !gone.has(group.id))
-        const removedCounted = list.items.filter(
+        const removed = data.pages
+          .flatMap((page) => page.items)
+          .filter((group) => gone.has(group.id))
+        const counted = removed.filter(
           (group) =>
-            gone.has(group.id) && (group.state.kind === 'ready' || group.state.kind === 'decision'),
+            group.state.kind === 'ready' ||
+            group.state.kind === 'decision' ||
+            group.state.kind === 'error',
         ).length
-        return { ...list, items, count: Math.max(0, list.count - removedCounted) }
+        return {
+          ...data,
+          pages: data.pages.map((page, index) => {
+            const items = page.items.filter((group) => !gone.has(group.id))
+            if (index > 0) {
+              return { ...page, items }
+            }
+            const sections = page.sections
+              ? {
+                  decision: Math.max(
+                    0,
+                    page.sections.decision -
+                      removed.filter((group) => inboxSectionOf(group.state) === 'decision').length,
+                  ),
+                  ready: Math.max(
+                    0,
+                    page.sections.ready -
+                      removed.filter((group) => inboxSectionOf(group.state) === 'ready').length,
+                  ),
+                  preparing: Math.max(
+                    0,
+                    page.sections.preparing -
+                      removed.filter((group) => inboxSectionOf(group.state) === 'preparing').length,
+                  ),
+                }
+              : undefined
+            return {
+              ...page,
+              items,
+              count: Math.max(0, page.count - counted),
+              ...(sections ? { sections } : {}),
+            }
+          }),
+        }
       })
     },
     [model, queryClient],
