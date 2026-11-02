@@ -3,6 +3,7 @@ import { BlobStore } from './media/storage'
 import type { FixtureItem } from './testing/catalog-factory'
 import { seedCatalog } from './testing/catalog-seed'
 import { seedFullCatalog } from './testing/full-catalog'
+import { seedInboxVolume } from './testing/inbox-volume'
 import { enqueueSeedRenditions, prepareSeedMedia, withSeedMedia } from './testing/media-seed'
 import { seedPlan } from './testing/plan-seed'
 
@@ -14,8 +15,10 @@ import { seedPlan } from './testing/plan-seed'
  * build their renditions. With `--plan` a week of the plan and the content manager Диана
  * (`diana`, the password of `CONTENTOPS_OWNER_PASSWORD`) for the screens of 4а. `--full` — the
  * full-volume catalog of DESIGN §9.3 (1 391 objects with placements) for the interface
- * measurement in its own test database (`tools/perf/`). A model that already has objects
- * (rows) is left as it is. Never for a database with real content.
+ * measurement in its own test database (`tools/perf/`). `--inbox <n>` — «Приехало» of stage 7
+ * volume: n open drafts (5 000 by default) and 20 000 works and more (`testing/inbox-volume.ts`).
+ * A model that already has objects (rows) is left as it is. Never for a database with real
+ * content.
  */
 const url = process.env.DATABASE_URL
 if (!url) {
@@ -26,7 +29,9 @@ const args = process.argv.slice(2)
 const withMedia = args.includes('--media')
 const withPlan = args.includes('--plan')
 const full = args.includes('--full')
-const model = args.find((arg) => !arg.startsWith('--')) ?? 'lora'
+const inboxAt = args.indexOf('--inbox')
+const inboxDrafts = inboxAt < 0 ? null : Number(args[inboxAt + 1] ?? '') || 5000
+const model = args.find((arg, index) => !arg.startsWith('--') && index !== inboxAt + 1) ?? 'lora'
 const pool = createPool(url, { max: 2, applicationName: 'seed' })
 try {
   const db = createDb(pool)
@@ -67,6 +72,14 @@ try {
       ? `seed: ${model} already has objects, nothing to do`
       : `seed: ${model} — ${result.created} objects${prepared ? ' with real media' : ''}`,
   )
+  if (inboxDrafts !== null) {
+    const inbox = await seedInboxVolume(db, model, inboxDrafts)
+    console.log(
+      inbox.skipped
+        ? `seed: ${model} already has the volume of «Приехало», nothing to do`
+        : `seed: ${model} — «Приехало»: ${inbox.groups} groups, ${inbox.drafts} open drafts, ${inbox.works} works`,
+    )
+  }
   if (withPlan) {
     const plan = await seedPlan(
       db,

@@ -113,7 +113,14 @@ export function InboxDoneScreen() {
             }}
             label={show === 'accepted' ? 'Принятые' : 'Отклонённые'}
             initialScrollOffset={scroll.initialOffset}
-            onScrollOffsetChange={scroll.onScrollOffsetChange}
+            onScrollOffsetChange={(offset) => {
+              scroll.onScrollOffsetChange(offset)
+              // Следующая страница — за три экрана до конца загруженного (SPEC §11.2).
+              const left = items.length * ROW_HEIGHT - offset
+              if (list.hasNextPage && !list.isFetchingNextPage && left < window.innerHeight * 3) {
+                void list.fetchNextPage()
+              }
+            }}
             className="-mx-2"
             renderItem={(group, state) => (
               <DecidedRow

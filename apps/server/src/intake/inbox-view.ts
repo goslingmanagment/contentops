@@ -1,14 +1,16 @@
 import type { ActorRef } from '@contentops/contracts/domain/common'
 import type { FileRole } from '@contentops/contracts/domain/files'
-import type {
-  DraftFile,
-  DraftHint,
-  DraftState,
-  InboxGroup,
-  InboxList,
-  OrderCandidate,
+import {
+  type DraftFile,
+  type DraftHint,
+  type DraftState,
+  type InboxGroup,
+  type InboxList,
+  inboxSectionOf,
+  type OrderCandidate,
 } from '@contentops/contracts/domain/inbox'
 import type { ItemType } from '@contentops/contracts/domain/item-type'
+import { DEFAULT_PAGE_LIMIT } from '@contentops/contracts/domain/pagination'
 import type { Queryable, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant, instantOrNull } from '../commands'
@@ -72,6 +74,10 @@ interface GroupRow extends Record<string, unknown> {
   source_label: string
 }
 
+/**
+ * What the state of a group needs from each of its drafts: a light row, read for every group the
+ * list considers. What a tile of a file needs (`FileRow`) is read only for the groups shown.
+ */
 interface DraftRow extends Record<string, unknown> {
   id: string
   group_id: string
@@ -91,27 +97,43 @@ interface DraftRow extends Record<string, unknown> {
   rejected_at: string | null
   blocked_reason: values.DraftBlockedReason | null
   error: string | null
-  proposed_role: values.AssetRole | null
-  proposed_ordinal: number | null
   source_blob: boolean
   has_master: boolean
   master_verified: boolean
   media_kind: values.MediaKind | null
   target_public_id: string | null
   applied_public_id: string | null
-  uploader_id: string | null
-  uploader_name: string | null
-  uploader_kind: 'human' | 'agent' | null
-  uploader_gender: 'f' | 'm' | null
   fetch_done: string | null
   fetch_total: string | null
   /** The source's answer when the last fetch gave up (attempts spent); null otherwise. */
   fetch_failed: string | null
-  thumb_generation: string | null
   duplicate_handle: string | null
   target_item_id: string | null
+  /** Only of a draft waiting for ◆ «К какому кадру?»: its bytes find similar frames. */
   source_hex: string | null
+}
+
+/** A file of a group as its tile shows it. */
+interface FileRow extends Record<string, unknown> {
+  id: string
+  group_id: string
+  state: values.DraftState
+  origin: values.DraftOrigin
+  /** The source bytes: the viewer plays the previews built from them. */
+  source_hex: string | null
+  path: string | null
+  byte_size: string | null
+  media_kind: values.MediaKind | null
+  proposed_role: values.AssetRole | null
+  proposed_ordinal: number | null
+  /** Place of the file in its group (1…), by the order of the files. */
+  position: string
+  thumb_generation: string | null
   shot_at: string | null
+  uploader_id: string | null
+  uploader_name: string | null
+  uploader_kind: 'human' | 'agent' | null
+  uploader_gender: 'f' | 'm' | null
 }
 
 const SYSTEM: ActorRef = { type: 'system', id: null, name: 'Система', gender: null }
@@ -382,13 +404,13 @@ const ROLE_LABEL: Record<FileRole, string> = {
   promo_link: 'промо',
 }
 
-function fileOf(model: string, draft: DraftRow, index: number): DraftFile {
+function fileOf(model: string, draft: FileRow): DraftFile {
   const video = draft.media_kind === 'video'
   const role: FileRole =
     (draft.proposed_role && ROLE[draft.proposed_role]) || (video ? 'master' : 'photo')
   const position =
     role === 'photo' || role === 'clip' || role === 'raw'
-      ? (draft.proposed_ordinal ?? index + 1)
+      ? (draft.proposed_ordinal ?? Number(draft.position))
       : null
   return {
     key: draft.id,
@@ -426,29 +448,39 @@ function orderPart(drafts: readonly DraftRow[]): string {
   return video && photo ? 'видео и фото' : video ? 'видео' : 'фото'
 }
 
-function view(
-  model: string,
+/** What the state of a group is, and the line under a disabled «Принять»; null — not shown. */
+interface Computed {
+  group: GroupRow
+  drafts: DraftRow[]
+  state: DraftState
+  block: string | null
+}
+
+function compute(
   group: GroupRow,
-  drafts: readonly DraftRow[],
+  drafts: DraftRow[],
   filter: InboxFilter,
   now: Date,
-  extras: Extras = NO_EXTRAS,
-): InboxGroup | null {
+): Computed | null {
   if (drafts.length === 0) return null
-  let state: DraftState | null
-  let block: string | null = null
   if (filter === 'active') {
-    const computed = activeState(group, drafts)
-    state = computed.state
-    block = computed.block
-  } else {
-    state = resolvedState(drafts, filter, now)
+    const { state, block } = activeState(group, drafts)
+    return { group, drafts, state, block }
   }
-  if (!state) return null
+  const state = resolvedState(drafts, filter, now)
+  return state ? { group, drafts, state, block: null } : null
+}
+
+function view(
+  model: string,
+  { group, drafts, state, block }: Computed,
+  files: readonly FileRow[],
+  extras: Extras = NO_EXTRAS,
+): InboxGroup {
   const first = drafts[0] as DraftRow
   const arrived =
     drafts.map((draft) => draft.arrived_at ?? draft.discovered_at).sort()[0] ?? group.discovered_at
-  const web = first.origin === 'web_upload'
+  const uploader = first.origin === 'web_upload' ? files[0] : undefined
   return {
     id: group.id,
     title: groupTitle(group, drafts),
@@ -458,12 +490,18 @@ function view(
         : parentOf(group.evidence.path)
       : parentOf(first.path),
     root: group.evidence?.root ?? group.source_label,
-    uploaded_by: web
-      ? actorOf(first.uploader_id, first.uploader_name, first.uploader_kind, first.uploader_gender)
+    uploaded_by: uploader
+      ? actorOf(
+          uploader.uploader_id,
+          uploader.uploader_name,
+          uploader.uploader_kind,
+          uploader.uploader_gender,
+        )
       : null,
     arrived_at: instant(arrived),
     size_bytes: drafts.reduce((sum, draft) => sum + Number(draft.byte_size ?? 0), 0),
     file_count: drafts.length,
+    video_count: drafts.filter((draft) => draft.media_kind === 'video').length,
     state,
     accept_block: block,
     fields: {
@@ -487,7 +525,7 @@ function view(
             { kind: 'row_change', was: group.evidence.was, now: group.evidence.now ?? '' },
           ]
         : extras.hints,
-    files: drafts.map((draft, index) => fileOf(model, draft, index)),
+    files: files.map((file) => fileOf(model, file)),
     candidates: extras.candidates,
     archive_entries: null,
     target_item: drafts.find((draft) => draft.target_public_id)?.target_public_id ?? null,
@@ -499,24 +537,48 @@ function view(
   }
 }
 
-async function loadGroups(
-  q: Queryable,
-  modelId: string,
-  groupIds: string[] | null,
-): Promise<GroupRow[]> {
+const GROUP_COLUMNS = sql`
+  g.id, g.group_key, g.grouping, g.evidence, g.proposed_type, g.proposed_title,
+  g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
+  g.has_second_person, g.custom_order_id, g.row_version, g.discovered_at, s.kind AS source_kind,
+  s.label AS source_label,
+  (SELECT public_item_id(i.type, i.number) FROM content_items i
+    WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_public_id`
+
+async function loadGroups(q: Queryable, modelId: string, groupIds: string[]): Promise<GroupRow[]> {
+  if (groupIds.length === 0) return []
   const { rows } = await q.execute<GroupRow>(sql`
-    SELECT g.id, g.group_key, g.grouping, g.evidence, g.proposed_type, g.proposed_title,
-           g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
-           g.has_second_person, g.custom_order_id, g.row_version, g.discovered_at, s.kind AS source_kind,
-           s.label AS source_label,
-           (SELECT public_item_id(i.type, i.number) FROM content_items i
-             WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_public_id
+    SELECT ${GROUP_COLUMNS}
       FROM inbox_groups g JOIN sources s ON s.model_id = g.model_id AND s.id = g.source_id
-     WHERE g.model_id = ${modelId}::uuid
-       AND (${groupIds === null} OR g.id = ANY (${sql.param(groupIds ?? [])}::uuid[]))`)
+     WHERE g.model_id = ${modelId}::uuid AND g.id = ANY (${sql.param(groupIds)}::uuid[])`)
   return rows
 }
 
+/** Photo or video of a draft before its bytes are known: by the extension of its path. */
+const MEDIA_KIND = sql`coalesce(b.media_kind, CASE
+  WHEN d.path ~* '\.(mp4|mov|m4v|avi|mkv|webm|mts|m2ts|3gp|hevc)$' THEN 'video' ELSE 'image' END)`
+
+/** The last fetch of a revision (index `work_operations_fetch_revision`, migration 0012). */
+const LAST_FETCH = sql`
+  LEFT JOIN LATERAL (
+    SELECT w.state, w.progress_num, w.progress_den, w.error_text, w.error_code
+      FROM work_operations w
+     WHERE w.model_id = d.model_id AND w.kind = 'fetch'
+       AND w.source_revision_id = d.source_revision_id
+     ORDER BY w.created_at DESC LIMIT 1
+  ) fw ON d.source_revision_id IS NOT NULL AND d.state <> 'resolved'`
+
+const OPEN_DRAFT = sql`d.state IN ('discovered', 'processing', 'ready')`
+
+function draftsOf(filter: InboxFilter) {
+  return filter === 'active'
+    ? OPEN_DRAFT
+    : filter === 'accepted'
+      ? sql`d.state = 'resolved' AND d.outcome <> 'rejected'`
+      : sql`d.state = 'resolved' AND d.outcome = 'rejected'`
+}
+
+/** Light rows of the drafts of `groupIds`: what the state of each group needs. */
 async function loadDrafts(
   q: Queryable,
   modelId: string,
@@ -524,74 +586,99 @@ async function loadDrafts(
   filter: InboxFilter,
 ): Promise<DraftRow[]> {
   if (groupIds.length === 0) return []
-  const which =
-    filter === 'active'
-      ? sql`d.state <> 'resolved'`
-      : filter === 'accepted'
-        ? sql`d.state = 'resolved' AND d.outcome <> 'rejected'`
-        : sql`d.state = 'resolved' AND d.outcome = 'rejected'`
   const { rows } = await q.execute<DraftRow>(sql`
     SELECT d.id, d.group_id, d.state, d.outcome, d.origin, d.path, d.byte_size, d.discovered_at,
            r.remote_created_at AS arrived_at, d.decided_at, d.decided_by,
            pd.display_name AS decided_name, pd.kind AS decided_kind, pd.gender AS decided_gender,
-           d.reject_reason, d.rejected_at, d.blocked_reason, d.error, d.proposed_role,
-           d.proposed_ordinal, d.source_blob_sha256 IS NOT NULL AS source_blob,
+           d.reject_reason, d.rejected_at, d.blocked_reason, d.error,
+           d.source_blob_sha256 IS NOT NULL AS source_blob,
            d.master_sha256 IS NOT NULL AS has_master, d.master_verified_at IS NOT NULL AS master_verified,
-           coalesce(b.media_kind, CASE
-             WHEN d.path ~* '\\.(mp4|mov|m4v|avi|mkv|webm|mts|m2ts|3gp|hevc)$' THEN 'video' ELSE 'image' END
-           ) AS media_kind,
-           (SELECT public_item_id(i.type, i.number) FROM content_items i
-             WHERE i.model_id = d.model_id AND i.id = d.target_item_id) AS target_public_id,
-           (SELECT public_item_id(i.type, i.number) FROM content_items i
-             WHERE i.model_id = d.model_id AND i.id = d.applied_item_id) AS applied_public_id,
-           u.principal_id AS uploader_id, pu.display_name AS uploader_name, pu.kind AS uploader_kind, pu.gender AS uploader_gender,
-           fw.progress_num AS fetch_done, fw.progress_den AS fetch_total,
-           CASE WHEN d.source_sha256 IS NULL THEN (
-             SELECT CASE WHEN w.state = 'failed' THEN coalesce(w.error_text, w.error_code, 'ошибка') END
-               FROM work_operations w
-              WHERE w.model_id = d.model_id AND w.kind = 'fetch'
-                AND w.source_revision_id = d.source_revision_id
-              ORDER BY w.created_at DESC LIMIT 1) END AS fetch_failed,
-           NULL::timestamptz AS shot_at, d.target_item_id,
-           encode(d.source_sha256, 'hex') AS source_hex,
-           (SELECT g.id FROM rendition_generations g
-             WHERE g.input_sha256 = d.source_sha256 AND g.kind = 'thumb640' AND g.state = 'ready'
-               AND NOT g.meta_stripped
-             ORDER BY g.ready_at DESC LIMIT 1) AS thumb_generation,
-           (SELECT m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '')
-              FROM asset_versions v
-              JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id AND m.kind = 'owned'
-             WHERE v.model_id = d.model_id AND v.id = d.duplicate_of_version_id LIMIT 1) AS duplicate_handle
+           ${MEDIA_KIND} AS media_kind,
+           public_item_id(ti.type, ti.number) AS target_public_id,
+           public_item_id(ai.type, ai.number) AS applied_public_id,
+           CASE WHEN fw.state IN ('pending', 'running', 'retry_wait') THEN fw.progress_num END AS fetch_done,
+           CASE WHEN fw.state IN ('pending', 'running', 'retry_wait') THEN fw.progress_den END AS fetch_total,
+           CASE WHEN d.source_sha256 IS NULL AND fw.state = 'failed'
+                THEN coalesce(fw.error_text, fw.error_code, 'ошибка') END AS fetch_failed,
+           dup.handle AS duplicate_handle, d.target_item_id,
+           CASE WHEN d.blocked_reason = 'which_frame' THEN encode(d.source_sha256, 'hex') END AS source_hex
       FROM inbox_drafts d
       LEFT JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id
       LEFT JOIN blobs b ON b.sha256 = d.source_blob_sha256
       LEFT JOIN principals pd ON pd.id = d.decided_by
-      LEFT JOIN web_uploads u ON u.model_id = d.model_id AND u.id = d.web_upload_id
-      LEFT JOIN principals pu ON pu.id = u.principal_id
+      LEFT JOIN content_items ti ON ti.model_id = d.model_id AND ti.id = d.target_item_id
+      LEFT JOIN content_items ai ON ai.model_id = d.model_id AND ai.id = d.applied_item_id
+      ${LAST_FETCH}
       LEFT JOIN LATERAL (
-        SELECT w.progress_num, w.progress_den FROM work_operations w
-         WHERE w.model_id = d.model_id AND w.kind = 'fetch' AND w.source_revision_id = d.source_revision_id
-           AND w.state IN ('pending', 'running', 'retry_wait')
-         ORDER BY w.created_at DESC LIMIT 1
-      ) fw ON true
+        SELECT m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '') AS handle
+          FROM asset_versions v
+          JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id AND m.kind = 'owned'
+         WHERE v.model_id = d.model_id AND v.id = d.duplicate_of_version_id LIMIT 1
+      ) dup ON d.duplicate_of_version_id IS NOT NULL
      WHERE d.model_id = ${modelId}::uuid
-       AND d.group_id = ANY (${sql.param(groupIds)}::uuid[]) AND ${which}
+       AND d.group_id = ANY (${sql.param(groupIds)}::uuid[]) AND ${draftsOf(filter)}
      ORDER BY d.group_id, d.proposed_ordinal NULLS LAST, d.path, d.id`)
   return rows
 }
 
 /**
- * Candidates of the drafts (schema §3.4 `inbox_draft_candidates`): ◆ «Какой заказ?» without a
- * preselection, and the pHash hint «Похоже на фото № 7 из SET-069 — сравнить» (SPEC §6.2).
+ * The files of `groupIds` as their tiles show them. `perGroup` — only the first files of each
+ * group for the list (videos first: the mosaic shows the master); `null` — every file.
+ */
+async function loadFiles(
+  q: Queryable,
+  modelId: string,
+  groupIds: string[],
+  filter: InboxFilter,
+  perGroup: number | null,
+): Promise<FileRow[]> {
+  if (groupIds.length === 0) return []
+  const { rows } = await q.execute<FileRow>(sql`
+    WITH ranked AS (
+      SELECT d.id,
+             row_number() OVER (PARTITION BY d.group_id
+                                ORDER BY d.proposed_ordinal NULLS LAST, d.path, d.id) AS position,
+             row_number() OVER (PARTITION BY d.group_id
+                                ORDER BY (${MEDIA_KIND}) = 'video' DESC, d.proposed_ordinal NULLS LAST,
+                                         d.path, d.id) AS preview
+        FROM inbox_drafts d LEFT JOIN blobs b ON b.sha256 = d.source_blob_sha256
+       WHERE d.model_id = ${modelId}::uuid
+         AND d.group_id = ANY (${sql.param(groupIds)}::uuid[]) AND ${draftsOf(filter)}
+    )
+    SELECT d.id, d.group_id, d.state, d.origin, encode(d.source_sha256, 'hex') AS source_hex,
+           d.path, d.byte_size, ${MEDIA_KIND} AS media_kind,
+           d.proposed_role, d.proposed_ordinal, ranked.position,
+           (SELECT g.id FROM rendition_generations g
+             WHERE g.input_sha256 = d.source_sha256 AND g.kind = 'thumb640' AND g.state = 'ready'
+               AND NOT g.meta_stripped
+             ORDER BY g.ready_at DESC LIMIT 1) AS thumb_generation,
+           NULL::timestamptz AS shot_at,
+           u.principal_id AS uploader_id, pu.display_name AS uploader_name,
+           pu.kind AS uploader_kind, pu.gender AS uploader_gender
+      FROM ranked
+      JOIN inbox_drafts d ON d.model_id = ${modelId}::uuid AND d.id = ranked.id
+      LEFT JOIN blobs b ON b.sha256 = d.source_blob_sha256
+      LEFT JOIN web_uploads u ON u.model_id = d.model_id AND u.id = d.web_upload_id
+      LEFT JOIN principals pu ON pu.id = u.principal_id
+     WHERE ${perGroup === null ? sql`true` : sql`ranked.preview <= ${perGroup}`}
+     ORDER BY d.group_id, ranked.position`)
+  return rows
+}
+
+/**
+ * Candidates of the open drafts of `groupIds` (schema §3.4 `inbox_draft_candidates`): ◆ «Какой
+ * заказ?» without a preselection, the pHash hint «Похоже на фото № 7 из SET-069 — сравнить»
+ * (SPEC §6.2), and the frames of ◆ «К какому кадру?».
  */
 async function loadExtras(
   q: Queryable,
   model: { id: string; code: string },
+  groupIds: readonly string[],
   drafts: readonly DraftRow[],
 ) {
   const modelId = model.id
   const extras = new Map<string, Extras>()
-  if (drafts.length === 0) return extras
+  if (groupIds.length === 0) return extras
   // ◆ «К какому кадру?»: the first unanswered file of a group and the frames of its set.
   for (const draft of drafts) {
     if (draft.blocked_reason !== 'which_frame' || !draft.target_item_id) continue
@@ -608,9 +695,8 @@ async function loadExtras(
       ),
     }
   }
-  const groupOf = new Map(drafts.map((draft) => [draft.id, draft.group_id]))
   const { rows } = await q.execute<{
-    draft_id: string
+    group_id: string
     kind: 'order' | 'similar_photo'
     order_id: string | null
     item_public: string | null
@@ -621,11 +707,12 @@ async function loadExtras(
     due: string | null
     signals: Record<string, unknown> | null
   }>(sql`
-    SELECT c.draft_id, c.kind, c.order_id, public_item_id(i.type, i.number) AS item_public,
+    SELECT d.group_id, c.kind, c.order_id, public_item_id(i.type, i.number) AS item_public,
            m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '') AS handle, m.ordinal,
            o.buyer_name AS buyer, o.brief, (o.due_at AT TIME ZONE 'Europe/Moscow')::date::text AS due,
            c.signals
       FROM inbox_draft_candidates c
+      JOIN inbox_drafts d ON d.model_id = c.model_id AND d.id = c.draft_id
       LEFT JOIN content_items i ON i.model_id = c.model_id AND i.id = c.item_id
       LEFT JOIN asset_versions v ON v.model_id = c.model_id AND v.id = c.version_id
       LEFT JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id
@@ -633,12 +720,11 @@ async function loadExtras(
       LEFT JOIN custom_orders o ON o.model_id = c.model_id AND o.id = c.order_id
      WHERE c.model_id = ${modelId}::uuid AND c.dismissed_at IS NULL
        AND c.kind IN ('order', 'similar_photo')
-       AND c.draft_id = ANY (${sql.param(drafts.map((draft) => draft.id))}::uuid[])
+       AND d.group_id = ANY (${sql.param([...groupIds])}::uuid[]) AND ${OPEN_DRAFT}
      ORDER BY c.score DESC NULLS LAST, c.created_at`)
   for (const row of rows) {
-    const group = groupOf.get(row.draft_id) as string
-    const entry: Extras = extras.get(group) ?? { hints: [], candidates: [] }
-    extras.set(group, entry)
+    const entry: Extras = extras.get(row.group_id) ?? { hints: [], candidates: [] }
+    extras.set(row.group_id, entry)
     if (row.kind === 'similar_photo' && row.item_public) {
       const number = row.ordinal ? ` № ${row.ordinal}` : ''
       entry.hints.push({
@@ -664,65 +750,211 @@ async function loadExtras(
   return extras
 }
 
+/** Files of a group in the list: the mosaic of a tile and the stack of a row show three. */
+export const LIST_FILES = 6
+/** «Принятые» of the last 14 days, «Отклонённые» while their bytes wait (DESIGN §4.10). */
+const ACCEPTED_DAYS = 14
+
+/**
+ * Groups «Новое» may show (DESIGN §4.8–4.9): with an open draft, not superseded; a group of the
+ * old corpus only with something for a person — a decision, an error, no type. The import
+ * accepts the rest itself, and those are most of the drafts at stage 7.
+ */
+async function activeCandidates(q: Queryable, modelId: string): Promise<GroupRow[]> {
+  const { rows } = await q.execute<GroupRow>(sql`
+    SELECT ${GROUP_COLUMNS}
+      FROM inbox_groups g JOIN sources s ON s.model_id = g.model_id AND s.id = g.source_id
+     WHERE g.model_id = ${modelId}::uuid
+       AND g.id IN (SELECT d.group_id FROM inbox_drafts d
+                     WHERE d.model_id = ${modelId}::uuid AND ${OPEN_DRAFT})
+       AND (g.evidence ->> 'superseded') IS DISTINCT FROM 'true'
+       AND (NOT coalesce(g.evidence ? 'legacy', false) OR g.proposed_type IS NULL
+            OR EXISTS (
+              SELECT 1 FROM inbox_drafts d ${LAST_FETCH}
+               WHERE d.model_id = g.model_id AND d.group_id = g.id AND ${OPEN_DRAFT}
+                 AND (d.blocked_reason IS NOT NULL OR d.error IS NOT NULL
+                      OR (d.source_sha256 IS NULL AND fw.state = 'failed'))))`)
+  return rows
+}
+
+/** Groups with drafts decided this way lately: accepted in 14 days, rejected in 30. */
+async function decidedCandidates(
+  q: Queryable,
+  modelId: string,
+  filter: 'accepted' | 'rejected',
+): Promise<GroupRow[]> {
+  const recent =
+    filter === 'accepted'
+      ? sql`d.decided_at >= now() - make_interval(days => ${ACCEPTED_DAYS})`
+      : sql`coalesce(d.rejected_at, d.decided_at) >= now() - make_interval(days => ${REJECT_KEEP_DAYS})`
+  const { rows } = await q.execute<GroupRow>(sql`
+    SELECT ${GROUP_COLUMNS}
+      FROM inbox_groups g JOIN sources s ON s.model_id = g.model_id AND s.id = g.source_id
+     WHERE g.model_id = ${modelId}::uuid
+       AND g.id IN (SELECT d.group_id FROM inbox_drafts d
+                     WHERE d.model_id = ${modelId}::uuid AND ${draftsOf(filter)} AND ${recent})`)
+  return rows
+}
+
 const SECTION = { decision: 0, error: 0, ready: 1, preparing: 2 } as const
 
-/** `GET /{model}/inbox`: groups of «Новое» or «Решённое». */
-export async function inboxList(
-  q: Queryable,
-  model: { id: string; code: string },
-  filter: InboxFilter,
-): Promise<InboxList> {
-  const modelId = model.id
-  const now = new Date()
-  const groups = await loadGroups(q, modelId, null)
+function rankOf(state: DraftState): number {
+  return SECTION[state.kind as keyof typeof SECTION] ?? 3
+}
+
+/** When a decided group was decided; when an open one arrived. */
+function sortTime({ state, group, drafts }: Computed): string {
+  if (state.kind === 'accepted' || state.kind === 'rejected') return state.at
+  const arrived = drafts.map((draft) => draft.arrived_at ?? draft.discovered_at).sort()[0]
+  return instant(arrived ?? group.discovered_at)
+}
+
+interface Position {
+  rank: number
+  at: string
+  id: string
+}
+
+/** Opaque keyset cursor (SPEC §11.2): the place of the last group of the page. */
+function cursorOf(position: Position): string {
+  return Buffer.from(JSON.stringify([position.rank, position.at, position.id])).toString(
+    'base64url',
+  )
+}
+
+function positionOf(cursor: string | undefined): Position | null {
+  if (!cursor) return null
+  try {
+    const [rank, at, id] = JSON.parse(Buffer.from(cursor, 'base64url').toString()) as [
+      number,
+      string,
+      string,
+    ]
+    if (typeof rank !== 'number' || typeof at !== 'string' || typeof id !== 'string') {
+      throw new Error('cursor')
+    }
+    return { rank, at, id }
+  } catch {
+    throw new ApiProblem('invalid_request', 'Такого курсора нет', { cursor })
+  }
+}
+
+/** Sections first (◆ and ▲, «готово», «готовится»), inside — newest first, then by id. */
+function compareGroups(left: Position, right: Position): number {
+  if (left.rank !== right.rank) return left.rank - right.rank
+  if (left.at !== right.at) return right.at.localeCompare(left.at)
+  return right.id.localeCompare(left.id)
+}
+
+/** Groups of «Новое» with their state; the old corpus shows only what needs a person. */
+async function activeGroups(q: Queryable, modelId: string, now: Date): Promise<Computed[]> {
+  const groups = await activeCandidates(q, modelId)
   const drafts = await loadDrafts(
     q,
     modelId,
     groups.map((group) => group.id),
-    filter,
+    'active',
   )
-  const extras = await loadExtras(q, model, drafts)
-  const byGroup = new Map<string, DraftRow[]>()
-  for (const draft of drafts)
-    byGroup.set(draft.group_id, [...(byGroup.get(draft.group_id) ?? []), draft])
-  const items = groups
-    .map((group) =>
-      view(model.code, group, byGroup.get(group.id) ?? [], filter, now, extras.get(group.id)),
+  const byGroup = Map.groupBy(drafts, (draft) => draft.group_id)
+  return groups
+    .map((group) => compute(group, byGroup.get(group.id) ?? [], 'active', now))
+    .filter((item): item is Computed => item !== null)
+    .filter(
+      (item) =>
+        !item.group.evidence?.legacy ||
+        item.state.kind === 'decision' ||
+        item.state.kind === 'error',
     )
-    .filter((item): item is InboxGroup => item !== null)
-    // Drafts of the old corpus without a dispute stay out of «Новое» (DESIGN §4.9): the
-    // import accepts them itself; a decision or an error shows here.
-    .filter((item) => {
-      if (filter !== 'active') return true
-      const group = groups.find((candidate) => candidate.id === item.id)
-      const evidence = group?.evidence as { legacy?: unknown; superseded?: boolean } | null
-      if (evidence?.superseded) return false
-      return !evidence?.legacy || item.state.kind === 'decision' || item.state.kind === 'error'
-    })
-    .sort((left, right) => {
-      const rank = (item: InboxGroup) => SECTION[item.state.kind as keyof typeof SECTION] ?? 3
-      if (filter === 'active' && rank(left) !== rank(right)) return rank(left) - rank(right)
-      const leftAt =
-        left.state.kind === 'accepted' || left.state.kind === 'rejected'
-          ? left.state.at
-          : left.arrived_at
-      const rightAt =
-        right.state.kind === 'accepted' || right.state.kind === 'rejected'
-          ? right.state.at
-          : right.arrived_at
-      return rightAt.localeCompare(leftAt)
-    })
-  const count =
+}
+
+const COUNTED: ReadonlySet<DraftState['kind']> = new Set(['decision', 'error', 'ready'])
+
+/** «Приехало · 9» (DESIGN §2.2, §4.8): groups where a person is needed — ◆, ▲ and «готово». */
+export async function inboxCount(q: Queryable, modelId: string): Promise<number> {
+  const groups = await activeGroups(q, modelId, new Date())
+  return groups.filter((item) => COUNTED.has(item.state.kind)).length
+}
+
+export interface InboxPage {
+  cursor?: string | undefined
+  limit?: number | undefined
+}
+
+/**
+ * `GET /{model}/inbox`: groups of «Новое» or «Решённое», a page at a time (SPEC §11.2). The
+ * state of every group is computed from light rows of its drafts; files, thumbnails and
+ * candidates are read only for the groups of the page, and of each only its first files.
+ */
+export async function inboxList(
+  q: Queryable,
+  model: { id: string; code: string },
+  filter: InboxFilter,
+  page: InboxPage = {},
+): Promise<InboxList> {
+  const modelId = model.id
+  const now = new Date()
+  const limit = page.limit ?? DEFAULT_PAGE_LIMIT
+  const after = positionOf(page.cursor)
+  let all: Computed[]
+  if (filter === 'active') {
+    all = await activeGroups(q, modelId, now)
+  } else {
+    const groups = await decidedCandidates(q, modelId, filter)
+    const drafts = await loadDrafts(
+      q,
+      modelId,
+      groups.map((group) => group.id),
+      filter,
+    )
+    const byGroup = Map.groupBy(drafts, (draft) => draft.group_id)
+    all = groups
+      .map((group) => compute(group, byGroup.get(group.id) ?? [], filter, now))
+      .filter((item): item is Computed => item !== null)
+  }
+  const placed = all
+    .map((item) => ({
+      item,
+      position: {
+        rank: filter === 'active' ? rankOf(item.state) : 0,
+        at: sortTime(item),
+        id: item.group.id,
+      },
+    }))
+    .sort((left, right) => compareGroups(left.position, right.position))
+  const rest = after ? placed.filter(({ position }) => compareGroups(position, after) > 0) : placed
+  const shown = rest.slice(0, limit)
+  const ids = shown.map(({ item }) => item.group.id)
+  const files = Map.groupBy(
+    await loadFiles(q, modelId, ids, filter, LIST_FILES),
+    (file) => file.group_id,
+  )
+  const extras =
     filter === 'active'
-      ? items.filter((item) => ['decision', 'error', 'ready'].includes(item.state.kind)).length
-      : (await inboxList(q, model, 'active')).count
+      ? await loadExtras(
+          q,
+          model,
+          ids,
+          shown.flatMap(({ item }) => item.drafts),
+        )
+      : new Map<string, Extras>()
+  const last = shown.at(-1)
+  // «Новое · 9» is the same number on every tab of «Приехало».
+  const active = filter === 'active' ? all : await activeGroups(q, modelId, now)
+  const sections = { decision: 0, ready: 0, preparing: 0 }
+  for (const item of active) {
+    const section = inboxSectionOf(item.state)
+    if (section) sections[section] += 1
+  }
   const { rows } = await q.execute<{ at: string | null }>(sql`
     SELECT (SELECT max(w.finished_at) FROM work_operations w
              WHERE w.model_id = ${modelId}::uuid AND w.kind = 'scan' AND w.state = 'succeeded') AS at`)
   return {
-    items,
-    next_cursor: null,
-    count,
+    items: shown.map(({ item }) =>
+      view(model.code, item, files.get(item.group.id) ?? [], extras.get(item.group.id)),
+    ),
+    next_cursor: last && rest.length > shown.length ? cursorOf(last.position) : null,
+    count: active.filter((item) => COUNTED.has(item.state.kind)).length,
+    sections,
     disk_checked_at: instantOrNull(rows[0]?.at),
     // «Разбор старого · 38»: what a person still decides there (DESIGN §4.9).
     legacy_disputes: await openDisputeCount(q, modelId),
@@ -737,23 +969,23 @@ async function withPreviews(
   q: Queryable,
   model: { id: string; code: string },
   files: readonly DraftFile[],
-  drafts: readonly DraftRow[],
+  rows: readonly FileRow[],
 ): Promise<DraftFile[]> {
   const previews = await mediaPreviews(
     q,
     model,
-    drafts.map((draft) => ({
-      media: draft.media_kind === 'video' ? 'video' : 'image',
+    rows.map((row) => ({
+      media: row.media_kind === 'video' ? 'video' : 'image',
       master: null,
-      source: draft.source_hex,
+      source: row.source_hex,
     })),
   )
   return files.map((file, index) => {
     const preview = previews[index]
-    const draft = drafts[index]
-    if (!preview || !draft) return file
+    const row = rows[index]
+    if (!preview || !row) return file
     // Not fetched or checked yet: the preview comes with the first pass after the bytes.
-    const preparing = draft.state === 'discovered' || draft.state === 'processing'
+    const preparing = row.state === 'discovered' || row.state === 'processing'
     return {
       ...file,
       preview:
@@ -776,9 +1008,15 @@ export async function inboxGroup(
   const now = new Date()
   for (const filter of ['active', 'accepted', 'rejected'] as const) {
     const drafts = await loadDrafts(q, modelId, [groupId], filter)
-    const extras = await loadExtras(q, model, drafts)
-    const shown = view(model.code, group, drafts, filter, now, extras.get(groupId))
-    if (shown) return { ...shown, files: await withPreviews(q, model, shown.files, drafts) }
+    const computed = compute(group, drafts, filter, now)
+    if (!computed) continue
+    const files = await loadFiles(q, modelId, [groupId], filter, null)
+    const extras =
+      filter === 'active'
+        ? await loadExtras(q, model, [groupId], drafts)
+        : new Map<string, Extras>()
+    const shown = view(model.code, computed, files, extras.get(groupId))
+    return { ...shown, files: await withPreviews(q, model, shown.files, files) }
   }
   throw new ApiProblem('not_found', 'Такой группы нет')
 }

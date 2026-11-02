@@ -192,6 +192,11 @@ export const InboxGroupSchema = z.object({
   arrived_at: InstantSchema,
   size_bytes: z.int().nonnegative(),
   file_count: z.int().nonnegative(),
+  /**
+   * Videos of the whole group. The list sends only the first files of a group (`files` is shorter
+   * than `file_count`); the group itself (`GET …/inbox/groups/{id}`) sends every file.
+   */
+  video_count: z.int().nonnegative().optional(),
   state: DraftStateSchema,
   /** One line under a disabled «Принять»: «Сначала выберите заказ». */
   accept_block: z.string().nullable(),
@@ -247,12 +252,20 @@ export function inboxSectionOf(state: DraftState): InboxSection | null {
   }
 }
 
-/** `GET /api/v1/<model>/inbox` */
+/** `GET /api/v1/<model>/inbox`, a page at a time (`cursor`, `limit`). */
 export const InboxListSchema = z.object({
   items: z.array(InboxGroupSchema),
   next_cursor: z.string().nullable(),
   /** Decision plus ready: the same number on the tab and in the column. */
   count: z.int().nonnegative(),
+  /** Groups of «Новое» by section, every page counted: the numbers of the section headers. */
+  sections: z
+    .object({
+      decision: z.int().nonnegative(),
+      ready: z.int().nonnegative(),
+      preparing: z.int().nonnegative(),
+    })
+    .optional(),
   disk_checked_at: InstantSchema.nullable(),
   /** «Разбор старого · 38» is shown while this is above zero. */
   legacy_disputes: z.int().nonnegative(),

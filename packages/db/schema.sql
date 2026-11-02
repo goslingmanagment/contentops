@@ -2991,6 +2991,8 @@ CREATE INDEX work_operations_draft ON public.work_operations USING btree (model_
 
 CREATE INDEX work_operations_due ON public.work_operations USING btree (next_attempt_at, priority) WHERE (state = ANY (ARRAY['pending'::text, 'retry_wait'::text]));
 
+CREATE INDEX work_operations_fetch_revision ON public.work_operations USING btree (model_id, source_revision_id, created_at DESC) WHERE (kind = 'fetch'::text);
+
 CREATE INDEX work_operations_lease ON public.work_operations USING btree (lease_until) WHERE (state = 'running'::text);
 
 CREATE INDEX work_operations_manifest ON public.work_operations USING btree (model_id, manifest_id) WHERE (manifest_id IS NOT NULL);

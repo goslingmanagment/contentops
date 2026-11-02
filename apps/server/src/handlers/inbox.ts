@@ -94,7 +94,11 @@ export function inboxHandlers(services: Services): HandlerRegistry {
   const { db, command } = services
   return {
     inbox: {
-      list: ({ query, ctx }) => inboxList(db, modelOf(ctx), query.state ?? 'active'),
+      list: ({ query, ctx }) =>
+        inboxList(db, modelOf(ctx), query.state ?? 'active', {
+          cursor: query.cursor,
+          limit: query.limit,
+        }),
 
       get: ({ params, ctx }) => inboxGroup(db, modelOf(ctx), groupId(params.group)),
 

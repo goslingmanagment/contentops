@@ -112,7 +112,7 @@ export function IntakeCollection({
                   {section.title}
                   {section.counted ? (
                     <span className="ml-1.5 font-normal text-ink-3 text-sm tabular-nums">
-                      {formatNumber(section.groups.length)}
+                      {formatNumber(section.total)}
                     </span>
                   ) : null}
                 </button>
@@ -124,7 +124,7 @@ export function IntakeCollection({
                     onClick={readyBatch.onAccept}
                     className="ml-auto"
                   >
-                    {acceptAllLabel(readyBatch.groups.length, section.groups.length)}
+                    {acceptAllLabel(readyBatch.groups.length, section.total)}
                   </Button>
                 ) : null}
               </header>

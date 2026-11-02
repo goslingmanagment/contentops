@@ -19,6 +19,8 @@ export interface IntakeSection {
   groups: readonly InboxGroup[]
   /** Номер первой группы раздела в общем порядке. */
   start: number
+  /** Групп в разделе на сервере, пока загружены не все страницы; иначе — `groups.length`. */
+  total: number
 }
 
 /** Раздел, в котором группу увидели первой; пока человек на экране, она из него не уходит. */
@@ -48,6 +50,7 @@ const SECTIONS: readonly { key: InboxSection; title: string; counted: boolean }[
 export function buildSections(
   groups: readonly InboxGroup[],
   pins: ReadonlyMap<string, InboxSection> = new Map(),
+  totals: Readonly<Record<InboxSection, number>> | null = null,
 ): IntakeSection[] {
   const result: IntakeSection[] = []
   let start = 0
@@ -56,7 +59,8 @@ export function buildSections(
       .filter((group) => (pins.get(group.id) ?? inboxSectionOf(group.state)) === section.key)
       .toSorted((left, right) => right.arrived_at.localeCompare(left.arrived_at))
     if (inSection.length > 0) {
-      result.push({ ...section, groups: inSection, start })
+      const total = Math.max(inSection.length, totals?.[section.key] ?? 0)
+      result.push({ ...section, groups: inSection, start, total })
       start += inSection.length
     }
   }

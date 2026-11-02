@@ -43,10 +43,15 @@ const MOSAIC_CELLS = 3
  * Мозаика плитки группы (DESIGN §4.8): первые кадры, у видео — длительность, у набора
  * фото на большой ячейке — число фото. Пока файлов нет (архив качается), ячейки серые.
  */
+/** Видео всей группы: в списке у большой группы только первые файлы (`files`). */
+export function videoCount(group: InboxGroup): number {
+  return group.video_count ?? group.files.filter((file) => file.media === 'video').length
+}
+
 export function groupMosaic(group: InboxGroup): MosaicTile[] {
   const kind = groupKind(group)
-  const photos = group.files.filter((file) => file.media === 'photo').length
-  const photosOnly = photos === group.files.length
+  const photos = group.file_count - videoCount(group)
+  const photosOnly = photos === group.file_count
   return [...group.files]
     .sort((left, right) => ROLE_WEIGHT[left.role] - ROLE_WEIGHT[right.role])
     .slice(0, MOSAIC_CELLS)

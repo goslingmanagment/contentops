@@ -32,6 +32,7 @@ export const queryKeys = {
     ['model', model, 'orders', tab] as const,
   order: (model: ModelCode, id: string) => ['model', model, 'order', id] as const,
   inbox: (model: ModelCode, view: string) => ['model', model, 'inbox', view] as const,
+  inboxGroup: (model: ModelCode, id: string) => ['model', model, 'inbox-group', id] as const,
   legacy: (model: ModelCode) => ['model', model, 'legacy'] as const,
   planDay: (model: ModelCode, date: string, mine: boolean) =>
     ['model', model, 'plan-day', date, mine] as const,

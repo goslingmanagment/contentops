@@ -650,7 +650,9 @@ DISTINCT `WHERE stream_key IS NOT NULL AND state IN ('pending','running','retry_
 пустым бывает только здесь, в `idempotency_keys`, `action_log`, у глобальных строк
 `policy_settings` и у общих тегов — список держит структурный тест. Частичные индексы
 `(next_attempt_at, priority) WHERE state IN ('pending','retry_wait')`,
-`(lease_until) WHERE state = 'running'`, `(draft_id)`. Готовый шаг с тем же
+`(lease_until) WHERE state = 'running'`, `(draft_id)`; последняя работа забора ревизии —
+`(model_id, source_revision_id, created_at DESC) WHERE kind = 'fetch'` (`0012_inbox_reads`:
+«Приехало» читает её у каждого открытого черновика). Готовый шаг с тем же
 `input_sha256` выходит сразу. Долгий FFmpeg или HTTP не выполняется внутри
 транзакции БД. Строка работы вставляется в той же транзакции, что и доменная запись;
 отдельного уведомления нет.
@@ -1671,6 +1673,7 @@ LLM.
 | 5 | `0008_hub` | `hub_sync_state`, `hub_observations`, `hub_posts`, `hub_post_attachments`, `hub_raw_media`, `hub_vault_albums`, `hub_vault_media` (7); FK `placement_evidence.hub_observation_id` |
 | 5б | `0009_publications` | таблиц нет: связь строки плана с публикацией Hub — колонки `posting_plan_rows` (схема §3.5), функции `is_publication_post/album`, поток `publications` в `hub_sync_state` |
 | 5 | `0010_hub_matching` | таблиц нет: `placements.surface_source` дополнен `hub_hint` (схема §9.6) |
+| после 3 (03.11.2026) | `0012_inbox_reads` | таблиц нет: индекс последней работы забора ревизии для «Приехало» (SPEC §12.0); номера поздних файлов ниже сдвигаются |
 | 8 (8а) | `0010_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
