@@ -2408,6 +2408,18 @@
             "required": [
               "decision"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "const": "split_folders"
+              }
+            },
+            "required": [
+              "decision"
+            ]
           }
         ]
       },

@@ -23,6 +23,10 @@ const CHANNEL_WORDS: Record<string, string> = {
   inst: 'instagram',
   reddit: 'reddit',
   gif: 'gif-sites',
+  gifs: 'gif-sites',
+  'gif сайты': 'gif-sites',
+  'gif-сайты': 'gif-sites',
+  'гиф сайты': 'gif-sites',
   'гиф-сайты': 'gif-sites',
   sfs: 'sfs',
 }
@@ -30,7 +34,7 @@ const CHANNEL_WORDS: Record<string, string> = {
 /** The channel of an SMM folder by its name: the code, the title or a usual short name. */
 export async function channelOf(q: Queryable, modelId: string, name: string | null | undefined) {
   if (!name) return null
-  const word = name.trim().toLowerCase()
+  const word = name.trim().toLowerCase().replace(/\s+/g, ' ')
   const code = CHANNEL_WORDS[word] ?? word
   const { rows } = await q.execute<{ id: string }>(sql`
     SELECT id FROM promo_channels

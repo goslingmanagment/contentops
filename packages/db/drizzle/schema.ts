@@ -2056,53 +2056,6 @@ export const hubRawMedia = pgTable("hub_raw_media", {
 	unique("hub_raw_media_ref").on(table.accountId, table.mediaRef, table.modelId),
 ]);
 
-export const inboxGroups = pgTable("inbox_groups", {
-	modelId: uuid("model_id").notNull(),
-	id: uuid().default(sql`uuidv7()`).notNull(),
-	sourceId: uuid("source_id").notNull(),
-	groupKey: text("group_key").notNull(),
-	grouping: text().notNull(),
-	folderObjectId: uuid("folder_object_id"),
-	evidence: jsonb(),
-	discoveredAt: timestamp("discovered_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
-	proposedType: text("proposed_type"),
-	proposedTitle: text("proposed_title"),
-	proposedTitleEn: text("proposed_title_en"),
-	proposedDescription: text("proposed_description"),
-	proposedTags: jsonb("proposed_tags"),
-	proposedPpvKind: text("proposed_ppv_kind"),
-	proposedPurpose: text("proposed_purpose"),
-	hasSecondPerson: boolean("has_second_person"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
-	customOrderId: uuid("custom_order_id"),
-}, (table): PgTableExtraConfigValue[] => [
-	foreignKey({
-			columns: [table.modelId, table.sourceId],
-			foreignColumns: [sources.id, sources.modelId],
-			name: "inbox_groups_model_id_source_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.folderObjectId],
-			foreignColumns: [sourceObjects.id, sourceObjects.modelId],
-			name: "inbox_groups_model_id_folder_object_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.customOrderId],
-			foreignColumns: [customOrders.id, customOrders.modelId],
-			name: "inbox_groups_model_id_custom_order_id_fkey"
-		}).onDelete("restrict"),
-	primaryKey({ columns: [table.id, table.modelId], name: "inbox_groups_pkey"}),
-	unique("inbox_groups_model_id_source_id_group_key_key").on(table.groupKey, table.modelId, table.sourceId),
-	check("inbox_groups_grouping_check", sql`"grouping" = ANY (ARRAY['folder'::text, 'exif_day'::text, 'upload_cluster'::text, 'single'::text, 'manual'::text])`),
-	check("inbox_groups_proposed_type_check", sql`proposed_type = ANY (ARRAY['PPV'::text, 'SET'::text, 'SXT'::text, 'CUS'::text, 'FYP'::text, 'LIFE'::text, 'RAW'::text, 'PRM'::text])`),
-	check("inbox_groups_proposed_ppv_kind_check", sql`proposed_ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text])`),
-	check("inbox_groups_proposed_purpose_check", sql`proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text])`),
-]);
-
 export const promoDeliveries = pgTable("promo_deliveries", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -2386,6 +2339,65 @@ export const hubVaultMedia = pgTable("hub_vault_media", {
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "hub_vault_media_pkey"}),
 	unique("hub_vault_media_member").on(table.accountId, table.albumId, table.memberRef, table.modelId),
+]);
+
+export const inboxGroups = pgTable("inbox_groups", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	sourceId: uuid("source_id").notNull(),
+	groupKey: text("group_key").notNull(),
+	grouping: text().notNull(),
+	folderObjectId: uuid("folder_object_id"),
+	evidence: jsonb(),
+	discoveredAt: timestamp("discovered_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	proposedType: text("proposed_type"),
+	proposedTitle: text("proposed_title"),
+	proposedTitleEn: text("proposed_title_en"),
+	proposedDescription: text("proposed_description"),
+	proposedTags: jsonb("proposed_tags"),
+	proposedPpvKind: text("proposed_ppv_kind"),
+	proposedPurpose: text("proposed_purpose"),
+	hasSecondPerson: boolean("has_second_person"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+	customOrderId: uuid("custom_order_id"),
+	proposedChannelId: uuid("proposed_channel_id"),
+	proposedCollectionId: uuid("proposed_collection_id"),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.modelId, table.sourceId],
+			foreignColumns: [sources.id, sources.modelId],
+			name: "inbox_groups_model_id_source_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.folderObjectId],
+			foreignColumns: [sourceObjects.id, sourceObjects.modelId],
+			name: "inbox_groups_model_id_folder_object_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.customOrderId],
+			foreignColumns: [customOrders.id, customOrders.modelId],
+			name: "inbox_groups_model_id_custom_order_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.proposedChannelId],
+			foreignColumns: [promoChannels.id, promoChannels.modelId],
+			name: "inbox_groups_model_id_proposed_channel_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.proposedCollectionId],
+			foreignColumns: [contentItems.id, contentItems.modelId],
+			name: "inbox_groups_model_id_proposed_collection_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "inbox_groups_pkey"}),
+	unique("inbox_groups_model_id_source_id_group_key_key").on(table.groupKey, table.modelId, table.sourceId),
+	check("inbox_groups_grouping_check", sql`"grouping" = ANY (ARRAY['folder'::text, 'exif_day'::text, 'upload_cluster'::text, 'single'::text, 'manual'::text])`),
+	check("inbox_groups_proposed_type_check", sql`proposed_type = ANY (ARRAY['PPV'::text, 'SET'::text, 'SXT'::text, 'CUS'::text, 'FYP'::text, 'LIFE'::text, 'RAW'::text, 'PRM'::text])`),
+	check("inbox_groups_proposed_ppv_kind_check", sql`proposed_ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text])`),
+	check("inbox_groups_proposed_purpose_check", sql`proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text])`),
 ]);
 
 export const hubSyncState = pgTable("hub_sync_state", {

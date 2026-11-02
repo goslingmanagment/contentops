@@ -81,6 +81,21 @@ for (const [index, [path, source, seconds]] of (
   })
   thumbs.set(node.id, clip.poster)
 }
+// Папки канала в SMM: каждая папка прямо над файлами — подборка канала из пути (SPEC §6.1).
+for (const [index, [path, source]] of (
+  [
+    ['/9. SMM/Instagram/Ноябрь/нюд/IMG_7001.jpg', 'mandelbrot'],
+    ['/9. SMM/Instagram/Ноябрь/нюд/IMG_7002.jpg', 'gradients'],
+    ['/9. SMM/Instagram/Ноябрь/IMG_7003.jpg', 'smptehdbars'],
+  ] as const
+).entries()) {
+  const bytes = photo(`smm-${index}`, source)
+  const node = tree.addFile(path, bytes, {
+    created: minutesAgo(15 - index),
+    modified: minutesAgo(15 - index),
+  })
+  thumbs.set(node.id, bytes)
+}
 const life = video('life', 'cellauto', 5)
 const lifeNode = tree.addFile('/6. Life/завтрак.mp4', life.bytes, {
   created: minutesAgo(12),

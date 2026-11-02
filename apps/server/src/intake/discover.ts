@@ -7,6 +7,7 @@ import {
   type SourceEntry,
 } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
+import { channelOf } from '../legacy/promo'
 import {
   clusterStart,
   fitsCluster,
@@ -379,7 +380,22 @@ interface GroupProposal {
   title: string | null
   type: string | null
   purpose?: string | null
+  /** The promo channel the path names (a folder of `9. SMM`). */
+  channelId?: string | null
   evidence: Record<string, unknown>
+}
+
+/** The first folder of the path that is a promo channel of the model, with its id. */
+export async function channelOfPath(
+  tx: Tx,
+  modelId: string,
+  names: readonly string[],
+): Promise<{ id: string; name: string } | null> {
+  for (const name of names) {
+    const id = await channelOf(tx, modelId, name)
+    if (id) return { id, name }
+  }
+  return null
 }
 
 async function groupOf(
@@ -402,14 +418,25 @@ async function groupOf(
   if (placement.kind === 'folder') {
     const folder = folderAt(placement.folderDepth)
     if (!folder) throw new Error(`folder of ${entry.path.raw} is not resolved`)
+    let kind = placement.proposal ?? null
+    let promo: Record<string, unknown> = {}
+    let channelId: string | null = null
+    if (kind?.channelFrom) {
+      // A folder of a channel is its collection; SMM without a channel is raw for FYPs.
+      const channel = await channelOfPath(tx, source.modelId, kind.channelFrom)
+      channelId = channel?.id ?? null
+      kind = channel ? kind : { type: 'RAW', purpose: 'fyp' }
+      promo = channel ? { promo: { channel: channel.name, folder: folder.raw } } : {}
+    }
     proposal = {
       key: `folder:${folder.resourceId}`,
       grouping: 'folder',
       folderResourceId: folder.resourceId,
       title: folder.name,
-      type: placement.proposal?.type ?? type,
-      purpose: placement.proposal?.purpose ?? null,
-      evidence: { ...evidence, path: folder.raw },
+      type: kind?.type ?? type,
+      purpose: kind?.purpose ?? null,
+      channelId,
+      evidence: { ...evidence, path: folder.raw, ...promo },
     }
   } else {
     const folder = relative.length >= 2 ? folderAt(1) : undefined
@@ -462,14 +489,14 @@ async function ensureGroup(tx: Tx, source: SourceRow, proposal: GroupProposal): 
   const inserted = await tx.execute<{ id: string }>(sql`
     INSERT INTO inbox_groups (
       model_id, source_id, group_key, grouping, folder_object_id, evidence, proposed_type,
-      proposed_title, proposed_purpose
+      proposed_title, proposed_purpose, proposed_channel_id
     )
     SELECT ${source.modelId}::uuid, ${source.id}::uuid, ${proposal.key}, ${proposal.grouping},
            (SELECT id FROM source_objects
              WHERE model_id = ${source.modelId}::uuid AND source_id = ${source.id}::uuid
                AND resource_id = ${proposal.folderResourceId}),
            ${JSON.stringify(proposal.evidence)}::jsonb, ${proposal.type}, ${proposal.title},
-           ${proposal.purpose ?? null}
+           ${proposal.purpose ?? null}, ${proposal.channelId ?? null}::uuid
     ON CONFLICT (model_id, source_id, group_key) DO NOTHING
     RETURNING id`)
   const [created] = inserted.rows

@@ -10,7 +10,9 @@ import type { values } from '@contentops/db'
  * in the model's folder itself) is grouped by its EXIF day, without EXIF by a cluster of up to
  * 45 minutes from the first file. One object is one clip, as in the import of the old disk
  * (`legacy/units.ts`): a video under `2. FYP` or `3. Customs` is a group by itself at any depth,
- * a loose video in `BG` too; a folder of FYP sources (`2. FYP/FYP исходники`) is one shoot.
+ * a loose video in `BG` too; a folder of FYP sources (`2. FYP/FYP исходники`) is one shoot. In
+ * `9. SMM` the folder right above the files is the group, a collection of the channel its path
+ * names (`9. SMM/Gif сайты/Октябрь/нюд`), as the import makes it (SPEC §6.3).
  */
 
 export const UPLOAD_CLUSTER_MS = 45 * 60 * 1000
@@ -18,6 +20,7 @@ export const UPLOAD_CLUSTER_MS = 45 * 60 * 1000
 const FYP_ROOT = /fyp|фуп/i
 const CUSTOM_ROOT = /customs?|кастом/i
 const BG_ROOT = /^bg$/i
+const SMM_ROOT = /(^|[^\p{L}])smm($|[^\p{L}])|смм/iu
 
 /** A folder of clips a FYP is made from: its files are raw material, not ready FYPs. */
 const FYP_SOURCES = /исходник|сырь[её]|оригинал|\bsources?\b|\braw\b|\boriginals?\b/i
@@ -33,7 +36,13 @@ export type Placement =
 /** What the kind of a folder says about its future object, above what its root says. */
 export interface FolderProposal {
   type: values.ContentType
-  purpose: values.RawPurpose
+  purpose: values.RawPurpose | null
+  /**
+   * Folders of the path that may name a promo channel, outermost first: the first one that is a
+   * channel of the model makes the folder its collection; none — SMM without a channel is raw
+   * material for FYPs, as the import of the old disk takes it.
+   */
+  channelFrom?: readonly string[]
 }
 
 /** `relative` — path components of the file, its name last. */
@@ -44,6 +53,14 @@ export function placementOf(relative: readonly string[], isVideo: boolean): Plac
     const sources = relative.slice(1, -1).findIndex((name) => FYP_SOURCES.test(name))
     if (sources >= 0) {
       return { kind: 'folder', folderDepth: sources + 2, proposal: { type: 'RAW', purpose: 'fyp' } }
+    }
+  }
+  if (SMM_ROOT.test(root) && dirs >= 2) {
+    const channelFrom = relative.slice(1, -1)
+    return {
+      kind: 'folder',
+      folderDepth: dirs,
+      proposal: { type: 'PRM', purpose: null, channelFrom },
     }
   }
   if (isVideo && (FYP_ROOT.test(root) || CUSTOM_ROOT.test(root))) return { kind: 'single' }

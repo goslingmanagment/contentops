@@ -52,6 +52,16 @@ describe('placementOf (SPEC §6.1)', () => {
     expect(clip('clip.mov')).toEqual({ kind: 'root', folderDepth: 0 })
   })
 
+  it('in 9. SMM the folder right above the files is the group; its path may name a channel', () => {
+    expect(photo('9. SMM/Gif сайты/Октябрь/нюд/a.jpg')).toEqual({
+      kind: 'folder',
+      folderDepth: 4,
+      proposal: { type: 'PRM', purpose: null, channelFrom: ['Gif сайты', 'Октябрь', 'нюд'] },
+    })
+    expect(clip('9. SMM/Instagram/b.mov')).toMatchObject({ kind: 'folder', folderDepth: 2 })
+    expect(photo('9. SMM/a.jpg')).toEqual({ kind: 'root', folderDepth: 1 })
+  })
+
   it('a photo in 2. FYP does not claim to be a FYP', () => {
     expect(typeOfFile('2. FYP', true)).toBe('FYP')
     expect(typeOfFile('2. FYP', false)).toBeNull()

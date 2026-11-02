@@ -1756,6 +1756,8 @@ CREATE TABLE public.inbox_groups (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     row_version bigint DEFAULT 1 NOT NULL,
     custom_order_id uuid,
+    proposed_channel_id uuid,
+    proposed_collection_id uuid,
     CONSTRAINT inbox_groups_grouping_check CHECK (("grouping" = ANY (ARRAY['folder'::text, 'exif_day'::text, 'upload_cluster'::text, 'single'::text, 'manual'::text]))),
     CONSTRAINT inbox_groups_proposed_ppv_kind_check CHECK ((proposed_ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text]))),
     CONSTRAINT inbox_groups_proposed_purpose_check CHECK ((proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text]))),
@@ -3561,6 +3563,12 @@ ALTER TABLE ONLY public.inbox_groups
 
 ALTER TABLE ONLY public.inbox_groups
     ADD CONSTRAINT inbox_groups_model_id_folder_object_id_fkey FOREIGN KEY (model_id, folder_object_id) REFERENCES public.source_objects(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_groups
+    ADD CONSTRAINT inbox_groups_model_id_proposed_channel_id_fkey FOREIGN KEY (model_id, proposed_channel_id) REFERENCES public.promo_channels(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.inbox_groups
+    ADD CONSTRAINT inbox_groups_model_id_proposed_collection_id_fkey FOREIGN KEY (model_id, proposed_collection_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.inbox_groups
     ADD CONSTRAINT inbox_groups_model_id_source_id_fkey FOREIGN KEY (model_id, source_id) REFERENCES public.sources(model_id, id) ON DELETE RESTRICT;

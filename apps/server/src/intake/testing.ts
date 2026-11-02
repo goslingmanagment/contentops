@@ -50,6 +50,10 @@ export function intakeBootstrap() {
         title: 'Лора',
         title_genitive: 'Лоры',
         accounts: [{ code: 'lora-1', platform: 'fansly', title: 'Fansly 1', handle: 'LoraVie' }],
+        promo_channels: [
+          { code: 'instagram', title: 'Instagram' },
+          { code: 'gif-sites', title: 'Гиф-сайты' },
+        ],
         id_counters: counters,
         sources: [
           { label: 'Dropbox', kind: 'dropbox', root: LORA_ROOT, credentials_ref: 'TEST_DROPBOX' },
