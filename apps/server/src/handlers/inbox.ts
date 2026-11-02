@@ -64,6 +64,10 @@ async function writeFields(
     sets.push(sql`proposed_type = ${body.type ? ITEM_TO_DB_TYPE[body.type] : null}`)
   }
   if (body.title !== undefined) sets.push(sql`proposed_title = ${body.title.trim() || null}`)
+  // «Короткое английское название» (naming §4) goes to `title_en` of the object at «Принять».
+  if (body.title_en !== undefined) {
+    sets.push(sql`proposed_title_en = ${body.title_en.trim() || null}`)
+  }
   if (body.description !== undefined) {
     sets.push(sql`proposed_description = ${body.description.trim() || null}`)
   }

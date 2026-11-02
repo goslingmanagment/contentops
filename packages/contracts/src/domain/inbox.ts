@@ -130,6 +130,8 @@ export type DraftState = z.infer<typeof DraftStateSchema>
 export const DraftFieldsSchema = z.object({
   type: ItemTypeSchema.nullable(),
   title: z.string(),
+  /** «Короткое английское название» (naming §4): optional, never blocks «Принять». */
+  title_en: z.string().max(80),
   description: z.string(),
   tags: z.array(z.string()),
   ppv_kind: PpvKindSchema.nullable(),

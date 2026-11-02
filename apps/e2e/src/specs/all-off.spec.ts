@@ -40,8 +40,8 @@ test('«всё выключено»: загрузить, принять, най�
   // Type and title right one after the other: the saves of a group go in turn, no 412 on
   // oneself.
   await panel.getByRole('radio', { name: 'Сет' }).click()
-  await panel.getByRole('textbox', { name: 'Название' }).fill(title)
-  await panel.getByRole('textbox', { name: 'Название' }).blur()
+  await panel.getByRole('textbox', { name: 'Название', exact: true }).fill(title)
+  await panel.getByRole('textbox', { name: 'Название', exact: true }).blur()
   await expect(page.getByRole('status').filter({ hasText: 'Сохранено' })).toBeVisible()
   await expect(panel.getByRole('heading', { name: title })).toBeVisible()
   // The photo becomes its own master in `worker-image`; until then «Принять» waits.
