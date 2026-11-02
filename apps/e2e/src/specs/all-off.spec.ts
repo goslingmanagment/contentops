@@ -92,7 +92,8 @@ test('«всё выключено»: загрузить, принять, най�
   const row = page.getByRole('listbox', { name: 'Строки дня' }).getByRole('option').filter({
     hasText: title,
   })
-  await expect(row.getByRole('button', { name: 'в плане' })).toBeVisible()
+  // The norm's time is 20:00: later in the evening the same row is already «пропущено».
+  await expect(row.getByRole('button', { name: /в плане|пропущено/ })).toBeVisible()
   await row.getByRole('button', { name: 'Отметить и подтвердить' }).click()
   await expect(row.getByRole('button', { name: 'подтверждено' })).toBeVisible()
   await expect(row).toContainText('вручную, Дмитрий')
