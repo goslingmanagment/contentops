@@ -8,6 +8,7 @@ import { filterDigest, readCursor, writeCursor } from '../catalog/paging'
 import { requireActor } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import type { HandlerRegistry } from '../handlers'
+import { suggestOrders } from '../intake/order-suggest'
 import { IMPORT_ACTOR } from '../legacy/auto-accept'
 import { attachAcceptedCustoms } from '../legacy/customs'
 import { agentSilence, orderView, orderViews, type ViewContext } from '../orders/view'
@@ -136,6 +137,8 @@ export function orderHandlers({ db, command }: Services): HandlerRegistry {
             // An old custom accepted before its order (SPEC §6.3): linked when the rule says so.
             const { id } = await lockOrder(tx, model, address)
             await attachAcceptedCustoms(tx, model, IMPORT_ACTOR, id)
+            // A new custom waiting in «Приехало» may be this order's (SPEC §8.2).
+            await suggestOrders(tx, model.id)
             return address
           },
           (address) => address,
@@ -202,6 +205,7 @@ export function orderHandlers({ db, command }: Services): HandlerRegistry {
             if (body.kind === 'delivery') {
               const { id } = await lockOrder(tx, model, params.order)
               await attachAcceptedCustoms(tx, model, IMPORT_ACTOR, id)
+              await suggestOrders(tx, model.id)
             }
           },
           params.order,

@@ -9591,6 +9591,9 @@
               },
               "part": {
                 "type": "string"
+              },
+              "proposed": {
+                "type": "boolean"
               }
             },
             "required": [

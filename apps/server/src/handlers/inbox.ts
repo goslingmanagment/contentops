@@ -17,6 +17,7 @@ import {
 } from '../intake/decisions'
 import { draftSource, planDraftDownload } from '../intake/draft-files'
 import { ITEM_TO_DB_TYPE, inboxGroup, inboxList } from '../intake/inbox-view'
+import { suggestOrders } from '../intake/order-suggest'
 import { dropStagedOfGroup } from '../intake/staging'
 import { createUpload } from '../intake/upload'
 import { acceptKeepingLegacyNumber } from '../legacy/auto-accept'
@@ -155,6 +156,8 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             subjectLabel: group.title ?? id,
             after: body,
           })
+          // A group that became a custom asks which order it is (SPEC §8.2).
+          if (body.type === 'custom') await suggestOrders(tx, model.id, [id])
           return inboxGroup(tx, model, id)
         }),
 
@@ -351,6 +354,10 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             subjectLabel: `${results.filter((result) => result.ok).length} групп`,
             after: { type: body.type },
           })
+          if (body.type === 'custom') {
+            const typed = results.filter((result) => result.ok).map((result) => result.id)
+            await suggestOrders(tx, model.id, typed)
+          }
           return { results }
         }),
 

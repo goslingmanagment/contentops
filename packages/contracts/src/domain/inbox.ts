@@ -69,7 +69,16 @@ export type DraftErrorKind = z.infer<typeof DraftErrorKindSchema>
 export const ReadyNoteSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('new') }),
   z.object({ kind: z.literal('extends'), item_id: ItemIdSchema }),
-  z.object({ kind: z.literal('order_part'), order_id: z.string(), part: z.string() }),
+  z.object({
+    kind: z.literal('order_part'),
+    order_id: z.string(),
+    part: z.string(),
+    /**
+     * The order was chosen by itself on the evidence in the hints (SPEC §8.2): a person links it
+     * with «Принять как сдачу» on this group, «Принять N» leaves it alone.
+     */
+    proposed: z.boolean().optional(),
+  }),
   z.object({ kind: z.literal('fix_of'), item_id: ItemIdSchema, revision_id: z.string() }),
   z.object({ kind: z.literal('promo'), channel: z.string() }),
 ])
@@ -313,5 +322,7 @@ export type AcceptManyResult = z.infer<typeof AcceptManyResultSchema>
  * closes the revision, so someone has to look at it and accept it on its own (DESIGN §4.8).
  */
 export function needsOwnAccept(group: InboxGroup): boolean {
-  return group.state.kind === 'ready' && group.state.note.kind === 'fix_of'
+  if (group.state.kind !== 'ready') return false
+  const note = group.state.note
+  return note.kind === 'fix_of' || (note.kind === 'order_part' && note.proposed === true)
 }

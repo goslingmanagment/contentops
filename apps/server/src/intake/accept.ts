@@ -14,7 +14,7 @@ import { linkDuplicates } from '../legacy/promo'
 import { handleOf } from '../media/downloads'
 import { bindGenerations } from '../media/renditions'
 import { lockBlobForReference } from '../media/storage-ops'
-import { markDeliveredParts } from '../orders/writes'
+import { completeRevision, markDeliveredParts } from '../orders/writes'
 import { aliasOpenDuplicates, resolveAlias } from './fetch'
 import { appendRefusal, newObjectRefusal } from './refusal'
 import { fillShotOn, shotOnOfDrafts } from './shot-date'
@@ -494,7 +494,10 @@ async function openOrderOf(tx: Tx, modelId: string, itemId: string): Promise<str
   return rows[0]?.order_id ?? null
 }
 
-/** Sealed composition of the delivered versions and the delivery rows of the order (§8.2). */
+/**
+ * Sealed composition of the delivered versions and the delivery rows of the order (§8.2);
+ * returns the delivery of the video, if any.
+ */
 async function recordDelivery(
   tx: Tx,
   modelId: string,
@@ -503,7 +506,8 @@ async function recordDelivery(
   files: readonly CreatedFile[],
   drafts: readonly DraftRow[],
   actor: Actor,
-) {
+): Promise<string | null> {
+  let video: string | null = null
   const deliveredAt =
     drafts
       .map((draft) => draft.arrived_at)
@@ -527,7 +531,7 @@ async function recordDelivery(
           ${file.membershipId}::uuid, ${file.assetId}::uuid, ${file.versionId}::uuid, ${file.handle}
         )`)
     }
-    await tx.execute(sql`
+    const { rows: delivered } = await tx.execute<{ id: string }>(sql`
       INSERT INTO custom_order_deliveries (
         model_id, order_id, part, item_id, manifest_id, delivered_at, basis, draft_id, linked_by
       ) VALUES (
@@ -535,8 +539,34 @@ async function recordDelivery(
         coalesce(${deliveredAt}::timestamptz, now()),
         ${JSON.stringify({ chosen: 'intake', files: chosen.length })}::jsonb,
         ${chosen[0]?.draftId ?? null}::uuid, ${actor.id}::uuid
-      )`)
+      )
+      RETURNING id`)
+    if (part === 'video') video = delivered[0]?.id ?? null
   }
+  return video
+}
+
+/**
+ * «Похоже на исправление CUS-195» (SPEC §8.2, DESIGN §6.6): the rule found the order of the
+ * group delivered with a revision still open — the custom the files fix and that revision.
+ */
+async function fixOfGroup(
+  tx: Tx,
+  modelId: string,
+  groupId: string,
+): Promise<{ publicId: string; revisionId: string } | null> {
+  const { rows } = await tx.execute<{ public_id: string; revision_id: string }>(sql`
+    SELECT public_item_id(i.type, i.number) AS public_id, c.signals ->> 'revision_id' AS revision_id
+      FROM inbox_draft_candidates c
+      JOIN inbox_drafts d ON d.model_id = c.model_id AND d.id = c.draft_id
+      JOIN content_items i ON i.model_id = c.model_id AND i.id = c.item_id AND i.type = 'CUS'
+      JOIN inbox_groups g ON g.model_id = d.model_id AND g.id = d.group_id
+     WHERE c.model_id = ${modelId}::uuid AND d.group_id = ${groupId}::uuid
+       AND d.state <> 'resolved' AND c.kind = 'existing_item' AND c.dismissed_at IS NULL
+       AND c.signals ? 'revision_id' AND c.order_id = g.custom_order_id
+     LIMIT 1`)
+  const row = rows[0]
+  return row ? { publicId: row.public_id, revisionId: row.revision_id } : null
 }
 
 export async function acceptGroup(
@@ -566,9 +596,16 @@ export async function acceptGroup(
   // The target object: «Дополнить…», a new revision of an accepted file, or the object this
   // group already made.
   const draftTarget = drafts.find((draft) => draft.target_item_id)?.target_item_id ?? null
+  // «Принять как исправление»: the files are a new master version of the custom they fix.
+  const fix =
+    !options.extend && options.as !== 'separate' && !draftTarget && !group.created_item_id
+      ? await fixOfGroup(tx, model.id, group.id)
+      : null
+  const extend =
+    options.extend ?? (fix ? { item_id: fix.publicId, role: 'master_version' as const } : null)
   let target: ItemRow | null = null
-  if (options.extend) {
-    target = await findItem(tx, model, options.extend.item_id, { lock: true })
+  if (extend) {
+    target = await findItem(tx, model, extend.item_id, { lock: true })
   } else if (options.as !== 'separate' && (draftTarget || group.created_item_id)) {
     const { rows } = await tx.execute<{ public_id: string }>(sql`
       SELECT public_item_id(type, number) AS public_id FROM content_items
@@ -613,7 +650,7 @@ export async function acceptGroup(
         )
   if (target) {
     item = { id: target.id, type: target.type, number: target.number }
-    how = options.how ?? 'extend'
+    how = options.how ?? (fix ? 'fix' : 'extend')
     await setJournalItem(tx, item.id)
     await fillShotOn(tx, model.id, item.id, shotOn)
   } else {
@@ -661,7 +698,7 @@ export async function acceptGroup(
         : null
     const role = roles
       ? (roles.get(draft.id) as Role)
-      : (proposed ?? options.role ?? appendRole(type, draft, options.extend))
+      : (proposed ?? options.role ?? appendRole(type, draft, extend))
     // `ed07` is the processed version of `raw07` (naming §3): the same number, and a second
     // processed version of that frame is a new version of the same file.
     const bound = role === 'ed' && draft.proposed_ordinal !== null ? draft.proposed_ordinal : null
@@ -735,12 +772,24 @@ export async function acceptGroup(
     item.type !== 'CUS'
       ? null
       : (group.custom_order_id ??
-        (target && options.extend?.role === 'master_version'
+        (target && extend?.role === 'master_version'
           ? await openOrderOf(tx, model.id, item.id)
           : null))
   if (orderId) {
-    await recordDelivery(tx, model.id, orderId, item, created, drafts, actor)
+    const delivery = await recordDelivery(tx, model.id, orderId, item, created, drafts, actor)
     await markDeliveredParts(tx, model, orderId, actor)
+    // The revision is done with the basis «проверил(а)»: the person looked at the fix and took
+    // it as one (DESIGN §2.5); the new version is its delivery.
+    if (fix && delivery) {
+      await completeRevision(
+        tx,
+        model,
+        orderId,
+        fix.revisionId,
+        { basis: 'checked', delivery_id: delivery },
+        actor,
+      )
+    }
   }
 
   for (const { draft, of } of twins) {
@@ -808,7 +857,11 @@ export async function acceptGroup(
       ...(how === 'upload' ? { Принято: 'при загрузке' } : {}),
     },
   })
-  return { item_id: publicId, how, next_step: target ? null : nextStep(item.type) }
+  return {
+    item_id: publicId,
+    how,
+    next_step: fix ? 'Закрыть заказ' : target ? null : nextStep(item.type),
+  }
 }
 
 /** «Отклонить» (SPEC §6.1): the drafts are decided, their bytes stay (§9.1). */

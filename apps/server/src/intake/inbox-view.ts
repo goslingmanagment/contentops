@@ -11,6 +11,7 @@ import {
 } from '@contentops/contracts/domain/inbox'
 import type { ItemType } from '@contentops/contracts/domain/item-type'
 import { DEFAULT_PAGE_LIMIT } from '@contentops/contracts/domain/pagination'
+import { orderTitleOf } from '@contentops/contracts/order-card'
 import type { Queryable, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant, instantOrNull } from '../commands'
@@ -71,6 +72,11 @@ interface GroupRow extends Record<string, unknown> {
   collection_public_id: string | null
   /** The object this group already made (`CUS-197`): a new file of it joins that object. */
   created_public_id: string | null
+  /** «Похоже на исправление CUS-195»: the custom of the order and its open revision. */
+  fix_item_public: string | null
+  fix_revision_id: string | null
+  /** The order of the group was chosen by the rule, not by a person (SPEC §8.2). */
+  order_proposed: boolean
   row_version: string
   discovered_at: string
   source_kind: values.SourceKind
@@ -164,6 +170,32 @@ function parentOf(path: string | null): string {
 }
 
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+
+/**
+ * What matched, in the order a person reads it: who it is (the model's line, the buyer), the
+ * words of the brief, the length, the days after the card. Stored as keys of a JSON object,
+ * which keeps no order.
+ */
+function matchedWords(signals: Record<string, unknown> | null): string[] {
+  const rank = (signal: string) =>
+    signal.startsWith('строка модели')
+      ? 0
+      : signal.startsWith('покупатель')
+        ? 1
+        : signal.startsWith('в ТЗ')
+          ? 2
+          : signal.includes('при заказанных')
+            ? 3
+            : 4
+  return Object.keys(signals ?? {})
+    .filter((key) => !key.startsWith('revision'))
+    .sort((left, right) => rank(left) - rank(right))
+}
+
+/** `2026-10-28` → `28.10`. */
+function shortDay(iso: string): string {
+  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}`
+}
 
 function dayWords(iso: string): string {
   const [, month, day] = iso.slice(0, 10).split('-').map(Number)
@@ -344,9 +376,16 @@ export function activeState(
       kind: 'ready',
       note: target
         ? { kind: 'extends', item_id: target }
-        : group.custom_order_id
-          ? { kind: 'order_part', order_id: group.custom_order_id, part: orderPart(drafts) }
-          : { kind: 'new' },
+        : group.fix_item_public && group.fix_revision_id && group.custom_order_id
+          ? { kind: 'fix_of', item_id: group.fix_item_public, revision_id: group.fix_revision_id }
+          : group.custom_order_id
+            ? {
+                kind: 'order_part',
+                order_id: group.custom_order_id,
+                part: orderPart(drafts),
+                ...(group.order_proposed ? { proposed: true } : {}),
+              }
+            : { kind: 'new' },
     },
     block: null,
   }
@@ -559,7 +598,23 @@ const GROUP_COLUMNS = sql`
   (SELECT public_item_id(i.type, i.number) FROM content_items i
     WHERE i.model_id = g.model_id AND i.id = g.proposed_collection_id) AS collection_public_id,
   (SELECT public_item_id(i.type, i.number) FROM content_items i
-    WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_public_id`
+    WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_public_id,
+  (SELECT public_item_id(i.type, i.number) FROM inbox_draft_candidates c
+     JOIN inbox_drafts x ON x.model_id = c.model_id AND x.id = c.draft_id
+     JOIN content_items i ON i.model_id = c.model_id AND i.id = c.item_id
+    WHERE c.model_id = g.model_id AND x.group_id = g.id AND x.state <> 'resolved'
+      AND c.kind = 'existing_item' AND c.dismissed_at IS NULL AND c.signals ? 'revision_id'
+    LIMIT 1) AS fix_item_public,
+  (SELECT c.signals ->> 'revision_id' FROM inbox_draft_candidates c
+     JOIN inbox_drafts x ON x.model_id = c.model_id AND x.id = c.draft_id
+    WHERE c.model_id = g.model_id AND x.group_id = g.id AND x.state <> 'resolved'
+      AND c.kind = 'existing_item' AND c.dismissed_at IS NULL AND c.signals ? 'revision_id'
+    LIMIT 1) AS fix_revision_id,
+  EXISTS (SELECT 1 FROM inbox_draft_candidates c
+            JOIN inbox_drafts x ON x.model_id = c.model_id AND x.id = c.draft_id
+           WHERE c.model_id = g.model_id AND x.group_id = g.id AND x.state <> 'resolved'
+             AND c.kind = 'order' AND c.chosen AND c.chosen_by IS NULL
+             AND c.order_id = g.custom_order_id) AS order_proposed`
 
 async function loadGroups(q: Queryable, modelId: string, groupIds: string[]): Promise<GroupRow[]> {
   if (groupIds.length === 0) return []
@@ -713,7 +768,7 @@ async function loadExtras(
   }
   const { rows } = await q.execute<{
     group_id: string
-    kind: 'order' | 'similar_photo'
+    kind: 'order' | 'similar_photo' | 'existing_item'
     order_id: string | null
     item_public: string | null
     handle: string | null
@@ -721,13 +776,23 @@ async function loadExtras(
     buyer: string | null
     brief: string | null
     due: string | null
+    card_on: string | null
     signals: Record<string, unknown> | null
+    by_rule: boolean
+    revision: string | null
+    revision_on: string | null
   }>(sql`
     SELECT d.group_id, c.kind, c.order_id, public_item_id(i.type, i.number) AS item_public,
            m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '') AS handle, m.ordinal,
            o.buyer_name AS buyer, o.brief, (o.due_at AT TIME ZONE 'Europe/Moscow')::date::text AS due,
-           c.signals
+           (o.card_at AT TIME ZONE 'Europe/Moscow')::date::text AS card_on,
+           c.signals, c.chosen AND c.chosen_by IS NULL AS by_rule,
+           rv.requirement AS revision,
+           (rv.requested_at AT TIME ZONE 'Europe/Moscow')::date::text AS revision_on
       FROM inbox_draft_candidates c
+      LEFT JOIN custom_order_revisions rv
+        ON c.kind = 'existing_item' AND rv.model_id = c.model_id
+       AND rv.id = (c.signals ->> 'revision_id')::uuid
       JOIN inbox_drafts d ON d.model_id = c.model_id AND d.id = c.draft_id
       LEFT JOIN content_items i ON i.model_id = c.model_id AND i.id = c.item_id
       LEFT JOIN asset_versions v ON v.model_id = c.model_id AND v.id = c.version_id
@@ -735,12 +800,31 @@ async function loadExtras(
                                   AND m.kind = 'owned'
       LEFT JOIN custom_orders o ON o.model_id = c.model_id AND o.id = c.order_id
      WHERE c.model_id = ${modelId}::uuid AND c.dismissed_at IS NULL
-       AND c.kind IN ('order', 'similar_photo')
+       AND c.kind IN ('order', 'similar_photo', 'existing_item')
        AND d.group_id = ANY (${sql.param([...groupIds])}::uuid[]) AND ${OPEN_DRAFT}
      ORDER BY c.score DESC NULLS LAST, c.created_at`)
+  const said = new Set<string>()
   for (const row of rows) {
     const entry: Extras = extras.get(row.group_id) ?? { hints: [], candidates: [] }
     extras.set(row.group_id, entry)
+    // What the rule saw (SPEC §8.2): the order it chose by itself and the fix it waits for.
+    if (row.by_rule && !said.has(`${row.group_id}:${row.kind}`)) {
+      said.add(`${row.group_id}:${row.kind}`)
+      if (row.kind === 'order') {
+        const title = orderTitleOf(row.brief ?? '') || row.buyer || 'Заказ'
+        const matched = matchedWords(row.signals).join(' · ')
+        entry.hints.push({
+          kind: 'order_match',
+          text: `Заказ «${title}»${row.card_on ? ` от ${shortDay(row.card_on)}` : ''}: ${matched}`,
+        })
+      } else if (row.kind === 'existing_item' && row.revision) {
+        entry.hints.push({
+          kind: 'order_match',
+          text: `Правка${row.revision_on ? ` от ${shortDay(row.revision_on)}` : ''} к ${row.item_public}: «${row.revision}»`,
+        })
+      }
+      continue
+    }
     if (row.kind === 'similar_photo' && row.item_public) {
       const number = row.ordinal ? ` № ${row.ordinal}` : ''
       entry.hints.push({
@@ -756,10 +840,10 @@ async function loadExtras(
     ) {
       entry.candidates.push({
         order_id: row.order_id,
-        title: row.buyer ?? 'Заказ',
+        title: orderTitleOf(row.brief ?? '') || row.buyer || 'Заказ',
         deadline: row.due,
         excerpt: (row.brief ?? '').slice(0, 140),
-        matched: Object.keys(row.signals ?? {}),
+        matched: matchedWords(row.signals),
       })
     }
   }

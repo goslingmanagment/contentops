@@ -13,6 +13,7 @@ import { queueMedia } from './fetch'
 import { bindFrame, ordinalOfHandle, rawFrame } from './frames'
 import { placementOf, titleFromFileName } from './grouping'
 import { ITEM_TO_DB_TYPE } from './inbox-view'
+import { suggestOrders } from './order-suggest'
 import { planRow } from './row-upload'
 import { acceptRowMontage } from './upload'
 
@@ -314,11 +315,23 @@ export async function chooseOrder(
     UPDATE inbox_groups SET custom_order_id = ${orderId}::uuid,
            proposed_type = CASE WHEN ${orderId}::uuid IS NULL THEN proposed_type ELSE 'CUS' END
      WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
+  // A person's answer ends the order the system chose (SPEC §8.2): another order or «Без
+  // заказа» takes back its mark and its «похоже на исправление»; the same order becomes theirs.
+  await tx.execute(sql`
+    UPDATE inbox_draft_candidates SET chosen = false, chosen_at = NULL, chosen_by = NULL
+     WHERE model_id = ${model.id}::uuid AND draft_id = ANY (${sql.param([...draftIds])}::uuid[])
+       AND kind = 'order' AND chosen AND order_id IS DISTINCT FROM ${orderId}::uuid`)
+  await tx.execute(sql`
+    UPDATE inbox_draft_candidates SET dismissed_at = now()
+     WHERE model_id = ${model.id}::uuid AND draft_id = ANY (${sql.param([...draftIds])}::uuid[])
+       AND kind = 'existing_item' AND dismissed_at IS NULL
+       AND order_id IS DISTINCT FROM ${orderId}::uuid`)
   if (orderId) {
     await tx.execute(sql`
       UPDATE inbox_draft_candidates SET chosen = true, chosen_at = now(), chosen_by = ${actor.id}::uuid
        WHERE model_id = ${model.id}::uuid AND draft_id = ANY (${sql.param([...draftIds])}::uuid[])
-         AND kind = 'order' AND order_id = ${orderId}::uuid AND NOT chosen`)
+         AND kind = 'order' AND order_id = ${orderId}::uuid
+         AND (NOT chosen OR chosen_by IS NULL)`)
   }
   await tx.execute(sql`
     UPDATE inbox_drafts SET blocked_reason = NULL, updated_at = now(), row_version = row_version + 1
@@ -349,6 +362,7 @@ export async function decide(
         UPDATE inbox_groups SET proposed_type = ${ITEM_TO_DB_TYPE[body.type]}
          WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
       await clear('needs_type')
+      if (body.type === 'custom') await suggestOrders(tx, model.id, [groupId])
       break
     case 'which_order':
       await chooseOrder(tx, model, actor, groupId, body.order_id, ids)
