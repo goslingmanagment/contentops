@@ -4,7 +4,7 @@ import type { AccountCode, LocalDate, LocalTime } from './domain/common'
  * Имена скачиваний и экспортов по naming §4–6 — одно место правды для сервера,
  * подсказок «будущее имя» и квитанций:
  *
- * `ID[_slug]_role[NN][_uN][_vN][__account_YYYY-MM-DD[_HHMM]][__NmSSs].ext`
+ * `ID[_slug][_NN]_role[NN][_uN][_vN][__account_YYYY-MM-DD[_HHMM]][__NmSSs].ext`
  *
  * Что именно отдаёт каждый вид скачивания — в `download-files.ts`.
  */
@@ -28,7 +28,7 @@ export type NameRole = (typeof NAME_ROLES)[number]
  * код страницы как есть, с несколькими дефисами (`lora-vip-of`, DESIGN §10).
  */
 export const EXPORT_NAME_PATTERN =
-  /^(?<id>(?:PPV|SET|SXT|CUS|FYP|LIFE|RAW|PRM)-\d{3,6})(?:_(?<slug>[a-z][a-z0-9]*(?:-[a-z0-9]+)*))?_(?<role>master|teaser|preview|pic|raw|ed|clip|thumb|cap)(?<ord>\d{2,3})?(?:_u(?<uniq>[1-9]\d*))?(?:_v(?<version>[2-9]|[1-9]\d+))?(?:__(?<account>[a-z0-9]+(?:-[a-z0-9]+)+)_(?<date>\d{4}-\d{2}-\d{2})(?:_(?<hhmm>\d{4}))?)?(?:__(?<dur>\d+m\d{2}s))?\.(?<ext>[a-z0-9]{2,4})$/
+  /^(?<id>(?:PPV|SET|SXT|CUS|FYP|LIFE|RAW|PRM)-\d{3,6})(?:_(?<slug>[a-z][a-z0-9]*(?:-[a-z0-9]+)*))?(?:_(?<pos>\d{2,3}))?_(?<role>master|teaser|preview|pic|raw|ed|clip|thumb|cap)(?<ord>\d{2,3})?(?:_u(?<uniq>[1-9]\d*))?(?:_v(?<version>[2-9]|[1-9]\d+))?(?:__(?<account>[a-z0-9]+(?:-[a-z0-9]+)+)_(?<date>\d{4}-\d{2}-\d{2})(?:_(?<hhmm>\d{4}))?)?(?:__(?<dur>\d+m\d{2}s))?\.(?<ext>[a-z0-9]{2,4})$/
 
 /** Лимит длины имени скачивания (naming §5). */
 export const NAME_LIMIT = 100
@@ -162,12 +162,20 @@ export interface NameSlot {
   time: LocalTime | null
 }
 
+/** Номер файла в порядке показа и сколько всего файлов: ширина номера (naming §5). */
+export interface ShowOrder {
+  index: number
+  total: number
+}
+
 /** Части одного имени скачивания; пустое поле в имя не попадает. */
 export interface NameParts {
   id: string
   title: string
   /** Короткое английское название; без него slug — транслит `title`. */
   title_en?: string | null
+  /** Номер показа у секстинга: `_07_` перед ролью (naming §5). */
+  order?: ShowOrder | null
   role: NameRole
   /** Номер порядковой роли: `pic03`, `ed12`. */
   ordinal?: number | null
@@ -184,6 +192,11 @@ export interface NameParts {
 /** `01…99`, дальше три цифры (ORD naming §5). */
 export function ordinalToken(ordinal: number): string {
   return String(ordinal).padStart(2, '0')
+}
+
+/** Номер по порядку: две цифры, при сотне файлов и больше — три (naming §5–6). */
+export function orderToken(index: number, total: number): string {
+  return String(index).padStart(total > 99 ? 3 : 2, '0')
 }
 
 /** `13m24s`: минуты без ограничения, секунды двумя цифрами. */
@@ -212,7 +225,8 @@ function assemble(parts: NameParts, slug: string): string {
     parts.duration_s !== null && parts.duration_s !== undefined
       ? `__${durationToken(parts.duration_s)}`
       : ''
-  const head = slug ? `${parts.id}_${slug}` : parts.id
+  const order = parts.order ? `_${orderToken(parts.order.index, parts.order.total)}` : ''
+  const head = `${slug ? `${parts.id}_${slug}` : parts.id}${order}`
   return `${head}_${parts.role}${ordinal}${uniq}${version}${slotToken(parts.slot)}${duration}.${normalizeExt(parts.ext)}`
 }
 
@@ -241,8 +255,7 @@ export function promoMemberName(
   source: { id: string; role: NameRole; ordinal: number | null; uniq?: number | null },
   ext: string,
 ): string {
-  const width = total > 99 ? 3 : 2
-  const order = String(index).padStart(width, '0')
+  const order = orderToken(index, total)
   const role = source.uniq
     ? `-u${source.uniq}`
     : source.role === 'master'

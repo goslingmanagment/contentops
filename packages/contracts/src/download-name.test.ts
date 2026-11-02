@@ -114,6 +114,29 @@ describe('имя из карточки каталога (naming §6)', () => {
     expect(parsed(name)).toMatchObject({ role: 'ed', ord: '03', ext: 'jpg' })
   })
 
+  it('секстинг: номер показа перед ролью, папка сортируется в порядке показа', () => {
+    const shown = (['pic', 'clip', 'pic'] as const).map((role, i) =>
+      exportName({
+        id: 'SXT-003',
+        title: 'Йога, дилдо, сквирт',
+        title_en: 'yoga squirt',
+        order: { index: i + 1, total: 3 },
+        role,
+        ordinal: role === 'clip' ? 1 : i === 0 ? 1 : 2,
+        ext: role === 'clip' ? 'mp4' : 'jpg',
+      }),
+    )
+    expect(shown).toEqual([
+      'SXT-003_yoga-squirt_01_pic01.jpg',
+      'SXT-003_yoga-squirt_02_clip01.mp4',
+      'SXT-003_yoga-squirt_03_pic02.jpg',
+    ])
+    expect([...shown].sort()).toEqual(shown)
+    expect(parsed(shown[1] ?? '')).toMatchObject({ pos: '02', role: 'clip', ord: '01' })
+    // Имя без slug, как его пишут руками: `SXT-002_01_pic01.jpg`.
+    expect(parsed('SXT-002_01_pic01.jpg')).toMatchObject({ id: 'SXT-002', pos: '01', ord: '01' })
+  })
+
   it('длительность — у PPV и кастомов: `__13m24s`', () => {
     const name = exportName({
       id: 'PPV-073',

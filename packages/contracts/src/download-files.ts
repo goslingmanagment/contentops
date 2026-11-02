@@ -1,7 +1,13 @@
 import type { DownloadKind } from './commands/objects'
 import type { CatalogEntry } from './domain/catalog'
 import type { ItemFile } from './domain/files'
-import { exportName, fanFileName, type NameRole, type NameSlot } from './download-name'
+import {
+  exportName,
+  fanFileName,
+  type NameRole,
+  type NameSlot,
+  type ShowOrder,
+} from './download-name'
 
 /**
  * Что отдаёт каждый вид скачивания (DESIGN §4.4–4.5, SPEC §9.3) и как называются его
@@ -21,10 +27,11 @@ export interface DeliveryOptions {
   model?: string
 }
 
-/** Роль файла в имени и номер порядковой роли. */
+/** Роль файла в имени, номер порядковой роли и у секстинга — номер показа. */
 export interface FileHandle {
   role: NameRole
   ordinal: number | null
+  order?: ShowOrder | null
 }
 
 /** Файл выдачи: имя, из какого файла объекта и что с ним сделано. */
@@ -57,6 +64,21 @@ function rankAmong(files: readonly ItemFile[], file: ItemFile, same: (other: Ite
 }
 
 /**
+ * Номер показа у секстинга (naming §5): фото и видео нумеруются по ролям раздельно,
+ * общий порядок держит этот номер.
+ */
+function showOrderOf(
+  entry: DownloadEntry,
+  files: readonly ItemFile[],
+  file: ItemFile,
+): ShowOrder | null {
+  if (entry.type !== 'sexting') return null
+  const shown = files.filter((other) => other.position !== null).sort(byPosition)
+  const index = shown.indexOf(file) + 1
+  return index > 0 ? { index, total: shown.length } : null
+}
+
+/**
  * Роль файла в имени (naming §3): мастер и монтаж фупа — `master`; кадр сета — `raw`
  * с номером кадра по съёмке; остальные фото — `pic`, видео — `clip` по порядку.
  */
@@ -65,6 +87,11 @@ export function handleOf(
   files: readonly ItemFile[],
   file: ItemFile,
 ): FileHandle {
+  const order = showOrderOf(entry, files, file)
+  return order ? { ...roleOf(entry, files, file), order } : roleOf(entry, files, file)
+}
+
+function roleOf(entry: DownloadEntry, files: readonly ItemFile[], file: ItemFile): FileHandle {
   switch (file.role) {
     case 'master':
     case 'montage':
@@ -118,6 +145,7 @@ function deliver(
     id: entry.id,
     title: entry.title,
     title_en: entry.title_en,
+    order: handle.order ?? null,
     role: handle.role,
     ordinal: handle.ordinal,
     uniq: main ? (options.uniq ?? null) : null,
