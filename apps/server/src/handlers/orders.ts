@@ -8,6 +8,8 @@ import { filterDigest, readCursor, writeCursor } from '../catalog/paging'
 import { requireActor } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import type { HandlerRegistry } from '../handlers'
+import { IMPORT_ACTOR } from '../legacy/auto-accept'
+import { attachAcceptedCustoms } from '../legacy/customs'
 import { agentSilence, orderView, orderViews, type ViewContext } from '../orders/view'
 import {
   addOrderMessage,
@@ -17,6 +19,7 @@ import {
   completeRevision,
   createOrder,
   linkDelivery,
+  lockOrder,
   markPart,
   reopenRevision,
   retractDelivery,
@@ -128,7 +131,13 @@ export function orderHandlers({ db, command }: Services): HandlerRegistry {
       create: ({ body, ctx }) =>
         onOrder(
           { ctx, body },
-          (tx, model, actor) => createOrder(tx, model, body, actor),
+          async (tx, model, actor) => {
+            const address = await createOrder(tx, model, body, actor)
+            // An old custom accepted before its order (SPEC §6.3): linked when the rule says so.
+            const { id } = await lockOrder(tx, model, address)
+            await attachAcceptedCustoms(tx, model, IMPORT_ACTOR, id)
+            return address
+          },
           (address) => address,
         ),
 
@@ -187,7 +196,14 @@ export function orderHandlers({ db, command }: Services): HandlerRegistry {
       addMessage: ({ params, body, ctx }) =>
         onOrder(
           { ctx, body },
-          (tx, model, actor) => addOrderMessage(tx, model, params.order, body, actor),
+          async (tx, model, actor) => {
+            await addOrderMessage(tx, model, params.order, body, actor)
+            // The model's line under the card names a custom accepted earlier (SPEC §6.3).
+            if (body.kind === 'delivery') {
+              const { id } = await lockOrder(tx, model, params.order)
+              await attachAcceptedCustoms(tx, model, IMPORT_ACTOR, id)
+            }
+          },
           params.order,
         ),
 

@@ -11,7 +11,8 @@ import {
 import { type ParsedLegacyPath, planLegacyImport } from '@contentops/legacy'
 import { sql } from 'drizzle-orm'
 import { mediaKindOf } from '../intake/grouping'
-import { autoAcceptGroup } from './auto-accept'
+import { autoAcceptGroup, IMPORT_ACTOR } from './auto-accept'
+import { attachAcceptedCustoms } from './customs'
 import { readInputs } from './inputs'
 import { displayRoot, ROOTS } from './review'
 import { type SnapshotEntry, type SnapshotWork, snapshotListing, snapshotOf } from './snapshot'
@@ -69,6 +70,8 @@ export interface BytesReport {
   not_media: number
   accepted_now: number
   aliased_now: number
+  /** Accepted customs linked to their orders now: the orders came after them (SPEC §6.3). */
+  orders_linked: number
   queued: Record<string, number>
   waiting: number
 }
@@ -186,6 +189,7 @@ export async function importBytes(ctx: WorkContext): Promise<WorkSuccess> {
     not_media: files.length - media.length,
     accepted_now: 0,
     aliased_now: 0,
+    orders_linked: 0,
     queued: {},
     waiting: 0,
   }
@@ -226,6 +230,17 @@ export async function importBytes(ctx: WorkContext): Promise<WorkSuccess> {
       report.queued[outcome.reason] = (report.queued[outcome.reason] ?? 0) + 1
     } else if (outcome.reason !== 'nothing_open') report.waiting += 1
   }
+  // Customs accepted before their orders were made: linked now where the rule finds one order.
+  report.orders_linked = await withActorTx(
+    db,
+    {
+      actor: SYSTEM_ACTOR('импорт'),
+      action: 'legacy.order',
+      requestId: `import:${work.id}:orders`,
+      workId: work.id,
+    },
+    (tx) => attachAcceptedCustoms(tx, scopeModel, IMPORT_ACTOR),
+  )
   return { report }
 }
 

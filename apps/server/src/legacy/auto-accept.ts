@@ -6,6 +6,7 @@ import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import { acceptGroup } from '../intake/accept'
 import { acceptedDuplicate, resolveAlias } from '../intake/fetch'
+import { linkCustom, orderForGroup } from './customs'
 import { channelOf, importPacks, linkDuplicates } from './promo'
 import { collisions, numberUnits } from './review'
 
@@ -41,6 +42,7 @@ export interface UnitNumber {
 interface GroupRow extends Record<string, unknown> {
   id: string
   closed_at: string | null
+  custom_order_id: string | null
   proposed_type: string | null
   proposed_title: string | null
   evidence: {
@@ -113,7 +115,7 @@ export async function autoAcceptGroup(
   groupId: string,
 ): Promise<AutoOutcome> {
   const { rows } = await tx.execute<GroupRow>(sql`
-    SELECT id, closed_at, proposed_type, proposed_title, evidence FROM inbox_groups
+    SELECT id, closed_at, custom_order_id, proposed_type, proposed_title, evidence FROM inbox_groups
      WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
   const group = rows[0]
   if (!group?.evidence?.legacy) return { kind: 'waiting', reason: 'not_legacy' }
@@ -158,13 +160,31 @@ export async function autoAcceptGroup(
   if (!group.proposed_type) return queue(tx, model.id, groupId, 'needs_type')
   const number = await numberFor(tx, model.id, group.evidence.number)
   if ('queue' in number) return queue(tx, model.id, groupId, number.queue)
+  // An old custom and its order (SPEC §6.3, `customs-match.ts`): one order — linked with the
+  // acceptance; several, or one without identity — ◆ «Какой заказ?» and the group waits.
+  const order =
+    group.proposed_type === 'CUS' && !group.custom_order_id
+      ? await orderForGroup(tx, model.id, groupId)
+      : null
+  if (order?.kind === 'ask') return queue(tx, model.id, groupId, 'ambiguous_order')
   try {
-    const result = await tx.transaction((inner) =>
-      acceptGroup(inner, model, IMPORT_ACTOR, groupId, {
+    const result = await tx.transaction(async (inner) => {
+      const accepted = await acceptGroup(inner, model, IMPORT_ACTOR, groupId, {
         as: 'default',
         legacy: { number: number.number, promoChannelId: channelId },
-      }),
-    )
+      })
+      if (order?.kind === 'link') {
+        await linkCustom(
+          inner,
+          model,
+          accepted.item_id,
+          order.candidate,
+          order.evidence,
+          IMPORT_ACTOR,
+        )
+      }
+      return accepted
+    })
     await settleClaims(tx, model.id, groupId, result.item_id, number.claim, group.evidence.number)
     if (channelId) {
       const { rows: made } = await tx.execute<{ id: string }>(sql`
@@ -197,7 +217,7 @@ export async function acceptKeepingLegacyNumber(
   body: AcceptCommand,
 ): Promise<AcceptResult> {
   const { rows } = await tx.execute<GroupRow>(sql`
-    SELECT id, closed_at, proposed_type, proposed_title, evidence FROM inbox_groups
+    SELECT id, closed_at, custom_order_id, proposed_type, proposed_title, evidence FROM inbox_groups
      WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
   const group = rows[0]
   const unit = group?.evidence?.legacy ? group.evidence.number : null
