@@ -7,6 +7,7 @@ import {
   UNIQ_LEVEL_LABEL,
 } from '@contentops/contracts'
 import type { ViewerFile } from '@contentops/ui/components/viewer'
+import { viewerMedia } from '@/lib/viewer-media'
 import { fypVersionKey } from '../files/file-keys'
 import { fileCover } from '../files/file-thumb'
 import { byKey, byPosition } from '../files/ordered-files'
@@ -20,16 +21,18 @@ export interface ViewerEntry {
   caption: string
 }
 
-function toViewerFile(entry: CatalogEntry, file: ItemFile, seedSuffix = ''): ViewerFile {
+export function toViewerFile(entry: CatalogEntry, file: ItemFile, seedSuffix = ''): ViewerFile {
   const cover = fileCover(entry, file)
   return {
     seed: `${cover.seed}${seedSuffix}`,
     kind: cover.kind,
     family: cover.family,
     type: file.media,
-    aspect: file.media === 'video' ? (file.width > file.height ? '16:9' : '9:16') : '3:4',
+    aspect: file.thumb.ratio,
+    ratio: file.width / file.height,
     durationSeconds: file.duration_s ?? undefined,
     label: file.label,
+    ...viewerMedia(file.thumb, file.preview),
   }
 }
 
@@ -95,6 +98,8 @@ function versionEntries(detail: ItemDetail): ViewerEntry[] {
       ...toViewerFile(detail.entry, montage, `:v${version.no}`),
       durationSeconds: version.duration_s,
       label: `версия ${version.no}`,
+      // Сама версия для страницы, а не монтаж: свой файл и своё превью.
+      ...viewerMedia(version.thumb, version.preview),
     },
     caption: `версия ${version.no} · ${UNIQ_LEVEL_LABEL[version.level]}`,
   }))
@@ -105,16 +110,29 @@ export function viewerEntries(detail: ItemDetail, search: ObjectSearch): ViewerE
   return [...fileEntries(detail, orderedFiles(detail, search)), ...versionEntries(detail)]
 }
 
-/** Прежняя версия мастера для `?v=1` и сравнения: та же сцена в другом свете. */
+/**
+ * Версия мастера для `?v=1` и сравнения: её собственные миниатюра, превью и кадры на общих
+ * с другими версиями таймкодах (DESIGN §3.5).
+ */
 export function masterVersionFile(detail: ItemDetail, version: number): ViewerFile | null {
   const master = detail.files.find((file) => file.role === 'master')
   if (!master) {
     return null
   }
   const suffix = version === master.current_version ? '' : `:v${version}`
-  const duration = master.versions.find((candidate) => candidate.no === version)?.duration_s
+  const own = master.versions.find((candidate) => candidate.no === version)
+  const file = toViewerFile(detail.entry, master, suffix)
   return {
-    ...toViewerFile(detail.entry, master, suffix),
-    durationSeconds: duration ?? master.duration_s ?? undefined,
+    ...file,
+    durationSeconds: own?.duration_s ?? master.duration_s ?? undefined,
+    ...(own?.preview ? viewerMedia(own.thumb, own.preview) : {}),
+    frames: own?.frames?.map((frame) => ({ seconds: frame.t_s, src: frame.thumb.url ?? null })),
   }
+}
+
+/** Пока превью собирается, карточку перечитывают — готовое превью встаёт само (DESIGN §3.5). */
+export const BUILDING_REFETCH_MS = 3000
+
+export function isBuilding(files: readonly (ViewerFile | undefined)[]): boolean {
+  return files.some((file) => file?.src === null && file.building)
 }

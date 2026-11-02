@@ -99,7 +99,7 @@ export function MasterSection({
         {older.map((version) => (
           <PreviewTile
             key={version.no}
-            cover={versionCover(detail.entry, version.no, master?.current_version ?? 1)}
+            cover={versionCover(detail.entry, version, master?.current_version ?? 1)}
             width={MASTER_WIDTH}
             durationSeconds={version.duration_s ?? undefined}
             dimmed

@@ -4,6 +4,7 @@ import {
   ActorRefSchema,
   InstantSchema,
   LocalDateSchema,
+  MediaPreviewSchema,
   ModelCodeSchema,
   ProgressSchema,
   RecordVersionSchema,
@@ -146,6 +147,8 @@ export const DraftFileSchema = z.object({
   duration_s: z.number().nonnegative().nullable(),
   size_bytes: z.int().nonnegative(),
   thumb: ThumbRefSchema,
+  /** What the viewer plays or shows, built from the source (SPEC §6.1); absent from the stub. */
+  preview: MediaPreviewSchema.optional(),
   shot_at: InstantSchema.nullable(),
 })
 export type DraftFile = z.infer<typeof DraftFileSchema>

@@ -29,6 +29,7 @@ export function Filmstrip({ files, index, onIndexChange }: FilmstripProps) {
             family={file.family}
             aspect="3:4"
             mediaAspect={file.aspect}
+            src={file.thumb}
             showCaptions={false}
             className="h-16 rounded-none"
           />

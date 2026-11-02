@@ -13,9 +13,22 @@ function itemQuery(api: ApiClient, model: ModelCode, id: ItemId) {
 }
 
 /** Карточка объекта целиком: файлы, размещение, разметка, происхождение, история. */
-export function useItem(model: ModelCode, id: ItemId, options: { enabled?: boolean } = {}) {
+export function useItem(
+  model: ModelCode,
+  id: ItemId,
+  options: {
+    enabled?: boolean
+    /** Перечитывать раз в столько мс: пока превью в просмотре собирается. */
+    refetchInterval?: number | false | ((detail: ItemDetail | undefined) => number | false)
+  } = {},
+) {
   const api = useApi()
-  return useQuery({ ...itemQuery(api, model, id), enabled: options.enabled ?? true })
+  const every = options.refetchInterval ?? false
+  return useQuery({
+    ...itemQuery(api, model, id),
+    enabled: options.enabled ?? true,
+    refetchInterval: typeof every === 'function' ? (query) => every(query.state.data) : every,
+  })
 }
 
 /**

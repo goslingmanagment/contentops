@@ -1,5 +1,6 @@
 import type { CatalogEntry } from '@contentops/contracts/domain/catalog'
-import type { MasterFrame } from '@contentops/contracts/domain/files'
+import type { MediaPreview } from '@contentops/contracts/domain/common'
+import type { FileVersion, MasterFrame } from '@contentops/contracts/domain/files'
 import {
   FILE_ROLE_LABEL,
   type FileRole,
@@ -13,6 +14,7 @@ import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
 import type { ModelScope } from '../context'
+import { mediaPreviews } from '../media/previews'
 import { itemOrderSummary } from '../orders/view'
 import { loadState } from '../plan/state'
 import { itemPages, versionPlacements } from '../plan/summaries'
@@ -64,6 +66,9 @@ export interface MembershipRow extends Record<string, unknown> {
   owner_variant_no: number | null
   /** Active `thumb640` generation of the version's master: the real thumbnail. */
   thumb_generation: string | null
+  /** Master and source hashes of the version, hex: its previews are found by them. */
+  master_hex: string
+  source_hex: string | null
 }
 
 /** The sub-handle of a file: `master`, `teaser`, `pic07`, `ed07`, `u2` (naming §3, §5). */
@@ -96,7 +101,8 @@ export async function memberships(
            (SELECT g.id FROM rendition_generations g
              WHERE g.master_sha256 = v.master_sha256 AND g.kind = 'thumb640' AND g.is_active
                AND g.state = 'ready' AND NOT g.meta_stripped
-             LIMIT 1) AS thumb_generation
+             LIMIT 1) AS thumb_generation,
+           encode(v.master_sha256, 'hex') AS master_hex, encode(v.source_sha256, 'hex') AS source_hex
       FROM item_memberships im
       JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id
       JOIN asset_versions v ON v.model_id = a.model_id
@@ -113,10 +119,17 @@ export async function memberships(
 }
 
 interface VersionRow extends Record<string, unknown> {
+  id: string
   asset_id: string
   version_no: number
   on: string
   duration_ms: number | null
+  width: number | null
+  height: number | null
+  media_kind: 'video' | 'image'
+  master_hex: string
+  source_hex: string | null
+  thumb_generation: string | null
 }
 
 const ORDINAL_LABEL: Partial<Record<FileRole, string>> = {
@@ -149,10 +162,11 @@ function fileOf(
   item: ItemRow,
   row: MembershipRow,
   position: number | null,
-  versions: readonly VersionRow[],
+  versions: readonly FileVersion[],
   processed: ReadonlySet<number>,
   owners: ReadonlyMap<string, ItemRow>,
   model: ModelScope,
+  preview: MediaPreview,
 ): ItemFile {
   const id = publicIdOfRow(item)
   const role = fileRole(item.type, row)
@@ -187,15 +201,9 @@ function fileOf(
       ratio: thumbRatio(row.media_kind, row.width, row.height),
       url: renditionUrl(model, row.thumb_generation, 'thumb-640.webp'),
     },
+    preview,
     current_version: row.version_no,
-    versions: versions
-      .filter((version) => version.asset_id === row.asset_id)
-      .map((version) => ({
-        no: version.version_no,
-        on: version.on,
-        reason: null,
-        duration_s: version.duration_ms ? Math.round(version.duration_ms / 1000) : null,
-      })),
+    versions: [...versions],
     state: { kind: 'ready' },
     selected: item.type === 'SET' ? row.selected : null,
     processed:
@@ -522,16 +530,162 @@ async function masterFrames(
   }))
 }
 
+/** Frames of each version for «Сравнить v1 / v2» (DESIGN §3.5): as many as the compare shows. */
+const COMPARE_FRAMES = 6
+
+/**
+ * Frames of video versions at the same timecodes — equal steps over the longest version, put on
+ * its frames and without repeats (a short clip has few) — each the nearest annotation frame of
+ * its version (SPEC §9.3 `frames/NNNN.webp`, every few seconds).
+ */
+async function alignedFrames(
+  q: Queryable,
+  model: ModelScope,
+  publicId: string,
+  versions: readonly VersionRow[],
+): Promise<Map<string, MasterFrame[]>> {
+  const out = new Map<string, MasterFrame[]>()
+  if (versions.length === 0) return out
+  const { rows } = await q.execute<{
+    version_id: string
+    generation: string
+    name: string
+    frame_ms: number
+  }>(sql`
+    SELECT v.id AS version_id, g.id AS generation, a.name, a.frame_ms::float8 AS frame_ms
+      FROM asset_versions v
+      JOIN rendition_generations g ON g.master_sha256 = v.master_sha256 AND g.kind = 'frames'
+                                  AND g.is_active AND g.state = 'ready' AND NOT g.meta_stripped
+      JOIN rendition_artifacts a ON a.generation_id = g.id AND a.state = 'ready'
+     WHERE v.model_id = ${model.id}::uuid
+       AND v.id = ANY(${sql.param(versions.map((version) => version.id))}::uuid[])
+       AND a.frame_ms IS NOT NULL
+     ORDER BY v.id, a.frame_ms`)
+  type FrameRow = (typeof rows)[number]
+  const framesOf = new Map<string, FrameRow[]>()
+  for (const row of rows)
+    framesOf.set(row.version_id, [...(framesOf.get(row.version_id) ?? []), row])
+  const nearest = (frames: readonly FrameRow[], moment: number) =>
+    frames.reduce((best, frame) =>
+      Math.abs(frame.frame_ms - moment) < Math.abs(best.frame_ms - moment) ? frame : best,
+    )
+  const longest = Math.max(...versions.map((version) => version.duration_ms ?? 0))
+  const reference = [...versions]
+    .filter((version) => framesOf.has(version.id))
+    .sort((a, b) => (b.duration_ms ?? 0) - (a.duration_ms ?? 0))[0]
+  if (!reference) return out
+  const own = framesOf.get(reference.id) ?? []
+  const span = longest || Math.max(...own.map((frame) => frame.frame_ms))
+  const moments = [
+    ...new Set(
+      Array.from(
+        { length: COMPARE_FRAMES },
+        (_, i) => nearest(own, (span * (i + 0.5)) / COMPARE_FRAMES).frame_ms,
+      ),
+    ),
+  ]
+  for (const version of versions) {
+    const frames = framesOf.get(version.id)
+    if (!frames) continue
+    const ratio = thumbRatio('video', version.width, version.height)
+    const end = version.duration_ms ?? Number.POSITIVE_INFINITY
+    out.set(
+      version.id,
+      moments
+        .filter((moment) => moment <= end)
+        .map((moment, i) => {
+          const frame = nearest(frames, moment)
+          return {
+            t_s: Math.round(frame.frame_ms / 100) / 10,
+            thumb: {
+              key: `${publicId}/frame${String(i + 1).padStart(2, '0')}-v${version.version_no}`,
+              ratio,
+              url: renditionUrl(model, frame.generation, frame.name),
+            },
+          }
+        }),
+    )
+  }
+  return out
+}
+
+/**
+ * Versions of the object's files. A file with one version gets the bare line; a file with more
+ * — a remontage, a fix — gets each version's thumbnail and preview, and a video its frames for
+ * the compare, so the viewer shows the version itself, not the current one.
+ */
+async function fileVersions(
+  q: Queryable,
+  model: ModelScope,
+  publicId: string,
+  assetIds: readonly string[],
+): Promise<Map<string, FileVersion[]>> {
+  const { rows } = await q.execute<VersionRow>(sql`
+    SELECT v.id, v.asset_id, v.version_no,
+           (v.created_at AT TIME ZONE 'Europe/Moscow')::date::text AS on,
+           v.duration_ms::float8 AS duration_ms, v.width, v.height, a.media_kind,
+           encode(v.master_sha256, 'hex') AS master_hex, encode(v.source_sha256, 'hex') AS source_hex,
+           (SELECT g.id FROM rendition_generations g
+             WHERE g.master_sha256 = v.master_sha256 AND g.kind = 'thumb640' AND g.is_active
+               AND g.state = 'ready' AND NOT g.meta_stripped
+             LIMIT 1) AS thumb_generation
+      FROM asset_versions v JOIN assets a ON a.model_id = v.model_id AND a.id = v.asset_id
+     WHERE v.model_id = ${model.id}::uuid
+       AND v.asset_id = ANY(${sql.param([...assetIds])}::uuid[])
+     ORDER BY v.asset_id, v.version_no`)
+  const count = new Map<string, number>()
+  for (const row of rows) count.set(row.asset_id, (count.get(row.asset_id) ?? 0) + 1)
+  const several = rows.filter((row) => (count.get(row.asset_id) ?? 0) > 1)
+  const previews = await mediaPreviews(
+    q,
+    model,
+    several.map((row) => ({
+      media: row.media_kind,
+      master: row.master_hex,
+      source: row.source_hex,
+    })),
+  )
+  const media = new Map(several.map((row, i) => [row.id, previews[i] as MediaPreview]))
+  const frames = await alignedFrames(
+    q,
+    model,
+    publicId,
+    several.filter((row) => row.media_kind === 'video'),
+  )
+  const out = new Map<string, FileVersion[]>()
+  for (const row of rows) {
+    const preview = media.get(row.id)
+    const version: FileVersion = {
+      no: row.version_no,
+      on: row.on,
+      reason: null,
+      duration_s: row.duration_ms ? Math.round(row.duration_ms / 1000) : null,
+      ...(preview
+        ? {
+            thumb: {
+              key: `${publicId}/${row.asset_id}-v${row.version_no}`,
+              ratio: thumbRatio(row.media_kind, row.width, row.height),
+              url: renditionUrl(model, row.thumb_generation, 'thumb-640.webp'),
+            },
+            preview,
+            ...(row.media_kind === 'video' ? { frames: frames.get(row.id) ?? [] } : {}),
+          }
+        : {}),
+    }
+    out.set(row.asset_id, [...(out.get(row.asset_id) ?? []), version])
+  }
+  return out
+}
+
 export async function itemDetail(q: Queryable, model: ModelScope, id: string): Promise<ItemDetail> {
   const item = await findItem(q, model, id, { withTombstones: true })
   const rows = await memberships(q, model, [item.id])
-  const { rows: versions } = await q.execute<VersionRow>(sql`
-    SELECT asset_id, version_no, (created_at AT TIME ZONE 'Europe/Moscow')::date::text AS on,
-           duration_ms::float8 AS duration_ms
-      FROM asset_versions
-     WHERE model_id = ${model.id}::uuid
-       AND asset_id = ANY(${sql.param(rows.map((row) => row.asset_id))}::uuid[])
-     ORDER BY asset_id, version_no`)
+  const versions = await fileVersions(
+    q,
+    model,
+    publicIdOfRow(item),
+    rows.map((row) => row.asset_id),
+  )
   const owners = await itemsByIds(
     q,
     model,
@@ -541,31 +695,42 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
     rows.flatMap((row) => (row.role === 'ed' && row.ordinal !== null ? [row.ordinal] : [])),
   )
   const base = rows.filter((row) => !(row.kind === 'owned' && row.variant_no > 0))
+  const previews = await mediaPreviews(
+    q,
+    model,
+    base.map((row) => ({ media: row.media_kind, master: row.master_hex, source: row.source_hex })),
+  )
   let rank = 0
-  const files = base.map((row) =>
+  const files = base.map((row, i) =>
     fileOf(
       item,
       row,
       ORDERED_ROLES.has(row.role) ? ++rank : null,
-      versions,
+      versions.get(row.asset_id) ?? [],
       processed,
       owners,
       model,
+      previews[i] as MediaPreview,
     ),
   )
-  const fypVersions: FypVersion[] = rows
-    .filter((row) => row.kind === 'owned' && row.variant_no > 0)
-    .map((row) => ({
-      no: row.variant_no,
-      level: row.uniq_level ?? 'soft',
-      thumb: {
-        key: `${publicIdOfRow(item)}/u${row.variant_no}`,
-        ratio: '9:16',
-        url: renditionUrl(model, row.thumb_generation, 'thumb-640.webp'),
-      },
-      duration_s: row.duration_ms ? Math.round(row.duration_ms / 1000) : 0,
-      placed: [],
-    }))
+  const variants = rows.filter((row) => row.kind === 'owned' && row.variant_no > 0)
+  const variantPreviews = await mediaPreviews(
+    q,
+    model,
+    variants.map((row) => ({ media: 'video', master: row.master_hex, source: row.source_hex })),
+  )
+  const fypVersions: FypVersion[] = variants.map((row, i) => ({
+    no: row.variant_no,
+    level: row.uniq_level ?? 'soft',
+    thumb: {
+      key: `${publicIdOfRow(item)}/u${row.variant_no}`,
+      ratio: '9:16',
+      url: renditionUrl(model, row.thumb_generation, 'thumb-640.webp'),
+    },
+    preview: variantPreviews[i] as MediaPreview,
+    duration_s: row.duration_ms ? Math.round(row.duration_ms / 1000) : 0,
+    placed: [],
+  }))
   const [entry] = item.deleted_at
     ? [tombstoneEntry(item, files)]
     : await catalogEntries(q, model, sql`AND c.item_id = ${item.id}::uuid`)

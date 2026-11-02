@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ViewerFile } from './viewer-file'
-import { ViewerMedia } from './viewer-media'
+import { MediaFrame, ViewerPhoto } from './viewer-media'
 
 interface ShutterCompareProps {
   left: ViewerFile
@@ -15,10 +15,10 @@ export function ShutterCompare({ left, right, leftLabel, rightLabel }: ShutterCo
   return (
     <div className="relative flex size-full flex-col items-center justify-center gap-4">
       <div className="relative flex min-h-0 w-full flex-1 items-center justify-center [container-type:size]">
-        <div className="relative">
-          <ViewerMedia file={left} />
+        <MediaFrame file={left}>
+          <ViewerPhoto file={left} onFailed={() => {}} />
           <div className="absolute inset-0" style={{ clipPath: `inset(0 0 0 ${split}%)` }}>
-            <ViewerMedia file={right} />
+            <ViewerPhoto file={right} onFailed={() => {}} />
           </div>
           <span
             aria-hidden
@@ -31,7 +31,7 @@ export function ShutterCompare({ left, right, leftLabel, rightLabel }: ShutterCo
           <span className="absolute top-2 right-2 rounded-sm bg-scrim px-1.5 text-2xs text-scrim-foreground">
             {rightLabel}
           </span>
-        </div>
+        </MediaFrame>
       </div>
       <input
         type="range"

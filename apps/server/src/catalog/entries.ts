@@ -85,7 +85,7 @@ const VIDEO_TYPES = new Set<ItemType>(['sexting', 'life', 'raw', 'promo'])
 
 /** Address of a rendition file of the model (SPEC §11.2). */
 export function renditionUrl(
-  model: ModelScope,
+  model: Pick<ModelScope, 'code'>,
   generation: string | null,
   name: string,
 ): string | null {

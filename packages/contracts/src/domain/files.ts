@@ -3,6 +3,7 @@ import {
   AccountCodeSchema,
   InstantSchema,
   LocalDateSchema,
+  MediaPreviewSchema,
   ProgressSchema,
   ThumbRefSchema,
 } from './common'
@@ -45,6 +46,13 @@ export const LIFE_ASSIGNMENT_LABEL: Record<LifeAssignment, string> = {
   both: 'оба',
 }
 
+/** «Кадры мастера»: up to ten frames at equal steps, with a timecode. */
+export const MasterFrameSchema = z.object({
+  t_s: z.number().nonnegative(),
+  thumb: ThumbRefSchema,
+})
+export type MasterFrame = z.infer<typeof MasterFrameSchema>
+
 /** A master rebuilt after a remontage or a fix is a new version; the old one stays. */
 export const FileVersionSchema = z.object({
   no: z.int().positive(),
@@ -52,6 +60,14 @@ export const FileVersionSchema = z.object({
   /** «перемонтаж», «до правки 20.09». */
   reason: z.string().nullable(),
   duration_s: z.number().nonnegative().nullable(),
+  /** The version's own pictures (SPEC §9.3), given when the file has more than one version. */
+  thumb: ThumbRefSchema.optional(),
+  preview: MediaPreviewSchema.optional(),
+  /**
+   * «Сравнить v1 / v2» of a video (DESIGN §3.5): frames of every version at the same timecodes
+   * of the longest one — the n-th frames of two versions show the same moment.
+   */
+  frames: z.array(MasterFrameSchema).optional(),
 })
 export type FileVersion = z.infer<typeof FileVersionSchema>
 
@@ -80,6 +96,8 @@ export const ItemFileSchema = z.object({
   height: z.int().positive(),
   size_bytes: z.int().nonnegative(),
   thumb: ThumbRefSchema,
+  /** What the viewer plays or shows; absent from the development stub, which has no bytes. */
+  preview: MediaPreviewSchema.optional(),
   current_version: z.int().positive(),
   versions: z.array(FileVersionSchema),
   state: FileStateSchema,
@@ -96,18 +114,13 @@ export const ItemFileSchema = z.object({
 })
 export type ItemFile = z.infer<typeof ItemFileSchema>
 
-/** «Кадры мастера»: up to ten frames at equal steps, with a timecode. */
-export const MasterFrameSchema = z.object({
-  t_s: z.number().nonnegative(),
-  thumb: ThumbRefSchema,
-})
-export type MasterFrame = z.infer<typeof MasterFrameSchema>
-
 /** A unique FYP version for a page: «версия 2 · подрезка». */
 export const FypVersionSchema = z.object({
   no: z.int().positive(),
   level: UniqLevelSchema,
   thumb: ThumbRefSchema,
+  /** The version itself in the viewer; absent from the development stub. */
+  preview: MediaPreviewSchema.optional(),
   duration_s: z.number().nonnegative(),
   placed: z.array(z.object({ account: AccountCodeSchema, on: LocalDateSchema.nullable() })),
 })

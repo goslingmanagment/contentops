@@ -14,6 +14,7 @@ import { sql } from 'drizzle-orm'
 import { instant, instantOrNull } from '../commands'
 import { ApiProblem } from '../errors'
 import { openDisputeCount } from '../legacy/review'
+import { mediaPreviews } from '../media/previews'
 import { frameChoices } from './frames'
 import { appendRefusal, newObjectRefusal, type Refusal } from './refusal'
 import { sourceThumbPath } from './source-thumbs'
@@ -728,6 +729,41 @@ export async function inboxList(
   }
 }
 
+/**
+ * What the viewer plays of the drafts (SPEC §6.1, DESIGN §3.5): the previews built from the
+ * source. Only a single group carries them — the viewer asks for it; the list stays light.
+ */
+async function withPreviews(
+  q: Queryable,
+  model: { id: string; code: string },
+  files: readonly DraftFile[],
+  drafts: readonly DraftRow[],
+): Promise<DraftFile[]> {
+  const previews = await mediaPreviews(
+    q,
+    model,
+    drafts.map((draft) => ({
+      media: draft.media_kind === 'video' ? 'video' : 'image',
+      master: null,
+      source: draft.source_hex,
+    })),
+  )
+  return files.map((file, index) => {
+    const preview = previews[index]
+    const draft = drafts[index]
+    if (!preview || !draft) return file
+    // Not fetched or checked yet: the preview comes with the first pass after the bytes.
+    const preparing = draft.state === 'discovered' || draft.state === 'processing'
+    return {
+      ...file,
+      preview:
+        preview.url || preview.building || !preparing
+          ? preview
+          : { ...preview, building: { progress: null } },
+    }
+  })
+}
+
 /** `GET /{model}/inbox/groups/{group}`: the group with what is still open, else its decision. */
 export async function inboxGroup(
   q: Queryable,
@@ -742,7 +778,7 @@ export async function inboxGroup(
     const drafts = await loadDrafts(q, modelId, [groupId], filter)
     const extras = await loadExtras(q, model, drafts)
     const shown = view(model.code, group, drafts, filter, now, extras.get(groupId))
-    if (shown) return shown
+    if (shown) return { ...shown, files: await withPreviews(q, model, shown.files, drafts) }
   }
   throw new ApiProblem('not_found', 'Такой группы нет')
 }
