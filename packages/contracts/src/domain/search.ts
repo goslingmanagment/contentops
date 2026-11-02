@@ -39,6 +39,38 @@ export const SearchResultSchema = z.object({
 })
 export type SearchResult = z.infer<typeof SearchResultSchema>
 
+/** SHA-256 of a file's bytes, lowercase hex: the browser hashes a dropped file (DESIGN §4.7). */
+export const Sha256HexSchema = z.string().regex(/^[0-9a-f]{64}$/)
+
+/**
+ * `GET /api/v1/<model>/search/file?sha256=` — «найдём такой же файл» (DESIGN §4.7, PRD §5
+ * «совпадающие файлы»): who holds exactly these bytes — a master or a source of a version, a
+ * copy issued for a page, a platform copy, a file of the old disk, a draft in «Приехало».
+ */
+export const FileMatchSchema = z.object({
+  /** `null` — a draft in «Приехало» not accepted yet. */
+  item_id: ItemIdSchema.nullable(),
+  title: z.string(),
+  /** «мастер», «исходник», «выданная копия», «копия для платформы», «в Приехало». */
+  what: z.string(),
+  /** Version of the asset; `null` for a draft. */
+  version: z.int().positive().nullable(),
+  /** A copy issued for a page: the page («Fansly 2») and the day. */
+  issued: z
+    .object({ account: AccountCodeSchema.nullable(), label: z.string().nullable(), on: z.string() })
+    .nullable(),
+  group_id: z.string().nullable(),
+})
+export type FileMatch = z.infer<typeof FileMatchSchema>
+
+export const FileSearchResultSchema = z.object({
+  sha256: Sha256HexSchema,
+  matches: z.array(FileMatchSchema),
+  /** «Этот файл: FYP-0412 версия 2 · Fansly 2 12.08» or «Такого файла нет». */
+  text: z.string(),
+})
+export type FileSearchResult = z.infer<typeof FileSearchResultSchema>
+
 /** `GET /api/v1/<model>/not-uploaded?account=` — one tab of «Ещё не залито». */
 export const NotUploadedPageSchema = z.object({
   account: AccountCodeSchema,

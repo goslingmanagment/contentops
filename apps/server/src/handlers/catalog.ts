@@ -8,6 +8,7 @@ import { sql } from 'drizzle-orm'
 import type { z } from 'zod'
 import { itemDetail } from '../catalog/detail'
 import { catalogEntries, contentTag } from '../catalog/entries'
+import { searchFile } from '../catalog/file-search'
 import { dbType, modelOf, publicIdOf } from '../catalog/ids'
 import { markupFields } from '../catalog/markup'
 import { filterDigest, pageOf, readCursor } from '../catalog/paging'
@@ -205,6 +206,7 @@ export function catalogHandlers({ db }: Services): HandlerRegistry {
       deleted: ({ ctx }) => deletedItems(db, modelOf(ctx.model), {}),
       resolve: ({ query, ctx }) => resolveQuery(db, modelOf(ctx.model), query.q),
       search: ({ query, ctx }) => searchCatalog(db, modelOf(ctx.model), query.q),
+      searchFile: ({ query, ctx }) => searchFile(db, modelOf(ctx.model), query.sha256),
       get: ({ params, ctx }) => itemDetail(db, modelOf(ctx.model), params.id),
     },
     markup: {

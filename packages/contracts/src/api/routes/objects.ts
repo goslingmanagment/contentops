@@ -25,7 +25,13 @@ import { MarkupValueSchema } from '../../domain/markup'
 import { DownloadAnswerSchema } from '../../domain/operations'
 import { BatchResultSchema, PageQuerySchema, pageSchema } from '../../domain/pagination'
 import { NewProvenanceLinkSchema } from '../../domain/provenance'
-import { NotUploadedPageSchema, ResolveResultSchema, SearchResultSchema } from '../../domain/search'
+import {
+  FileSearchResultSchema,
+  NotUploadedPageSchema,
+  ResolveResultSchema,
+  SearchResultSchema,
+  Sha256HexSchema,
+} from '../../domain/search'
 import { ItemCreatedSchema, OkSchema, UploadNowResultSchema } from '../responses'
 import { defineRoute, QueryListSchema } from '../route'
 
@@ -76,6 +82,13 @@ export const objectRoutes = {
     path: '/api/v1/{model}/search',
     query: z.object({ q: z.string() }),
     response: SearchResultSchema,
+  }),
+  /** «Отпустите — найдём такой же файл»: the browser sends the SHA-256 of the dropped file. */
+  searchFile: defineRoute({
+    method: 'GET',
+    path: '/api/v1/{model}/search/file',
+    query: z.object({ sha256: Sha256HexSchema }),
+    response: FileSearchResultSchema,
   }),
   notUploaded: defineRoute({
     method: 'GET',

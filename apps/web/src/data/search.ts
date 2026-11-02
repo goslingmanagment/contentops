@@ -71,6 +71,17 @@ export function useFoundObjects(model: ModelCode, query: string) {
   return { index, server, found }
 }
 
+/**
+ * Поиск по файлу (DESIGN §4.7): хэш брошенного файла считает браузер, сервер отвечает, у
+ * какого объекта такие же байты — мастер, исходник, выданная копия, копия для платформы,
+ * файл старого диска или черновик «Приехало».
+ */
+export function useFileSearch(model: ModelCode) {
+  const api = useApi()
+  return (sha256: string, signal?: AbortSignal) =>
+    api.objects.searchFile({ params: { model }, query: { sha256 }, signal })
+}
+
 /** «04:10»: минуты хронологии всегда двумя цифрами, как в плеере. */
 export function timelineTimecode(seconds: number): string {
   const text = formatDuration(seconds)

@@ -337,6 +337,23 @@ describe('lists', () => {
     expect(ids).not.toContain('FYP-0412')
   })
 
+  it('finds an object by the bytes of a file (DESIGN §4.7 «найдём такой же файл»)', async () => {
+    const { rows } = await server.db.execute<{ sha: string }>(sql`
+      SELECT encode(v.master_sha256, 'hex') AS sha FROM asset_versions v
+        JOIN assets a ON a.model_id = v.model_id AND a.id = v.asset_id
+        JOIN content_items i ON i.model_id = a.model_id AND i.id = a.created_in_item_id
+       WHERE public_item_id(i.type, i.number) = 'PPV-073' ORDER BY v.version_no DESC LIMIT 1`)
+    const sha = rows[0]?.sha as string
+    const found = (await get(`/api/v1/lora/search/file?sha256=${sha}`)).json()
+    expect(found.matches[0]).toMatchObject({ item_id: 'PPV-073', what: 'мастер' })
+    expect(found.text).toMatch(/^Этот файл: PPV-073/)
+    const none = (await get(`/api/v1/lora/search/file?sha256=${'0'.repeat(64)}`)).json()
+    expect(none).toMatchObject({ matches: [], text: 'Такого файла нет' })
+    // Another model never sees these bytes.
+    expect((await get(`/api/v1/ari/search/file?sha256=${sha}`)).json().matches).toEqual([])
+    expect((await get('/api/v1/lora/search/file?sha256=xyz')).statusCode).toBe(400)
+  })
+
   it('shows the journal of one object', async () => {
     const events = (await get('/api/v1/lora/journal?item=PPV-073')).json().items
     expect(events.length).toBeGreaterThan(0)
