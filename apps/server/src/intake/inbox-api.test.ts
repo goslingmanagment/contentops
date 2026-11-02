@@ -236,6 +236,14 @@ describe('«Приехало» from the source', () => {
     expect(whole.files.find((file) => file.file_name === '07.jpg')?.role_label).toBe('фото 7')
   })
 
+  it('the column counts «Приехало» as the tab «Новое» does', async () => {
+    const list = InboxListSchema.parse((await get('/api/v1/lora/inbox')).json())
+    const counters = (await get('/api/v1/admin/counters')).json()
+    const lora = counters.models.find((one: { model: string }) => one.model === 'lora')
+    expect(list.count).toBeGreaterThan(0)
+    expect(lora).toMatchObject({ inbox: list.count, attention: true })
+  })
+
   it('«Разбор старого» is empty before stage 3', async () => {
     const response = await get('/api/v1/lora/legacy')
     expect(response.statusCode).toBe(200)
