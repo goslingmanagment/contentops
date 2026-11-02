@@ -9,7 +9,14 @@ import { instant, requireActor } from '../commands'
 import type { RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
-import { areaOf, areaPatterns, describeEvent, type LogRow } from '../journal/describe'
+import {
+  actorOf,
+  areaOf,
+  areaPatterns,
+  describeEvent,
+  type LogRow,
+  SERVICE_ACTION_PATTERN,
+} from '../journal/describe'
 import { orderCondition } from '../orders/view'
 import type { Services } from '../services'
 
@@ -17,6 +24,10 @@ import type { Services } from '../services'
  * Журнал модели (DESIGN §4.18): only `action` rows, newest first, keyset pagination by
  * `(at, id)`. Events without a model (people, tokens, global switches and thresholds,
  * sign-ins) belong to no model's feed; the owner sees them in the journal of every model.
+ *
+ * What people and agents did is the default; the work queue's own rows (`work.*`, hundreds of
+ * thousands a day) show only with «Кто: система». Without them the feed reads the partial
+ * index `action_log_feed` instead of the whole journal.
  */
 
 type JournalQuery = z.output<typeof JournalQuerySchema>
@@ -63,14 +74,15 @@ function writeCursor(row: EventRow, digest: string): string {
 
 function eventOf(row: EventRow): JournalEvent {
   const { phrase, changes } = describeEvent(row)
+  const actor = actorOf(row)
   return {
     id: row.id,
     at: instant(row.at_text),
     actor: {
       type: row.actor_type === 'human' ? 'person' : row.actor_type,
       id: row.actor_id,
-      name: row.actor_label,
-      gender: row.gender,
+      name: actor.name,
+      gender: actor.gender,
     },
     area: areaOf(row.action),
     action: row.action,
@@ -98,29 +110,56 @@ async function journalPage(services: Services, ctx: RequestContext, query: Journ
   const order = query.order ? orderCondition(query.order) : null
   if (query.order && !order) return { items: [], next_cursor: null }
   const patterns = query.area ? areaPatterns(query.area) : null
+  const actorType = query.actor_type ? ACTOR_TYPE[query.actor_type] : null
+  // The queue's rows only for «Кто: система» without another «Что» (they are all «Система»).
+  const service = actorType === 'system' && (!query.area || query.area === 'system')
+  // Only the filters that are set: an `x IS NULL OR …` keeps the planner off the indexes.
+  const filters = [
+    sql`a.entry_kind = 'action'`,
+    ...(service ? [] : [sql.raw(`a.action NOT LIKE '${SERVICE_ACTION_PATTERN}'`)]),
+    ...(item ? [sql`a.item_id = ${item.id}::uuid`] : []),
+    ...(order
+      ? [
+          sql`a.subject_kind = 'custom_orders' AND a.subject_id = (
+            SELECT o.id FROM custom_orders o WHERE o.model_id = ${model.id}::uuid AND ${order})`,
+        ]
+      : []),
+    ...(actorType ? [sql`a.actor_type = ${actorType}`] : []),
+    ...(query.result ? [sql`a.result = ${query.result}`] : []),
+    ...(query.from ? [sql`a.at >= ${query.from}::timestamptz`] : []),
+    ...(query.to ? [sql`a.at <= ${query.to}::timestamptz`] : []),
+    ...(patterns ? [sql`a.action LIKE ANY(${sql.param(patterns)}::text[])`] : []),
+    ...(actor.role === 'reader' ? [sql`a.action NOT LIKE 'orders.%'`] : []),
+    ...(cursor
+      ? [
+          sql`a.at <= ${cursor.at}::timestamptz`,
+          sql`(a.at, a.id) < (${cursor.at}::timestamptz, ${cursor.id}::bigint)`,
+        ]
+      : []),
+  ]
+  const where = sql.join(filters, sql` AND `)
+  // Two ordered branches instead of `model_id = … OR model_id IS NULL`: each walks its index
+  // from the newest row and stops after a page.
+  const ownerOnly = actor.role === 'owner' && !item && !order
   const { rows } = await services.db.execute<EventRow>(sql`
+    WITH page AS (
+      (SELECT a.* FROM action_log a
+        WHERE a.model_id = ${model.id}::uuid AND ${where}
+        ORDER BY a.at DESC, a.id DESC LIMIT ${limit + 1})
+      ${
+        ownerOnly
+          ? sql`UNION ALL
+      (SELECT a.* FROM action_log a
+        WHERE a.model_id IS NULL AND ${where}
+        ORDER BY a.at DESC, a.id DESC LIMIT ${limit + 1})`
+          : sql``
+      }
+    )
     SELECT a.id::text AS id, a.at::text AS at_text, a.actor_type, a.actor_id, a.actor_label,
            p.gender, a.action, a.subject_label, a.before, a.after, a.result, a.request_id,
            i.type AS item_type, i.number AS item_number
-      FROM action_log a LEFT JOIN principals p ON p.id = a.actor_id
+      FROM page a LEFT JOIN principals p ON p.id = a.actor_id
       LEFT JOIN content_items i ON i.model_id = a.model_id AND i.id = a.item_id
-     WHERE a.entry_kind = 'action'
-       AND (${item?.id ?? null}::uuid IS NULL OR a.item_id = ${item?.id ?? null}::uuid)
-       ${
-         order
-           ? sql`AND a.subject_kind = 'custom_orders' AND a.subject_id = (
-               SELECT o.id FROM custom_orders o WHERE o.model_id = ${model.id}::uuid AND ${order})`
-           : sql``
-       }
-       AND (a.model_id = ${model.id}::uuid OR (${actor.role === 'owner'} AND a.model_id IS NULL))
-       AND (${query.actor_type ? ACTOR_TYPE[query.actor_type] : null}::text IS NULL
-            OR a.actor_type = ${query.actor_type ? ACTOR_TYPE[query.actor_type] : null})
-       AND (${query.result ?? null}::text IS NULL OR a.result = ${query.result ?? null})
-       AND (${query.from ?? null}::timestamptz IS NULL OR a.at >= ${query.from ?? null}::timestamptz)
-       AND (${query.to ?? null}::timestamptz IS NULL OR a.at <= ${query.to ?? null}::timestamptz)
-       AND (${patterns === null} OR a.action LIKE ANY(${sql.param(patterns ?? [])}::text[]))
-       ${actor.role === 'reader' ? sql`AND a.action NOT LIKE 'orders.%'` : sql``}
-       ${cursor ? sql`AND (a.at, a.id) < (${cursor.at}::timestamptz, ${cursor.id}::bigint)` : sql``}
      ORDER BY a.at DESC, a.id DESC
      LIMIT ${limit + 1}`)
   const page = rows.slice(0, limit)

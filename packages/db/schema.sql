@@ -2801,6 +2801,8 @@ CREATE INDEX action_log_actor_at ON public.action_log USING btree (actor_id, at 
 
 CREATE INDEX action_log_at_brin ON public.action_log USING brin (at);
 
+CREATE INDEX action_log_feed ON public.action_log USING btree (model_id, at DESC, id DESC) WHERE ((entry_kind = 'action'::text) AND (action !~~ 'work.%'::text));
+
 CREATE INDEX action_log_item_history ON public.action_log USING btree (model_id, item_id, at DESC) WHERE (entry_kind = 'action'::text);
 
 CREATE INDEX action_log_model_at ON public.action_log USING btree (model_id, at DESC);
