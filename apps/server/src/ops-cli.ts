@@ -13,7 +13,7 @@ import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
-import { opsAgent, opsPerson, opsPolicy, opsSwitch } from './ops-owner'
+import { opsAgent, opsContractor, opsPerson, opsPolicy, opsSwitch } from './ops-owner'
 import { smokeSetup } from './smoke/setup'
 
 /**
@@ -64,6 +64,11 @@ import { smokeSetup } from './smoke/setup'
  *   docker compose exec -T worker node dist/ops.js agent <name> --role manager --models lora [--token]
  *   docker compose exec -T worker node dist/ops.js switch ydisk.lora scan=on
  *
+ * A contractor of a model, as «Модели и страницы» adds one (owner only on the screen): the
+ * recipient «Подготовить передачу» needs:
+ *
+ *   docker compose exec -T worker node dist/ops.js contractor "<имя>" --model lora --channel twitter
+ *
  * A value of «Пороги» by its key, and the settings without a screen (`hub_ad_markers` of a page,
  * `import_batch_scope` of a model); `off` — not set:
  *
@@ -84,6 +89,7 @@ const USAGE = `usage:
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
   ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
   ops.js person <login> --name <имя> --role manager|reader --models <a,b>   (a temporary password once)
+  ops.js contractor <name> --model <m> [--channel <code>] [--contact <text>] [--format upload|master|compat]
   ops.js switch <integration> <switch>=on|off ...   (ydisk.lora scan=on, agents enabled=on)
   ops.js policy <key> <json|off> [--model <m>] [--page <p>] [--type PPV]   (thresholds, hub_ad_markers…)`
 
@@ -136,6 +142,9 @@ async function main(argv: string[]): Promise<number> {
       page: { type: 'string' },
       type: { type: 'string' },
       list: { type: 'string' },
+      channel: { type: 'string' },
+      contact: { type: 'string' },
+      format: { type: 'string' },
     },
     allowPositionals: true,
   })
@@ -287,6 +296,20 @@ async function main(argv: string[]): Promise<number> {
             .split(',')
             .map((code) => code.trim())
             .filter(Boolean),
+        }),
+      )
+      return 0
+    }
+    if (command === 'contractor') {
+      const [name] = positionals
+      if (!name || !values.model) throw new Error(USAGE)
+      out(
+        await opsContractor(db, {
+          name,
+          model: values.model,
+          channel: values.channel,
+          contact: values.contact,
+          format: values.format,
         }),
       )
       return 0
