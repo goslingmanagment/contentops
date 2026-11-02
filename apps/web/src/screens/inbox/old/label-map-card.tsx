@@ -114,6 +114,7 @@ export function LabelMapCard({ labels, accounts, saving, onSave }: LabelMapCardP
                 <Thumb
                   key={example.name}
                   seed={example.thumb.key}
+                  src={example.thumb.url}
                   showCaptions={false}
                   className="w-7.5 shrink-0 rounded-md"
                 />

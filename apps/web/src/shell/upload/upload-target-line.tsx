@@ -1,6 +1,7 @@
+import type { ItemId } from '@contentops/contracts'
 import { Thumb } from '@contentops/ui/components/thumb'
 import { InboxIcon } from 'lucide-react'
-import { itemCoverById } from '@/lib/item-cover'
+import { useItemCover } from '@/objects/use-item-cover'
 import type { UploadTarget } from './upload-target'
 
 /** «Куда»: объект или строка плана с миниатюрой; у «Другое» — группа в «Приехало». */
@@ -26,13 +27,7 @@ export function TargetLine({
   }
   return (
     <p className="flex min-w-0 items-center gap-3 text-base">
-      {target.kind === 'item' ? (
-        <Thumb
-          {...itemCoverById(target.itemId)}
-          showCaptions={false}
-          className="w-7.5 shrink-0 rounded-md"
-        />
-      ) : null}
+      {target.kind === 'item' ? <TargetThumb itemId={target.itemId} /> : null}
       <span className="min-w-0 truncate">
         {target.kind === 'item' ? (
           <span className="text-ink-3 tabular-nums">{target.itemId} · </span>
@@ -41,4 +36,9 @@ export function TargetLine({
       </span>
     </p>
   )
+}
+
+function TargetThumb({ itemId }: { itemId: ItemId }) {
+  const cover = useItemCover(itemId)
+  return <Thumb {...cover} showCaptions={false} className="w-7.5 shrink-0 rounded-md" />
 }

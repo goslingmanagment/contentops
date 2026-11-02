@@ -1,3 +1,4 @@
+import { allowSyntheticCovers } from '@contentops/ui/lib/synthetic-covers'
 import type { createMockSession } from './mock-session'
 
 type CreateMockSession = typeof createMockSession
@@ -12,6 +13,8 @@ let createMock: CreateMockSession | null = null
 export async function loadDevMock(): Promise<void> {
   if (import.meta.env.DEV) {
     createMock = (await import('./mock-session')).createMockSession
+    // У заглушки нет байтов: её объекты рисуются сценами (DESIGN §7.9).
+    allowSyntheticCovers()
   }
 }
 

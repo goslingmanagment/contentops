@@ -58,6 +58,7 @@ export function HandoffList({ handoffs, collections }: HandoffListProps) {
         <HandoffRow
           handoff={handoff}
           title={collections.get(handoff.collection_id)?.title ?? null}
+          cover={collections.get(handoff.collection_id)?.cover.url ?? null}
           selected={state.selected}
           onOpen={() => open(handoff)}
         />

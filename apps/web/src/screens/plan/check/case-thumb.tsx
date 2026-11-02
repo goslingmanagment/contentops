@@ -2,7 +2,7 @@ import type { ItemId, SurfaceKind } from '@contentops/contracts'
 import { Thumb } from '@contentops/ui/components/thumb'
 import { cn } from '@contentops/ui/lib/utils'
 import { NewspaperIcon, SquarePlayIcon } from 'lucide-react'
-import { itemCoverById } from '@/lib/item-cover'
+import { useItemCover } from '@/objects/use-item-cover'
 
 /** Строка сверки 40 × 53, строка «не проверено» 30 × 40 (DESIGN §7.6). */
 const SIZE = {
@@ -46,9 +46,24 @@ export function CaseThumb({
       </div>
     )
   }
+  return <OurCaseThumb itemId={itemId} size={size} dimmed={dimmed} className={className} />
+}
+
+function OurCaseThumb({
+  itemId,
+  size,
+  dimmed,
+  className,
+}: {
+  itemId: ItemId
+  size: keyof typeof SIZE
+  dimmed: boolean
+  className?: string
+}) {
+  const cover = useItemCover(itemId)
   return (
     <Thumb
-      {...itemCoverById(itemId)}
+      {...cover}
       showCaptions={false}
       className={cn(
         'shrink-0 rounded-md transition-opacity duration-160',

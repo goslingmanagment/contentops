@@ -1589,6 +1589,16 @@
                 },
                 "ok": {
                   "type": "boolean"
+                },
+                "thumb": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ThumbRef"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -10351,6 +10361,16 @@
                 },
                 "title": {
                   "type": "string"
+                },
+                "thumb": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ThumbRef"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [

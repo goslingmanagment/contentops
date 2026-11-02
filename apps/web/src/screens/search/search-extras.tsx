@@ -16,6 +16,8 @@ import { useCurrentModel } from '@/shell/model/model-context'
 export interface InboxDraft {
   group_id: string
   title: string
+  /** Миниатюра первого файла группы; `null` — её ещё нет. */
+  thumb?: { url?: string | null } | null
 }
 
 interface SearchExtrasProps {
@@ -140,6 +142,7 @@ export function SearchExtras(props: SearchExtrasProps) {
                 thumb={
                   <Thumb
                     seed={draft.group_id}
+                    src={draft.thumb?.url}
                     aspect="1:1"
                     showCaptions={false}
                     className="w-10 shrink-0 rounded-md"
