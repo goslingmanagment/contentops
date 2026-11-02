@@ -44,6 +44,7 @@ export function RowPreview({ row, entry, menu }: RowPreviewProps) {
             <Thumb
               {...(entry ? itemCover(entry) : itemCoverById(manifest.item_id))}
               seed={manifest.thumb.key}
+              src={manifest.thumb.url}
               mediaAspect={vertical ? '9:16' : undefined}
               className="rounded-lg"
             />

@@ -9,6 +9,8 @@ interface HandoffRowProps {
   handoff: Handoff
   /** Название подборки из индекса: «КП2 офис нейлон». */
   title: string | null
+  /** Обложка подборки из индекса — первый её материал; `null` — миниатюры нет. */
+  cover: string | null
   selected: boolean
   /** Открыть подборку с этой передачей в панели. */
   onOpen: () => void
@@ -18,7 +20,7 @@ interface HandoffRowProps {
  * Строка списка «Передачи» 52 (DESIGN §4.17): дата, подрядчик, подборка, «60 видео ·
  * 2,65 ГБ», состояние. Нажатие открывает подборку с этой передачей в панели.
  */
-export function HandoffRow({ handoff, title, selected, onOpen }: HandoffRowProps) {
+export function HandoffRow({ handoff, title, cover, selected, onOpen }: HandoffRowProps) {
   const today = useToday()
   const collection = title ? `${handoff.collection_id} · ${title}` : handoff.collection_id
   return (
@@ -32,6 +34,7 @@ export function HandoffRow({ handoff, title, selected, onOpen }: HandoffRowProps
       <Thumb
         seed={handoff.collection_id}
         kind="promo"
+        src={cover}
         aspect="1:1"
         showCaptions={false}
         className="w-10 shrink-0 rounded-md"

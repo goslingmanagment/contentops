@@ -1,4 +1,4 @@
-import type { Account, Order } from '@contentops/contracts'
+import type { Account, ItemId, Order } from '@contentops/contracts'
 import { StatusWord } from '@contentops/ui/components/status-word'
 import { StopRowClick } from '@contentops/ui/components/stop-row-click'
 import { Thumb } from '@contentops/ui/components/thumb'
@@ -6,7 +6,7 @@ import { WhyPopover } from '@contentops/ui/components/why-popover'
 import { cn } from '@contentops/ui/lib/utils'
 import { ExternalLinkIcon } from 'lucide-react'
 import { useToday } from '@/data/api-session'
-import { itemCoverById } from '@/lib/item-cover'
+import { useItemCover } from '@/objects/use-item-cover'
 import {
   deadlineText,
   orderMeta,
@@ -33,9 +33,7 @@ function deliveredItem(order: Order) {
 function OrderThumb({ order }: { order: Order }) {
   const item = deliveredItem(order)
   if (item) {
-    return (
-      <Thumb {...itemCoverById(item)} showCaptions={false} className="w-10 shrink-0 rounded-md" />
-    )
+    return <DeliveredThumb item={item} />
   }
   return (
     <span className="flex aspect-[3/4] w-10 shrink-0 items-center justify-center rounded-md border border-input border-dashed px-0.5 text-center text-2xs text-ink-3">
@@ -108,4 +106,9 @@ function CardLink({ url }: { url: string }) {
       <ExternalLinkIcon aria-hidden className="size-3.5" />
     </a>
   )
+}
+
+function DeliveredThumb({ item }: { item: ItemId }) {
+  const cover = useItemCover(item)
+  return <Thumb {...cover} showCaptions={false} className="w-10 shrink-0 rounded-md" />
 }

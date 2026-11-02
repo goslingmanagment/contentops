@@ -73,7 +73,15 @@ export const CheckCaseSchema = z.object({
   pair_matches: z.boolean().nullable(),
   posts: z.array(HubPostSchema),
   /** k из n: attachments with ✓ / ✗. */
-  attachments: z.array(z.object({ no: z.int().positive(), label: z.string(), ok: z.boolean() })),
+  attachments: z.array(
+    z.object({
+      no: z.int().positive(),
+      label: z.string(),
+      ok: z.boolean(),
+      /** The file's thumbnail; `null` while none is built. Absent from the stub. */
+      thumb: ThumbRefSchema.nullable().optional(),
+    }),
+  ),
   album: z.string().nullable(),
   /** Fansly, one variant, equal attachments, time and duration within tolerance. */
   unambiguous: z.boolean(),

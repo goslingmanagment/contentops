@@ -46,6 +46,7 @@ export function RowThumb({ row, size = 'row', className }: RowThumbProps) {
         seed={row.manifest.thumb.key}
         kind={cover.kind}
         family={cover.family}
+        src={row.manifest.thumb.url}
         showCaptions={false}
         className={cn(
           'rounded-md transition-opacity duration-160',

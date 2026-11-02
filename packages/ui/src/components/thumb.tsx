@@ -2,6 +2,7 @@ import { formatDuration } from '@contentops/contracts/format'
 import { cn } from 'cn'
 import { LayersIcon, PlayIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
+import { syntheticCoversAllowed } from '../lib/synthetic-covers'
 import { CoverArt } from './cover/cover-art'
 import { type CoverFamily, type CoverKind, pickCoverFamily } from './cover/families'
 import { aspectRatioValue, type CoverAspect } from './cover/scene'
@@ -44,15 +45,16 @@ export interface ThumbProps extends Omit<ComponentProps<'div'>, 'children'> {
   /** Размер растра обложки-заглушки: `screen` — для просмотра во весь экран. */
   resolution?: 'thumb' | 'screen'
   /**
-   * Настоящая миниатюра (`/api/v1/<model>/g/<поколение>/thumb-640.webp`); пока её нет —
-   * синтетическая обложка по `seed`. Грузится лениво, место держит `aspect-ratio`.
+   * Настоящая миниатюра (`/api/v1/<model>/g/<поколение>/thumb-640.webp`). Грузится лениво,
+   * место держит `aspect-ratio`. Нет её — серое место; рисованная сцена по `seed` — только
+   * у заглушки разработки (`allowSyntheticCovers`).
    */
   src?: string | null
 }
 
 /**
- * Миниатюра (DESIGN §7.6, §7.9): место держится заранее через `aspect-ratio`, обложка —
- * синтетическая сцена по ID. Подписи 11,5/14 на подложке `--scrim`.
+ * Миниатюра (DESIGN §7.6, §3.10): место держится заранее через `aspect-ratio`, картинка —
+ * настоящая миниатюра файла. Подписи 11,5/14 на подложке `--scrim`.
  */
 export function Thumb({
   seed,
@@ -89,7 +91,7 @@ export function Thumb({
       style={fill ? style : { aspectRatio: aspectRatioValue[aspect], ...style }}
       {...props}
     >
-      {src ? (
+      {!src && !syntheticCoversAllowed() ? null : src ? (
         <img
           src={src}
           alt=""

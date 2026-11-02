@@ -54,6 +54,7 @@ export function AttachmentGrid({ itemId, attachments }: AttachmentGridProps) {
               seed={`${cover.seed}-${attachment.no}`}
               kind={cover.kind}
               family={cover.family}
+              src={attachment.thumb?.url}
               aspect="1:1"
               showCaptions={false}
               overlay={<AttachmentSign ok={attachment.ok} />}

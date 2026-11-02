@@ -14,6 +14,7 @@ import { instant } from '../commands'
 import { labelMappings } from './labels'
 import { type ImportReport, lastImportWork } from './parse'
 import { snapshotOf } from './snapshot'
+import { legacyThumbs } from './thumbs'
 
 /**
  * «Приехало › Разбор старого» (DESIGN §4.9) from the database: the progress line by roots, the
@@ -467,7 +468,23 @@ export async function legacyReview(
   model: { id: string; code: string },
 ): Promise<LegacyReview> {
   const last = await lastImportWork(q, model.id, 'parse')
-  const disputes = await legacyDisputes(q, model.id, last?.report ?? null)
+  const found = await legacyDisputes(q, model.id, last?.report ?? null)
+  // The pictures a person decides by: the real thumbnails of the folders and files.
+  const objectOf = (ref: { key: string }) => ref.key.replace(/^legacy:/, '')
+  const thumbs = await legacyThumbs(
+    q,
+    model,
+    found.flatMap((dispute) => [
+      ...dispute.thumbs.map(objectOf),
+      ...dispute.folders.map((folder) => objectOf(folder.thumb)),
+    ]),
+  )
+  const real = <T extends { key: string }>(ref: T) => thumbs.get(objectOf(ref)) ?? ref
+  const disputes = found.map((dispute) => ({
+    ...dispute,
+    thumbs: dispute.thumbs.map(real),
+    folders: dispute.folders.map((folder) => ({ ...folder, thumb: real(folder.thumb) })),
+  }))
   return {
     progress: await progressOf(q, model.id, disputes),
     labels: await labelMappings(q, model),

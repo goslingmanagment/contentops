@@ -16,7 +16,7 @@ import { Thumb } from '@contentops/ui/components/thumb'
 import { Link } from '@tanstack/react-router'
 import { Fragment } from 'react'
 import { useToday } from '@/data/api-session'
-import { itemCoverById } from '@/lib/item-cover'
+import { useItemCover } from '@/objects/use-item-cover'
 
 interface JournalEventRowProps {
   event: JournalEvent
@@ -96,6 +96,7 @@ function Phrase({ event, model }: { event: JournalEvent; model: ModelCode }) {
 
 /** Миниатюра предмета ведёт в объект, даже когда номера нет во фразе. */
 function ItemThumb({ item, model }: { item: ItemId; model: ModelCode }) {
+  const cover = useItemCover(item)
   return (
     <Link
       to="/$model/i/$id"
@@ -105,12 +106,7 @@ function ItemThumb({ item, model }: { item: ItemId; model: ModelCode }) {
       title={item}
       className="block rounded-md"
     >
-      <Thumb
-        {...itemCoverById(item)}
-        aspect="1:1"
-        showCaptions={false}
-        className="w-8 rounded-md"
-      />
+      <Thumb {...cover} aspect="1:1" showCaptions={false} className="w-8 rounded-md" />
     </Link>
   )
 }

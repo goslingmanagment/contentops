@@ -96,6 +96,7 @@ function TargetRow({
         seed={cover.seed}
         kind={cover.kind}
         family={cover.family}
+        src={cover.src}
         durationSeconds={cover.durationSeconds}
         countLabel={cover.countLabel}
         versionCount={cover.versionCount}

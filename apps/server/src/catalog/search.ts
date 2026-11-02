@@ -235,7 +235,28 @@ async function inboxHits(q: Queryable, model: ModelScope, query: string) {
     SELECT id, proposed_title AS title FROM inbox_groups
      WHERE model_id = ${model.id}::uuid AND closed_at IS NULL AND proposed_title IS NOT NULL
      ORDER BY discovered_at DESC`)
-  return rows
-    .filter((row) => titleMatches(parsed, row.title))
-    .map((row) => ({ group_id: row.id, title: row.title }))
+  const hits = rows.filter((row) => titleMatches(parsed, row.title))
+  if (hits.length === 0) return []
+  // The first file of the group with a thumbnail, as the group's tile shows it.
+  const { rows: thumbs } = await q.execute<{ group_id: string; generation: string }>(sql`
+    SELECT DISTINCT ON (d.group_id) d.group_id, g.id AS generation
+      FROM inbox_drafts d
+      JOIN rendition_generations g ON g.input_sha256 = d.source_sha256 AND g.kind = 'thumb640'
+                                  AND g.state = 'ready' AND NOT g.meta_stripped
+     WHERE d.model_id = ${model.id}::uuid
+       AND d.group_id = ANY (${sql.param(hits.map((row) => row.id))}::uuid[])
+     ORDER BY d.group_id, d.proposed_ordinal NULLS LAST, d.path, g.ready_at DESC`)
+  const byGroup = new Map(thumbs.map((row) => [row.group_id, row.generation]))
+  return hits.map((row) => {
+    const generation = byGroup.get(row.id)
+    return {
+      group_id: row.id,
+      title: row.title,
+      thumb: {
+        key: `draft:${row.id}`,
+        ratio: '1:1' as const,
+        url: generation ? `/api/v1/${model.code}/g/${generation}/thumb-640.webp` : null,
+      },
+    }
+  })
 }

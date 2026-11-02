@@ -414,11 +414,17 @@ async function attachmentsOf(
     role: string | null
     ordinal: number | null
     ok: boolean
+    generation: string | null
   }>(sql`
     SELECT e.asset_version_id AS version_id, m.role, m.ordinal,
            EXISTS (SELECT 1 FROM hub_post_attachments t
                     WHERE t.model_id = e.model_id AND t.post_id = ${partial.payload.post_id}::uuid
-                      AND t.matched_version_id = e.asset_version_id) AS ok
+                      AND t.matched_version_id = e.asset_version_id) AS ok,
+           (SELECT g.id FROM asset_versions v
+              JOIN rendition_generations g ON g.master_sha256 = v.master_sha256
+                                          AND g.kind = 'thumb640' AND g.is_active
+                                          AND g.state = 'ready' AND NOT g.meta_stripped
+             WHERE v.model_id = e.model_id AND v.id = e.asset_version_id LIMIT 1) AS generation
       FROM asset_manifest_entries e
       LEFT JOIN item_memberships m ON m.model_id = e.model_id AND m.id = e.membership_id
      WHERE e.model_id = ${state.model.id}::uuid AND e.manifest_id = ${row.manifest_id}::uuid
@@ -428,6 +434,13 @@ async function attachmentsOf(
     no: index + 1,
     label: `${file.role ?? 'файл'}${file.ordinal ? ` ${file.ordinal}` : ''}`,
     ok: file.ok,
+    thumb: {
+      key: `${row.id}/${index + 1}`,
+      ratio: '1:1' as const,
+      url: file.generation
+        ? `/api/v1/${state.model.code}/g/${file.generation}/thumb-640.webp`
+        : null,
+    },
   }))
 }
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AccountCodeSchema } from './common'
+import { AccountCodeSchema, ThumbRefSchema } from './common'
 import { IntegrationLineSchema } from './integrations'
 import { ItemIdSchema, ItemTypeSchema } from './item-type'
 
@@ -35,7 +35,14 @@ export const SearchResultSchema = z.object({
     }),
   ),
   timeline: z.array(TimelineHitSchema),
-  inbox: z.array(z.object({ group_id: z.string(), title: z.string() })),
+  inbox: z.array(
+    z.object({
+      group_id: z.string(),
+      title: z.string(),
+      /** The first file's thumbnail; `null` while none is built. Absent from the stub. */
+      thumb: ThumbRefSchema.nullable().optional(),
+    }),
+  ),
 })
 export type SearchResult = z.infer<typeof SearchResultSchema>
 
