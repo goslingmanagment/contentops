@@ -185,7 +185,18 @@ export function formatAgo(past: Instant, now: Instant): string {
  * Works for the regular verbs the product uses (принял, отметил, связал, выключил…).
  */
 export function pastVerb(masculine: string, gender: Gender | null): string {
-  return gender === 'f' ? `${masculine}а` : masculine
+  if (gender !== 'f') return masculine
+  return FEMININE_PAST[masculine] ?? `${masculine}а`
+}
+
+/** Verbs whose feminine is not «+а»: «завёл» → «завела», «перенёс» → «перенесла». */
+const FEMININE_PAST: Record<string, string> = {
+  завёл: 'завела',
+  перенёс: 'перенесла',
+  нашёл: 'нашла',
+  вёл: 'вела',
+  принёс: 'принесла',
+  отвёл: 'отвела',
 }
 
 /**

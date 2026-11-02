@@ -313,9 +313,10 @@ export const actionLog = pgTable("action_log", {
 }, (table): PgTableExtraConfigValue[] => [
 	index("action_log_actor_at").using("btree", table.actorId.asc().nullsLast().op("timestamptz_ops"), table.at.desc().nullsFirst().op("uuid_ops")),
 	index("action_log_at_brin").using("brin", table.at.asc().nullsLast().op("timestamptz_minmax_ops")),
-	index("action_log_item_history").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.itemId.asc().nullsLast().op("timestamptz_ops"), table.at.desc().nullsFirst().op("timestamptz_ops")).where(sql`(entry_kind = 'action'::text)`),
-	index("action_log_model_at").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.at.desc().nullsFirst().op("timestamptz_ops")),
-	index("action_log_subject").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.subjectKind.asc().nullsLast().op("text_ops"), table.subjectId.asc().nullsLast().op("uuid_ops"), table.at.desc().nullsFirst().op("timestamptz_ops")),
+	index("action_log_feed").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.at.desc().nullsFirst().op("uuid_ops"), table.id.desc().nullsFirst().op("uuid_ops")).where(sql`((entry_kind = 'action'::text) AND (action !~~ 'work.%'::text))`),
+	index("action_log_item_history").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.itemId.asc().nullsLast().op("uuid_ops"), table.at.desc().nullsFirst().op("uuid_ops")).where(sql`(entry_kind = 'action'::text)`),
+	index("action_log_model_at").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.at.desc().nullsFirst().op("uuid_ops")),
+	index("action_log_subject").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.subjectKind.asc().nullsLast().op("uuid_ops"), table.subjectId.asc().nullsLast().op("text_ops"), table.at.desc().nullsFirst().op("text_ops")),
 	foreignKey({
 			columns: [table.modelId],
 			foreignColumns: [models.id],
