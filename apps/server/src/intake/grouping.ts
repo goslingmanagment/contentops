@@ -8,24 +8,47 @@ import type { values } from '@contentops/db'
  * roots (`1. PPV`, `3. Customs`, `BG`, …). A file inside a subfolder of a root belongs to the
  * group of that subfolder, held by its folder id, not by its path. A file right in a root (or
  * in the model's folder itself) is grouped by its EXIF day, without EXIF by a cluster of up to
- * 45 minutes from the first file; videos in the roots `3. Customs` and `BG` go one by one.
+ * 45 minutes from the first file. One object is one clip, as in the import of the old disk
+ * (`legacy/units.ts`): a video under `2. FYP` or `3. Customs` is a group by itself at any depth,
+ * a loose video in `BG` too; a folder of FYP sources (`2. FYP/FYP исходники`) is one shoot.
  */
 
 export const UPLOAD_CLUSTER_MS = 45 * 60 * 1000
 
-/** Roots whose loose videos are objects one by one (SPEC §6.1). */
-const ONE_BY_ONE_ROOTS = [/customs?/i, /кастом/i, /^bg$/i]
+const FYP_ROOT = /fyp|фуп/i
+const CUSTOM_ROOT = /customs?|кастом/i
+const BG_ROOT = /^bg$/i
+
+/** A folder of clips a FYP is made from: its files are raw material, not ready FYPs. */
+const FYP_SOURCES = /исходник|сырь[её]|оригинал|\bsources?\b|\braw\b|\boriginals?\b/i
 
 export type Placement =
-  /** Inside the subfolder at `relative[0]/relative[1]`. */
-  | { kind: 'folder'; folderDepth: 2 }
+  /** The file is an object by itself, whatever folder it lies in. */
+  | { kind: 'single' }
+  /** Inside the folder made of the first `folderDepth` components of `relative`. */
+  | { kind: 'folder'; folderDepth: number; proposal?: FolderProposal }
   /** Right in a root (`folderDepth` 1) or in the model's folder itself (0). */
   | { kind: 'root'; folderDepth: 0 | 1 }
 
+/** What the kind of a folder says about its future object, above what its root says. */
+export interface FolderProposal {
+  type: values.ContentType
+  purpose: values.RawPurpose
+}
+
 /** `relative` — path components of the file, its name last. */
-export function placementOf(relative: readonly string[]): Placement {
+export function placementOf(relative: readonly string[], isVideo: boolean): Placement {
   const dirs = relative.length - 1
+  const root = dirs >= 1 ? (relative[0] ?? '') : ''
+  if (FYP_ROOT.test(root)) {
+    const sources = relative.slice(1, -1).findIndex((name) => FYP_SOURCES.test(name))
+    if (sources >= 0) {
+      return { kind: 'folder', folderDepth: sources + 2, proposal: { type: 'RAW', purpose: 'fyp' } }
+    }
+  }
+  if (isVideo && (FYP_ROOT.test(root) || CUSTOM_ROOT.test(root))) return { kind: 'single' }
   if (dirs >= 2) return { kind: 'folder', folderDepth: 2 }
+  if (isVideo && BG_ROOT.test(root)) return { kind: 'single' }
   return { kind: 'root', folderDepth: dirs <= 0 ? 0 : 1 }
 }
 
@@ -44,7 +67,13 @@ export type LooseGroup =
   /** The caller finds an open cluster of this folder or starts one at the file's time. */
   | { grouping: 'upload_cluster'; prefix: string }
 
-/** Group of a file right in a root: by itself, by EXIF day, or by an upload cluster. */
+/** Roots whose loose videos are objects one by one in the old disk's units too (SPEC §6.1). */
+const ONE_BY_ONE_ROOTS = [CUSTOM_ROOT, BG_ROOT]
+
+/**
+ * Group of a file right in a root: by itself, by EXIF day, or by an upload cluster. Used by the
+ * import of the old disk as well, which takes FYPs one by one by its own parse.
+ */
 export function looseGroupOf(file: LooseFile, folderId: string, timezone: string): LooseGroup {
   if (
     file.isVideo &&
@@ -98,6 +127,15 @@ const TYPE_BY_ROOT: [RegExp, values.ContentType][] = [
 export function typeFromRoot(rootName: string | null): values.ContentType | null {
   if (!rootName) return null
   return TYPE_BY_ROOT.find(([re]) => re.test(rootName))?.[1] ?? null
+}
+
+/**
+ * The type a file proposes through its root. A FYP is one clip: photos in `2. FYP` say nothing
+ * about what they are, so their group asks ◆ «Что это?» instead of a refusal at «Принять».
+ */
+export function typeOfFile(rootName: string | null, isVideo: boolean): values.ContentType | null {
+  const type = typeFromRoot(rootName)
+  return type === 'FYP' && !isVideo ? null : type
 }
 
 /** `13:03 вся в красном.mov` → `вся в красном`: the tail of a custom's name is its title. */

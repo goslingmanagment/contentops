@@ -62,6 +62,25 @@ for (const [index, [name, source, seconds]] of (
   })
   thumbs.set(node.id, clip.poster)
 }
+// Новые фупы прямо в корне и исходники фупа своей папкой: каждый ролик — своя группа, папка
+// исходников — одна съёмка сырья (SPEC §6.1).
+for (const [index, [path, source, seconds]] of (
+  [
+    ['/2. FYP/Видео 01.11.2026, 10 45 34 PM.mp4', 'mandelbrot', 3],
+    ['/2. FYP/Видео 01.11.2026, 10 47 02 PM.mp4', 'life', 3],
+    ['/2. FYP/FYP исходники/IMG_6101.mp4', 'smptehdbars', 3],
+    ['/2. FYP/FYP исходники/IMG_6102.mp4', 'testsrc2', 3],
+    ['/3. Customs/2 Видео/12-03 танец.mp4', 'gradients', 3],
+    ['/3. Customs/2 Видео/12-04 у окна.mp4', 'cellauto', 3],
+  ] as const
+).entries()) {
+  const clip = video(`fyp-${index}`, source, seconds)
+  const node = tree.addFile(path, clip.bytes, {
+    created: minutesAgo(20 - index),
+    modified: minutesAgo(20 - index),
+  })
+  thumbs.set(node.id, clip.poster)
+}
 const life = video('life', 'cellauto', 5)
 const lifeNode = tree.addFile('/6. Life/завтрак.mp4', life.bytes, {
   created: minutesAgo(12),

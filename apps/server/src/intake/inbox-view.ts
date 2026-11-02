@@ -15,6 +15,7 @@ import { instant, instantOrNull } from '../commands'
 import { ApiProblem } from '../errors'
 import { openDisputeCount } from '../legacy/review'
 import { frameChoices } from './frames'
+import { appendRefusal, newObjectRefusal, type Refusal } from './refusal'
 import { sourceThumbPath } from './source-thumbs'
 
 /**
@@ -52,6 +53,7 @@ interface GroupRow extends Record<string, unknown> {
     plan_row_id?: string
     was?: string
     now?: string
+    legacy?: unknown
   } | null
   proposed_type: values.ContentType | null
   proposed_title: string | null
@@ -61,6 +63,8 @@ interface GroupRow extends Record<string, unknown> {
   proposed_purpose: values.RawPurpose | null
   has_second_person: boolean | null
   custom_order_id: string | null
+  /** The object this group already made (`CUS-197`): a new file of it joins that object. */
+  created_public_id: string | null
   row_version: string
   discovered_at: string
   source_kind: values.SourceKind
@@ -201,6 +205,24 @@ const MASTER_FAILURE: Record<string, string> = {
   unreadable: 'файл не читается — ждёт замены',
 }
 
+const TYPE_OF_ID = /^([A-Z]+)-/
+
+/**
+ * What «Принять» would refuse by the files of a group (`refusal.ts`), told before the click: the
+ * files are known from discovery, so this does not wait for the master.
+ */
+function refusalOf(group: GroupRow, drafts: readonly DraftRow[]): Refusal | null {
+  const videos = drafts.filter((draft) => draft.media_kind === 'video').length
+  const photos = drafts.length - videos
+  const target =
+    drafts.find((draft) => draft.target_public_id)?.target_public_id ?? group.created_public_id
+  if (target) {
+    const type = TYPE_OF_ID.exec(target)?.[1] as values.ContentType | undefined
+    return type ? appendRefusal(type, videos) : null
+  }
+  return group.proposed_type ? newObjectRefusal(group.proposed_type, videos, photos) : null
+}
+
 /** State of the unresolved drafts of a group, and the line under a disabled «Принять». */
 export function activeState(
   group: GroupRow,
@@ -247,9 +269,17 @@ export function activeState(
       block: broken ? 'Примите как есть или отклоните' : 'Сначала разберитесь с ошибкой',
     }
   }
+  // The import of the old corpus finds a refusal by itself and marks the group (`auto-accept`);
+  // its words come from the rule, so three videos of a PPV are not «Видео среди фото».
+  const marked = drafts.some((draft) => draft.blocked_reason === 'video_in_set')
+  const refused = !group.evidence?.legacy || marked ? refusalOf(group, drafts) : null
   for (const draft of drafts) {
+    if (draft.blocked_reason === 'video_in_set' && refused) continue
     const decision = draft.blocked_reason ? DECISION[draft.blocked_reason] : undefined
     if (decision) return { state: decision, block: 'Сначала примите решение' }
+  }
+  if (refused) {
+    return { state: { kind: 'decision', decision: refused.decision }, block: refused.message }
   }
   const preparing = drafts.filter(
     (draft) => draft.state === 'discovered' || draft.state === 'processing',
@@ -477,7 +507,9 @@ async function loadGroups(
     SELECT g.id, g.group_key, g.grouping, g.evidence, g.proposed_type, g.proposed_title,
            g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
            g.has_second_person, g.custom_order_id, g.row_version, g.discovered_at, s.kind AS source_kind,
-           s.label AS source_label
+           s.label AS source_label,
+           (SELECT public_item_id(i.type, i.number) FROM content_items i
+             WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_public_id
       FROM inbox_groups g JOIN sources s ON s.model_id = g.model_id AND s.id = g.source_id
      WHERE g.model_id = ${modelId}::uuid
        AND (${groupIds === null} OR g.id = ANY (${sql.param(groupIds ?? [])}::uuid[]))`)

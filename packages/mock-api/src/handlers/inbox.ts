@@ -196,6 +196,14 @@ function decide(model: ModelWorld, record: InboxRecord, command: DecideCommand) 
         makeReady(group)
       }
       return
+    case 'split_videos': {
+      const videos = group.files.filter((file) => file.media === 'video')
+      for (const video of videos.slice(1)) {
+        splitOff(model, record, new Set([video.key]), group.fields.type)
+      }
+      makeReady(group)
+      return
+    }
     case 'video_in_set': {
       const videos = new Set(
         group.files.filter((file) => file.media === 'video').map((file) => file.key),

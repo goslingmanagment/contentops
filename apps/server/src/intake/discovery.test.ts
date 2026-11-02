@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { scanHandler, scanStreams } from './scan'
@@ -130,6 +132,90 @@ describe('discovery from Dropbox', () => {
     const run = await scan('dropbox')
     expect(run.report).toMatchObject({ mode: 'full', complete: true })
     expect(await intakeCounts(h.db)).toEqual(before)
+  })
+})
+
+describe('one clip is one group (SPEC §6.1)', () => {
+  const groupsUnder = async (prefix: string) =>
+    (await groups(h.sources.dropbox.id)).filter((group) =>
+      group.files.some((file) => file.startsWith(`${LORA_ROOT}/${prefix}`)),
+    )
+
+  beforeAll(async () => {
+    const t = h.dropbox.tree
+    t.addFile(`${LORA_ROOT}/2. FYP/a.mov`, 2100)
+    t.addFile(`${LORA_ROOT}/2. FYP/b.mov`, 2200)
+    t.addFile(`${LORA_ROOT}/2. FYP/cover.jpg`, 900)
+    t.addFile(`${LORA_ROOT}/2. FYP/FYP исходники/s1.mov`, 2300)
+    t.addFile(`${LORA_ROOT}/2. FYP/FYP исходники/s2.mov`, 2400)
+    t.addFile(`${LORA_ROOT}/3. Customs/4 Видео/c1.mov`, 2500)
+    t.addFile(`${LORA_ROOT}/3. Customs/4 Видео/c2.mov`, 2600)
+    await scan('dropbox', 'full')
+  })
+
+  it('videos under the FYP root and in a subfolder of customs become one group each', async () => {
+    const fyp = await groupsUnder('2. FYP/')
+    const made = fyp.map((g) => [g.grouping, g.proposed_type, g.proposed_title, g.files.length])
+    expect(made).toEqual(
+      expect.arrayContaining([
+        ['single', 'FYP', 'a', 1],
+        ['single', 'FYP', 'b', 1],
+      ]),
+    )
+    const customs = await groupsUnder('3. Customs/4 Видео/')
+    expect(customs.map((g) => [g.grouping, g.proposed_type, g.proposed_title])).toEqual([
+      ['single', 'CUS', 'c1'],
+      ['single', 'CUS', 'c2'],
+    ])
+  })
+
+  it('a folder of FYP sources is one RAW shoot; a photo in the root waits for its type', async () => {
+    const sources = await groupsUnder('2. FYP/FYP исходники/')
+    expect(sources.map((g) => [g.grouping, g.proposed_type, g.files.length])).toEqual([
+      ['folder', 'RAW', 2],
+    ])
+    const { rows } = await h.db.execute<{ purpose: string | null }>(sql`
+      SELECT proposed_purpose AS purpose FROM inbox_groups
+       WHERE group_key = ${sources[0]?.group_key as string}`)
+    expect(rows).toEqual([{ purpose: 'fyp' }])
+    const photo = (await groupsUnder('2. FYP/cover')).map((g) => g.proposed_type)
+    expect(photo).toEqual([null])
+  })
+
+  it('the night pass leaves a draft where a person put it, a moved file follows its folder', async () => {
+    const [group] = await groupsUnder('2. FYP/FYP исходники/')
+    const { rows: drafts } = await h.db.execute<{ id: string; path: string }>(sql`
+      SELECT id, path FROM inbox_drafts WHERE path LIKE ${`${LORA_ROOT}/2. FYP/FYP исходники/%`}
+       ORDER BY path`)
+    // What «Разделить» does: the file goes to a group of its own.
+    await withActorTx(
+      h.db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test.split', requestId: randomUUID() },
+      (tx) =>
+        tx.execute(sql`
+          WITH made AS (
+            INSERT INTO inbox_groups (model_id, source_id, group_key, grouping)
+            VALUES (${h.modelId}::uuid, ${h.sources.dropbox.id}::uuid, 'split:by-hand', 'manual')
+            RETURNING id
+          )
+          UPDATE inbox_drafts SET group_id = (SELECT id FROM made)
+           WHERE id = ${drafts[0]?.id as string}::uuid`),
+    )
+    await scan('dropbox', 'full')
+    const groupOfDraft = async (id: string) => {
+      const { rows } = await h.db.execute<{ key: string }>(sql`
+        SELECT g.group_key AS key FROM inbox_drafts d JOIN inbox_groups g ON g.id = d.group_id
+         WHERE d.id = ${id}::uuid`)
+      return rows[0]?.key
+    }
+    expect(await groupOfDraft(drafts[0]?.id as string)).toBe('split:by-hand')
+    expect(await groupOfDraft(drafts[1]?.id as string)).toBe(group?.group_key)
+    h.dropbox.tree.move(
+      `${LORA_ROOT}/2. FYP/FYP исходники/s1.mov`,
+      `${LORA_ROOT}/2. FYP/Новая/Исходники/s1.mov`,
+    )
+    await scan('dropbox', 'full')
+    expect(await groupOfDraft(drafts[0]?.id as string)).toMatch(/^folder:/)
   })
 })
 

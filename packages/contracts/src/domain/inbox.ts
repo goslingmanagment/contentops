@@ -34,6 +34,8 @@ export const DecisionKindSchema = z.enum([
   'split_archive',
   /** A processed frame whose download name is unknown: which frame of the set it is. */
   'which_frame',
+  /** More clips than the type takes (a FYP is one clip): split the group by its clips. */
+  'split_videos',
 ])
 export type DecisionKind = z.infer<typeof DecisionKindSchema>
 
@@ -46,6 +48,7 @@ export const DECISION_LABEL: Record<DecisionKind, string> = {
   substitute_montage: 'Подставить монтаж в строку?',
   split_archive: 'Разделить архив?',
   which_frame: 'К какому кадру?',
+  split_videos: 'Несколько роликов — разделить?',
 }
 
 /** ▲ «ошибка». */

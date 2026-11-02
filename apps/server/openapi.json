@@ -2386,6 +2386,18 @@
               "file_key",
               "frame"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
+                "const": "split_videos"
+              }
+            },
+            "required": [
+              "decision"
+            ]
           }
         ]
       },
@@ -2399,7 +2411,8 @@
           "cross_model",
           "substitute_montage",
           "split_archive",
-          "which_frame"
+          "which_frame",
+          "split_videos"
         ]
       },
       "DeleteItemCommandInput": {

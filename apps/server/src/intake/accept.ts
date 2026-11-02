@@ -15,6 +15,7 @@ import { bindGenerations } from '../media/renditions'
 import { lockBlobForReference } from '../media/storage-ops'
 import { markDeliveredParts } from '../orders/writes'
 import { aliasOpenDuplicates, resolveAlias } from './fetch'
+import { appendRefusal, newObjectRefusal } from './refusal'
 
 /**
  * «Принять» (SPEC §4.1, §6.1, schema §5 «Принятие группы», §9.3): one transaction after the
@@ -176,13 +177,17 @@ export async function lockOpenDrafts(
            encode(d.source_sha256, 'hex') AS source_hex, d.master_verified_at IS NOT NULL AS master_verified,
            d.blocked_reason, d.proposed_role, d.proposed_ordinal, d.target_item_id,
            d.target_asset_id, d.source_revision_id, r.source_object_id, o.resource_id,
-           d.web_upload_id, u.client_filename, b.media_kind,
+           d.web_upload_id, u.client_filename,
+           coalesce(b.media_kind, sb.media_kind, CASE
+             WHEN d.path ~* '\\.(mp4|mov|m4v|avi|mkv|webm|mts|m2ts|3gp|hevc)$' THEN 'video' ELSE 'image' END
+           ) AS media_kind,
            coalesce(r.remote_created_at, u.completed_at, d.discovered_at) AS arrived_at
       FROM inbox_drafts d
       LEFT JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id
       LEFT JOIN source_objects o ON o.model_id = r.model_id AND o.id = r.source_object_id
       LEFT JOIN web_uploads u ON u.model_id = d.model_id AND u.id = d.web_upload_id
       LEFT JOIN blobs b ON b.sha256 = d.master_sha256
+      LEFT JOIN blobs sb ON sb.sha256 = d.source_blob_sha256
      WHERE d.model_id = ${model.id}::uuid AND d.group_id = ${groupId}::uuid AND d.state <> 'resolved'
      ORDER BY d.id
      FOR UPDATE OF d`)
@@ -195,28 +200,23 @@ function rolesFor(type: DbType, drafts: readonly DraftRow[], promo = false): Map
   const photos = drafts.filter((draft) => draft.media_kind !== 'video')
   const roles = new Map<string, Role>()
   const bySize = [...videos].sort((a, b) => Number(b.byte_size ?? 0) - Number(a.byte_size ?? 0))
+  const refused = newObjectRefusal(type, videos.length, photos.length)
+  if (refused) throw blocked(refused.reason, refused.message)
   switch (type) {
     case 'PPV':
-      if (videos.length > 2) throw blocked('video_in_set', 'Видео больше двух — разделите группу')
       for (const [index, draft] of bySize.entries()) {
         roles.set(draft.id, index === 0 ? 'master' : 'teaser')
       }
       for (const draft of photos) roles.set(draft.id, 'pic')
       break
     case 'CUS':
-      if (videos.length > 1)
-        throw blocked('video_in_set', 'В кастоме одно видео — разделите группу')
       for (const draft of videos) roles.set(draft.id, 'master')
       for (const draft of photos) roles.set(draft.id, 'pic')
       break
     case 'FYP':
-      if (videos.length !== 1 || photos.length > 0) {
-        throw blocked('video_in_set', 'Фуп — один ролик: разделите группу')
-      }
       roles.set(videos[0]?.id as string, 'master')
       break
     case 'SET':
-      if (videos.length > 0) throw blocked('video_in_set', 'Видео среди фото — решите, куда его')
       for (const draft of photos) roles.set(draft.id, 'raw')
       break
     case 'SXT':
@@ -243,9 +243,10 @@ function appendRole(type: DbType, draft: DraftRow, extend: AcceptCommand['extend
   if (extend?.role === 'teaser') return 'teaser'
   if (extend?.role === 'master_version') return 'master'
   const video = draft.media_kind === 'video'
+  const refused = appendRefusal(type, video ? 1 : 0)
+  if (refused) throw blocked(refused.reason, refused.message)
   switch (type) {
     case 'SET':
-      if (video) throw blocked('video_in_set', 'Видео в сет не добавляется')
       return 'raw'
     case 'RAW':
       return 'raw'
