@@ -100,6 +100,26 @@
   `ops/up.sh`, и сторож на новый адрес: `register-tasks.ps1 -Enable -HealthUrl
   https://contentops.tail1d911a.ts.net/healthz`.
 
+## Вход через VPN агентства
+
+У Дианы и владельца на ноутбуках уже стоит WireGuard агентства (сервер `194.58.37.39`, сеть
+`10.66.66.0/24`), поэтому Tailscale им не нужен: адрес **`http://10.66.66.1:8088`** открывается
+при включённом VPN (решение 02.11.2026, проще общего доступа в tailnet; адрес в `PUBLIC_URL`
+не меняется). Внутри VPN трафик шифрует WireGuard, между сервером VPN и ВМ — SSH.
+
+- В ВМ служба `contentops-vpn-tunnel` держит обратный туннель SSH до сервера VPN: порт
+  `10.66.66.1:8088` → `127.0.0.1:8080` nginx стека; перезапускается сама, ключ —
+  `/etc/contentops/tunnel_ed25519` (только в ВМ). Проверка: `systemctl status
+  contentops-vpn-tunnel`, снаружи `curl http://10.66.66.1:8088/healthz`.
+- На сервере VPN — пользователь `contentops-tunnel` без оболочки; в его `authorized_keys`
+  ключ ограничен (`restrict,port-forwarding,permitlisten="10.66.66.1:8088"`), настройка sshd —
+  `/etc/ssh/sshd_config.d/60-contentops-tunnel.conf`.
+- Порт закрыт для всех участников VPN, кроме перечисленных: `ufw status | grep 8088` на сервере
+  VPN (сейчас `diana-macbook` 10.66.66.7, `diana-iphone` 10.66.66.6, `mbp-pro-16` владельца
+  10.66.66.2). Новый человек — адрес из `/etc/wireguard/wg0.conf` и `ufw allow in on wg0 from
+  <адрес> to 10.66.66.1 port 8088 proto tcp comment contentops`.
+- Скорость скачивания упирается в исходящий канал домашнего интернета, около 4 МиБ/с.
+
 ## Стек и выкатка
 
 - Стек — один Compose (SPEC §12.1): `db` (PostgreSQL 18.6), одноразовый `migrate`, `web`,
@@ -190,7 +210,10 @@
   `DROPBOX_REFRESH_TOKEN` + `DROPBOX_APP_KEY` (+ `DROPBOX_APP_SECRET`, если приложение не PKCE).
   Скан включает владелец в «Интеграции» по источнику; полный обход Я.Диска до первого дня
   этапа 3 не запускается (снимок `scan:freeze` — SPEC §6.3).
-- Dropbox для ContentOps (делает владелец): dropbox.com/developers/apps → Create app →
+- Dropbox Лоры подключён 02.11.2026: приложение `contentops-lora` (только чтение, PKCE, без
+  секрета), ключи — в `.env` ВМ и в `~/.config/agency/secrets.env` на маке
+  (`CONTENTOPS_DROPBOX_*`). Следующая модель — так же:
+- Dropbox для новой модели: dropbox.com/developers/apps → Create app →
   Scoped access → Full Dropbox → имя `contentops-<модель>`; Permissions — только
   `files.metadata.read` и `files.content.read` → Submit; Settings → App key (и App secret).
   Refresh token: открыть
