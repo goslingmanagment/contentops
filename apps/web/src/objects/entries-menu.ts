@@ -5,6 +5,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useCallback } from 'react'
 import { useApi } from '@/data/api-session'
 import { useCatalogIndex } from '@/data/catalog'
+import { useIntegrations } from '@/data/integrations'
 import { usePromoChannels } from '@/data/promo'
 import { queryKeys } from '@/data/query-keys'
 import { useRole } from '@/data/session'
@@ -12,6 +13,7 @@ import { type PlanDialogPreset, usePlanDialog } from '@/shell/dialogs/plan-dialo
 import { useCurrentModel } from '@/shell/model/model-context'
 import type { ObjectDialogRequest } from './dialogs/use-object-dialogs'
 import { downloadOptionsFor } from './download-options'
+import { showInSourceLabel } from './source-words'
 import { useObjectActions } from './use-object-actions'
 
 const COLLECTIONS_IN_MENU = 6
@@ -75,6 +77,17 @@ export function useEntriesMenu(
   const channels = usePromoChannels(model).data ?? []
   const index = useCatalogIndex(model).data
   const showOnDisk = useShowOnYandexDisk()
+  // Имя источника — по источникам модели: у Лоры старый Я.Диск и новый Dropbox (DESIGN §1.1).
+  const sources = [
+    ...new Set(
+      (useIntegrations().data ?? []).flatMap((integration) =>
+        integration.model === model &&
+        (integration.kind === 'ydisk' || integration.kind === 'dropbox')
+          ? [integration.kind]
+          : [],
+      ),
+    ),
+  ]
   const canAct = role === 'owner' || role === 'manager'
   const single = entries.length === 1 ? entries[0] : undefined
   const ids = entries.map((entry) => entry.id)
@@ -165,7 +178,7 @@ export function useEntriesMenu(
       ? [
           {
             id: 'ydisk',
-            label: 'Показать на Я.Диске ↗',
+            label: showInSourceLabel(sources),
             onSelect: () => showOnDisk(single.id),
           },
           {

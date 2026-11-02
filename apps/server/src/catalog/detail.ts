@@ -296,7 +296,12 @@ const OLD_NAME_KIND: Record<string, OldName['kind']> = {
   registry_row: 'number',
 }
 
-/** Я.Диск: the source folder of the object and its old names (aliases, naming §9). */
+/**
+ * Where the object lies in its source (DESIGN §4.4 п. 4, §1.1): the folder of the group it was
+ * accepted from; for an object of files from elsewhere — the folder of its first file with an
+ * old path; a fixture keeps the folder as an alias of the object. Old names are the object's
+ * aliases (naming §9).
+ */
 async function diskOf(
   q: Queryable,
   model: ModelScope,
@@ -308,15 +313,113 @@ async function diskOf(
        AND kind IN ('legacy_path', 'legacy_name', 'legacy_id', 'merged_id', 'vault_album',
                     'registry_row')
      ORDER BY created_at, id`)
-  const path = rows.find((row) => row.kind === 'legacy_path')?.value ?? ''
+  const folder =
+    (await groupFolder(q, model, item)) ??
+    (await fileFolder(q, model, item)) ??
+    aliasFolder(rows.find((row) => row.kind === 'legacy_path')?.value)
   return {
-    path,
-    url: path ? `https://disk.yandex.ru/client/disk/${encodeURIComponent(path)}` : '',
+    ...(folder ? placeOf(folder) : { path: '', url: '' }),
+    source: folder?.source ?? null,
     old_names: rows.map((row) => ({
       name: row.value,
       kind: OLD_NAME_KIND[row.kind] ?? 'number',
       with_fan_name: false,
     })),
+  }
+}
+
+interface SourceFolder {
+  source: 'ydisk' | 'dropbox'
+  /** The folder as the source's API names it: `disk:/1. PPV/…` or `/1. PPV/…`. */
+  path: string
+  /** The model's root in that source (`disk:/`, `/Lora`): the path in words starts below it. */
+  root?: string | null
+  /** An archive, not a folder: the words name it, the link opens the folder it lies in. */
+  file?: boolean
+}
+
+const CLOUD: Record<string, SourceFolder['source']> = { yandex_disk: 'ydisk', dropbox: 'dropbox' }
+
+/**
+ * The folder of the group the object was accepted from, if it came from a cloud source: the
+ * folder object's current path (a folder group — the folder itself, a day's loose files — the
+ * folder they lie in; renames on the disk follow), else the path the group was found at.
+ */
+async function groupFolder(q: Queryable, model: ModelScope, item: ItemRow) {
+  const { rows } = await q.execute<{
+    current: string | null
+    is_dir: boolean | null
+    path: string | null
+    grouping: string
+    kind: string
+    root: string | null
+  }>(sql`
+    SELECT o.current_path AS current, o.is_dir, g.evidence ->> 'path' AS path, g.grouping,
+           s.kind, s.root_path AS root
+      FROM content_items c
+      JOIN inbox_groups g ON g.model_id = c.model_id AND g.id = c.created_from_group_id
+      JOIN sources s ON s.model_id = g.model_id AND s.id = g.source_id
+      LEFT JOIN source_objects o ON o.model_id = g.model_id AND o.id = g.folder_object_id
+     WHERE c.model_id = ${model.id}::uuid AND c.id = ${item.id}::uuid`)
+  const row = rows[0]
+  const source = row ? CLOUD[row.kind] : undefined
+  if (!row || !source) return null
+  const path =
+    row.current ?? (row.grouping === 'folder' ? row.path : row.path && folderOf(row.path))
+  return path ? { source, path, root: row.root, file: row.is_dir === false } : null
+}
+
+function folderOf(path: string): string {
+  const cut = path.lastIndexOf('/')
+  return cut > 0 ? path.slice(0, cut) : path
+}
+
+/** The folder of the object's first file that keeps an old path of a cloud source. */
+async function fileFolder(q: Queryable, model: ModelScope, item: ItemRow) {
+  const { rows } = await q.execute<{ path: string; kind: string; root: string | null }>(sql`
+    SELECT a.value_raw AS path, s.kind, s.root_path AS root
+      FROM item_memberships m
+      JOIN aliases a ON a.model_id = m.model_id AND a.asset_id = m.asset_id
+                    AND a.kind = 'legacy_path'
+      JOIN source_objects o ON o.model_id = a.model_id AND o.id = a.source_object_id
+      JOIN sources s ON s.model_id = o.model_id AND s.id = o.source_id
+     WHERE m.model_id = ${model.id}::uuid AND m.item_id = ${item.id}::uuid
+       AND s.kind IN ('yandex_disk', 'dropbox')
+     ORDER BY a.created_at, a.id
+     LIMIT 1`)
+  const row = rows[0]
+  const source = row ? CLOUD[row.kind] : undefined
+  if (!row || !source) return null
+  return { source, path: folderOf(row.path), root: row.root }
+}
+
+/** A folder kept as the object's own alias (fixtures, early imports): the old Я.Диск. */
+function aliasFolder(path: string | undefined): SourceFolder | null {
+  return path ? { source: 'ydisk', path } : null
+}
+
+/**
+ * «1. PPV / Bundles / [PPV-073]_birthday_07.08.26» and the folder in the source's web client:
+ * Я.Диск — `disk.yandex.ru/client/disk/<path>`, Dropbox — `dropbox.com/home/<path>`.
+ */
+export function placeOf(folder: SourceFolder): { path: string; url: string } {
+  const split = (path: string) =>
+    path
+      .replace(/^disk:/, '')
+      .split('/')
+      .filter((part) => part.length > 0)
+  const parts = split(folder.path)
+  const root = split(folder.root ?? '')
+  const below = root.every((part, index) => parts[index] === part)
+    ? parts.slice(root.length)
+    : parts
+  const encoded = (folder.file ? parts.slice(0, -1) : parts).map(encodeURIComponent).join('/')
+  return {
+    path: below.join(' / '),
+    url:
+      folder.source === 'dropbox'
+        ? `https://www.dropbox.com/home/${encoded}`
+        : `https://disk.yandex.ru/client/disk/${encoded}`,
   }
 }
 

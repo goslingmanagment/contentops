@@ -435,6 +435,27 @@ describe('accept (schema §5, §9.3)', () => {
     expect(await flagAfter('есть', true)).toBe(true)
   })
 
+  it('the object shows its folder and source: «На Dropbox», a path in words and a link', async () => {
+    const path = `${LORA_ROOT}/6. Life/Папка с пробелом [x]/01.jpg`
+    h.dropbox.tree.addFile(path, 2900)
+    await scan()
+    await fetchAll()
+    const { group_id, draft_id } = await groupOfPath(path)
+    await makeReady(draft_id)
+    const accepted = await accept(group_id)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    const page = await call(app, {
+      method: 'GET',
+      url: `/api/v1/lora/i/${accepted.json().item_id}`,
+      as: owner,
+    })
+    expect(page.json().ydisk).toMatchObject({
+      source: 'dropbox',
+      path: '6. Life / Папка с пробелом [x]',
+      url: `https://www.dropbox.com/home/Lora/6.%20Life/${encodeURIComponent('Папка с пробелом [x]')}`,
+    })
+  })
+
   it('reject keeps the bytes; reopen brings the draft back to «готово»', async () => {
     h.dropbox.tree.addFile(`${LORA_ROOT}/6. Life/Лишнее/01.jpg`, 2600)
     await scan()

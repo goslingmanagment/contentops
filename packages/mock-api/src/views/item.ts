@@ -193,7 +193,8 @@ export function itemDetail(context: FactsContext, id: ItemId, role: Role): ItemD
     provenance: record.provenance,
     ydisk: {
       path: record.ydisk_path,
-      url: `https://disk.yandex.ru/client/disk/${encodeURIComponent(record.ydisk_path.replaceAll(' / ', '/'))}`,
+      url: `https://disk.yandex.ru/client/disk/${record.ydisk_path.split(' / ').map(encodeURIComponent).join('/')}`,
+      source: record.ydisk_path ? 'ydisk' : null,
       old_names: record.old_names.filter((name) => role !== 'reader' || !name.with_fan_name),
     },
     pages: pagesOf(context, record),

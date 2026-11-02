@@ -210,7 +210,12 @@ describe('object page', () => {
         confirmed: false,
       }),
     ])
-    expect(detail.ydisk.path).toBe('1. PPV/[PPV-073]_party_12.08.26')
+    // In words, as DESIGN §4.4 shows it, with the folder in the source's web client.
+    expect(detail.ydisk).toMatchObject({
+      path: '1. PPV / [PPV-073]_party_12.08.26',
+      source: 'ydisk',
+      url: `https://disk.yandex.ru/client/disk/1.%20PPV/${encodeURIComponent('[PPV-073]_party_12.08.26')}`,
+    })
     expect(detail.pages.map((page) => [page.account, page.summary.word])).toEqual([
       ['lora-1', 'не видели'],
       ['lora-of', 'не видели'],
