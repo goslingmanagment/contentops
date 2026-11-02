@@ -29,7 +29,7 @@ import {
   sealReceipt,
   servedFile,
 } from '../media/downloads'
-import { currentDigests } from '../media/pipeline'
+import { currentDigests, NO_DIGESTS } from '../media/pipeline'
 import { mimeOfExt, shaBytes, shaHex } from '../media/storage'
 import { uniqKey } from '../media/work/copies'
 import { exportKeyOf, storedPlan } from '../media/work/export'
@@ -139,7 +139,7 @@ async function issue(
       )
     }
   }
-  const digests = (await currentDigests(tx)) ?? { version: '', platform: '', platformStripped: '' }
+  const digests = (await currentDigests(tx)) ?? NO_DIGESTS
   const plan = await planDownload(tx, {
     modelId: model.id,
     modelCode: model.code,

@@ -6,7 +6,7 @@ import { type Db, enqueueWork, WorkError } from '@contentops/db'
 import { stripPhotoMetadata, type ToolVersions } from '@contentops/media'
 import { sql } from 'drizzle-orm'
 import type { FileRow } from '../media/downloads'
-import { currentDigests } from '../media/pipeline'
+import { currentDigests, platformDigest } from '../media/pipeline'
 import { readyGeneration } from '../media/renditions'
 import { type BlobStore, shaBytes, shaHex } from '../media/storage'
 import { renderKey } from '../media/work/copies'
@@ -64,9 +64,10 @@ export function storedMedia(store: BlobStore, versions?: ToolVersions): PublishM
             'Медиаконвейер ещё не запускался: копию для платформы собрать некому',
           )
         }
+        const digest = await platformDigest(db, digests, file.master, true)
         const ready = await readyGeneration(db, {
           kind: 'platform',
-          recipeDigest: digests.platformStripped,
+          recipeDigest: digest,
           metaStripped: true,
           masterSha256: file.master,
           inputSha256: file.master,
@@ -105,11 +106,11 @@ export function storedMedia(store: BlobStore, versions?: ToolVersions): PublishM
         const { work } = await enqueueWork(db, {
           modelId,
           kind: 'render',
-          workKey: renderKey(shaHex(file.master), digests.platformStripped),
+          workKey: renderKey(shaHex(file.master), digest),
           inputSha256: file.master,
           assetVersionId: file.version_id,
           scope: 'stripped',
-          recipeDigest: digests.platformStripped,
+          recipeDigest: digest,
           priority: 1_000_000,
         })
         if (work.state === 'failed' || work.state === 'cancelled') {

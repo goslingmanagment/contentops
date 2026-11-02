@@ -43,18 +43,25 @@ export function renderHandler(env: MediaEnv): WorkHandler {
   return async (ctx) => {
     const master = inputSha(ctx)
     const stripped = ctx.work.scope === 'stripped'
-    const recipe = stripped ? env.recipes.platform.stripped : env.recipes.platform.kept
-    const key = { kind: 'platform' as const, recipeDigest: recipe.digest, metaStripped: stripped }
-    const ready = await readyGeneration(env.db, {
-      ...key,
-      masterSha256: master,
-      inputSha256: master,
-    })
-    if (ready) return { outputRef: ready.id, report: { generation: ready.id, cached: true } }
-    const input = await locateInput(env, master)
     let dir: string | null = null
     try {
+      const input = await locateInput(env, master)
       const probe = await probeVideoCached(env, input, ctx.signal)
+      const { platform } = env.recipes
+      const recipe = probe.video.isHdr
+        ? stripped
+          ? platform.hdrStripped
+          : platform.hdrKept
+        : stripped
+          ? platform.stripped
+          : platform.kept
+      const key = { kind: 'platform' as const, recipeDigest: recipe.digest, metaStripped: stripped }
+      const ready = await readyGeneration(env.db, {
+        ...key,
+        masterSha256: master,
+        inputSha256: master,
+      })
+      if (ready) return { outputRef: ready.id, report: { generation: ready.id, cached: true } }
       await abandonBuilding(env, ctx.work.id)
       const generationId = await createGeneration(env.db, {
         ...key,

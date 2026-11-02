@@ -9,6 +9,7 @@ import {
   sourceFps,
 } from './derive-video.ts'
 import { extOf, removeQuietly, sha256File, tempPathIn } from './files.ts'
+import { hdrOfRecipe, withHdrFilter } from './hdr.ts'
 import { type AudioTrack, probeVideo, type VideoProbe } from './probe.ts'
 import { type DigestedRecipe, digested, recipe } from './recipe.ts'
 import {
@@ -202,11 +203,16 @@ export function platformRecipe(
   versions: ToolVersions,
   profile: PlatformProfile,
   metaStripped: boolean,
+  hdrSource = false,
 ): DigestedRecipe {
   return digested(
-    recipe('platform', 'video', { ...profile, hdr: HDR_TO_SDR, metaStripped }, versions, [
-      'ffmpeg',
-    ]),
+    recipe(
+      'platform',
+      'video',
+      { ...profile, hdr: hdrOfRecipe(hdrSource, HDR_TO_SDR), metaStripped },
+      versions,
+      ['ffmpeg'],
+    ),
   )
 }
 
@@ -268,40 +274,42 @@ export async function buildPlatformCopy(
     profile.maxLongSide,
   )
   const fps = platformFps(probe, profile.maxFps)
-  const vf = [
-    `scale=${size.width}:${size.height}`,
-    ...(probe.video.isHdr ? [HDR_TO_SDR] : []),
-    `fps=${fps}`,
-    'format=yuv420p',
-  ].join(',')
-  const file = await encodeTo(
-    'platform.mp4',
-    (tmp) => [
-      ...COMMON_HEAD,
-      '-i',
-      options.input,
-      '-map',
-      '0:v:0',
-      '-filter:v',
-      vf,
-      ...h264Args(profile, fps, probe.durationMs),
-      ...audioArgs(probe, profile.audioKbps),
-      ...metadataArgs(metaStripped),
-      '-f',
-      'mp4',
-      tmp,
-    ],
-    options,
-    paths,
-    probe.durationMs,
-  )
+  const file = await withHdrFilter(probe, options.outDir, (hdr) => {
+    const vf = [
+      `scale=${size.width}:${size.height}`,
+      ...(hdr ? [hdr] : []),
+      `fps=${fps}`,
+      'format=yuv420p',
+    ].join(',')
+    return encodeTo(
+      'platform.mp4',
+      (tmp) => [
+        ...COMMON_HEAD,
+        '-i',
+        options.input,
+        '-map',
+        '0:v:0',
+        '-filter:v',
+        vf,
+        ...h264Args(profile, fps, probe.durationMs),
+        ...audioArgs(probe, profile.audioKbps),
+        ...metadataArgs(metaStripped),
+        '-f',
+        'mp4',
+        tmp,
+      ],
+      options,
+      paths,
+      probe.durationMs,
+    )
+  })
   return {
     file: {
       ...(await describeVideo('platform.mp4', file, paths, options.signal)),
       kind: 'platform',
       frameMs: null,
     },
-    recipe: platformRecipe(versions, profile, metaStripped),
+    recipe: platformRecipe(versions, profile, metaStripped, probe.video.isHdr),
   }
 }
 
@@ -348,14 +356,14 @@ export function uniqFilters(
   params: UniqParams,
   size: { width: number; height: number },
   fps: number,
-  hdr: boolean,
+  hdr: string | null,
 ): { video: string; audio: string } {
   const keep = 1 - params.zoomPct / 100
   const speed = 1 + params.speedPct / 100
   const video = [
     `crop=w=trunc(iw*${keep}/2)*2:h=trunc(ih*${keep}/2)*2:x=(iw-ow)/2:y=(ih-oh)/2`,
     `scale=${size.width}:${size.height}`,
-    ...(hdr ? [HDR_TO_SDR] : []),
+    ...(hdr ? [hdr] : []),
     ...(params.mirror ? ['hflip'] : []),
     `setpts=PTS/${speed}`,
     `fps=${fps}`,
@@ -380,33 +388,35 @@ export async function buildUniqVersion(
     profile.maxLongSide,
   )
   const fps = platformFps(probe, profile.maxFps)
-  const f = uniqFilters(params, size, fps, probe.video.isHdr)
   const speed = 1 + params.speedPct / 100
   const outSec = probe.durationMs / 1000 / speed - params.trimEndSec
   const name = `uniq-${params.n}.mp4`
-  const file = await encodeTo(
-    name,
-    (tmp) => [
-      ...COMMON_HEAD,
-      '-i',
-      options.input,
-      '-map',
-      '0:v:0',
-      '-filter:v',
-      f.video,
-      ...h264Args(profile, fps, outSec * 1000),
-      ...audioArgs(probe, profile.audioKbps, f.audio),
-      '-t',
-      outSec.toFixed(3),
-      ...metadataArgs(metaStripped),
-      '-f',
-      'mp4',
-      tmp,
-    ],
-    options,
-    paths,
-    Math.round(outSec * 1000),
-  )
+  const file = await withHdrFilter(probe, options.outDir, (hdr) => {
+    const f = uniqFilters(params, size, fps, hdr)
+    return encodeTo(
+      name,
+      (tmp) => [
+        ...COMMON_HEAD,
+        '-i',
+        options.input,
+        '-map',
+        '0:v:0',
+        '-filter:v',
+        f.video,
+        ...h264Args(profile, fps, outSec * 1000),
+        ...audioArgs(probe, profile.audioKbps, f.audio),
+        '-t',
+        outSec.toFixed(3),
+        ...metadataArgs(metaStripped),
+        '-f',
+        'mp4',
+        tmp,
+      ],
+      options,
+      paths,
+      Math.round(outSec * 1000),
+    )
+  })
   return {
     params,
     file: await describeVideo(name, file, paths, options.signal),
@@ -419,7 +429,7 @@ export async function buildUniqVersion(
           zoom: [...UNIQ_ZOOM_PCT],
           trim: [...UNIQ_TRIM_SEC],
           speed: '±1 % alternating',
-          hdr: HDR_TO_SDR,
+          hdr: hdrOfRecipe(probe.video.isHdr, HDR_TO_SDR),
           metaStripped,
         },
         versions,
@@ -460,46 +470,54 @@ export async function buildCompatibleCopy(options: CopyOptions): Promise<CopyRes
     `-c:a:${i}`,
     ...(MP4_AUDIO.has(a.codec) ? ['copy'] : ['aac', `-b:a:${i}`, '256k']),
   ])
-  const vf = [...(probe.video.isHdr ? [HDR_TO_SDR] : []), 'format=yuv420p'].join(',')
-  const file = await encodeTo(
-    'compatible.mp4',
-    (tmp) => [
-      ...COMMON_HEAD,
-      '-i',
-      options.input,
-      '-map',
-      '0:v:0',
-      ...audio,
-      ...(tracks.length === 0 ? ['-an'] : []),
-      '-filter:v',
-      vf,
-      '-c:v',
-      p.codec,
-      '-profile:v',
-      p.profile,
-      '-preset',
-      p.preset,
-      '-crf',
-      String(p.crf),
-      '-g',
-      String(Math.max(1, Math.round(fps * p.keyintSeconds))),
-      '-pix_fmt',
-      p.pixFmt,
-      '-fps_mode',
-      'passthrough',
-      ...metadataArgs(metaStripped),
-      '-f',
-      'mp4',
-      tmp,
-    ],
-    options,
-    paths,
-    probe.durationMs,
-  )
+  const file = await withHdrFilter(probe, options.outDir, (hdr) => {
+    const vf = [...(hdr ? [hdr] : []), 'format=yuv420p'].join(',')
+    return encodeTo(
+      'compatible.mp4',
+      (tmp) => [
+        ...COMMON_HEAD,
+        '-i',
+        options.input,
+        '-map',
+        '0:v:0',
+        ...audio,
+        ...(tracks.length === 0 ? ['-an'] : []),
+        '-filter:v',
+        vf,
+        '-c:v',
+        p.codec,
+        '-profile:v',
+        p.profile,
+        '-preset',
+        p.preset,
+        '-crf',
+        String(p.crf),
+        '-g',
+        String(Math.max(1, Math.round(fps * p.keyintSeconds))),
+        '-pix_fmt',
+        p.pixFmt,
+        '-fps_mode',
+        'passthrough',
+        ...metadataArgs(metaStripped),
+        '-f',
+        'mp4',
+        tmp,
+      ],
+      options,
+      paths,
+      probe.durationMs,
+    )
+  })
   return {
     file: await describeVideo('compatible.mp4', file, paths, options.signal),
     recipe: digested(
-      recipe('compatible', 'video', { ...p, hdr: HDR_TO_SDR, metaStripped }, versions, ['ffmpeg']),
+      recipe(
+        'compatible',
+        'video',
+        { ...p, hdr: hdrOfRecipe(probe.video.isHdr, HDR_TO_SDR), metaStripped },
+        versions,
+        ['ffmpeg'],
+      ),
     ),
   }
 }

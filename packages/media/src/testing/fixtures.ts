@@ -17,6 +17,8 @@ export const FIXTURE_NAMES = [
   'vfr120',
   'fps120',
   'hdr4k60',
+  'hlgPatches',
+  'pqPatches',
   'vertical',
   'lowrate',
   'av1',
@@ -44,6 +46,8 @@ const FILE: Record<FixtureName, string> = {
   vfr120: 'vfr120.mov',
   fps120: 'fps120.mp4',
   hdr4k60: 'hdr4k60.mov',
+  hlgPatches: 'hlg-patches.mov',
+  pqPatches: 'pq-patches.mov',
   vertical: 'vertical.mov',
   lowrate: 'lowrate.mp4',
   av1: 'av1.mp4',
@@ -62,7 +66,7 @@ const FILE: Record<FixtureName, string> = {
 }
 
 /** Bump with any change below: it re-keys the cache. */
-const GENERATOR_VERSION = 5
+const GENERATOR_VERSION = 6
 
 /** Neutral fixture metadata (no real place: the zero point). */
 export const FIXTURE_TAGS = {
@@ -79,6 +83,23 @@ export const FIXTURE_PHOTO_EXIF = {
   dateTimeOriginal: '2024:05:06 07:08:09',
   offsetTimeOriginal: '+03:00',
 } as const
+
+/**
+ * Flat colour patches of the HDR fixtures: sRGB values of surfaces (skin of the ColorChecker and a
+ * brighter one, neutral greys), exposed so that a white surface is the HDR reference white of
+ * BT.2408 (HLG 75 %).
+ * Row by row, each patch `HDR_PATCH_SIDE` px square.
+ */
+export const HDR_PATCHES = [
+  { name: 'lightSkin', srgb: [194, 150, 130] },
+  { name: 'darkSkin', srgb: [115, 82, 68] },
+  { name: 'brightSkin', srgb: [243, 200, 175] },
+  { name: 'grey', srgb: [122, 122, 122] },
+  { name: 'lightGrey', srgb: [200, 200, 200] },
+  { name: 'white', srgb: [243, 243, 243] },
+] as const
+export const HDR_PATCH_SIDE = 120
+export const HDR_PATCH_COLUMNS = 3
 
 export async function ensureFixtures(
   options: { dir?: string; paths?: ToolPaths; heifEnc?: string } = {},
@@ -119,6 +140,7 @@ export async function ensureFixtures(
       g.vfr120(),
       g.fps120(),
       g.hdr4k60(),
+      g.hdrPatches(),
       g.vertical(),
       g.lowrate(),
       g.av1(),
@@ -265,6 +287,61 @@ class Generator {
       '-c:a',
       'aac',
       this.out('hdr4k60'),
+    ])
+  }
+
+  /** The patches of `HDR_PATCHES` in HEVC 10-bit: HLG as a phone stores it, and the same in PQ. */
+  async hdrPatches() {
+    const raw = join(this.dir, 'hlg-patches.yuv')
+    await writeFile(raw, hlgPatchFrame())
+    const x265 = (transfer: string) => [
+      '-c:v',
+      'libx265',
+      '-preset',
+      'ultrafast',
+      '-x265-params',
+      `log-level=error:lossless=1:colorprim=bt2020:transfer=${transfer}:colormatrix=bt2020nc`,
+      '-color_primaries',
+      'bt2020',
+      '-color_trc',
+      transfer,
+      '-colorspace',
+      'bt2020nc',
+      '-tag:v',
+      'hvc1',
+    ]
+    await this.ff([
+      '-f',
+      'rawvideo',
+      '-pix_fmt',
+      'yuv420p10le',
+      '-s',
+      `${HDR_PATCH_SIDE * HDR_PATCH_COLUMNS}x${(HDR_PATCH_SIDE * HDR_PATCHES.length) / HDR_PATCH_COLUMNS}`,
+      '-r',
+      '30',
+      '-color_range',
+      'tv',
+      '-colorspace',
+      'bt2020nc',
+      '-color_primaries',
+      'bt2020',
+      '-color_trc',
+      'arib-std-b67',
+      '-stream_loop',
+      '9',
+      '-i',
+      raw,
+      ...x265('arib-std-b67'),
+      this.out('hlgPatches'),
+    ])
+    await rm(raw)
+    await this.ff([
+      '-i',
+      this.out('hlgPatches'),
+      '-vf',
+      'zscale=t=smpte2084,format=yuv420p10le',
+      ...x265('smpte2084'),
+      this.out('pqPatches'),
     ])
   }
 
@@ -524,6 +601,54 @@ class Generator {
       .toBuffer()
     await writeFile(this.out('smallPng'), withPngText(png, 'Comment', 'fixture text chunk'))
   }
+}
+
+/** One `yuv420p10le` frame of `HDR_PATCHES` in HLG BT.2020, limited range. */
+function hlgPatchFrame(): Buffer {
+  const width = HDR_PATCH_SIDE * HDR_PATCH_COLUMNS
+  const height = (HDR_PATCH_SIDE * HDR_PATCHES.length) / HDR_PATCH_COLUMNS
+  const frame = Buffer.alloc(((width * height * 3) / 2) * 2)
+  const code = HDR_PATCHES.map(({ srgb }) => {
+    const [r, g, b] = srgb.map((v) => {
+      const c = v / 255
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    }) as [number, number, number]
+    // BT.709 → BT.2020 (BT.2087), a white surface at the scene light of HLG 75 %.
+    const [er, eg, eb] = [
+      0.6274 * r + 0.3293 * g + 0.0433 * b,
+      0.0691 * r + 0.9195 * g + 0.0114 * b,
+      0.0164 * r + 0.088 * g + 0.8956 * b,
+    ].map((v) => hlgOetf(v * 0.265)) as [number, number, number]
+    const y = 0.2627 * er + 0.678 * eg + 0.0593 * eb
+    return [
+      Math.round(64 + 876 * y),
+      Math.round(512 + (896 * (eb - y)) / 1.8814),
+      Math.round(512 + (896 * (er - y)) / 1.4746),
+    ] as const
+  })
+  const at = (x: number, y: number, step: number) =>
+    code[
+      Math.floor(x / (HDR_PATCH_SIDE / step)) +
+        Math.floor(y / (HDR_PATCH_SIDE / step)) * HDR_PATCH_COLUMNS
+    ] as readonly [number, number, number]
+  let offset = 0
+  const put = (w: number, h: number, step: number, plane: 0 | 1 | 2) => {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        frame.writeUInt16LE(at(x, y, step)[plane], offset)
+        offset += 2
+      }
+    }
+  }
+  put(width, height, 1, 0)
+  put(width / 2, height / 2, 2, 1)
+  put(width / 2, height / 2, 2, 2)
+  return frame
+}
+
+/** The HLG curve of BT.2100, scene light 0–1 → signal 0–1. */
+function hlgOetf(e: number): number {
+  return e <= 1 / 12 ? Math.sqrt(3 * e) : 0.17883277 * Math.log(12 * e - 0.28466892) + 0.55991073
 }
 
 /** Appends a `free` box so that size × 8 / duration reaches the bitrate (as the benchmark tests). */

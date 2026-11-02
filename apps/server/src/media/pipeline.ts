@@ -43,7 +43,13 @@ export interface PipelineRecipes {
   probePhoto: DigestedRecipe
   video: ReturnType<typeof videoDerivativeRecipes>
   photo: ReturnType<typeof photoRecipes>
-  platform: { kept: DigestedRecipe; stripped: DigestedRecipe }
+  /** A copy of an HDR master has a recipe of its own: an SDR copy stays valid (SPEC §9.3). */
+  platform: {
+    kept: DigestedRecipe
+    stripped: DigestedRecipe
+    hdrKept: DigestedRecipe
+    hdrStripped: DigestedRecipe
+  }
 }
 
 export function pipelineRecipes(
@@ -61,6 +67,8 @@ export function pipelineRecipes(
     platform: {
       kept: platformRecipe(versions, platform, false),
       stripped: platformRecipe(versions, platform, true),
+      hdrKept: platformRecipe(versions, platform, false, true),
+      hdrStripped: platformRecipe(versions, platform, true, true),
     },
   }
 }
@@ -73,6 +81,8 @@ export function recipeDigests(recipes: PipelineRecipes): Record<string, string> 
     'probe.photo': recipes.probePhoto.digest,
     platform: recipes.platform.kept.digest,
     'platform.stripped': recipes.platform.stripped.digest,
+    'platform.hdr': recipes.platform.hdrKept.digest,
+    'platform.hdr.stripped': recipes.platform.hdrStripped.digest,
   }
   for (const [kind, r] of Object.entries(recipes.video)) digests[`video.${kind}`] = r.digest
   for (const [kind, r] of Object.entries(recipes.photo)) digests[`photo.${kind}`] = r.digest
@@ -98,7 +108,12 @@ export async function activatePipelineVersion(
   const renditionRecipes = {
     video: Object.fromEntries(Object.entries(recipes.video).map(([k, r]) => [k, r.recipe])),
     photo: Object.fromEntries(Object.entries(recipes.photo).map(([k, r]) => [k, r.recipe])),
-    platform: { kept: recipes.platform.kept.recipe, stripped: recipes.platform.stripped.recipe },
+    platform: {
+      kept: recipes.platform.kept.recipe,
+      stripped: recipes.platform.stripped.recipe,
+      hdrKept: recipes.platform.hdrKept.recipe,
+      hdrStripped: recipes.platform.hdrStripped.recipe,
+    },
   }
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('pipeline_versions', 0))`)
@@ -171,6 +186,17 @@ export interface PipelineDigests {
   version: string
   platform: string
   platformStripped: string
+  platformHdr: string
+  platformHdrStripped: string
+}
+
+/** No media role has started yet: nothing to look a copy up by. */
+export const NO_DIGESTS: PipelineDigests = {
+  version: '',
+  platform: '',
+  platformStripped: '',
+  platformHdr: '',
+  platformHdrStripped: '',
 }
 
 /** Digests of the current `pipeline_versions` row; `null` until a media role has started. */
@@ -181,5 +207,30 @@ export async function currentDigests(q: Queryable): Promise<PipelineDigests | nu
   const platform = row?.digests.platform
   const platformStripped = row?.digests['platform.stripped']
   if (!row || !platform || !platformStripped) return null
-  return { version: row.version, platform, platformStripped }
+  return {
+    version: row.version,
+    platform,
+    platformStripped,
+    // A row of an older image, until the media roles of the new one have started.
+    platformHdr: row.digests['platform.hdr'] ?? platform,
+    platformHdrStripped: row.digests['platform.hdr.stripped'] ?? platformStripped,
+  }
+}
+
+/**
+ * The digest a master's platform copy goes by: HDR by its ffprobe row. A master not probed yet
+ * counts as SDR; `render` probes it and builds by what it finds (`work/copies.ts`).
+ */
+export async function platformDigest(
+  q: Queryable,
+  digests: PipelineDigests,
+  master: Buffer,
+  stripped: boolean,
+): Promise<string> {
+  const { rows } = await q.execute<{ hdr: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM blob_probes WHERE sha256 = ${master} AND kind = 'ffprobe' AND is_hdr
+    ) AS hdr`)
+  if (rows[0]?.hdr) return stripped ? digests.platformHdrStripped : digests.platformHdr
+  return stripped ? digests.platformStripped : digests.platform
 }

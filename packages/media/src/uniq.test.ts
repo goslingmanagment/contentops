@@ -48,7 +48,7 @@ describe('uniq versions (SPEC §9.3)', () => {
   it('builds crop/scale to even profile sizes, setpts and atempo', () => {
     const size = platformSize(2160, 3840, 1920)
     expect(size).toEqual({ width: 1080, height: 1920 })
-    const f = uniqFilters(uniqParams('mirror', 2), size, 30, false)
+    const f = uniqFilters(uniqParams('mirror', 2), size, 30, null)
     expect(f.video).toBe(
       'crop=w=trunc(iw*0.98/2)*2:h=trunc(ih*0.98/2)*2:x=(iw-ow)/2:y=(ih-oh)/2,scale=1080:1920,hflip,setpts=PTS/0.99,fps=30,format=yuv420p',
     )

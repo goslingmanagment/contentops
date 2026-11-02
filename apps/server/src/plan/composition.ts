@@ -17,7 +17,7 @@ import {
   pickFiles,
   zipNameOf,
 } from '../media/downloads'
-import { currentDigests } from '../media/pipeline'
+import { currentDigests, platformDigest } from '../media/pipeline'
 import { readyGeneration } from '../media/renditions'
 import { shaHex } from '../media/storage'
 import { renderKey } from '../media/work/copies'
@@ -241,9 +241,10 @@ export async function enqueueCopies(
   if (!digests) return
   for (const file of files) {
     if (file.media_kind !== 'video') continue
+    const digest = await platformDigest(tx, digests, file.master, true)
     const ready = await readyGeneration(tx, {
       kind: 'platform',
-      recipeDigest: digests.platformStripped,
+      recipeDigest: digest,
       metaStripped: true,
       masterSha256: file.master,
       inputSha256: file.master,
@@ -252,11 +253,11 @@ export async function enqueueCopies(
     await enqueueWork(tx, {
       modelId,
       kind: 'render',
-      workKey: renderKey(shaHex(file.master), digests.platformStripped),
+      workKey: renderKey(shaHex(file.master), digest),
       inputSha256: file.master,
       assetVersionId: file.version_id,
       scope: 'stripped',
-      recipeDigest: digests.platformStripped,
+      recipeDigest: digest,
     })
   }
 }
@@ -291,9 +292,10 @@ export async function copyState(q: Queryable, files: readonly FileRow[]): Promis
       building.push(0)
       continue
     }
+    const digest = await platformDigest(q, digests, file.master, true)
     const ready = await readyGeneration(q, {
       kind: 'platform',
-      recipeDigest: digests.platformStripped,
+      recipeDigest: digest,
       metaStripped: true,
       masterSha256: file.master,
       inputSha256: file.master,
@@ -308,7 +310,7 @@ export async function copyState(q: Queryable, files: readonly FileRow[]): Promis
     const { rows } = await q.execute<{ state: string; num: string | null; den: string | null }>(sql`
       SELECT state, progress_num AS num, progress_den AS den FROM work_operations
        WHERE kind = 'render'
-         AND work_key = ${renderKey(shaHex(file.master), digests.platformStripped)}
+         AND work_key = ${renderKey(shaHex(file.master), digest)}
        ORDER BY created_at DESC LIMIT 1`)
     const work = rows[0]
     if (work?.state === 'failed' || work?.state === 'cancelled') return { state: 'failed' }

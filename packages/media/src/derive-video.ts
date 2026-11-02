@@ -52,7 +52,11 @@ export const PREVIEW_PROFILE = {
   metadata: 'none',
 } as const
 
-/** HDR (PQ/HLG) → SDR BT.709, applied after the first downscale. */
+/**
+ * HDR (PQ/HLG) → SDR BT.709 of previews and stills, applied after the first downscale. What people
+ * download and fans see converts by `hdr.ts` (SPEC §9.3); this one stays, since its change would
+ * rebuild the previews of the whole library.
+ */
 export const HDR_TO_SDR =
   'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p'
 
