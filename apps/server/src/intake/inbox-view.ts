@@ -66,6 +66,9 @@ interface GroupRow extends Record<string, unknown> {
   proposed_purpose: values.RawPurpose | null
   has_second_person: boolean | null
   custom_order_id: string | null
+  /** «Канал ▾» of a promo pack: the code of the channel; «Подборка ▾»: the collection. */
+  channel_code: string | null
+  collection_public_id: string | null
   /** The object this group already made (`CUS-197`): a new file of it joins that object. */
   created_public_id: string | null
   row_version: string
@@ -326,6 +329,15 @@ export function activeState(
   if (!group.proposed_type) {
     return { state: { kind: 'decision', decision: 'what_is_it' }, block: 'Сначала выберите тип' }
   }
+  // A promo pack is a collection of a channel (DESIGN §4.8): «готово · Промо: Instagram».
+  if (group.proposed_type === 'PRM' && !group.evidence?.legacy && !group.created_public_id) {
+    return group.channel_code
+      ? {
+          state: { kind: 'ready', note: { kind: 'promo', channel: group.channel_code } },
+          block: null,
+        }
+      : { state: { kind: 'ready', note: { kind: 'new' } }, block: 'Сначала выберите канал' }
+  }
   const target = drafts.find((draft) => draft.target_public_id)?.target_public_id
   return {
     state: {
@@ -511,8 +523,8 @@ function view(
       tags: group.proposed_tags ?? [],
       ppv_kind: group.proposed_ppv_kind,
       raw_purpose: group.proposed_purpose === 'mass_dm' ? 'mailing' : group.proposed_purpose,
-      channel: null,
-      collection: null,
+      channel: group.channel_code,
+      collection: group.collection_public_id,
       second_person: group.has_second_person,
       fan_name: null,
       order_id: group.custom_order_id,
@@ -542,6 +554,10 @@ const GROUP_COLUMNS = sql`
   g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
   g.has_second_person, g.custom_order_id, g.row_version, g.discovered_at, s.kind AS source_kind,
   s.label AS source_label,
+  (SELECT ch.code FROM promo_channels ch
+    WHERE ch.model_id = g.model_id AND ch.id = g.proposed_channel_id) AS channel_code,
+  (SELECT public_item_id(i.type, i.number) FROM content_items i
+    WHERE i.model_id = g.model_id AND i.id = g.proposed_collection_id) AS collection_public_id,
   (SELECT public_item_id(i.type, i.number) FROM content_items i
     WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_public_id`
 

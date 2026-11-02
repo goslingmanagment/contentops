@@ -1,15 +1,17 @@
 import type { DecideCommand, UpdateDraftFilesCommand } from '@contentops/contracts/commands/inbox'
 import type { FileRole } from '@contentops/contracts/domain/files'
 import { enqueueWork, type Tx, type values } from '@contentops/db'
+import { components } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import { splitArchive } from '../legacy/split'
 import { lockOrder } from '../orders/writes'
 import { acceptGroup, lockGroupForDecision, lockOpenDrafts, rejectGroup } from './accept'
+import { channelOfPath } from './discover'
 import { queueMedia } from './fetch'
 import { bindFrame, ordinalOfHandle, rawFrame } from './frames'
-import { titleFromFileName } from './grouping'
+import { placementOf, titleFromFileName } from './grouping'
 import { ITEM_TO_DB_TYPE } from './inbox-view'
 import { planRow } from './row-upload'
 import { acceptRowMontage } from './upload'
@@ -144,6 +146,85 @@ async function splitVideos(
   return hasPhotos ? videos.length : rest.length
 }
 
+/**
+ * «Разложить по папкам» (SPEC §6.1): a group gathered before the rule of its root — every file
+ * goes to the group of the folder right above it, as discovery groups it now: in `9. SMM` a
+ * collection of the channel its path names, elsewhere a group of the same type. Files of the
+ * group's own folder stay. Returns the number of groups the files went to.
+ */
+async function splitFolders(
+  tx: Tx,
+  model: ModelScope,
+  groupId: string,
+  drafts: Awaited<ReturnType<typeof lockOpenDrafts>>,
+): Promise<number> {
+  const { rows } = await tx.execute<{
+    source_id: string
+    root_path: string | null
+    folder_object_id: string | null
+    root: string | null
+    proposed_type: values.ContentType | null
+    proposed_purpose: values.RawPurpose | null
+  }>(sql`
+    SELECT g.source_id, s.root_path, g.folder_object_id, g.evidence ->> 'root' AS root,
+           g.proposed_type, g.proposed_purpose
+      FROM inbox_groups g JOIN sources s ON s.model_id = g.model_id AND s.id = g.source_id
+     WHERE g.model_id = ${model.id}::uuid AND g.id = ${groupId}::uuid`)
+  const group = rows[0]
+  if (!group) throw new ApiProblem('not_found', 'Такой группы нет')
+  const byFolder = new Map<string, string[]>()
+  for (const draft of drafts) {
+    const cut = draft.path?.lastIndexOf('/') ?? -1
+    if (!draft.path || cut <= 0) continue
+    const folder = draft.path.slice(0, cut)
+    byFolder.set(folder, [...(byFolder.get(folder) ?? []), draft.id])
+  }
+  const depth = components(group.root_path ?? '').length
+  let made = 0
+  for (const [path, ids] of byFolder) {
+    const { rows: found } = await tx.execute<{ id: string; resource_id: string; name: string }>(sql`
+      SELECT id, resource_id, current_name AS name FROM source_objects
+       WHERE model_id = ${model.id}::uuid AND source_id = ${group.source_id}::uuid AND is_dir
+         AND current_path = ${path} AND resource_id IS NOT NULL AND gone_since IS NULL
+       ORDER BY last_seen_at DESC LIMIT 1`)
+    const folder = found[0]
+    if (!folder || folder.id === group.folder_object_id) continue
+    const relative = components(path).slice(depth)
+    const placement = placementOf([...relative, ''], false)
+    const kind = placement.kind === 'folder' ? placement.proposal : undefined
+    const channel = kind?.channelFrom ? await channelOfPath(tx, model.id, kind.channelFrom) : null
+    const type = kind?.channelFrom ? (channel ? 'PRM' : 'RAW') : (kind?.type ?? group.proposed_type)
+    const purpose = kind?.channelFrom
+      ? channel
+        ? null
+        : 'fyp'
+      : (kind?.purpose ?? group.proposed_purpose)
+    const evidence = {
+      root: relative[0] ?? group.root,
+      path,
+      split_from: groupId,
+      ...(channel ? { promo: { channel: channel.name, folder: path } } : {}),
+    }
+    const { rows: made_ } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO inbox_groups (
+        model_id, source_id, group_key, grouping, folder_object_id, evidence, proposed_type,
+        proposed_title, proposed_purpose, proposed_channel_id
+      ) VALUES (
+        ${model.id}::uuid, ${group.source_id}::uuid, ${`folder:${folder.resource_id}`}, 'folder',
+        ${folder.id}::uuid, ${JSON.stringify(evidence)}::jsonb, ${type}, ${folder.name},
+        ${purpose}, ${channel?.id ?? null}::uuid
+      )
+      ON CONFLICT (model_id, source_id, group_key) DO UPDATE SET updated_at = now()
+      RETURNING id`)
+    await moveDrafts(tx, model, ids, (made_[0] as { id: string }).id)
+    made += 1
+  }
+  if (made === 0) {
+    throw new ApiProblem('invalid_request', 'Раскладывать нечего: все файлы в папке группы')
+  }
+  return made
+}
+
 /** «Слить»: the open files of the other groups join the first one. */
 export async function mergeGroups(
   tx: Tx,
@@ -275,6 +356,9 @@ export async function decide(
     case 'split_videos':
       await splitVideos(tx, model, groupId, drafts)
       await clear('video_in_set')
+      break
+    case 'split_folders':
+      await splitFolders(tx, model, groupId, drafts)
       break
     case 'video_in_set': {
       const videos = drafts.filter((draft) => draft.media_kind === 'video').map((draft) => draft.id)

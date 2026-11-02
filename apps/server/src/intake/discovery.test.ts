@@ -219,6 +219,39 @@ describe('one clip is one group (SPEC §6.1)', () => {
   })
 })
 
+describe('a folder of 9. SMM is a collection of its channel (SPEC §6.1, §6.3)', () => {
+  beforeAll(async () => {
+    const t = h.dropbox.tree
+    t.addFile(`${LORA_ROOT}/9. SMM/Gif сайты/Октябрь/нюд/a.jpg`, 1201)
+    t.addFile(`${LORA_ROOT}/9. SMM/Gif сайты/Октябрь/нюд/b.mov`, 1202)
+    t.addFile(`${LORA_ROOT}/9. SMM/Gif сайты/Октябрь/c.jpg`, 1203)
+    t.addFile(`${LORA_ROOT}/9. SMM/Подрядчик/съёмка/d.jpg`, 1204)
+    await scan('dropbox', 'full')
+  })
+
+  it('each leaf folder is a group; the channel comes from the path, without one — raw for FYPs', async () => {
+    const { rows } = await h.db.execute<{
+      title: string
+      type: string
+      purpose: string | null
+      channel: string | null
+      files: number
+    }>(sql`
+      SELECT g.proposed_title AS title, g.proposed_type AS type, g.proposed_purpose AS purpose,
+             ch.code AS channel, count(d.id)::int AS files
+        FROM inbox_groups g
+        JOIN inbox_drafts d ON d.model_id = g.model_id AND d.group_id = g.id
+        LEFT JOIN promo_channels ch ON ch.model_id = g.model_id AND ch.id = g.proposed_channel_id
+       WHERE d.path LIKE ${`${LORA_ROOT}/9. SMM/%`}
+       GROUP BY g.model_id, g.id, ch.code ORDER BY g.proposed_title`)
+    expect(rows).toEqual([
+      { title: 'нюд', type: 'PRM', purpose: null, channel: 'gif-sites', files: 2 },
+      { title: 'Октябрь', type: 'PRM', purpose: null, channel: 'gif-sites', files: 1 },
+      { title: 'съёмка', type: 'RAW', purpose: 'fyp', channel: null, files: 1 },
+    ])
+  })
+})
+
 describe('losses (SPEC §6.1)', () => {
   const file = `${LORA_ROOT}/8. Other/z.jpg`
   const away = '/Elsewhere/z.jpg'

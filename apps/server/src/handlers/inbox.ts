@@ -1,6 +1,7 @@
 import type { UpdateDraftCommand } from '@contentops/contracts/commands/inbox'
 import { logAction, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
+import { findItem } from '../catalog/ids'
 import { checkVersion, isUuid } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
@@ -19,6 +20,7 @@ import { ITEM_TO_DB_TYPE, inboxGroup, inboxList } from '../intake/inbox-view'
 import { dropStagedOfGroup } from '../intake/staging'
 import { createUpload } from '../intake/upload'
 import { acceptKeepingLegacyNumber } from '../legacy/auto-accept'
+import { findChannel } from '../promo/views'
 import type { Services } from '../services'
 
 /** «Приехало» (DESIGN §4.8–4.10): reading groups and editing the fields of a future object. */
@@ -71,6 +73,33 @@ async function writeFields(
     sets.push(sql`proposed_purpose = ${purpose}`)
   }
   if (body.second_person !== undefined) sets.push(sql`has_second_person = ${body.second_person}`)
+  // «Канал ▾» and «Подборка: новая / PRM-015 ▾» of a promo pack (DESIGN §4.8). Another channel
+  // drops a collection of the former one; a collection brings its channel.
+  if (body.channel !== undefined) {
+    const channel = body.channel === null ? null : (await findChannel(tx, model, body.channel)).id
+    sets.push(sql`proposed_channel_id = ${channel}::uuid`)
+    if (body.collection === undefined) {
+      sets.push(sql`proposed_collection_id = CASE
+        WHEN (SELECT promo_channel_id FROM content_items
+               WHERE model_id = ${model.id}::uuid AND id = proposed_collection_id)
+             IS NOT DISTINCT FROM ${channel}::uuid THEN proposed_collection_id END`)
+    }
+  }
+  if (body.collection !== undefined) {
+    const collection =
+      body.collection === null || body.collection === 'new'
+        ? null
+        : await findItem(tx, model, body.collection)
+    if (collection && collection.type !== 'PRM') {
+      throw new ApiProblem('invalid_request', 'Это не подборка Промо', {
+        collection: body.collection,
+      })
+    }
+    sets.push(sql`proposed_collection_id = ${collection?.id ?? null}::uuid`)
+    if (collection?.promo_channel_id && body.channel === undefined) {
+      sets.push(sql`proposed_channel_id = ${collection.promo_channel_id}::uuid`)
+    }
+  }
   // «Заказ» of a custom: the KM's own upload becomes a delivery of the order (DESIGN §6.6).
   if (body.order_id !== undefined) {
     const drafts = await lockOpenDrafts(tx, model, id)

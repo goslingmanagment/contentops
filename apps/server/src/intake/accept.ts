@@ -10,6 +10,7 @@ import { logItemAction, touchItem } from '../catalog/writes'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import { materializeClaims } from '../legacy/materialize'
+import { linkDuplicates } from '../legacy/promo'
 import { handleOf } from '../media/downloads'
 import { bindGenerations } from '../media/renditions'
 import { lockBlobForReference } from '../media/storage-ops'
@@ -120,6 +121,9 @@ interface GroupRow extends Record<string, unknown> {
   has_second_person: boolean | null
   custom_order_id: string | null
   created_item_id: string | null
+  /** «Канал ▾» and «Подборка ▾» of a promo pack (DESIGN §4.8); no collection — a new one. */
+  proposed_channel_id: string | null
+  proposed_collection_id: string | null
 }
 
 interface DraftRow extends Record<string, unknown> {
@@ -156,7 +160,7 @@ export async function lockGroupForDecision(
   const { rows } = await tx.execute<GroupRow>(sql`
     SELECT g.id, g.source_id, g.proposed_type, g.proposed_title, g.proposed_title_en,
            g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
-           g.has_second_person, g.custom_order_id,
+           g.has_second_person, g.custom_order_id, g.proposed_channel_id, g.proposed_collection_id,
            (SELECT i.id FROM content_items i
              WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_item_id
       FROM inbox_groups g
@@ -229,9 +233,9 @@ function rolesFor(type: DbType, drafts: readonly DraftRow[], promo = false): Map
       for (const draft of drafts) roles.set(draft.id, 'raw')
       break
     case 'PRM':
-      // Past SMM folders of the old disk become collections (SPEC §6.3); new ones are built
-      // in «Промо».
-      if (!promo) throw blocked('promo', 'Подборки Промо собираются в разделе «Промо»')
+      // A collection of its channel (SPEC §6.3, §7.1): a folder of `9. SMM`, a past one of the
+      // old disk, or a pack the KM gave a channel.
+      if (!promo) throw blocked('promo_channel', 'Сначала выберите канал')
       for (const draft of videos) roles.set(draft.id, 'clip')
       for (const draft of photos) roles.set(draft.id, 'pic')
       break
@@ -261,7 +265,8 @@ function appendRole(type: DbType, draft: DraftRow, extend: AcceptCommand['extend
       if (!video) throw blocked('video_in_set', 'В фуп добавляется только ролик')
       return 'master'
     case 'PRM':
-      throw blocked('promo', 'Подборки Промо пополняются в разделе «Промо»')
+      // Material shot for the channel joins the chosen collection as its own files (SPEC §7.1).
+      return video ? 'clip' : 'pic'
   }
 }
 
@@ -462,6 +467,7 @@ function nextStep(type: DbType): string | null {
     case 'SET':
       return 'Отобрать кадры'
     case 'RAW':
+    case 'PRM':
       return null
     default:
       return 'В план'
@@ -568,6 +574,14 @@ export async function acceptGroup(
       SELECT public_item_id(type, number) AS public_id FROM content_items
        WHERE model_id = ${model.id}::uuid AND id = ${(draftTarget ?? group.created_item_id) as string}::uuid`)
     if (rows[0]) target = await findItem(tx, model, rows[0].public_id, { lock: true })
+  } else if (group.proposed_type === 'PRM' && group.proposed_collection_id) {
+    // «Подборка: PRM-015»: the pack fills the chosen collection («+ в PRM-015», DESIGN §4.8).
+    const { rows } = await tx.execute<{ public_id: string }>(sql`
+      SELECT public_item_id(type, number) AS public_id FROM content_items
+       WHERE model_id = ${model.id}::uuid AND id = ${group.proposed_collection_id}::uuid
+         AND type = 'PRM' AND deleted_at IS NULL`)
+    if (!rows[0]) throw blocked('promo_collection', 'Такой подборки больше нет — выберите другую')
+    target = await findItem(tx, model, rows[0].public_id, { lock: true })
   }
   const type = target ? target.type : group.proposed_type
   if (!type) throw blocked('needs_type', 'Сначала выберите тип')
@@ -575,7 +589,8 @@ export async function acceptGroup(
     // One group makes one object (schema §4): «Отдельным объектом» is a split first.
     throw blocked('separate', 'Сначала вынесите файлы в отдельную группу')
   }
-  const roles = target ? null : rolesFor(type, files, Boolean(options.legacy?.promoChannelId))
+  const channelId = options.legacy?.promoChannelId ?? group.proposed_channel_id
+  const roles = target ? null : rolesFor(type, files, Boolean(channelId))
 
   // Bytes by ascending SHA-256 (schema §9.3): two accepts over shared bytes never deadlock.
   const masters = [...new Set(files.map((draft) => draft.master_hex as string))].sort()
@@ -624,7 +639,7 @@ export async function acceptGroup(
         ${type === 'RAW' ? (group.proposed_purpose ?? 'unknown') : null},
         ${group.has_second_person}, ${type === 'CUS' ? 'unknown' : null},
         ${group.id}::uuid, ${options.legacy ? 'import' : 'intake'}, ${actor.id}::uuid,
-        ${type === 'PRM' ? (options.legacy?.promoChannelId ?? null) : null}::uuid,
+        ${type === 'PRM' ? channelId : null}::uuid,
         ${shotOn}::date
       )
       RETURNING id`)
@@ -776,6 +791,11 @@ export async function acceptGroup(
   const elsewhere = await aliasOpenDuplicates(tx, model.id, group.id, [
     ...new Set(accepted.filter((hex): hex is string => Boolean(hex))),
   ])
+  // Files of the pack the catalog already had are links of the collection, not copies (SPEC
+  // §7.1); the import of the old disk links its own after the accept.
+  if (item.type === 'PRM' && channelId && !options.legacy) {
+    await linkDuplicates(tx, model, group.id, channelId, item.id, null)
+  }
 
   const publicId = publicIdOf(item.type, item.number)
   await logItemAction(tx, model, item, {

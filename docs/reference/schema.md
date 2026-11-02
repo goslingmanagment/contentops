@@ -538,7 +538,9 @@ single | manual`; правило группировки — одно, SPEC §6.1
 группе (`annotation_fields` с `group_id`) и переносится на объект; значения —
 колонки группы, как в образце 1б: `proposed_type`, `proposed_title`, `proposed_title_en?`,
 `proposed_description`, `proposed_tags jsonb`, `proposed_ppv_kind`, `proposed_purpose`,
-`has_second_person`, `custom_order_id?`. Одиночный файл — группа из одного черновика
+`has_second_person`, `custom_order_id?`, у промо — `proposed_channel_id?` (канал из пути
+`9. SMM` или «Канал ▾») и `proposed_collection_id?` (пусто — новая подборка; `0013_inbox_promo`).
+Одиночный файл — группа из одного черновика
 (`single`), поэтому `inbox_drafts.group_id` обязателен. ИИ предлагает оба названия
 вместе; человек или агент утверждает каждое поле. `proposed_title_en` при принятии
 переносится в `content_items.title_en`; отсутствие английского названия приёмку
@@ -579,7 +581,8 @@ single | manual`; правило группировки — одно, SPEC §6.1
 Принятие группы, уже создавшей объект, дополняет этот объект. Роли нового объекта: PPV —
 до двух видео (больший — мастер, второй — тизер) и фото; CUS — одно видео и фото; FYP —
 один ролик; SET — только фото (видео — ◆ «Видео среди фото»); SXT, LIFE — клипы и фото;
-RAW — всё сырьё; PRM в приёмке не создаётся (4в).
+RAW — всё сырьё; PRM — клипы и фото подборки канала: новой или выбранной (SPEC §7.1, с
+03.11.2026; до того подборки собирались только в «Промо»).
 
 CHECK `outcome NOT IN ('new_item','append') OR master_verified_at IS NOT NULL` —
 «принять можно только с проверенным мастером» (§6.1); для дубля и отказа мастер не
@@ -1674,6 +1677,7 @@ LLM.
 | 5б | `0009_publications` | таблиц нет: связь строки плана с публикацией Hub — колонки `posting_plan_rows` (схема §3.5), функции `is_publication_post/album`, поток `publications` в `hub_sync_state` |
 | 5 | `0010_hub_matching` | таблиц нет: `placements.surface_source` дополнен `hub_hint` (схема §9.6) |
 | после 3 (03.11.2026) | `0012_inbox_reads` | таблиц нет: индекс последней работы забора ревизии для «Приехало» (SPEC §12.0); номера поздних файлов ниже сдвигаются |
+| после 3 (03.11.2026) | `0013_inbox_promo` | таблиц нет: канал и подборка промо-группы «Приехало» (`inbox_groups.proposed_channel_id`, `proposed_collection_id`) |
 | 8 (8а) | `0010_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 

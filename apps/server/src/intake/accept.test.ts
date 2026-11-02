@@ -632,6 +632,107 @@ describe('duplicates among open drafts (SPEC §6.2, schema §5)', () => {
   })
 })
 
+describe('a promo pack (SPEC §7.1, DESIGN §4.8)', () => {
+  const patch = (group: string, version: number, body: object) =>
+    call(app, {
+      method: 'PATCH',
+      url: `/api/v1/lora/inbox/groups/${group}`,
+      as: owner,
+      key: newKey(),
+      ifMatch: version,
+      body,
+    })
+  const groupView = async (group: string) =>
+    (
+      await call(app, { method: 'GET', url: `/api/v1/lora/inbox/groups/${group}`, as: owner })
+    ).json()
+
+  it('a folder of a channel becomes a new collection, the next pack fills the chosen one', async () => {
+    const first = `${LORA_ROOT}/9. SMM/Instagram/Октябрь/01.jpg`
+    const second = `${LORA_ROOT}/9. SMM/Instagram/Ноябрь/02.jpg`
+    h.dropbox.tree.addFile(first, 4401)
+    h.dropbox.tree.addFile(second, 4402)
+    await scan()
+    await fetchAll()
+    const one = await groupOfPath(first)
+    await makeReady(one.draft_id)
+    const ready = await groupView(one.group_id)
+    expect(ready).toMatchObject({
+      state: { kind: 'ready', note: { kind: 'promo', channel: 'instagram' } },
+      accept_block: null,
+      fields: { type: 'promo', channel: 'instagram', collection: null },
+    })
+    const made = await accept(one.group_id)
+    expect(made.statusCode).toBe(200)
+    const collection = made.json().item_id as string
+    expect(collection).toMatch(/^PRM-/)
+    expect(made.json()).toMatchObject({ how: 'new', next_step: null })
+    const { rows } = await h.db.execute<{ channel: string; role: string }>(sql`
+      SELECT ch.code AS channel, m.role FROM content_items i
+        JOIN promo_channels ch ON ch.id = i.promo_channel_id
+        JOIN item_memberships m ON m.item_id = i.id
+       WHERE i.created_from_group_id = ${one.group_id}::uuid`)
+    expect(rows).toEqual([{ channel: 'instagram', role: 'pic' }])
+
+    const two = await groupOfPath(second)
+    await makeReady(two.draft_id)
+    const before = await groupView(two.group_id)
+    const chosen = await patch(two.group_id, before.version, { collection: collection })
+    expect(chosen.statusCode).toBe(200)
+    expect(chosen.json().fields).toMatchObject({ channel: 'instagram', collection })
+    const added = await accept(two.group_id)
+    expect(added.json()).toMatchObject({ item_id: collection, how: 'extend' })
+  })
+
+  it('a pack typed «Промо» without a channel says so before the click; the channel is saved', async () => {
+    const path = `${LORA_ROOT}/8. Other/Для канала/03.jpg`
+    h.dropbox.tree.addFile(path, 4403)
+    await scan()
+    await fetchAll()
+    const { group_id, draft_id } = await groupOfPath(path)
+    await makeReady(draft_id)
+    const typed = await patch(group_id, (await groupView(group_id)).version, { type: 'promo' })
+    expect(typed.json()).toMatchObject({
+      state: { kind: 'ready' },
+      accept_block: 'Сначала выберите канал',
+    })
+    expect((await accept(group_id)).statusCode).toBe(422)
+    const channel = await patch(group_id, typed.json().version, { channel: 'gif-sites' })
+    expect(channel.json()).toMatchObject({
+      state: { kind: 'ready', note: { kind: 'promo', channel: 'gif-sites' } },
+      accept_block: null,
+    })
+    expect((await accept(group_id)).json().item_id).toMatch(/^PRM-/)
+  })
+
+  it('«Разложить по папкам» moves every file to the group of its own folder', async () => {
+    h.dropbox.tree.addFile(`${LORA_ROOT}/4. Sets/Общая/01.jpg`, 4501)
+    h.dropbox.tree.addFile(`${LORA_ROOT}/4. Sets/Общая/Утро/02.jpg`, 4502)
+    h.dropbox.tree.addFile(`${LORA_ROOT}/4. Sets/Общая/Вечер/03.jpg`, 4503)
+    await scan()
+    const { group_id } = await groupOfPath(`${LORA_ROOT}/4. Sets/Общая/01.jpg`)
+    const decided = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${group_id}:decide`,
+      as: owner,
+      key: newKey(),
+      body: { decision: 'split_folders' },
+    })
+    expect(decided.statusCode).toBe(200)
+    expect(decided.json()).toMatchObject({ title: 'Общая', file_count: 1 })
+    const { rows } = await h.db.execute<{ title: string; type: string; files: number }>(sql`
+      SELECT g.proposed_title AS title, g.proposed_type AS type, count(*)::int AS files
+        FROM inbox_drafts d JOIN inbox_groups g ON g.id = d.group_id
+       WHERE d.path LIKE ${`${LORA_ROOT}/4. Sets/Общая/%`}
+       GROUP BY g.model_id, g.id ORDER BY g.proposed_title`)
+    expect(rows).toEqual([
+      { title: 'Вечер', type: 'SET', files: 1 },
+      { title: 'Общая', type: 'SET', files: 1 },
+      { title: 'Утро', type: 'SET', files: 1 },
+    ])
+  })
+})
+
 describe('«Принять как есть» (SPEC §9.2)', () => {
   const life = (path: string) => `${LORA_ROOT}/6. Life/${path}`
 
