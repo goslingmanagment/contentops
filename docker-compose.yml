@@ -83,7 +83,7 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
       TRUSTED_PROXY: loopback,${STACK_SUBNET:-10.77.10.0/24}
       HOST_SPACE_FILE: /host/space.json
-      SPACE_WARN_GB: ${SPACE_WARN_GB:-200}
+      SPACE_WARN_GB: ${SPACE_WARN_GB:-200,E:=160}
       SPACE_STOP_GB: ${SPACE_STOP_GB:-100}
       # Cloud sources (SPEC §6.1): `sources.credentials_ref` names the variable.
       YDISK_TOKEN: ${YDISK_TOKEN:-}
@@ -125,7 +125,7 @@ services:
       ROLE: worker
       FETCH_JOBS: ${FETCH_JOBS:-4}
       FETCH_AHEAD_GB: ${FETCH_AHEAD_GB:-25}
-      # Intake stops below SPACE_STOP_GB of free C: (SPEC §12.2).
+      # Intake stops below SPACE_STOP_GB of free space on any disk (SPEC §12.2).
       HOST_SPACE_FILE: /host/space.json
       SPACE_STOP_GB: ${SPACE_STOP_GB:-100}
       # Cloud sources (SPEC §6.1): `sources.credentials_ref` names the variable.
