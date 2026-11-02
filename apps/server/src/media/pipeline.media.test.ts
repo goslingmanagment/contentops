@@ -18,7 +18,7 @@ import type {} from '@contentops/media/testing/global-setup'
 import { sql } from 'drizzle-orm'
 import { afterAll, afterEach, beforeAll, describe, expect, inject, it, vi } from 'vitest'
 import { BOOTSTRAP, OWNER } from '../testing/server'
-import { createMediaEnv, type MediaEnv } from './pipeline'
+import { createMediaEnv, currentDigests, type MediaEnv, platformDigest } from './pipeline'
 import { mediaHandlers } from './roles'
 import { type BlobStore, extOfName, shaBytes } from './storage'
 import { modelId, seedItem, systemTx, tempStore } from './testing'
@@ -421,6 +421,31 @@ describe('copies and durable results from a master', () => {
       SELECT count(*)::int AS n FROM rendition_generations
        WHERE master_sha256 = ${shaBytes(master)} AND kind = 'platform' AND is_active`)
     expect(rows[0]?.n).toBe(2)
+  })
+
+  it('render: an HDR master goes by a digest of its own, an SDR one keeps its own', async () => {
+    start('worker-video')
+    const hdr = await stage('hlgPatches')
+    const digests = await currentDigests(db)
+    if (!digests) throw new Error('no current pipeline version')
+    const { stripped, hdrStripped } = env.recipes.platform
+    // Not probed yet: counted as SDR, so the copy is asked for by the SDR digest.
+    expect(await platformDigest(db, digests, shaBytes(hdr), true)).toBe(stripped.digest)
+    const done = await finished(
+      await enqueue({
+        kind: 'render',
+        workKey: renderKey(hdr, stripped.digest),
+        inputSha256: shaBytes(hdr),
+        scope: 'stripped',
+        recipeDigest: stripped.digest,
+      }),
+    )
+    expect(done).toMatchObject({ state: 'succeeded' })
+    const { rows } = await db.execute<{ recipe_digest: string }>(sql`
+      SELECT recipe_digest FROM rendition_generations WHERE id = ${done.output_ref}::uuid`)
+    expect(rows[0]?.recipe_digest).toBe(hdrStripped.digest)
+    expect(await platformDigest(db, digests, shaBytes(hdr), true)).toBe(hdrStripped.digest)
+    expect(await platformDigest(db, digests, shaBytes(master), true)).toBe(stripped.digest)
   })
 
   it('render_compat: an H.264 copy in the exports folder of the receipt, not kept', async () => {

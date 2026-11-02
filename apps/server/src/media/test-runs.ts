@@ -2,7 +2,7 @@ import { copyFile, mkdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { type Db, enqueueWork } from '@contentops/db'
 import { sql } from 'drizzle-orm'
-import { currentDigests } from './pipeline'
+import { currentDigests, platformDigest } from './pipeline'
 import { type BlobStore, extOfName, sha256OfFile, shaBytes } from './storage'
 import { renderKey } from './work/copies'
 
@@ -60,7 +60,7 @@ export async function stageForTest(db: Db, store: BlobStore, model: string, file
 export async function renderForTest(db: Db, model: string, sha: string, stripped: boolean) {
   const digests = await currentDigests(db)
   if (!digests) throw new Error('no current pipeline version: start the worker roles first')
-  const digest = stripped ? digests.platformStripped : digests.platform
+  const digest = await platformDigest(db, digests, shaBytes(sha), stripped)
   const { work } = await enqueueWork(db, {
     modelId: await modelId(db, model),
     kind: 'render',

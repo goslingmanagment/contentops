@@ -8,7 +8,7 @@ import {
 } from '@contentops/contracts/download-name'
 import { enqueueWork, type Queryable, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
-import type { PipelineDigests } from './pipeline'
+import { type PipelineDigests, platformDigest } from './pipeline'
 import { readyGeneration } from './renditions'
 import { exportKey, extOfName, mimeOfExt, shaHex } from './storage'
 import { compatKey, renderKey } from './work/copies'
@@ -301,7 +301,7 @@ export async function supplyOf(
   const { file, strip } = input
   const copy = input.kind === 'platform' || input.kind === 'teaser' || input.kind === 'fan'
   if (copy && file.media_kind === 'video') {
-    const digest = strip ? input.digests.platformStripped : input.digests.platform
+    const digest = await platformDigest(tx, input.digests, file.master, strip)
     const ready = await readyGeneration(tx, {
       kind: 'platform',
       recipeDigest: digest,

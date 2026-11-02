@@ -195,7 +195,9 @@ vault, прочитанные агентом в Hub, — улики SXT-010/011)
 `ffmpeg`, `svtav1`, `libvips`, `sharp`, `phash_algo`, `master_recipe jsonb`
 (CRF 24, preset 6, tune 1, qm, GOP — §9.2), `rendition_recipes jsonb` (§9.3),
 `recipe_digests jsonb` (по каждому виду, мастер тоже вид, — хэш канонического JSON его
-рецепта и версий инструментов, которыми он собирается), `activated_at`,
+рецепта и версий инструментов, которыми он собирается; у копии для платформы четыре:
+с метаданными и без, из SDR и из HDR — `platform`, `platform.stripped`, `platform.hdr`,
+`platform.hdr.stripped`, SPEC §9.3), `activated_at`,
 `is_current` (частичный UNIQUE — ровно одна). Смена профиля мастера или производной —
 новая строка и новый `pipeline_version`; ключ производной и `blob_probes` — по
 `recipe_digest` своего вида, а не по общей версии, поэтому правка миниатюр пересобирает

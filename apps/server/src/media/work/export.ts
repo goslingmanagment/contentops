@@ -90,11 +90,12 @@ interface WorkState extends Record<string, unknown> {
   state: string
   report: { file?: ExportFile } | null
   error_text: string | null
+  output_ref: string | null
 }
 
 async function workState(env: MediaEnv, id: string): Promise<WorkState | undefined> {
   const { rows } = await env.db.execute<WorkState>(sql`
-    SELECT state, report, error_text FROM work_operations WHERE id = ${id}::uuid`)
+    SELECT state, report, error_text, output_ref FROM work_operations WHERE id = ${id}::uuid`)
   return rows[0]
 }
 
@@ -110,7 +111,11 @@ async function awaitCopy(env: MediaEnv, planned: PlannedFile): Promise<IssuedFil
       masterSha256: planned.file.master,
       inputSha256: planned.file.master,
     })
-    if (ready) {
+    const work = ready ? undefined : await workState(env, supply.workId)
+    // The generation the work built or found: an HDR master planned before its probe was known
+    // gets a copy under the HDR recipe, not the digest of the plan (SPEC §9.3).
+    const generation = ready?.id ?? (work?.state === 'succeeded' ? work.output_ref : null)
+    if (generation) {
       const { rows } = await env.db.execute<{
         id: string
         storage_key: string
@@ -118,7 +123,7 @@ async function awaitCopy(env: MediaEnv, planned: PlannedFile): Promise<IssuedFil
         byte_size: string
       }>(sql`
         SELECT id, storage_key, output_sha256, byte_size FROM rendition_artifacts
-         WHERE generation_id = ${ready.id}::uuid AND name = 'platform.mp4' AND state = 'ready'`)
+         WHERE generation_id = ${generation}::uuid AND name = 'platform.mp4' AND state = 'ready'`)
       const a = rows[0]
       if (a) {
         return issuedFromPlan({
@@ -133,7 +138,6 @@ async function awaitCopy(env: MediaEnv, planned: PlannedFile): Promise<IssuedFil
         })
       }
     }
-    const work = await workState(env, supply.workId)
     if (work?.state === 'failed' || work?.state === 'cancelled') {
       throw new WorkError(
         'permanent',

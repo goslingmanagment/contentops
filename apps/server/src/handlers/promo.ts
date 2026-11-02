@@ -5,7 +5,7 @@ import { modelOf } from '../catalog/ids'
 import { checkVersion } from '../commands'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
-import { currentDigests } from '../media/pipeline'
+import { currentDigests, NO_DIGESTS } from '../media/pipeline'
 import {
   channelContents,
   channelList,
@@ -61,11 +61,7 @@ export function promoHandlers({ db, command }: Services): HandlerRegistry {
       prepareHandoff: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx.model)
-          const digests = (await currentDigests(tx)) ?? {
-            version: '',
-            platform: '',
-            platformStripped: '',
-          }
+          const digests = (await currentDigests(tx)) ?? NO_DIGESTS
           const started = await prepareHandoff(tx, model, params.collection, body, actor, digests)
           return {
             kind: 'operation' as const,

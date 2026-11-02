@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import sharp from 'sharp'
 import { HDR_TO_SDR, type OutputFile } from './derive-video.ts'
 import { removeQuietly, sha256File, tempPathIn } from './files.ts'
+import { hdrOfRecipe, withHdrFilter } from './hdr.ts'
 import { probeVideo, type VideoProbe } from './probe.ts'
 import { type DigestedRecipe, digested, recipe } from './recipe.ts'
 import {
@@ -18,8 +19,8 @@ import {
 /**
  * A frame of a master in full size (SPEC §9.3, schema §3.4 `extract_frame`): «Сделать фото»
  * and «Сделать обложкой» from a moment of the video. The picture is shown as a player shows
- * it (display matrix applied), HDR is tone-mapped to SDR BT.709, and the still is a JPEG
- * q95 4:4:4 in sRGB — a photo of the object, not a rendition.
+ * it (display matrix applied), HDR becomes SDR BT.709 as in the copies (`hdr.ts`), and the still
+ * is a JPEG q95 4:4:4 in sRGB — a photo of the object, not a rendition.
  */
 export const FRAME_PROFILE = {
   format: 'jpeg',
@@ -29,13 +30,15 @@ export const FRAME_PROFILE = {
   seek: 'accurate (-ss after -i)',
 } as const
 
-export function frameRecipe(versions: ToolVersions): DigestedRecipe {
+export function frameRecipe(versions: ToolVersions, hdrSource = false): DigestedRecipe {
   return digested(
-    recipe('frames', 'video', { ...FRAME_PROFILE, full: true }, versions, [
-      'ffmpeg',
-      'libvips',
-      'sharp',
-    ]),
+    recipe(
+      'frames',
+      'video',
+      { ...FRAME_PROFILE, hdr: hdrOfRecipe(hdrSource, FRAME_PROFILE.hdr), full: true },
+      versions,
+      ['ffmpeg', 'libvips', 'sharp'],
+    ),
   )
 }
 
@@ -59,30 +62,32 @@ export async function extractFrame(options: {
   const name = `frame-${atMs}.jpg`
   const jpg = join(options.outDir, name)
   try {
-    const run = await runTool(
-      paths.ffmpeg,
-      [
-        '-nostdin',
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-y',
-        '-i',
-        options.input,
-        '-ss',
-        (atMs / 1000).toFixed(3),
-        '-map',
-        '0:v:0',
-        ...(probe.video.isHdr ? ['-filter:v', HDR_TO_SDR] : []),
-        '-frames:v',
-        '1',
-        '-c:v',
-        'png',
-        '-f',
-        'image2',
-        png,
-      ],
-      { signal, niceness: options.niceness },
+    const run = await withHdrFilter(probe, options.outDir, (hdr) =>
+      runTool(
+        paths.ffmpeg,
+        [
+          '-nostdin',
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-y',
+          '-i',
+          options.input,
+          '-ss',
+          (atMs / 1000).toFixed(3),
+          '-map',
+          '0:v:0',
+          ...(hdr ? ['-filter:v', hdr] : []),
+          '-frames:v',
+          '1',
+          '-c:v',
+          'png',
+          '-f',
+          'image2',
+          png,
+        ],
+        { signal, niceness: options.niceness },
+      ),
     )
     if (run.code !== 0) {
       throw new ToolError(
@@ -99,7 +104,7 @@ export async function extractFrame(options: {
     const [sha256, s] = await Promise.all([sha256File(jpg, signal), stat(jpg)])
     return {
       atMs,
-      recipe: frameRecipe(versions),
+      recipe: frameRecipe(versions, probe.video.isHdr),
       file: {
         name,
         path: jpg,

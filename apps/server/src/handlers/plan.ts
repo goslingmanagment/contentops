@@ -11,7 +11,7 @@ import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { planDownload } from '../media/downloads'
-import { currentDigests } from '../media/pipeline'
+import { currentDigests, NO_DIGESTS } from '../media/pipeline'
 import { exportKeyOf, type StoredBatch, storedBatch } from '../media/work/export'
 import { checkLine } from '../plan/checks'
 import {
@@ -526,11 +526,7 @@ export function planHandlers(services: Services): HandlerRegistry {
           if (rows.length === 0) {
             throw new ApiProblem('invalid_request', 'Нечего скачать: строк с файлами нет')
           }
-          const digests = (await currentDigests(tx)) ?? {
-            version: '',
-            platform: '',
-            platformStripped: '',
-          }
+          const digests = (await currentDigests(tx)) ?? NO_DIGESTS
           const parts: StoredBatch['parts'] = []
           for (const row of rows) {
             if (!row.item_type || row.item_number === null || !row.manifest_id || !row.item_id) {
