@@ -6,6 +6,7 @@ import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { hubLatency } from '../hub/views'
+import { inboxCount } from '../intake/inbox-view'
 import { evaluateRow, loadState } from '../plan/state'
 import { missedBefore, todayRows } from '../plan/views'
 import type { Services } from '../services'
@@ -95,9 +96,10 @@ async function systemState(db: Db, space: SpaceOptions): Promise<SystemState> {
 const NEEDS_STEP: ReadonlySet<string> = new Set(['planned', 'missed', 'blocked_second_person'])
 
 /**
- * Counters of the left column (DESIGN §2.2): today's rows the person posts that still need a
- * step (the owner sees every page) and ▲ «пропущено» of the previous 7 days; red when one of
- * them is missed; «Приехало» counts with 2в.
+ * Counters of the left column (DESIGN §2.2): «Приехало» — groups where a person is needed, the
+ * number of the tab «Новое»; today's rows the person posts that still need a step (the owner
+ * sees every page) and ▲ «пропущено» of the previous 7 days, red when one of them is missed. A
+ * ◆ or ▲ in either puts the dot on the avatar of the model.
  */
 async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelCounters> {
   const scope = await modelScopeOf(db, code)
@@ -112,12 +114,15 @@ async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelC
     (verdict) => NEEDS_STEP.has(verdict.level) || verdict.sign === 'turn',
   )
   const earlier = missedBefore(state, actor.role === 'owner' ? null : actor.id)
+  const inbox = await inboxCount(db, scope.id)
   return {
     model: code,
-    inbox: 0,
+    inbox: inbox.count,
     plan: steps.length + earlier.length,
     plan_missed: earlier.length > 0 || steps.some((verdict) => verdict.level === 'missed'),
-    attention: verdicts.some((verdict) => verdict.sign === 'turn' || verdict.sign === 'trouble'),
+    attention:
+      inbox.attention ||
+      verdicts.some((verdict) => verdict.sign === 'turn' || verdict.sign === 'trouble'),
   }
 }
 

@@ -869,10 +869,19 @@ async function activeGroups(q: Queryable, modelId: string, now: Date): Promise<C
 
 const COUNTED: ReadonlySet<DraftState['kind']> = new Set(['decision', 'error', 'ready'])
 
-/** «Приехало · 9» (DESIGN §2.2, §4.8): groups where a person is needed — ◆, ▲ and «готово». */
-export async function inboxCount(q: Queryable, modelId: string): Promise<number> {
+/**
+ * «Приехало · 9» (DESIGN §2.2, §4.8): groups where a person is needed — ◆, ▲ and «готово», the
+ * same number as on the tab «Новое»; `attention` — a ◆ or ▲ among them (the dot on the avatar).
+ */
+export async function inboxCount(
+  q: Queryable,
+  modelId: string,
+): Promise<{ count: number; attention: boolean }> {
   const groups = await activeGroups(q, modelId, new Date())
-  return groups.filter((item) => COUNTED.has(item.state.kind)).length
+  return {
+    count: groups.filter((item) => COUNTED.has(item.state.kind)).length,
+    attention: groups.some((item) => item.state.kind === 'decision' || item.state.kind === 'error'),
+  }
 }
 
 export interface InboxPage {
