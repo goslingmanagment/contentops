@@ -5,7 +5,7 @@ import { checkVersion, isUuid } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
-import { acceptGroup, lockOpenDrafts, rejectGroup, reopenGroup } from '../intake/accept'
+import { lockOpenDrafts, rejectGroup, reopenGroup } from '../intake/accept'
 import {
   chooseOrder,
   decide,
@@ -18,6 +18,7 @@ import { draftSource, planDraftDownload } from '../intake/draft-files'
 import { ITEM_TO_DB_TYPE, inboxGroup, inboxList } from '../intake/inbox-view'
 import { dropStagedOfGroup } from '../intake/staging'
 import { createUpload } from '../intake/upload'
+import { acceptKeepingLegacyNumber } from '../legacy/auto-accept'
 import type { Services } from '../services'
 
 /** «Приехало» (DESIGN §4.8–4.10): reading groups and editing the fields of a future object. */
@@ -148,7 +149,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
         const model = modelOf(ctx)
         const id = groupId(params.group)
         const result = await command({ ctx, body }, (tx, actor) =>
-          acceptGroup(tx, model, actor, id, body),
+          acceptKeepingLegacyNumber(tx, model, actor, id, body),
         )
         await dropStagedOfGroup(services, model.id, id)
         return result
@@ -166,7 +167,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             try {
               // Each group in its own savepoint: one refusal does not undo the others.
               const accepted = await tx.transaction((inner) =>
-                acceptGroup(inner, model, actor, raw, { as: 'default' }),
+                acceptKeepingLegacyNumber(inner, model, actor, raw, { as: 'default' }),
               )
               out.push({ id: raw, ok: true, code: null, accepted })
             } catch (error) {

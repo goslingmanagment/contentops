@@ -1,3 +1,5 @@
+import type { AcceptCommand } from '@contentops/contracts/commands/inbox'
+import type { AcceptResult } from '@contentops/contracts/domain/inbox'
 import { logAction, type Tx, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope } from '../context'
@@ -180,6 +182,40 @@ export async function autoAcceptGroup(
     if (BLOCKED.has(reason)) return markBlocked(tx, model.id, groupId, reason)
     return queue(tx, model.id, groupId, reason)
   }
+}
+
+/**
+ * «Принять» by a person, a group of the old corpus: the object takes the number its old name
+ * keeps (SPEC §6.4), not the next of the counter, and the claims point at it; a number in
+ * dispute waits for its decision. A group whose type was changed has no claim on the number.
+ */
+export async function acceptKeepingLegacyNumber(
+  tx: Tx,
+  model: ModelScope,
+  actor: Actor,
+  groupId: string,
+  body: AcceptCommand,
+): Promise<AcceptResult> {
+  const { rows } = await tx.execute<GroupRow>(sql`
+    SELECT id, closed_at, proposed_type, proposed_title, evidence FROM inbox_groups
+     WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
+  const group = rows[0]
+  const unit = group?.evidence?.legacy ? group.evidence.number : null
+  if (!unit || unit.type !== group?.proposed_type || body.as !== 'default' || body.extend) {
+    return acceptGroup(tx, model, actor, groupId, body)
+  }
+  const number = await numberFor(tx, model.id, unit)
+  if ('queue' in number) {
+    throw new ApiProblem('accept_blocked', 'Номер этой папки не решён: сначала «Разбор старого»', {
+      reason: number.queue,
+    })
+  }
+  const result = await acceptGroup(tx, model, actor, groupId, {
+    ...body,
+    legacy: { number: number.number },
+  })
+  await settleClaims(tx, model.id, groupId, result.item_id, number.claim, unit)
+  return result
 }
 
 /**
