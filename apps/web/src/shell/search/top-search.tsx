@@ -7,11 +7,14 @@ import { type KeyboardEvent, useDeferredValue, useId, useMemo, useRef, useState 
 import { useFoundObjects } from '@/data/search'
 import { useKeyboardShortcut } from '@/lib/use-keyboard-shortcut'
 import { useGoTo } from '../navigation/use-go-to'
+import { FileSearchPanel, fileSearchLine } from './file-search-panel'
 import { buildSuggestions, type Suggestion } from './search-suggestions'
 import { SuggestionRow } from './suggestion-row'
+import { useFileSearchDrop } from './use-file-search'
 import { useOpenSearch } from './use-open-search'
 
 const PLACEHOLDER = 'Найти: ппв 73, кастом в колготках, фуп у зеркала…'
+const DROP_PLACEHOLDER = 'Отпустите — найдём такой же файл'
 
 /**
  * Поиск в верхней полосе (DESIGN §2.1, §4.7): `/` и `Ctrl K` ставят в него фокус.
@@ -45,6 +48,9 @@ export function TopSearch({ model }: { model: ModelCode }) {
   const { goToObject, goToDestination } = useGoTo()
   const navigate = useNavigate()
   const openSearch = useOpenSearch()
+  const file = useFileSearchDrop(model)
+  const fileMode = file.state.kind !== 'idle'
+  useKeyboardShortcut({ code: 'Escape', enabled: fileMode, whileTyping: true }, file.clear)
 
   const focusSearch = () => {
     inputRef.current?.focus()
@@ -108,18 +114,26 @@ export function TopSearch({ model }: { model: ModelCode }) {
     }
   }
 
-  const expanded = open && query.trim().length > 0 && flat.length > 0
+  const expanded = !fileMode && open && query.trim().length > 0 && flat.length > 0
+  const fileDone = file.state.kind === 'done' || file.state.kind === 'failed'
   const optionId = (position: number) => `${listId}-${position}`
 
   return (
-    <div className="relative w-140 max-w-full">
+    // Брошенный на строку файл ищется, а не загружается (DESIGN §4.7).
+    <div className={cn('relative w-140 max-w-full', file.over && 'z-60')} {...file.handlers}>
       <div
         className={cn(
           'flex h-11 items-center gap-3 rounded-xl bg-background px-4 transition-shadow duration-120 focus-within:shadow-md',
-          expanded && 'rounded-b-none shadow-md',
+          (expanded || fileDone) && 'rounded-b-none shadow-md',
+          file.over && 'shadow-md ring-2 ring-primary',
         )}
       >
         <SearchIcon aria-hidden className="size-4.5 shrink-0 text-ink-3" />
+        {fileMode && !file.over ? (
+          <p role="status" aria-live="polite" className="min-w-0 flex-1 truncate text-base">
+            {fileSearchLine(file.state)}
+          </p>
+        ) : null}
         <input
           ref={inputRef}
           type="search"
@@ -129,7 +143,8 @@ export function TopSearch({ model }: { model: ModelCode }) {
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={expanded && current >= 0 ? optionId(current) : undefined}
-          placeholder={PLACEHOLDER}
+          hidden={fileMode && !file.over}
+          placeholder={file.over ? DROP_PLACEHOLDER : PLACEHOLDER}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value)
@@ -143,6 +158,15 @@ export function TopSearch({ model }: { model: ModelCode }) {
         />
         <Kbd aria-hidden>/</Kbd>
       </div>
+      <FileSearchPanel
+        state={file.state}
+        model={model}
+        onOpen={(id) => {
+          file.clear()
+          goToObject(model, id)
+        }}
+        onClose={file.clear}
+      />
       {expanded ? (
         <div
           id={listId}

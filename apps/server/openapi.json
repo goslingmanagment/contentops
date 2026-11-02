@@ -3405,6 +3405,91 @@
           "ai_failed"
         ]
       },
+      "FileMatch": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ItemId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issued": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "account": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/AccountCode"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "on": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "account",
+                  "label",
+                  "on"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "item_id",
+          "title",
+          "what",
+          "version",
+          "issued",
+          "group_id"
+        ],
+        "additionalProperties": false
+      },
       "FileRole": {
         "type": "string",
         "enum": [
@@ -3430,6 +3515,29 @@
           "raw",
           "promo_link"
         ]
+      },
+      "FileSearchResult": {
+        "type": "object",
+        "properties": {
+          "sha256": {
+            "$ref": "#/components/schemas/Sha256Hex"
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileMatch"
+            }
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "matches",
+          "text"
+        ],
+        "additionalProperties": false
       },
       "FileState": {
         "oneOf": [
@@ -10341,6 +10449,14 @@
           "purpose"
         ]
       },
+      "Sha256Hex": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
+      "Sha256HexInput": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      },
       "Sign": {
         "type": "string",
         "enum": [
@@ -13175,6 +13291,55 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SearchResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/search/file": {
+      "get": {
+        "operationId": "objects.searchFile",
+        "tags": [
+          "objects"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/Sha256HexInput"
+            },
+            "in": "query",
+            "name": "sha256",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileSearchResult"
                 }
               }
             }

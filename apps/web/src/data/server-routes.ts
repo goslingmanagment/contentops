@@ -65,6 +65,7 @@ export const SERVER_ROUTES: ServerRoutes = {
     'deleted',
     'resolve',
     'search',
+    'searchFile',
     'notUploaded',
     'alreadyUploaded',
     'get',
