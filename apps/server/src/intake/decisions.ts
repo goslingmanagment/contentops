@@ -85,6 +85,11 @@ export async function splitGroup(
     chosen.map((draft) => draft.id),
     created,
   )
+  // Too many videos for the type is answered by this split: accepting checks the rule again.
+  await tx.execute(sql`
+    UPDATE inbox_drafts SET blocked_reason = NULL, updated_at = now(), row_version = row_version + 1
+     WHERE model_id = ${model.id}::uuid AND group_id = ANY (${sql.param([groupId, created])}::uuid[])
+       AND blocked_reason = 'video_in_set' AND state <> 'resolved'`)
   await bump(tx, model, groupId)
   return created
 }
