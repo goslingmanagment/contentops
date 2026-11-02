@@ -9,6 +9,7 @@ import { belongsToSpaceCard, describeIntegration } from '@contentops/contracts/i
 import { evaluateRow, type FactsContext } from '../fixtures/facts'
 import type { ModelWorld, World } from '../fixtures/world-types'
 import { inboxList } from './inbox'
+import { missedBefore } from './plan'
 
 /** Counters of the left column and the space card (DESIGN §2.2), one request for all models. */
 
@@ -34,6 +35,14 @@ export function modelCounters(
   const steps = mine.filter(
     ({ verdict }) => NEEDS_STEP.has(verdict.level) || verdict.sign === 'turn',
   )
+  const earlier = missedBefore(context, today).filter(
+    (entry) =>
+      person.role === 'owner' ||
+      [...model.plan_rows.values()].some(
+        (row) =>
+          row.date === entry.date && row.account === entry.account && row.assignee === person.id,
+      ),
+  )
   const inbox = inboxList(model, now, 'active')
   const decisions = inbox.items.filter(
     (group) => group.state.kind === 'decision' || group.state.kind === 'error',
@@ -41,8 +50,8 @@ export function modelCounters(
   return {
     model: model.model.code,
     inbox: person.role === 'reader' ? 0 : inbox.count,
-    plan: person.role === 'reader' ? 0 : steps.length,
-    plan_missed: steps.some(({ verdict }) => verdict.level === 'missed'),
+    plan: person.role === 'reader' ? 0 : steps.length + earlier.length,
+    plan_missed: earlier.length > 0 || steps.some(({ verdict }) => verdict.level === 'missed'),
     attention:
       decisions.length > 0 ||
       verdicts.some(({ verdict }) => verdict.sign === 'turn' || verdict.sign === 'trouble'),

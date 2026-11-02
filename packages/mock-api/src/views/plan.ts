@@ -1,4 +1,4 @@
-import { isoWeekOf, weekDates, weekdayIndex } from '@contentops/contracts/clock'
+import { addDays, isoWeekOf, mskDate, weekDates, weekdayIndex } from '@contentops/contracts/clock'
 import type { DownloadKind } from '@contentops/contracts/commands/objects'
 import type { AccountCode, IsoWeek, LocalDate, Sign } from '@contentops/contracts/domain/common'
 import type { Integration, IntegrationLine } from '@contentops/contracts/domain/integrations'
@@ -335,7 +335,21 @@ export function planDay(
       (sum, row) => sum + (row.copy?.state === 'ready' ? row.copy.size_bytes : 0),
       0,
     ),
+    missed_before: date === mskDate(context.now) ? missedBefore(context, date, isMine) : [],
   }
+}
+
+/** ▲ «пропущено» of the previous 7 days, newest first (DESIGN §4.11 «Пропущено раньше»). */
+export function missedBefore(
+  context: FactsContext,
+  today: LocalDate,
+  isMine: (row: PlanRowRecord) => boolean = () => true,
+): { date: LocalDate; account: AccountCode }[] {
+  const days = new Set(Array.from({ length: 7 }, (_, index) => addDays(today, -(index + 1))))
+  return activeRows(context, days)
+    .filter((row) => isMine(row) && evaluateRow(context, row).level === 'missed')
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .map((row) => ({ date: row.date, account: row.account }))
 }
 
 function normHint(norm: WeekNorm): string {

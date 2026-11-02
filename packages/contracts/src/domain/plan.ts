@@ -294,6 +294,11 @@ export const PlanDaySchema = z.object({
   releases: z.array(ReleaseSchema),
   cancelled_count: z.int().nonnegative(),
   download_size_bytes: z.int().nonnegative(),
+  /**
+   * Only on today: ▲ «пропущено» of the previous 7 days, one entry per row (after «Мои»), for
+   * «Пропущено раньше · 2 ›» under the day's title (DESIGN §4.11); the page chips filter it.
+   */
+  missed_before: z.array(z.object({ date: LocalDateSchema, account: AccountCodeSchema })),
 })
 export type PlanDay = z.infer<typeof PlanDaySchema>
 

@@ -74,7 +74,8 @@ describe('изменение видно при следующем чтении',
     expect(story?.verdict.word).toBe('пропущено')
     expect(story?.mark_button).toBe('mark_confirm')
     const counters = await api.admin.counters({})
-    expect(counters.models.find((entry) => entry.model === 'lora')?.plan).toBe(2)
+    // Two steps today and ▲ «пропущено» of Mon 21 (DESIGN §2.2: and the previous 7 days).
+    expect(counters.models.find((entry) => entry.model === 'lora')?.plan).toBe(3)
     await api.plan.markConfirm({
       params: { model: 'lora', row: story?.id ?? '' },
       body: { stated_occurred_at: null },
