@@ -117,10 +117,12 @@ export function VariantsBody({
 
 /**
  * vault: «в альбоме нет файла» или «старый файл в альбоме» → «Залить заново» — окно «В план»
- * для новой заливки; альбом Hub проверит сам при следующем обходе.
+ * для новой заливки; альбом Hub проверит сам при следующем обходе. У старого файла есть и
+ * «Старый подходит» (DESIGN §4.15, SPEC §7): строка закрывается подтверждением КМ по
+ * старому файлу.
  */
 export function VaultBody(props: CaseBodyProps) {
-  const { canDecide, pending, onReupload } = props
+  const { entry, canDecide, pending, onDecide, onReupload } = props
   return (
     <>
       <Pair {...props} />
@@ -130,6 +132,16 @@ export function VaultBody(props: CaseBodyProps) {
             <Button disabled={pending !== null} onClick={onReupload}>
               Залить заново
             </Button>
+            {entry.kind === 'vault_stale' ? (
+              <Button
+                variant="outline"
+                pending={pending === 'confirm'}
+                disabled={pending !== null && pending !== 'confirm'}
+                onClick={() => onDecide({ action: 'confirm', entry, evidenceId: null })}
+              >
+                Старый подходит
+              </Button>
+            ) : null}
           </PanelMain>
         </div>
       ) : null}
