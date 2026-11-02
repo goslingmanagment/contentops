@@ -344,6 +344,17 @@ describe('«не вышло» и выключенный Hub', () => {
           sql`UPDATE posting_plan_rows SET marked_at = now() - interval '3 days' WHERE id = ${row?.id}::uuid`,
         ),
     )
+    // Hub itself is fresh: the posts of the fixtures are from yesterday, and after a day a page
+    // says «Hub не обновлял посты» instead, which is true from 23:10 Moscow time on.
+    await withActorTx(
+      db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test', requestId: randomUUID() },
+      (tx) =>
+        tx.execute(
+          sql`UPDATE hub_sync_state SET hub_succeeded_at = now()
+               WHERE account_id = ${lora1.accountId}::uuid AND dataset = 'posts'`,
+        ),
+    )
     const view = await rowView(row?.id as string)
     expect(view.verdict.level).toBe('cannot_verify')
     expect(view.verdict.reason).toBe('Нет доказательства покрытия постов')
