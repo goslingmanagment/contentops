@@ -603,3 +603,24 @@ describe('the reconciliation with the snapshot', () => {
     expect(await footprint()).toEqual(before)
   })
 })
+
+describe('«Принять» by a person, a group of the old corpus', () => {
+  it('keeps the number of the old name and settles its claims, not the next of the counter', async () => {
+    const path = `disk:${PATH('1. PPV/Bundles/[PPV-071]_slow_strip_tights_23.07.26')}`
+    const { rows } = await h.db.execute<{ group_id: string; id: string }>(sql`
+      SELECT d.group_id, d.id FROM inbox_drafts d JOIN source_revisions r ON r.id = d.source_revision_id
+       WHERE r.frozen_path = ${`${path}/c.mov`}`)
+    const { group_id, id } = rows[0] as { group_id: string; id: string }
+    const post = (url: string, body: object) =>
+      call(app, { method: 'POST', url, as: owner, key: newKey(), body })
+    const split = await post(`/api/v1/lora/inbox/groups/${group_id}:split`, { file_keys: [id] })
+    expect(split.statusCode).toBe(201)
+    await readyAll()
+    const accepted = await post(`/api/v1/lora/inbox/groups/${group_id}:accept`, { as: 'default' })
+    expect(accepted.json()).toMatchObject({ item_id: 'PPV-071' })
+    const { rows: claims } = await h.db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM legacy_claims c JOIN content_items i ON i.id = c.resolved_item_id
+       WHERE c.claim_kind = 'number' AND public_item_id(i.type, i.number) = 'PPV-071'`)
+    expect(claims[0]?.n).toBe(1)
+  })
+})
