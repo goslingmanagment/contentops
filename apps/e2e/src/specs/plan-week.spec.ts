@@ -206,7 +206,8 @@ test('the owner plans a week and a PPV release, Диана does her day', async 
     await expect(viewTab(km, 'День')).toHaveAttribute('aria-current', 'page')
     const row = km.getByRole('option').filter({ hasText: `${SET} · стена` })
     await expect(row).toHaveCount(1)
-    await expect(row).toContainText('в плане')
+    // The row is at 20:00 today: later in the evening it is already «пропущено».
+    await expect(row).toContainText(/в плане|пропущено/)
 
     const download = km.waitForEvent('download', { timeout: 90_000 })
     await row.getByRole('button', { name: 'Скачать для заливки' }).click()
