@@ -367,6 +367,35 @@ describe('accept (schema §5, §9.3)', () => {
     expect(await counter('RAW')).toBe((before as number) + 1)
   })
 
+  it('«Разделить» lifts «Видео среди фото»: a PPV with a master and two teasers can be accepted', async () => {
+    const root = `${LORA_ROOT}/1. PPV/Три ролика`
+    for (const name of ['master.mov', 'promo-1.mov', 'promo-2.mov']) {
+      h.dropbox.tree.addFile(`${root}/${name}`, 5100)
+    }
+    await scan()
+    const extra = await groupOfPath(`${root}/promo-2.mov`)
+    await withActorTx(
+      h.db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test', requestId: randomUUID() },
+      (tx) =>
+        tx.execute(sql`
+          UPDATE inbox_drafts SET blocked_reason = 'video_in_set'
+           WHERE group_id = ${extra.group_id}::uuid`),
+    )
+    const split = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${extra.group_id}:split`,
+      as: owner,
+      key: newKey(),
+      body: { file_keys: [extra.draft_id] },
+    })
+    expect(split.statusCode).toBe(201)
+    const { rows } = await h.db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM inbox_drafts WHERE path LIKE ${`${root}/%`}
+         AND blocked_reason IS NOT NULL`)
+    expect(rows[0]?.n).toBe(0)
+  })
+
   it('reject keeps the bytes; reopen brings the draft back to «готово»', async () => {
     h.dropbox.tree.addFile(`${LORA_ROOT}/6. Life/Лишнее/01.jpg`, 2600)
     await scan()
