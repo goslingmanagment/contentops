@@ -113,6 +113,68 @@ describe('«Приехало» from the source', () => {
     expect(group.fields).toMatchObject({ type: 'life', title: 'Утро на кухне' })
   })
 
+  it('a group «Принять» would refuse says so before the click and splits by clips', async () => {
+    h.dropbox.tree.addFile(`${LORA_ROOT}/8. Other/Пачка/clip1.mov`, 4100)
+    h.dropbox.tree.addFile(`${LORA_ROOT}/8. Other/Пачка/clip2.mov`, 4200)
+    h.dropbox.tree.addFile(`${LORA_ROOT}/8. Other/Пачка/clip3.mov`, 4300)
+    await runWork(h.db, {
+      modelId: h.modelId,
+      kind: 'scan',
+      scope: h.sources.dropbox.id,
+      dataset: 'recent',
+      handlers: { scan: scanHandler(h.factory) },
+    })
+    const list = InboxListSchema.parse((await get('/api/v1/lora/inbox')).json())
+    const pack = list.items.find((group) => group.title === 'Пачка')
+    if (!pack) throw new Error('no pack')
+    const url = `/api/v1/lora/inbox/groups/${pack.id}`
+    const typed = await call(app, {
+      method: 'PATCH',
+      url,
+      as: owner,
+      key: newKey(),
+      ifMatch: pack.version,
+      body: { type: 'fyp' },
+    })
+    // Still downloading: the files are known, the refusal does not wait for the master.
+    expect(InboxGroupSchema.parse(typed.json())).toMatchObject({
+      state: { kind: 'decision', decision: 'split_videos' },
+      accept_block: 'Фуп — один ролик: разделите группу',
+    })
+    const accept = await call(app, {
+      method: 'POST',
+      url: `${url}:accept`,
+      as: owner,
+      key: newKey(),
+      body: { as: 'default' },
+    })
+    expect(accept.statusCode).toBe(422)
+    const split = await call(app, {
+      method: 'POST',
+      url: `${url}:decide`,
+      as: owner,
+      key: newKey(),
+      body: { decision: 'split_videos' },
+    })
+    expect(split.statusCode).toBe(200)
+    expect(InboxGroupSchema.parse(split.json())).toMatchObject({
+      id: pack.id,
+      title: 'clip1',
+      file_count: 1,
+      state: { kind: 'preparing' },
+      source_path: `${LORA_ROOT}/8. Other/Пачка`,
+    })
+    const after = InboxListSchema.parse((await get('/api/v1/lora/inbox')).json())
+    const clips = after.items.filter((group) => /^clip\d$/.test(group.title))
+    expect(clips.map((group) => [group.title, group.fields.type, group.file_count]).sort()).toEqual(
+      [
+        ['clip1', 'fyp', 1],
+        ['clip2', 'fyp', 1],
+        ['clip3', 'fyp', 1],
+      ],
+    )
+  })
+
   it('«Разбор старого» is empty before stage 3', async () => {
     const response = await get('/api/v1/lora/legacy')
     expect(response.statusCode).toBe(200)

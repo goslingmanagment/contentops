@@ -10,11 +10,12 @@ import { sql } from 'drizzle-orm'
 import {
   clusterStart,
   fitsCluster,
+  type LooseGroup,
   looseGroupOf,
   mediaKindOf,
   placementOf,
   titleFromFileName,
-  typeFromRoot,
+  typeOfFile,
 } from './grouping'
 import type { SourceRow } from './source-client'
 
@@ -72,12 +73,13 @@ function relativeOf(entry: SourceEntry): string[] {
   return entry.path.relative === '' ? [] : entry.path.relative.split('/')
 }
 
-/** Folders the group of a file is held by: the group subfolder, or the root it lies in. */
+/** Folders the group of a file is held by: the group folder and the root it lies in. */
 function folderPathsOf(client: CloudSource, entry: SourceEntry): string[] {
   const rootDepth = components(client.root).length
   const relative = relativeOf(entry)
-  const placement = placementOf(relative)
-  const depths = placement.kind === 'folder' ? [1, 2] : placement.folderDepth === 1 ? [1] : []
+  const placement = placementOf(relative, mediaKindOf(entry.name, entry.mediaType) === 'video')
+  const depths =
+    placement.kind === 'folder' ? [1, placement.folderDepth] : relative.length >= 2 ? [1] : []
   return depths.map((depth) => prefixPath(entry.path.raw, rootDepth + depth))
 }
 
@@ -376,6 +378,7 @@ interface GroupProposal {
   folderResourceId: string | null
   title: string | null
   type: string | null
+  purpose?: string | null
   evidence: Record<string, unknown>
 }
 
@@ -388,33 +391,37 @@ async function groupOf(
   const { source, client } = input
   const relative = relativeOf(entry)
   const rootName = relative.length >= 2 ? (relative[0] ?? null) : null
-  const type = typeFromRoot(rootName)
+  const type = typeOfFile(rootName, isVideo)
   const rootDepth = components(client.root).length
-  const placement = placementOf(relative)
+  const placement = placementOf(relative, isVideo)
   const folderAt = (depth: number) =>
     input.folders.get(pathKey(source, prefixPath(entry.path.raw, rootDepth + depth)))
   const evidence = { root: rootName, path: entry.path.raw }
 
   let proposal: GroupProposal
   if (placement.kind === 'folder') {
-    const folder = folderAt(2)
+    const folder = folderAt(placement.folderDepth)
     if (!folder) throw new Error(`folder of ${entry.path.raw} is not resolved`)
     proposal = {
       key: `folder:${folder.resourceId}`,
       grouping: 'folder',
       folderResourceId: folder.resourceId,
       title: folder.name,
-      type,
+      type: placement.proposal?.type ?? type,
+      purpose: placement.proposal?.purpose ?? null,
       evidence: { ...evidence, path: folder.raw },
     }
   } else {
-    const folder = placement.folderDepth === 1 ? folderAt(1) : undefined
+    const folder = relative.length >= 2 ? folderAt(1) : undefined
     const folderId = folder?.resourceId ?? 'root'
-    const loose = looseGroupOf(
-      { fileId: entry.id ?? '', isVideo, shotAt: entry.shotAt, rootName },
-      folderId,
-      source.modelTimezone,
-    )
+    const loose: LooseGroup =
+      placement.kind === 'single'
+        ? { grouping: 'single', key: `single:${entry.id ?? ''}` }
+        : looseGroupOf(
+            { fileId: entry.id ?? '', isVideo, shotAt: entry.shotAt, rootName },
+            folderId,
+            source.modelTimezone,
+          )
     const base = { folderResourceId: folder?.resourceId ?? null, type, evidence }
     if (loose.grouping === 'single') {
       proposal = {
@@ -455,13 +462,14 @@ async function ensureGroup(tx: Tx, source: SourceRow, proposal: GroupProposal): 
   const inserted = await tx.execute<{ id: string }>(sql`
     INSERT INTO inbox_groups (
       model_id, source_id, group_key, grouping, folder_object_id, evidence, proposed_type,
-      proposed_title
+      proposed_title, proposed_purpose
     )
     SELECT ${source.modelId}::uuid, ${source.id}::uuid, ${proposal.key}, ${proposal.grouping},
            (SELECT id FROM source_objects
              WHERE model_id = ${source.modelId}::uuid AND source_id = ${source.id}::uuid
                AND resource_id = ${proposal.folderResourceId}),
-           ${JSON.stringify(proposal.evidence)}::jsonb, ${proposal.type}, ${proposal.title}
+           ${JSON.stringify(proposal.evidence)}::jsonb, ${proposal.type}, ${proposal.title},
+           ${proposal.purpose ?? null}
     ON CONFLICT (model_id, source_id, group_key) DO NOTHING
     RETURNING id`)
   const [created] = inserted.rows
@@ -475,7 +483,11 @@ async function ensureGroup(tx: Tx, source: SourceRow, proposal: GroupProposal): 
   return found.id
 }
 
-/** The draft of a revision; a file moved before acceptance follows its new group. */
+/**
+ * The draft of a revision. A file moved before acceptance follows its new group; a file that
+ * stayed where it was keeps the group it is in: a person may have split or merged it, and a
+ * repeat of the listing (every night) must not undo that.
+ */
 async function ensureDraft(
   tx: Tx,
   source: SourceRow,
@@ -483,13 +495,19 @@ async function ensureDraft(
   revision: RevisionResult,
   entry: SourceEntry,
 ): Promise<boolean> {
-  const { rows } = await tx.execute<{ id: string; group_id: string; state: string }>(sql`
-    SELECT id, group_id, state FROM inbox_drafts
+  const { rows } = await tx.execute<{
+    id: string
+    group_id: string
+    state: string
+    path: string | null
+  }>(sql`
+    SELECT id, group_id, state, path FROM inbox_drafts
      WHERE model_id = ${source.modelId}::uuid AND source_revision_id = ${revision.id}::uuid
      FOR UPDATE`)
   const [existing] = rows
   if (existing) {
-    if (existing.state !== 'resolved' && existing.group_id !== groupId) {
+    const moved = existing.path !== entry.path.raw
+    if (moved && existing.state !== 'resolved' && existing.group_id !== groupId) {
       await tx.execute(sql`
         UPDATE inbox_drafts
            SET group_id = ${groupId}::uuid, path = ${entry.path.raw}, updated_at = now(),

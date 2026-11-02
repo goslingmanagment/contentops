@@ -191,6 +191,9 @@ export function useIntakeActions({ onShow, onDecided }: ActionsOptions = {}) {
       if (command.decision === 'video_in_set') {
         toast.show({ message: videoDoneMessage(command.destination, 1) })
       }
+      if (command.decision === 'split_videos') {
+        toast.show({ message: 'Разделено по роликам' })
+      }
     },
   })
 

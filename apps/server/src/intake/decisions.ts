@@ -9,6 +9,7 @@ import { lockOrder } from '../orders/writes'
 import { acceptGroup, lockGroupForDecision, lockOpenDrafts, rejectGroup } from './accept'
 import { queueMedia } from './fetch'
 import { bindFrame, ordinalOfHandle, rawFrame } from './frames'
+import { titleFromFileName } from './grouping'
 import { ITEM_TO_DB_TYPE } from './inbox-view'
 import { planRow } from './row-upload'
 import { acceptRowMontage } from './upload'
@@ -93,6 +94,54 @@ export async function splitGroup(
        AND blocked_reason = 'video_in_set' AND state <> 'resolved'`)
   await bump(tx, model, groupId)
   return created
+}
+
+/**
+ * «Разделить по роликам» (SPEC §6.1): every video becomes a group of its own, the group discovery
+ * would have made for it, with the fields of this one and the name of its file. Photos stay
+ * here; without photos the first video stays, so the answer to the command is still this group.
+ */
+async function splitVideos(
+  tx: Tx,
+  model: ModelScope,
+  groupId: string,
+  drafts: Awaited<ReturnType<typeof lockOpenDrafts>>,
+): Promise<number> {
+  const group = await lockGroupForDecision(tx, model, groupId)
+  const videos = drafts.filter((draft) => draft.media_kind === 'video')
+  const hasPhotos = videos.length < drafts.length
+  if (videos.length === 0 || (videos.length === 1 && !hasPhotos)) {
+    throw new ApiProblem('invalid_request', 'Разделять нечего: в группе один ролик')
+  }
+  const titleOf = (draft: (typeof drafts)[number]) =>
+    titleFromFileName((draft.path ?? '').split('/').at(-1) ?? '', group.proposed_type)
+  const [first, ...rest] = videos
+  for (const draft of hasPhotos ? videos : rest) {
+    const key = draft.resource_id ? `single:${draft.resource_id}` : `split:${draft.id}`
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO inbox_groups (
+        model_id, source_id, group_key, grouping, folder_object_id, evidence, proposed_type,
+        proposed_title, proposed_title_en, proposed_description, proposed_tags, proposed_ppv_kind,
+        proposed_purpose, has_second_person
+      )
+      SELECT model_id, source_id, ${key}, 'single', folder_object_id,
+             (coalesce(evidence, '{}'::jsonb) - 'number')
+               || jsonb_build_object('path', ${draft.path}::text, 'split_from', id::text),
+             proposed_type, ${titleOf(draft)}, proposed_title_en, proposed_description,
+             proposed_tags, proposed_ppv_kind, proposed_purpose, has_second_person
+        FROM inbox_groups WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid
+      ON CONFLICT (model_id, source_id, group_key) DO UPDATE SET updated_at = now()
+      RETURNING id`)
+    await moveDrafts(tx, model, [draft.id], (rows[0] as { id: string }).id)
+  }
+  if (!hasPhotos && first) {
+    await tx.execute(sql`
+      UPDATE inbox_groups
+         SET grouping = 'single', proposed_title = ${titleOf(first)},
+             evidence = coalesce(evidence, '{}'::jsonb) || jsonb_build_object('path', ${first.path}::text)
+       WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
+  }
+  return hasPhotos ? videos.length : rest.length
 }
 
 /** «Слить»: the open files of the other groups join the first one. */
@@ -222,6 +271,10 @@ export async function decide(
       break
     case 'which_order':
       await chooseOrder(tx, model, actor, groupId, body.order_id, ids)
+      break
+    case 'split_videos':
+      await splitVideos(tx, model, groupId, drafts)
+      await clear('video_in_set')
       break
     case 'video_in_set': {
       const videos = drafts.filter((draft) => draft.media_kind === 'video').map((draft) => draft.id)

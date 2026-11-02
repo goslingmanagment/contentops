@@ -41,6 +41,7 @@ const DECISIONS: Record<DecisionKind, ComponentType<DecisionProps>> = {
   substitute_montage: RowChange,
   split_archive: SplitArchive,
   which_frame: WhichFrame,
+  split_videos: SplitVideos,
 }
 
 export function DecisionBlock(props: DecisionProps) {
@@ -111,6 +112,35 @@ function VideoInSet({ group, pending, decide }: DecisionProps) {
           </Button>
         ))}
       </div>
+    </InfoSection>
+  )
+}
+
+/**
+ * ◆ «Несколько роликов» (DESIGN §4.8): у фупа и кастома один ролик — одним нажатием каждый
+ * становится своей группой. В PPV лишний ролик решает человек: отмечает его ниже и выделяет.
+ */
+function SplitVideos({ group, pending, decide }: DecisionProps) {
+  const oneByOne = group.fields.type === 'fyp' || group.fields.type === 'custom'
+  const photos = group.files.some((file) => file.media === 'photo')
+  return (
+    <InfoSection title="Несколько роликов">
+      <p className="text-sm">
+        {oneByOne
+          ? `Каждый ролик станет своей группой с теми же полями${photos ? '; фото останутся здесь' : ''}.`
+          : 'Отметьте лишний ролик в файлах ниже и нажмите «Выделить в новую».'}
+      </p>
+      {oneByOne ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          onClick={() => decide({ decision: 'split_videos' })}
+          className="self-start"
+        >
+          Разделить по роликам
+        </Button>
+      ) : null}
     </InfoSection>
   )
 }
