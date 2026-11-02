@@ -36,7 +36,12 @@ export interface Candidate {
     has_second_person: boolean | null
   } | null
   /** «Под монтаж»: the raw object the row waits a montage from. */
-  montage_from: { id: string } | null
+  montage_from: {
+    id: string
+    type: DbItemType
+    number: number
+    has_second_person: boolean | null
+  } | null
   account: string
   surface: DbSurface
   date: LocalDate
@@ -87,7 +92,9 @@ export function refusalOf(state: PlanState, candidate: Candidate): Refusal | nul
   if (!page) return { code: 'not_found', text: `Страницы ${candidate.account} нет` }
   const item = candidate.item
   if (!item) {
-    return candidate.montage_from ? null : { code: 'invalid_request', text: 'Не выбран объект' }
+    if (!candidate.montage_from) return { code: 'invalid_request', text: 'Не выбран объект' }
+    // The montage takes the flag of its source: an answer now, or the upload is refused later.
+    return page.platform === 'onlyfans' ? secondPersonRefusal(candidate.montage_from) : null
   }
   if (item.type === 'CUS') {
     return {
@@ -109,16 +116,23 @@ export function refusalOf(state: PlanState, candidate: Candidate): Refusal | nul
   if (candidate.surface === 'story' && !candidate.release_id && !candidate.marked) {
     return { code: 'invalid_request', text: 'сториз ставится только тизером выпуска PPV' }
   }
-  if (page.platform === 'onlyfans') {
-    if (item.has_second_person === true) {
-      return { code: 'second_person_onlyfans', text: 'нельзя: второй человек в кадре' }
-    }
-    if (item.has_second_person === null) {
-      return {
-        code: 'second_person_onlyfans',
-        text: 'есть второй человек в кадре? Без ответа на OnlyFans не ставится',
-        question: { kind: 'second_person', item_id: publicIdOf(item.type, item.number) },
-      }
+  return page.platform === 'onlyfans' ? secondPersonRefusal(item) : null
+}
+
+/** OnlyFans takes only «второго человека нет»: flagged is refused, unanswered is asked (§7). */
+function secondPersonRefusal(item: {
+  type: DbItemType
+  number: number
+  has_second_person: boolean | null
+}): Refusal | null {
+  if (item.has_second_person === true) {
+    return { code: 'second_person_onlyfans', text: 'нельзя: второй человек в кадре' }
+  }
+  if (item.has_second_person === null) {
+    return {
+      code: 'second_person_onlyfans',
+      text: 'есть второй человек в кадре? Без ответа на OnlyFans не ставится',
+      question: { kind: 'second_person', item_id: publicIdOf(item.type, item.number) },
     }
   }
   return null

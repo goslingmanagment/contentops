@@ -172,7 +172,14 @@ export async function resolveRow(
             has_second_person: item.has_second_person,
           }
         : null,
-      montage_from: montage ? { id: montage.id } : null,
+      montage_from: montage
+        ? {
+            id: montage.id,
+            type: montage.type,
+            number: montage.number,
+            has_second_person: montage.has_second_person,
+          }
+        : null,
       account: input.account,
       surface: dbSurface(input.surface),
       date: input.date,

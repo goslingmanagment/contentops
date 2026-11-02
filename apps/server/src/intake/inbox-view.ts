@@ -444,7 +444,7 @@ function view(
       raw_purpose: group.proposed_purpose === 'mass_dm' ? 'mailing' : group.proposed_purpose,
       channel: null,
       collection: null,
-      second_person: group.has_second_person ?? false,
+      second_person: group.has_second_person,
       fan_name: null,
       order_id: group.custom_order_id,
       shot_on: null,

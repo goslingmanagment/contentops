@@ -610,7 +610,7 @@ export async function acceptGroup(
         ${group.proposed_description},
         ${type === 'PPV' ? (group.proposed_ppv_kind ?? 'bundle') : null},
         ${type === 'RAW' ? (group.proposed_purpose ?? 'unknown') : null},
-        ${group.has_second_person ?? false}, ${type === 'CUS' ? 'unknown' : null},
+        ${group.has_second_person}, ${type === 'CUS' ? 'unknown' : null},
         ${group.id}::uuid, ${options.legacy ? 'import' : 'intake'}, ${actor.id}::uuid,
         ${type === 'PRM' ? (options.legacy?.promoChannelId ?? null) : null}::uuid
       )

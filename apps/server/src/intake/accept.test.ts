@@ -396,6 +396,45 @@ describe('accept (schema §5, §9.3)', () => {
     expect(rows[0]?.n).toBe(0)
   })
 
+  it('nobody answered about the second person: the object stays «не проверено» (SPEC §7)', async () => {
+    const flagAfter = async (name: string, answer: boolean | null) => {
+      const path = `${LORA_ROOT}/6. Life/Второй человек ${name}/01.jpg`
+      h.dropbox.tree.addFile(path, 2700 + name.length)
+      await scan()
+      await fetchAll()
+      const { group_id, draft_id } = await groupOfPath(path)
+      await makeReady(draft_id)
+      if (answer !== null) {
+        const group = await call(app, {
+          method: 'GET',
+          url: `/api/v1/lora/inbox/groups/${group_id}`,
+          as: owner,
+        })
+        const saved = await call(app, {
+          method: 'PATCH',
+          url: `/api/v1/lora/inbox/groups/${group_id}`,
+          as: owner,
+          key: newKey(),
+          ifMatch: group.json().version,
+          body: { second_person: answer },
+        })
+        expect(saved.statusCode, saved.body).toBe(200)
+      }
+      const accepted = await accept(group_id)
+      expect(accepted.statusCode, accepted.body).toBe(200)
+      const id = accepted.json().item_id as string
+      const { rows } = await h.db.execute<{ flag: boolean | null }>(sql`
+        SELECT has_second_person AS flag FROM content_items
+         WHERE model_id = ${h.modelId}::uuid AND public_item_id(type, number) = ${id}`)
+      const page = await call(app, { method: 'GET', url: `/api/v1/lora/i/${id}`, as: owner })
+      expect(page.json().entry.second_person).toBe(rows[0]?.flag)
+      return rows[0]?.flag
+    }
+    expect(await flagAfter('без ответа', null)).toBeNull()
+    expect(await flagAfter('нет', false)).toBe(false)
+    expect(await flagAfter('есть', true)).toBe(true)
+  })
+
   it('reject keeps the bytes; reopen brings the draft back to «готово»', async () => {
     h.dropbox.tree.addFile(`${LORA_ROOT}/6. Life/Лишнее/01.jpg`, 2600)
     await scan()

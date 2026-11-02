@@ -347,6 +347,11 @@ describe('1. PPV', () => {
       { id: 'PPV-069', origin: 'import', files: 1 },
       { id: 'PPV-070', origin: 'import', files: 2 },
     ])
+    // Nobody looked at the old corpus: «не проверено» until the first OnlyFans placement.
+    const { rows: flags } = await h.db.execute<{ flag: boolean | null }>(sql`
+      SELECT DISTINCT has_second_person AS flag FROM content_items
+       WHERE model_id = ${h.modelId}::uuid AND origin = 'import'`)
+    expect(flags).toEqual([{ flag: null }])
     // Three videos in one PPV: a ◆ in «Приехало»; the rest of PPV waits in «Разбор старого».
     expect(
       await draftOf('1. PPV/Bundles/[PPV-071]_slow_strip_tights_23.07.26/a.mov'),

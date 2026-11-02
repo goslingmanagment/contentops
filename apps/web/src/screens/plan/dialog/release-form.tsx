@@ -121,7 +121,12 @@ export function ReleaseFormView({ entry, data, preset, tabs, left, onDone }: Rel
             : 'Отметьте ячейки'
         }
         submit={
-          <Button type="submit" form={formId} disabled={rows.length === 0} pending={create.pending}>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={rows.length === 0 || Boolean(check.summary?.question)}
+            pending={create.pending}
+          >
             <CalendarPlusIcon />
             {rows.length > 0 ? `Поставить выпуск: ${rowsWord(rows.length)}` : 'Поставить выпуск'}
           </Button>

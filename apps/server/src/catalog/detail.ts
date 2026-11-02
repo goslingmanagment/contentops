@@ -360,7 +360,7 @@ function tombstoneEntry(item: ItemRow, files: readonly ItemFile[]): CatalogEntry
     raw_purpose: rawPurposeOf(item.raw_purpose),
     ppv_made_as: null,
     fan_name: type === 'custom' ? item.name_in_media : null,
-    second_person: item.has_second_person === true,
+    second_person: item.has_second_person,
     delivered_on: null,
     selected_count: null,
     processed_count: null,

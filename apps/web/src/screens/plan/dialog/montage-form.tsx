@@ -177,7 +177,12 @@ function MontageFormBody({
             : 'Отметьте файлы и страницу'
         }
         submit={
-          <Button type="submit" form={formId} disabled={rows.length === 0} pending={create.pending}>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={rows.length === 0 || Boolean(check.summary?.question)}
+            pending={create.pending}
+          >
             <CalendarPlusIcon />
             Поставить под монтаж
           </Button>

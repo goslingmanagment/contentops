@@ -86,6 +86,8 @@ export interface RowNote {
   text: string
   /** Чем важнее, тем меньше: отказ −1, дальше янтарь по `WARNING_RANK`. */
   rank: number
+  /** Отказ ждёт ответа про второго человека: тот же вопрос, что у одной строки. */
+  question?: { item_id: ItemId } | null
 }
 
 /** Пометки строк пакета по ответу предпросмотра. */
@@ -96,7 +98,12 @@ export function batchNotes(
   return Array.from({ length: count }, (_, index): RowNote | null => {
     const rejected = result?.rejected.find((entry) => entry.index === index)
     if (rejected) {
-      return { tone: 'blocked', text: rejected.text, rank: -1 }
+      return {
+        tone: 'blocked',
+        text: rejected.text,
+        rank: -1,
+        question: rejected.question ? { item_id: rejected.question.item_id } : null,
+      }
     }
     const warning = result?.rows[index]?.warnings[0]
     return warning
@@ -127,6 +134,6 @@ export function batchSummary(notes: readonly (RowNote | null)[]): CheckSummary {
     tone: first.tone,
     text: `${capitalize(first.text)}${tail}`,
     thresholdUnset: false,
-    question: null,
+    question: marked.find((note) => note.question)?.question ?? null,
   }
 }

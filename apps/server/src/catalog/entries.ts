@@ -118,7 +118,7 @@ function entryOf(row: IndexRow, model: ModelScope): CatalogEntry {
     raw_purpose: rawPurposeOf(row.raw_purpose),
     ppv_made_as: (row.ppv_made_as as CatalogEntry['ppv_made_as']) ?? null,
     fan_name: type === 'custom' ? row.name_in_media : null,
-    second_person: row.has_second_person === true,
+    second_person: row.has_second_person,
     delivered_on: row.delivered_on,
     selected_count: row.selected_count,
     processed_count: row.processed_count,

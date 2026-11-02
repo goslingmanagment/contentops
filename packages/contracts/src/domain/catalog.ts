@@ -68,7 +68,8 @@ export const CatalogEntrySchema = z.object({
   /** Custom: PPV made from it (`PPV-076`), or `null` while it is «готов для PPV». */
   ppv_made_as: ItemIdSchema.nullable(),
   fan_name: FanNameSchema.nullable(),
-  second_person: z.boolean(),
+  /** `null` — nobody answered yet, «не проверено»: asked at the first OnlyFans placement (SPEC §7). */
+  second_person: z.boolean().nullable(),
   delivered_on: LocalDateSchema.nullable(),
   /** Set: frames picked for posting and frames processed. */
   selected_count: z.int().nonnegative().nullable(),

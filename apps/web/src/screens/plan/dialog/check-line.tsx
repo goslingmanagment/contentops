@@ -8,6 +8,7 @@ import { useApi } from '@/data/api-session'
 import { usePlanPreview, useRowChecks } from '@/data/plan'
 import { queryKeys } from '@/data/query-keys'
 import { useRole } from '@/data/session'
+import { SecondPersonChoice } from '@/objects/second-person-choice'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { batchNotes, batchSummary, type CheckSummary, pickCheck } from './check-summary'
 
@@ -135,26 +136,6 @@ function SecondPersonQuestion({ itemId }: { itemId: ItemId }) {
     },
   })
   return (
-    <span className="flex shrink-0 items-baseline gap-1.5">
-      <Button
-        type="button"
-        variant="link"
-        size="inline"
-        disabled={answer.isPending}
-        onClick={() => answer.start({ yes: false })}
-      >
-        Нет
-      </Button>
-      <span className="text-ink-3">·</span>
-      <Button
-        type="button"
-        variant="link"
-        size="inline"
-        disabled={answer.isPending}
-        onClick={() => answer.start({ yes: true })}
-      >
-        Есть
-      </Button>
-    </span>
+    <SecondPersonChoice disabled={answer.isPending} onAnswer={(yes) => answer.start({ yes })} />
   )
 }

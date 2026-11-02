@@ -224,7 +224,7 @@ export async function rowView(
       ? planWarnings(state, {
           row_id: row.id,
           item: candidateItem(row),
-          montage_from: row.input_item_id ? { id: row.input_item_id } : null,
+          montage_from: candidateMontage(row),
           account: row.account,
           surface: row.surface,
           date: row.slot_date,
@@ -256,6 +256,18 @@ export function candidateItem(row: RowRecord) {
         type: row.item_type,
         number: row.item_number,
         has_second_person: row.has_second_person,
+      }
+    : null
+}
+
+/** The source of a row that waits a montage, as a check sees it. */
+export function candidateMontage(row: RowRecord) {
+  return row.input_item_id && row.input_item_type && row.input_item_number !== null
+    ? {
+        id: row.input_item_id,
+        type: row.input_item_type,
+        number: row.input_item_number,
+        has_second_person: row.input_has_second_person,
       }
     : null
 }

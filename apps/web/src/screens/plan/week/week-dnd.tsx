@@ -91,6 +91,11 @@ export function WeekDnd({ norms, canAct, onOpenDialog, children }: WeekDndProps)
       toast.show({ message: `Не поставлено: ${blocked}`, tone: 'error' })
       return
     }
+    // Второго человека ещё не проверяли: спросит окно (DESIGN §4.13), перетаскиванию негде.
+    if (entry.second_person === null && account.platform === 'onlyfans') {
+      onOpenDialog([entry.id], { accounts: [code], surface, date })
+      return
+    }
     const versions =
       surface === 'fyp' ? pickVersions((await loadItem(entry.id)).fyp_versions, [code]) : []
     create.create([

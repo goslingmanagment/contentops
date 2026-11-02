@@ -1,5 +1,5 @@
 import { isoWeekOf } from '@contentops/contracts/clock'
-import type { NewPlanRow } from '@contentops/contracts/commands/plan'
+import type { CreatePlanRowsResult, NewPlanRow } from '@contentops/contracts/commands/plan'
 import type { BatchResult } from '@contentops/contracts/domain/pagination'
 import type { PlanRow, Release } from '@contentops/contracts/domain/plan'
 import { markButtonKind } from '@contentops/contracts/placement'
@@ -23,7 +23,7 @@ import {
 } from '../plan/composition'
 import { dbSurface, type RowRecord, rowById, surfaceOfDb } from '../plan/records'
 import { hubCoverage, loadState, type PlanState } from '../plan/state'
-import { dayView, rowView, viewContext, weekView } from '../plan/views'
+import { candidateMontage, dayView, rowView, viewContext, weekView } from '../plan/views'
 import {
   accountId,
   checkAssignee,
@@ -120,13 +120,19 @@ export function planHandlers(services: Services): HandlerRegistry {
     options: { unknownTime?: boolean } = {},
   ) {
     const state = await loadState(tx, model)
-    const rejected: { index: number; code: string; text: string }[] = []
+    const rejected: CreatePlanRowsResult['rejected'] = []
     const resolved = []
     for (const [index, input] of inputs.entries()) {
       const one = await resolveRow(tx, model, input)
       const refusal = isRefusal(one) ? one : ruleRefusal(state, one)
-      if (refusal) rejected.push({ index, code: refusal.code, text: refusal.text })
-      else if (!isRefusal(one)) resolved.push(one)
+      if (refusal) {
+        rejected.push({
+          index,
+          code: refusal.code,
+          text: refusal.text,
+          question: refusal.question ?? null,
+        })
+      } else if (!isRefusal(one)) resolved.push(one)
     }
     for (const input of inputs) await checkAssignee(tx, model, input.assignee)
     if (rejected.length > 0) return { created: false, rows: [], rejected }
@@ -454,7 +460,7 @@ export function planHandlers(services: Services): HandlerRegistry {
                         has_second_person: row.has_second_person,
                       }
                     : null,
-                montage_from: row.input_item_id ? { id: row.input_item_id } : null,
+                montage_from: candidateMontage(row),
                 account: body.account,
                 surface: row.surface,
                 date: body.date,
