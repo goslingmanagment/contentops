@@ -48,7 +48,7 @@ export interface ReconcileReport {
   unexplained: { revision_id: string; path: string; why: string }[]
 }
 
-interface Row extends Record<string, unknown> {
+export interface Row extends Record<string, unknown> {
   revision_id: string
   path: string
   member: boolean
@@ -63,9 +63,15 @@ interface Row extends Record<string, unknown> {
   reject_reason: string | null
   successor_state: string | null
   successor_outcome: string | null
+  /** What «Можно освобождать» shows (`release.ts`): bytes of the snapshot and where they went. */
+  size: string
+  source_sha: string | null
+  master_sha: string | null
+  master_state: string | null
+  item: string | null
 }
 
-function classify(row: Row): { outcome: Outcome; reason: string | null } {
+export function classify(row: Row): { outcome: Outcome; reason: string | null } {
   if (row.container) {
     return row.unreadable
       ? { outcome: 'blocked', reason: 'archive_unreadable' }
@@ -110,7 +116,7 @@ function classify(row: Row): { outcome: Outcome; reason: string | null } {
   return { outcome: 'waiting', reason: row.draft_state }
 }
 
-async function rowsOf(q: Queryable, snapshot: SnapshotWork): Promise<Row[]> {
+export async function rowsOf(q: Queryable, snapshot: SnapshotWork): Promise<Row[]> {
   const { rows } = await q.execute<Row>(sql`
     SELECT r.id AS revision_id, r.frozen_path AS path, o.archive_revision_id IS NOT NULL AS member,
            EXISTS (SELECT 1 FROM source_objects m
@@ -120,10 +126,16 @@ async function rowsOf(q: Queryable, snapshot: SnapshotWork): Promise<Row[]> {
                       AND c.dedup_key = 'archive:' || r.id::text) AS unreadable,
            o.gone_since IS NOT NULL AS gone,
            d.state AS draft_state, d.outcome, d.blocked_reason, d.error, d.decided_by,
-           d.reject_reason, sd.state AS successor_state, sd.outcome AS successor_outcome
+           d.reject_reason, sd.state AS successor_state, sd.outcome AS successor_outcome,
+           r.byte_size::text AS size, encode(d.source_sha256, 'hex') AS source_sha,
+           encode(v.master_sha256, 'hex') AS master_sha, b.state AS master_state,
+           CASE WHEN i.id IS NOT NULL THEN public_item_id(i.type, i.number) END AS item
       FROM source_revisions r
       JOIN source_objects o ON o.model_id = r.model_id AND o.id = r.source_object_id
       LEFT JOIN inbox_drafts d ON d.model_id = r.model_id AND d.source_revision_id = r.id
+      LEFT JOIN asset_versions v ON v.model_id = d.model_id AND v.id = d.applied_version_id
+      LEFT JOIN blobs b ON b.sha256 = v.master_sha256
+      LEFT JOIN content_items i ON i.model_id = d.model_id AND i.id = d.applied_item_id
       LEFT JOIN LATERAL (
         SELECT n.id FROM source_revisions n
          WHERE n.model_id = r.model_id AND n.previous_id = r.id

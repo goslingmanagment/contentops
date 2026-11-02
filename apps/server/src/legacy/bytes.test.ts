@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type Db, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
@@ -22,6 +22,7 @@ import { importBytes } from './bytes'
 import { writeInputs } from './inputs'
 import { enqueueImport } from './parse'
 import type { ReconcileReport } from './reconcile'
+import { releaseMarkdown, releaseReport } from './release'
 import { snapshotOf } from './snapshot'
 import { freezeDisk, plantDisk, runImport, runQueued, zipOf } from './testing'
 
@@ -128,6 +129,9 @@ beforeAll(async () => {
     ),
     await copy('1. PPV/Bundles/[PPV-069]_lace_tease_21.05.26/gone.mov', null),
     await copy('5. Sextings/sexting feb.zip', null),
+    // 9. SMM is in the copy whole: «Можно освобождать» once it is imported and reconciled.
+    await copy('9. SMM/Twitter/zenpromo june/photos/june_photo_001.jpg', null),
+    await copy('9. SMM/Twitter/zenpromo june/photos/june_photo_002.jpg', null),
   ]
   await writeFile(join(copyRoot, 'list.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n'))
 
@@ -631,5 +635,42 @@ describe('«Принять» by a person, a group of the old corpus', () => {
       SELECT count(*)::int AS n FROM legacy_claims c JOIN content_items i ON i.id = c.resolved_item_id
        WHERE c.claim_kind = 'number' AND public_item_id(i.type, i.number) = 'PPV-071'`)
     expect(claims[0]?.n).toBe(1)
+  })
+})
+
+describe('«Можно освобождать» (SPEC §12.2)', () => {
+  it('lists the roots imported whole with a green reconciliation, their files and proven masters', async () => {
+    const report = await releaseReport(h.db, 'lora', join(copyRoot, 'list.jsonl'))
+    const smm = report.roots.find((root) => root.root === '9. SMM')
+    expect(smm).toMatchObject({ ready: true, files: 2, copy_bytes: 1200, blockers: {} })
+    expect(smm?.rows.map((row) => [row.outcome, row.item, row.copy, row.master?.state])).toEqual([
+      ['accepted', 'PRM-001', 'bytes', 'present'],
+      ['alias', 'PPV-070', 'bytes', 'present'],
+    ])
+    expect(smm?.rows.every((row) => row.source_sha256?.length === 64)).toBe(true)
+    // A file out of the batch, a refused group, a file gone from the cloud: not yet.
+    const ppv = report.roots.find((root) => root.root === '1. PPV')
+    expect(ppv?.ready).toBe(false)
+    expect(ppv?.blockers).toMatchObject({ 'blocked:deferred': 1 })
+    expect(report.ready_bytes).toBe(1200)
+    const text = releaseMarkdown(report)
+    expect(text).toContain('## 9. SMM — можно освобождать')
+    expect(text).toContain('- **1. PPV** — ')
+  })
+
+  it('a file of the copy the snapshot does not know keeps its root waiting', async () => {
+    const list = join(copyRoot, 'list-extra.jsonl')
+    const lines = (await readFile(join(copyRoot, 'list.jsonl'), 'utf8')).trim()
+    const extra = {
+      path: 'Lora/9. SMM/Twitter/zenpromo june/photos/june_photo_003.jpg',
+      is_dir: false,
+      size: 50,
+      last_write_utc: '2026-11-01T10:00:00Z',
+      attributes: 0x20,
+      bytes_present: true,
+    }
+    await writeFile(list, `${lines}\n${JSON.stringify(extra)}\n`)
+    const smm = (await releaseReport(h.db, 'lora', list)).roots.find((r) => r.root === '9. SMM')
+    expect(smm).toMatchObject({ ready: false, blockers: { 'в копии, но не в снимке': 1 } })
   })
 })

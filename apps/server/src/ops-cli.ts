@@ -8,6 +8,7 @@ import { loadConfig } from './config'
 import { enqueueHistoryPass } from './hub/match/auto'
 import { enqueueFreeze, freezeRegister } from './intake/freeze'
 import { importReportMarkdown } from './legacy/export'
+import { releaseMarkdown, releaseReport } from './legacy/release'
 import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
@@ -39,6 +40,12 @@ import { smokeSetup } from './smoke/setup'
  * holds the real names of the disk:
  *
  *   docker compose exec -T worker node dist/ops.js import-report <model> [plan|reconcile|<work>] > x.md
+ *
+ * «Можно освобождать» (PLAN этап 7, 9а; SPEC §12.2): the roots of the old disk whose copy may be
+ * unpinned in the Я.Диск client — fully imported, a green reconciliation, masters in place — with
+ * every file, its bytes in the copy and its proven blobs. It only reads; also out of git:
+ *
+ *   docker compose exec -T worker node dist/ops.js release-report <model> > release.md
  *
  * The history pass of the Fansly pages with «Автосверка» on, again after a batch of the library
  * (SPEC §7; stages 7, 9a and «Старый формат» 9b) — one `hub_history` work per page:
@@ -72,6 +79,7 @@ const USAGE = `usage:
   ops.js freeze <model> <source label> [YYYY-MM-DD] [--wait]
   ops.js freeze-export <model> [YYYY-MM-DD]
   ops.js import-report <model> [plan|reconcile|<work id>]   (Markdown, out of git)
+  ops.js release-report <model> [--list <copy list>]   («Можно освобождать», Markdown, out of git)
   ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
   ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
@@ -127,6 +135,7 @@ async function main(argv: string[]): Promise<number> {
       name: { type: 'string' },
       page: { type: 'string' },
       type: { type: 'string' },
+      list: { type: 'string' },
     },
     allowPositionals: true,
   })
@@ -323,6 +332,13 @@ async function main(argv: string[]): Promise<number> {
       const [model, work] = positionals
       if (!model) throw new Error(USAGE)
       process.stdout.write(await importReportMarkdown(db, model, work ?? null))
+      return 0
+    }
+    if (command === 'release-report') {
+      const [model] = positionals
+      if (!model) throw new Error(USAGE)
+      const list = values.list ?? config.LEGACY_COPY_LIST ?? null
+      process.stdout.write(releaseMarkdown(await releaseReport(db, model, list)))
       return 0
     }
     if (command === 'stage' || command === 'render') {
