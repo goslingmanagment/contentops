@@ -10,12 +10,13 @@ type FieldKey = keyof DraftFields
 
 const FIELD_WORD: Partial<Record<FieldKey, string>> = {
   title: 'название',
+  title_en: 'английское название',
   description: 'описание',
   tags: 'теги',
 }
 
 /** Поля, правку которых можно отменить из полоски (§3.8): теги, название, описание. */
-const UNDOABLE: ReadonlySet<FieldKey> = new Set(['title', 'description', 'tags'])
+const UNDOABLE: ReadonlySet<FieldKey> = new Set(['title', 'title_en', 'description', 'tags'])
 
 interface DraftEdit {
   patch: UpdateDraftCommand

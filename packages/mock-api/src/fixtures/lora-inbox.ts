@@ -45,6 +45,7 @@ export function fields(patch: Partial<DraftFields>): DraftFields {
     fan_name: null,
     order_id: null,
     shot_on: null,
+    title_en: '',
     ...patch,
   }
 }

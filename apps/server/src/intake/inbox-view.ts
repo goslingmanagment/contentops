@@ -61,6 +61,7 @@ interface GroupRow extends Record<string, unknown> {
   } | null
   proposed_type: values.ContentType | null
   proposed_title: string | null
+  proposed_title_en: string | null
   proposed_description: string | null
   proposed_tags: string[] | null
   proposed_ppv_kind: values.PpvKind | null
@@ -558,6 +559,7 @@ function view(
     fields: {
       type: group.proposed_type ? DB_TYPE_TO_ITEM[group.proposed_type] : null,
       title: group.proposed_title ?? '',
+      title_en: group.proposed_title_en ?? '',
       description: group.proposed_description ?? '',
       tags: group.proposed_tags ?? [],
       ppv_kind: group.proposed_ppv_kind,
@@ -589,7 +591,7 @@ function view(
 }
 
 const GROUP_COLUMNS = sql`
-  g.id, g.group_key, g.grouping, g.evidence, g.proposed_type, g.proposed_title,
+  g.id, g.group_key, g.grouping, g.evidence, g.proposed_type, g.proposed_title, g.proposed_title_en,
   g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
   g.has_second_person, g.custom_order_id, g.row_version, g.discovered_at, s.kind AS source_kind,
   s.label AS source_label,

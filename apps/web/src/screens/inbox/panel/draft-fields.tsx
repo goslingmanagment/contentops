@@ -64,6 +64,13 @@ export function DraftFields({ group, saver }: DraftFieldsProps) {
         saver={saver}
       />
       <DraftTextField
+        field="title_en"
+        label="Короткое английское название"
+        value={fields.title_en}
+        placeholder="необязательно: dildo-ride, mirror"
+        saver={saver}
+      />
+      <DraftTextField
         field="description"
         label="Описание"
         value={fields.description}

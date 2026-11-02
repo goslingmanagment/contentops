@@ -6,7 +6,7 @@ import { FieldRow } from './field-row'
 import type { DraftSave } from './use-draft-save'
 
 interface DraftTextFieldProps {
-  field: 'title' | 'description'
+  field: 'title' | 'title_en' | 'description'
   label: string
   value: string
   source?: string | null

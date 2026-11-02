@@ -105,12 +105,16 @@ describe('«Приехало» from the source', () => {
       as: owner,
       key: newKey(),
       ifMatch: loose.version,
-      body: { type: 'life', title: 'Утро на кухне' },
+      body: { type: 'life', title: 'Утро на кухне', title_en: ' kitchen-morning ' },
     })
     expect(saved.statusCode).toBe(200)
     const group = InboxGroupSchema.parse(saved.json())
     expect(group).toMatchObject({ title: 'Утро на кухне', version: loose.version + 1 })
-    expect(group.fields).toMatchObject({ type: 'life', title: 'Утро на кухне' })
+    expect(group.fields).toMatchObject({
+      type: 'life',
+      title: 'Утро на кухне',
+      title_en: 'kitchen-morning',
+    })
   })
 
   it('a group «Принять» would refuse says so before the click and splits by clips', async () => {

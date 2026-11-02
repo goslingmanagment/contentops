@@ -2876,6 +2876,10 @@
           "title": {
             "type": "string"
           },
+          "title_en": {
+            "type": "string",
+            "maxLength": 80
+          },
           "description": {
             "type": "string"
           },
@@ -2953,6 +2957,7 @@
         "required": [
           "type",
           "title",
+          "title_en",
           "description",
           "tags",
           "ppv_kind",
@@ -11406,6 +11411,10 @@
           },
           "title": {
             "type": "string"
+          },
+          "title_en": {
+            "type": "string",
+            "maxLength": 80
           },
           "description": {
             "type": "string"

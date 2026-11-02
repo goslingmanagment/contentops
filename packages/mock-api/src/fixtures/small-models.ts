@@ -174,6 +174,7 @@ export function lilyInbox(): InboxRecord[] {
         fields: {
           type: 'life',
           title: 'Кафе с подругой',
+          title_en: '',
           description: '',
           tags: [],
           ppv_kind: null,
