@@ -88,6 +88,8 @@ services:
       # Cloud sources (SPEC §6.1): `sources.credentials_ref` names the variable.
       YDISK_TOKEN: ${YDISK_TOKEN:-}
       DROPBOX_REFRESH_TOKEN: ${DROPBOX_REFRESH_TOKEN:-}
+      # Another model's Dropbox: its own refresh token of the same app, named by its source.
+      DROPBOX_REFRESH_TOKEN_ARI: ${DROPBOX_REFRESH_TOKEN_ARI:-}
       DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:-}
       DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET:-}
       HUB_BASE_URL: ${HUB_BASE_URL:-}
@@ -131,6 +133,8 @@ services:
       # Cloud sources (SPEC §6.1): `sources.credentials_ref` names the variable.
       YDISK_TOKEN: ${YDISK_TOKEN:-}
       DROPBOX_REFRESH_TOKEN: ${DROPBOX_REFRESH_TOKEN:-}
+      # Another model's Dropbox: its own refresh token of the same app, named by its source.
+      DROPBOX_REFRESH_TOKEN_ARI: ${DROPBOX_REFRESH_TOKEN_ARI:-}
       DROPBOX_APP_KEY: ${DROPBOX_APP_KEY:-}
       DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET:-}
       HUB_BASE_URL: ${HUB_BASE_URL:-}
