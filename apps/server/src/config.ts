@@ -13,6 +13,44 @@ export type ProcessRole = (typeof ROLES)[number]
 const AbsolutePath = z.string().refine(isAbsolute, 'нужен абсолютный путь')
 const Count = z.coerce.number().int().positive()
 
+/** A threshold of free space: the value of every disk, and of some disks their own. */
+export interface DiskGb {
+  all: number
+  disks: Record<string, number>
+}
+
+/** The pilot's thresholds when the environment says nothing (SPEC §12.2). */
+export const PILOT_SPACE_GB: { warn: DiskGb; stop: DiskGb } = {
+  warn: { all: 200, disks: { 'E:': 160 } },
+  stop: { all: 100, disks: {} },
+}
+
+/**
+ * `200` — every disk; `200,E:=160` — 200, and E: its own 160. A disk not named takes the value
+ * without a name (SPEC §12.2: the budgets of each disk decide its warning).
+ */
+const DiskGbSchema = z.string().transform((value, ctx): DiskGb => {
+  const out: DiskGb = { all: Number.NaN, disks: {} }
+  for (const part of value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)) {
+    const [name, gb] = part.includes('=') ? part.split('=', 2) : [null, part]
+    const number = Number(gb)
+    if (gb === undefined || gb.trim() === '' || !Number.isFinite(number) || number < 0) {
+      ctx.addIssue({ code: 'custom', message: 'ожидается «200» или «200,E:=160»' })
+      return z.NEVER
+    }
+    if (name === null) out.all = number
+    else out.disks[name.trim()] = number
+  }
+  if (Number.isNaN(out.all)) {
+    ctx.addIssue({ code: 'custom', message: 'нужно значение для всех дисков: «200,E:=160»' })
+    return z.NEVER
+  }
+  return out
+})
+
 /** `a,b,c` with spaces and empty items dropped. */
 function commaList(item: z.ZodType<string, string>) {
   return z
@@ -70,9 +108,13 @@ const EnvSchema = z.object({
    * disks grow): JSON written by the host every 5 min. Without it the space is «нет данных».
    */
   HOST_SPACE_FILE: AbsolutePath.optional(),
-  /** Pilot thresholds of free space: warning and stop of intake (SPEC §12.2). */
-  SPACE_WARN_GB: z.coerce.number().nonnegative().default(200),
-  SPACE_STOP_GB: z.coerce.number().nonnegative().default(100),
+  /**
+   * Pilot thresholds of free space by disk (SPEC §12.2): the warning — C: 200 (the owner's
+   * decision), E: 160 (the stop and the scratch above it: derived files and the prefetch live
+   * there); the stop of intake — 100 on every disk.
+   */
+  SPACE_WARN_GB: DiskGbSchema.default(PILOT_SPACE_GB.warn),
+  SPACE_STOP_GB: DiskGbSchema.default(PILOT_SPACE_GB.stop),
   /**
    * Development without nginx: `web` streams files itself instead of `X-Accel-Redirect`.
    * Never set in the stack: nginx sends the bytes (SPEC §12.0 «отдача»).

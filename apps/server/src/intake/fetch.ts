@@ -20,7 +20,7 @@ import { sql } from 'drizzle-orm'
 import { copyFromLocal, type LegacyCopyConfig } from '../legacy/copy'
 import type { BlobStore } from '../media/storage'
 import { extOfName, shaBytes } from '../media/storage'
-import { readHostSpace, type SpaceOptions } from '../space'
+import { belowStop, readHostSpace, type SpaceOptions } from '../space'
 import { recordChangedRevision } from './discover'
 import { mediaKindOf } from './grouping'
 import { scanFailure } from './scan'
@@ -32,7 +32,8 @@ import { type SourceFactory, sourceById } from './source-client'
  * checked hash goes to the revision and the draft; then an exact duplicate resolves itself as
  * an alias (schema §5), anything else gets its derivatives and master queued. Parallelism is
  * the `fetch` slot (`FETCH_JOBS`); the prefetch of videos stays under `FETCH_AHEAD_GB`; intake stops
- * below the free space of the pilot (`SPACE_STOP_GB` of C:).
+ * below the free space of the pilot (`SPACE_STOP_GB` of any disk: C: for the masters, E: for the
+ * prefetch and the derived files).
  */
 
 const GB = 1_000_000_000
@@ -113,14 +114,10 @@ function entryOf(row: RevisionRow, kind: 'yandex_disk' | 'dropbox', root: string
   }
 }
 
-/** Free space of the pilot below the stop line: intake waits (SPEC §12.2). */
+/** Free space of the pilot below the stop line of a disk: intake waits (SPEC §12.2). */
 async function spaceLow(space: SpaceOptions | undefined): Promise<boolean> {
   if (!space?.file) return false
-  const report = await readHostSpace(space.file)
-  const first = report?.disks[0]
-  if (!report || !first) return false
-  if (Date.now() - Date.parse(report.measured_at) > 15 * 60_000) return false
-  return first.free_bytes <= space.stopGb * GB
+  return belowStop(await readHostSpace(space.file), space, new Date())
 }
 
 /** Bytes fetched but not yet turned into a verified master: the prefetch budget. */

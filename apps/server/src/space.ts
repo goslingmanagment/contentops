@@ -3,6 +3,7 @@ import type { IntegrationLine } from '@contentops/contracts/domain/integrations'
 import type { Disk, SpaceCard } from '@contentops/contracts/domain/system'
 import { formatBytes } from '@contentops/contracts/format'
 import { z } from 'zod'
+import { type DiskGb, PILOT_SPACE_GB } from './config'
 
 /**
  * Free space of the host disks (SPEC §12.2). On the pilot the VM disks are growing VHDX
@@ -30,8 +31,20 @@ const GB = 1_000_000_000
 export interface SpaceOptions {
   /** `HOST_SPACE_FILE`; without it there is nothing to show. */
   file: string | undefined
-  warnGb: number
-  stopGb: number
+  /** `SPACE_WARN_GB`, `SPACE_STOP_GB`: by disk. */
+  warnGb: DiskGb
+  stopGb: DiskGb
+}
+
+/** The pilot's thresholds when the environment says nothing (`config.ts`). */
+export const PILOT_SPACE: Omit<SpaceOptions, 'file'> = {
+  warnGb: PILOT_SPACE_GB.warn,
+  stopGb: PILOT_SPACE_GB.stop,
+}
+
+/** The threshold of one disk in bytes: its own value, else the value of every disk. */
+export function thresholdBytes(threshold: DiskGb, disk: string): number {
+  return Math.round((threshold.disks[disk] ?? threshold.all) * GB)
 }
 
 /** The last report, or `null` when the file is missing or broken. */
@@ -54,13 +67,13 @@ function isFresh(space: HostSpace, now: Date): boolean {
 
 /** Disks of «Настройки › Состояние»: names from the last report, numbers only while fresh. */
 export function diskViews(space: HostSpace | null, options: SpaceOptions, now: Date): Disk[] {
-  const thresholds = {
-    warn_below_bytes: Math.round(options.warnGb * GB),
-    stop_below_bytes: Math.round(options.stopGb * GB),
-  }
+  const thresholds = (name: string) => ({
+    warn_below_bytes: thresholdBytes(options.warnGb, name),
+    stop_below_bytes: thresholdBytes(options.stopGb, name),
+  })
   if (!space) {
     return [
-      { name: 'Место', free_bytes: null, total_bytes: null, measured_at: null, ...thresholds },
+      { name: 'Место', free_bytes: null, total_bytes: null, measured_at: null, ...thresholds('') },
     ]
   }
   const fresh = isFresh(space, now)
@@ -69,8 +82,14 @@ export function diskViews(space: HostSpace | null, options: SpaceOptions, now: D
     free_bytes: fresh ? disk.free_bytes : null,
     total_bytes: fresh ? disk.total_bytes : null,
     measured_at: space.measured_at,
-    ...thresholds,
+    ...thresholds(disk.name),
   }))
+}
+
+/** A fresh report says some disk is at or below its stop line: intake waits (SPEC §12.2). */
+export function belowStop(space: HostSpace | null, options: SpaceOptions, now: Date): boolean {
+  if (!space || !isFresh(space, now)) return false
+  return space.disks.some((disk) => disk.free_bytes <= thresholdBytes(options.stopGb, disk.name))
 }
 
 function wholeGb(bytes: number): string {
@@ -91,7 +110,7 @@ function spaceLine(disk: Disk, text: string): IntegrationLine {
 /**
  * Card at the bottom of the left column (DESIGN §2.2): the first disk (C: on the pilot) and
  * lines only when something is wrong — «Мало места: 180 ГБ», «Забор остановлен: свободно
- * 95 ГБ» (SPEC §12.2; thresholds of the pilot 200 / 100 GB).
+ * 95 ГБ» (SPEC §12.2; thresholds of the pilot: C: 200 / 100 GB, E: 160 / 100 GB).
  */
 export function spaceCard(disks: readonly Disk[]): SpaceCard {
   const [first] = disks

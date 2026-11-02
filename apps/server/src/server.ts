@@ -11,7 +11,7 @@ import { registerSourceThumbs } from './intake/source-thumbs'
 import { registerTus } from './intake/tus'
 import { BlobStore, type StorageRoots } from './media/storage'
 import type { IntegrationSecrets } from './services'
-import type { SpaceOptions } from './space'
+import { PILOT_SPACE, type SpaceOptions } from './space'
 
 export interface ServerOptions {
   db: Db
@@ -41,7 +41,7 @@ export function buildServer(options: ServerOptions) {
     secureCookies: options.publicUrl.startsWith('https:'),
     secrets: options.secrets,
     sourceEnv: options.sourceEnv ?? process.env,
-    space: options.space ?? { file: undefined, warnGb: 200, stopGb: 100 },
+    space: options.space ?? { file: undefined, ...PILOT_SPACE },
     store: new BlobStore(options.storage),
   }
   const authenticate = createAuthenticate(db)

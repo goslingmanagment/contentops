@@ -33,6 +33,24 @@ describe('loadConfig', () => {
     })
   })
 
+  it('reads thresholds of free space by disk (SPEC §12.2)', () => {
+    expect(loadConfig(WEB)).toMatchObject({
+      SPACE_WARN_GB: { all: 200, disks: { 'E:': 160 } },
+      SPACE_STOP_GB: { all: 100, disks: {} },
+    })
+    expect(loadConfig({ ...WEB, SPACE_WARN_GB: '250, E:=120' }).SPACE_WARN_GB).toEqual({
+      all: 250,
+      disks: { 'E:': 120 },
+    })
+    expect(loadConfig({ ...WEB, SPACE_WARN_GB: '200' }).SPACE_WARN_GB).toEqual({
+      all: 200,
+      disks: {},
+    })
+    expect(problemsOf({ ...WEB, SPACE_WARN_GB: 'E:=160' })).toEqual([
+      'SPACE_WARN_GB: нужно значение для всех дисков: «200,E:=160»',
+    ])
+  })
+
   it('starts without secrets of integrations', () => {
     const config = loadConfig(WEB)
     expect(config.YDISK_TOKEN).toBeUndefined()
