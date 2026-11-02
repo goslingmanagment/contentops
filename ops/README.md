@@ -190,7 +190,10 @@
   --models lora`, с `--token` — новый токен один раз в stdout (прежние токены агента
   отзываются); человек с ролью КМ или «Только чтение» (то же, что «Добавить человека»; занятый
   логин — отказ, новый пароль — `contentops-db reset-password`) — `ops.js person diana --name
-  "Диана" --role manager --models lora`, временный пароль один раз в stdout; выключатели по коду интеграции — `ops.js switch ydisk.lora scan=on`, `ops.js
+  "Диана" --role manager --models lora`, временный пароль один раз в stdout; подрядчик модели,
+  как «Модели и страницы» (без него «Подготовить передачу» некому) — `ops.js contractor "<имя>"
+  --model lora --channel twitter` (`--format upload|master|compat`, по умолчанию «для заливки»;
+  есть — остаётся как был, другой канал или формат — отказ, их меняет экран); выключатели по коду интеграции — `ops.js switch ydisk.lora scan=on`, `ops.js
   switch agents enabled=on`, `ops.js switch hub.lora-1 receive=off`. Токен печатается
   только в stdout: сразу в файл, не на экран. Пороги по ключам схемы и настройки без экрана
   (метки рекламы страницы, партия импорта) — `ops.js policy hub_candidate_tolerance 30`,

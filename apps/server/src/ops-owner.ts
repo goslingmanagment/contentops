@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { type AgentRole, AgentRoleSchema } from '@contentops/contracts/domain/agents'
 import { ROLE_LABEL } from '@contentops/contracts/domain/people'
 import {
+  CONTRACTOR_FORMAT_LABEL,
+  type ContractorFormat,
+  ContractorFormatSchema,
+} from '@contentops/contracts/domain/promo'
+import {
   type Db,
   isSwitchOn,
   logAction,
@@ -204,6 +209,113 @@ export async function opsPerson(
       after: { Логин: login, Роль: ROLE_LABEL[role.data], Модели: await modelNames(tx, now) },
     })
     return { login, id, name, role: role.data, models: now, temporary_password: password }
+  })
+}
+
+export interface OpsContractorResult {
+  contractor: string
+  id: string
+  model: string
+  channel: string | null
+  contact: string | null
+  format: ContractorFormat
+  created: boolean
+}
+
+/**
+ * `ops.js contractor <name> --model <m> [--channel <code>] [--contact <text>] [--format …]` —
+ * «Добавить подрядчика» of «Модели и страницы» (DESIGN §4.19, owner only) for a stack whose owner
+ * has no browser session: without a contractor «Подготовить передачу» has no recipient (PLAN
+ * этап 7). A contractor of that name stays as it is; another channel or format is refused (they
+ * change on the screen). The journal shows the system's `ops`.
+ */
+export async function opsContractor(
+  db: Db,
+  input: {
+    name: string
+    model: string
+    channel?: string | undefined
+    contact?: string | undefined
+    format?: string | undefined
+  },
+): Promise<OpsContractorResult> {
+  const name = input.name.trim()
+  if (!name) throw new Error('the contractor needs a name')
+  const format = ContractorFormatSchema.safeParse(input.format ?? 'upload')
+  if (!format.success) throw new Error(`format ${input.format}: upload, master or compat`)
+  const contact = input.contact?.trim() || null
+  return withActorTx(db, context('contractor.ops'), async (tx) => {
+    const [model] = await modelsByCodes(tx, [input.model])
+    if (!model) throw new Error(`${input.model}: no such model`)
+    let channel: { id: string; code: string; title: string } | null = null
+    if (input.channel) {
+      const { rows } = await tx.execute<{ id: string; code: string; title: string }>(sql`
+        SELECT id, code, title FROM promo_channels
+         WHERE model_id = ${model.id}::uuid AND archived_at IS NULL ORDER BY code`)
+      channel = rows.find((row) => row.code === input.channel) ?? null
+      if (!channel) {
+        throw new Error(
+          `channel ${input.channel}: none of the model (${rows.map((row) => row.code).join(', ') || 'no channels'})`,
+        )
+      }
+    }
+    const { rows: found } = await tx.execute<{
+      id: string
+      channel: string | null
+      contact: string | null
+      format: ContractorFormat
+    }>(sql`
+      SELECT c.id, ch.code AS channel, c.contact, c.format FROM contractors c
+        LEFT JOIN promo_channels ch ON ch.model_id = c.model_id AND ch.id = c.channel_id
+       WHERE c.model_id = ${model.id}::uuid AND c.name = ${name}
+       FOR UPDATE OF c`)
+    const existing = found[0]
+    if (existing) {
+      const differs =
+        (input.channel !== undefined && existing.channel !== input.channel) ||
+        (input.format !== undefined && existing.format !== format.data)
+      if (differs) {
+        throw new Error(
+          `«${name}» is there with channel ${existing.channel ?? 'any'} and format ${existing.format}: ` +
+            'they change in «Модели и страницы»',
+        )
+      }
+      return {
+        contractor: name,
+        id: existing.id,
+        model: input.model,
+        channel: existing.channel,
+        contact: existing.contact,
+        format: existing.format,
+        created: false,
+      }
+    }
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO contractors (model_id, name, contact, channel_id, format)
+      VALUES (${model.id}::uuid, ${name}, ${contact}, ${channel?.id ?? null}::uuid, ${format.data})
+      RETURNING id`)
+    const id = rows[0]?.id
+    if (!id) throw new Error('contractor insert returned nothing')
+    await logAction(tx, {
+      modelId: model.id,
+      subjectKind: 'contractors',
+      subjectId: id,
+      subjectLabel: name,
+      after: [
+        ['Подрядчик', name],
+        ['Канал', channel?.title ?? 'любой'],
+        ['Формат', CONTRACTOR_FORMAT_LABEL[format.data]],
+      ],
+    })
+    return {
+      contractor: name,
+      id,
+      model: input.model,
+      channel: channel?.code ?? null,
+      contact,
+      format: format.data,
+      created: true,
+    }
   })
 }
 
