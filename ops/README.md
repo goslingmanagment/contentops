@@ -222,6 +222,10 @@
 - Dropbox Лоры подключён 02.11.2026: приложение `contentops-lora` (только чтение, PKCE, без
   секрета), ключи — в `.env` ВМ и в `~/.config/agency/secrets.env` на маке
   (`CONTENTOPS_DROPBOX_*`). Следующая модель — так же:
+- Вторая и следующие модели — то же приложение `contentops-lora`, авторизованное под Dropbox модели
+  (ссылка authorize ниже, PKCE): свой refresh token в своей переменной, имя переменной —
+  `credentials_ref` источника в `/etc/contentops/bootstrap.json`, и та же строка в
+  `docker-compose.yml` у `web` и `worker` (Ари — `DROPBOX_REFRESH_TOKEN_ARI`, 03.11.2026).
 - Dropbox для новой модели: dropbox.com/developers/apps → Create app →
   Scoped access → Full Dropbox → имя `contentops-<модель>`; Permissions — только
   `files.metadata.read` и `files.content.read` → Submit; Settings → App key (и App secret).
