@@ -16,6 +16,7 @@ import { lockBlobForReference } from '../media/storage-ops'
 import { markDeliveredParts } from '../orders/writes'
 import { aliasOpenDuplicates, resolveAlias } from './fetch'
 import { appendRefusal, newObjectRefusal } from './refusal'
+import { fillShotOn, shotOnOfDrafts } from './shot-date'
 
 /**
  * «Принять» (SPEC §4.1, §6.1, schema §5 «Принятие группы», §9.3): one transaction after the
@@ -586,10 +587,20 @@ export async function acceptGroup(
 
   let item: ItemRef
   let how: AcceptResult['how']
+  // The day of shooting from EXIF of the accepted bytes (SPEC §6.3); a promo collection has none.
+  const shotOn =
+    type === 'PRM'
+      ? null
+      : await shotOnOfDrafts(
+          tx,
+          model.id,
+          files.map((draft) => draft.id),
+        )
   if (target) {
     item = { id: target.id, type: target.type, number: target.number }
     how = options.how ?? 'extend'
     await setJournalItem(tx, item.id)
+    await fillShotOn(tx, model.id, item.id, shotOn)
   } else {
     const kept = options.legacy?.number ?? null
     const number = kept ?? (await issueNumber(tx, model.id, type))
@@ -605,7 +616,7 @@ export async function acceptGroup(
       INSERT INTO content_items (
         model_id, type, number, title, title_en, description, ppv_kind, raw_purpose,
         has_second_person, name_in_media, created_from_group_id, origin, created_by,
-        promo_channel_id
+        promo_channel_id, shot_on
       ) VALUES (
         ${model.id}::uuid, ${type}, ${number}, ${title}, ${group.proposed_title_en},
         ${group.proposed_description},
@@ -613,7 +624,8 @@ export async function acceptGroup(
         ${type === 'RAW' ? (group.proposed_purpose ?? 'unknown') : null},
         ${group.has_second_person}, ${type === 'CUS' ? 'unknown' : null},
         ${group.id}::uuid, ${options.legacy ? 'import' : 'intake'}, ${actor.id}::uuid,
-        ${type === 'PRM' ? (options.legacy?.promoChannelId ?? null) : null}::uuid
+        ${type === 'PRM' ? (options.legacy?.promoChannelId ?? null) : null}::uuid,
+        ${shotOn}::date
       )
       RETURNING id`)
     item = { id: (rows[0] as { id: string }).id, type, number }
