@@ -76,7 +76,7 @@ export function IntakeView({ viewParam, onViewParamChange, initialGroupId }: Int
   const panelRef = useRef<DraftPanelHandle>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const scroll = useHistoryScroll('inbox:scroll')
-  const preview = useIntakePreview()
+  const preview = useIntakePreview(model.code)
   // Группы из адреса нет среди нового: панель говорит об этом одной строкой и ничего не
   // выбирает сама. Решается один раз, по первым данным: принятая потом группа уходит
   // из списка обычным путём.

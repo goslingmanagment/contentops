@@ -67,3 +67,16 @@ export const StatusWordSchema = z.object({
 export type StatusWord = z.infer<typeof StatusWordSchema>
 
 export const ProgressSchema = z.number().min(0).max(1)
+
+/**
+ * What the viewer plays or shows of a file (SPEC §9.3, DESIGN §3.5): the browser copy —
+ * `preview.mp4` of a video, `preview-2048.webp` of a photo — and `poster.webp`, the first frame
+ * of a video before it plays. The master is never played in the browser. `url` is `null` while
+ * the preview is not built; `building` — its build is queued or running, with its share.
+ */
+export const MediaPreviewSchema = z.object({
+  url: z.string().nullable(),
+  poster: z.string().nullable(),
+  building: z.object({ progress: ProgressSchema.nullable() }).nullable(),
+})
+export type MediaPreview = z.infer<typeof MediaPreviewSchema>

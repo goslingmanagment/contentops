@@ -1,17 +1,16 @@
 import { ChevronLeftIcon, ChevronRightIcon, InfoIcon, XIcon } from 'lucide-react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
-import { type KeyboardEvent, type ReactNode, useRef, useState } from 'react'
+import { type KeyboardEvent, type ReactNode, type RefObject, useRef, useState } from 'react'
 import { isTypingTarget } from '../lib/platform'
 import { Button } from './button'
 import { DarkSurface } from './dark-surface'
-import { ProgressWord } from './progress-word'
 import type { TimelineSegment } from './timeline-track'
 import { Filmstrip } from './viewer/filmstrip'
 import { FrameCompare } from './viewer/frame-compare'
 import { ShutterCompare } from './viewer/shutter-compare'
 import { VideoControls } from './viewer/video-controls'
 import type { ViewerFile } from './viewer/viewer-file'
-import { ViewerMedia } from './viewer/viewer-media'
+import { MediaFrame, MediaNotice, MediaStill, ViewerPhoto } from './viewer/viewer-media'
 
 export type { ViewerFile }
 
@@ -34,7 +33,7 @@ interface ViewerProps {
   actions?: ReactNode
   /** Сведения справа тёмной панелью 320, клавиша `i`. */
   info?: ReactNode
-  /** Превью ещё нет: постер и «Превью собирается · 40 %». */
+  /** Мастер ещё обрабатывается: постер и «Превью собирается · 40 %» (0–100). */
   previewProgress?: number
   /** Сравнение двух версий: фото — шторкой, видео — двумя лентами кадров. */
   compare?: ViewerCompare
@@ -47,9 +46,15 @@ interface ViewerProps {
   corner?: ReactNode
 }
 
+/** Что сейчас на сцене: файл и его превью. Смена — новый `<video>` и сброс хода. */
+function mediaKeyOf(file: ViewerFile | undefined): string {
+  return file ? `${file.seed}\n${file.src ?? ''}` : ''
+}
+
 /**
  * Просмотр (DESIGN §3.5): чёрный экран на весь размер, стрелки 56 по бокам, лента кадров
- * у фото, управление у видео. `←` `→` — соседний файл, `Space` — пауза, `i` — сведения,
+ * у фото, управление у видео. Играет превью `preview.mp4`, `<video>` на странице один; фото —
+ * превью 2048 поверх миниатюры. `←` `→` — соседний файл, `Space` — пауза, `i` — сведения,
  * `Esc` — выход.
  */
 export function Viewer({
@@ -71,31 +76,65 @@ export function Viewer({
   const [infoOpen, setInfoOpen] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [position, setPosition] = useState(startSeconds ?? 0)
-  const [appliedStart, setAppliedStart] = useState(startSeconds)
-  if (appliedStart !== startSeconds) {
-    setAppliedStart(startSeconds)
+  const [mediaDuration, setMediaDuration] = useState<number | undefined>(undefined)
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const file = files[index]
+  const mediaKey = mediaKeyOf(file)
+  const [shown, setShown] = useState({ key: mediaKey, start: startSeconds })
+  if (shown.key !== mediaKey || shown.start !== startSeconds) {
+    setShown({ key: mediaKey, start: startSeconds })
+    setPlaying(false)
     setPosition(startSeconds ?? 0)
+    if (shown.key !== mediaKey) {
+      setMediaDuration(undefined)
+      setFailed(false)
+    }
   }
   const contentRef = useRef<HTMLDivElement>(null)
-  const file = files[index]
+  const videoRef = useRef<HTMLVideoElement>(null)
   const hasPrevious = index > 0
   const hasNext = index < files.length - 1
+  const playable = file?.type === 'video' && typeof file.src === 'string' && !failed
 
-  const goTo = (next: number) => {
-    setPlaying(false)
-    setPosition(0)
-    onIndexChange(next)
+  const goTo = (next: number) => onIndexChange(next)
+
+  const togglePlay = () => {
+    const video = videoRef.current
+    if (!video) {
+      return
+    }
+    if (video.paused || video.ended) {
+      void video.play().catch(() => setPlaying(false))
+    } else {
+      video.pause()
+    }
+  }
+
+  const seek = (seconds: number) => {
+    setPosition(seconds)
+    const video = videoRef.current
+    if (video) {
+      video.currentTime = seconds
+    }
+  }
+
+  const retry = () => {
+    setFailed(false)
+    setAttempt((value) => value + 1)
   }
 
   const handleKeyDown = (event: KeyboardEvent) => {
-    if (isTypingTarget(event.target)) {
+    // Ползунок позиции — не поле ввода: `Space` и там ставит на паузу.
+    const onSlider = event.target instanceof HTMLInputElement && event.target.type === 'range'
+    if (isTypingTarget(event.target) && !(onSlider && event.code === 'Space')) {
       return
     }
     const actionsByCode: Record<string, (() => void) | undefined> = {
       ArrowLeft: hasPrevious ? () => goTo(index - 1) : undefined,
       ArrowRight: hasNext ? () => goTo(index + 1) : undefined,
       KeyI: info ? () => setInfoOpen((value) => !value) : undefined,
-      Space: file?.type === 'video' ? () => setPlaying((value) => !value) : undefined,
+      Space: playable && !compare ? togglePlay : undefined,
     }
     const action = actionsByCode[event.code]
     if (action) {
@@ -147,18 +186,38 @@ export function Viewer({
                   <CompareStage compare={compare} onOpenAt={onCompareOpenAt} />
                 ) : file ? (
                   <div className="flex size-full items-center justify-center [container-type:size]">
-                    <div className="relative">
-                      <ViewerMedia file={file} />
-                      {previewProgress === undefined ? null : (
-                        <div className="absolute inset-0 flex items-center justify-center bg-scrim">
-                          <ProgressWord
-                            label="Превью собирается ·"
-                            value={previewProgress}
-                            className="w-56 text-foreground"
-                          />
-                        </div>
+                    <MediaFrame file={file}>
+                      {file.type === 'video' ? (
+                        <>
+                          <MediaStill file={file} />
+                          {playable ? (
+                            <ViewerVideo
+                              key={`${mediaKey}\n${attempt}\n${startSeconds ?? ''}`}
+                              file={file}
+                              videoRef={videoRef}
+                              startSeconds={startSeconds}
+                              onToggle={togglePlay}
+                              onPlayingChange={setPlaying}
+                              onTime={setPosition}
+                              onDuration={setMediaDuration}
+                              onFailed={() => setFailed(true)}
+                            />
+                          ) : null}
+                        </>
+                      ) : (
+                        <ViewerPhoto
+                          key={`${mediaKey}\n${attempt}`}
+                          file={file}
+                          onFailed={() => setFailed(true)}
+                        />
                       )}
-                    </div>
+                      <MediaNotice
+                        file={file}
+                        progress={previewProgress}
+                        failed={failed}
+                        onRetry={retry}
+                      />
+                    </MediaFrame>
                   </div>
                 ) : null}
                 {compare ? null : (
@@ -175,13 +234,14 @@ export function Viewer({
               {compare || !file ? null : (
                 <footer className="relative flex min-h-24 shrink-0 items-center justify-center py-4">
                   {corner ? <div className="absolute bottom-6 left-5">{corner}</div> : null}
-                  {file.type === 'video' && file.durationSeconds !== undefined ? (
+                  {file.type === 'video' ? (
                     <VideoControls
-                      durationSeconds={file.durationSeconds}
+                      durationSeconds={file.durationSeconds ?? mediaDuration ?? 0}
                       positionSeconds={position}
                       playing={playing}
-                      onPlayingChange={setPlaying}
-                      onSeek={setPosition}
+                      onPlayingChange={togglePlay}
+                      onSeek={seek}
+                      disabled={!playable}
                       timeline={timeline}
                     />
                   ) : (
@@ -202,6 +262,59 @@ export function Viewer({
         </DarkSurface>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
+  )
+}
+
+interface ViewerVideoProps {
+  file: ViewerFile
+  videoRef: RefObject<HTMLVideoElement | null>
+  startSeconds: number | undefined
+  onToggle: () => void
+  onPlayingChange: (playing: boolean) => void
+  onTime: (seconds: number) => void
+  onDuration: (seconds: number) => void
+  onFailed: () => void
+}
+
+/**
+ * Превью видео (SPEC §9.3 `preview.mp4`): своё управление снизу, без встроенного; нажатие на
+ * кадр — пауза. Постер — первый кадр, пока данные не пришли.
+ */
+function ViewerVideo({
+  file,
+  videoRef,
+  startSeconds,
+  onToggle,
+  onPlayingChange,
+  onTime,
+  onDuration,
+  onFailed,
+}: ViewerVideoProps) {
+  return (
+    // biome-ignore lint/a11y/useMediaCaption: превью съёмок без речи для субтитров; управление — кнопками и `Space`.
+    <video
+      ref={videoRef}
+      src={file.src ?? undefined}
+      poster={file.poster ?? file.thumb ?? undefined}
+      preload="metadata"
+      playsInline
+      onClick={onToggle}
+      onLoadedMetadata={(event) => {
+        const video = event.currentTarget
+        if (Number.isFinite(video.duration)) {
+          onDuration(video.duration)
+        }
+        if (startSeconds !== undefined && startSeconds > 0) {
+          video.currentTime = startSeconds
+        }
+      }}
+      onPlay={() => onPlayingChange(true)}
+      onPause={() => onPlayingChange(false)}
+      onEnded={() => onPlayingChange(false)}
+      onTimeUpdate={(event) => onTime(event.currentTarget.currentTime)}
+      onError={onFailed}
+      className="absolute inset-0 size-full cursor-pointer object-contain"
+    />
   )
 }
 

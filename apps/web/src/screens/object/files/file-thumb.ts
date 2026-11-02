@@ -1,5 +1,6 @@
 import {
   type CatalogEntry,
+  type FileVersion,
   type FypVersion,
   type ItemFile,
   type ItemId,
@@ -63,13 +64,18 @@ export function frameCover(entry: CatalogEntry, frame: MasterFrame): FileCover {
   return coverOfThumb(frame.thumb, entry.id)
 }
 
-/** Версия мастера: текущая — обложка объекта, прежние — та же сцена в другом свете. */
-export function versionCover(entry: CatalogEntry, version: number, current: number): FileCover {
+/** Версия мастера: своя миниатюра; у заглушки — та же сцена в другом свете. */
+export function versionCover(
+  entry: CatalogEntry,
+  version: FileVersion,
+  current: number,
+): FileCover {
   return {
     seed: entry.id,
     kind: entry.type,
     family: objectFamily(entry.id),
-    frame: version === current ? undefined : 40 + version,
+    frame: version.no === current ? undefined : 40 + version.no,
+    src: version.thumb?.url ?? undefined,
   }
 }
 
@@ -80,5 +86,6 @@ export function versionTileCover(entry: CatalogEntry, version: FypVersion): File
     kind: entry.type,
     family: objectFamily(entry.id),
     frame: 20 + version.no,
+    src: version.thumb.url ?? undefined,
   }
 }

@@ -2993,6 +2993,9 @@
           "thumb": {
             "$ref": "#/components/schemas/ThumbRef"
           },
+          "preview": {
+            "$ref": "#/components/schemas/MediaPreview"
+          },
           "shot_at": {
             "anyOf": [
               {
@@ -3503,6 +3506,18 @@
                 "type": "null"
               }
             ]
+          },
+          "thumb": {
+            "$ref": "#/components/schemas/ThumbRef"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/MediaPreview"
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MasterFrame"
+            }
           }
         },
         "required": [
@@ -3563,6 +3578,9 @@
           },
           "thumb": {
             "$ref": "#/components/schemas/ThumbRef"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/MediaPreview"
           },
           "duration_s": {
             "type": "number",
@@ -4744,6 +4762,9 @@
           },
           "thumb": {
             "$ref": "#/components/schemas/ThumbRef"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/MediaPreview"
           },
           "current_version": {
             "type": "integer",
@@ -6149,6 +6170,55 @@
           "video",
           "photo"
         ]
+      },
+      "MediaPreview": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "poster": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "building": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "progress": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Progress"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "progress"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "poster",
+          "building"
+        ],
+        "additionalProperties": false
       },
       "MemberRefInput": {
         "type": "object",

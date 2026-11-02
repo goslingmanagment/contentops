@@ -2,6 +2,7 @@ import { type DraftFile, type FileRole, formatNumber, type InboxGroup } from '@c
 import type { MosaicTile } from '@contentops/ui/components/mosaic'
 import type { CoverKind } from '@contentops/ui/components/thumb'
 import type { ViewerFile } from '@contentops/ui/components/viewer'
+import { viewerMedia } from '@/lib/viewer-media'
 
 /**
  * Как нарисовать файлы черновика синтетическими миниатюрами (DESIGN §7.9): обложка —
@@ -67,5 +68,6 @@ export function viewerFileOf(file: DraftFile, kind: CoverKind | undefined): View
     kind,
     durationSeconds: file.duration_s ?? undefined,
     label: file.role_label,
+    ...viewerMedia(file.thumb, file.preview),
   }
 }

@@ -1,24 +1,76 @@
-import { type CatalogEntry, formatDuration, type ItemId } from '@contentops/contracts'
+import {
+  type CatalogEntry,
+  formatDuration,
+  type ItemDetail,
+  type ItemId,
+  type ItemType,
+} from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { Viewer, type ViewerFile } from '@contentops/ui/components/viewer'
 import { useRouter } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useItem } from '@/data/object'
 import { itemCover } from '@/lib/item-cover'
 import { metaLine } from '@/objects/item-facts'
+import { BUILDING_REFETCH_MS, isBuilding, toViewerFile } from '@/screens/object/viewer/viewer-files'
+import { useCurrentModel } from '@/shell/model/model-context'
 
-/** Объект в просмотре из сетки: мастер у видео, обложка у фото-объектов — как на плитке. */
+/** У PPV, кастома и фупа смотрят мастер (монтаж), даже если обложка — фото. */
+const MASTER_TYPES: ReadonlySet<ItemType> = new Set(['ppv', 'custom', 'fyp'])
+
+function showsMaster(entry: CatalogEntry): boolean {
+  return entry.duration_s !== null && MASTER_TYPES.has(entry.type)
+}
+
+/**
+ * Объект в просмотре из сетки: мастер у PPV, кастома и фупа, у остальных — файл обложки, как
+ * на плитке. До карточки — миниатюра обложки в кадре той же формы, что придёт с карточкой:
+ * ничего не прыгает.
+ */
 export function previewFileOf(entry: CatalogEntry): ViewerFile {
   const cover = itemCover(entry)
-  const video = entry.duration_s !== null
+  const master = showsMaster(entry)
+  // Кадр обложки известен серверу; у заглушки разработки его нет — по длительности.
+  const coverIsVideo = entry.cover.url
+    ? entry.cover.ratio === '9:16' || (entry.type === 'promo' && entry.cover.ratio === '16:9')
+    : entry.duration_s !== null
+  const video = master || coverIsVideo
   return {
     seed: cover.seed,
     kind: cover.kind,
     family: cover.family,
     type: video ? 'video' : 'photo',
-    aspect: video ? (entry.type === 'promo' ? '16:9' : '9:16') : '3:4',
-    durationSeconds: entry.duration_s ?? undefined,
+    aspect: master
+      ? entry.cover.ratio === '16:9'
+        ? '16:9'
+        : '9:16'
+      : entry.cover.url
+        ? entry.cover.ratio
+        : video
+          ? entry.type === 'promo'
+            ? '16:9'
+            : '9:16'
+          : '3:4',
+    durationSeconds: master ? (entry.duration_s ?? undefined) : undefined,
     label: entry.id,
+    thumb: entry.cover.url ?? null,
   }
+}
+
+/**
+ * Файл объекта для просмотра из сетки: мастер или монтаж у PPV, кастома и фупа; у остальных
+ * — файл обложки (та же миниатюра), иначе первый. Из карточки — с превью для просмотра.
+ */
+function coverFileOf(detail: ItemDetail): ViewerFile | undefined {
+  const entry = detail.entry
+  const files = detail.files
+  const file =
+    (showsMaster(entry)
+      ? files.find((candidate) => candidate.role === 'master' || candidate.role === 'montage')
+      : undefined) ??
+    files.find((candidate) => entry.cover.url && candidate.thumb.url === entry.cover.url) ??
+    files[0]
+  return file ? { ...toViewerFile(entry, file), label: entry.id } : undefined
 }
 
 /** «PPV-073 · День рождения, торт, кружево · 13:24». */
@@ -48,10 +100,21 @@ export function EntriesViewer({
   onClose,
   onOpen,
 }: EntriesViewerProps) {
-  const files = useMemo(() => entries.map(previewFileOf), [entries])
+  const model = useCurrentModel().code
+  const preview = useMemo(() => entries.map(previewFileOf), [entries])
+  // Видео грузится при открытии просмотра, а не в сетке (SPEC §12.0): карточка объекта.
+  const detail = useItem(model, current, {
+    refetchInterval: (item) =>
+      item && isBuilding([coverFileOf(item)]) ? BUILDING_REFETCH_MS : false,
+  }).data
+  const shown = detail?.entry.id === current ? coverFileOf(detail) : undefined
   useReturnFocus()
   const index = entries.findIndex((entry) => entry.id === current)
   const entry = entries[index]
+  const files = useMemo(
+    () => (shown ? preview.map((file, at) => (at === index ? shown : file)) : preview),
+    [preview, shown, index],
+  )
   if (!entry) {
     return null
   }

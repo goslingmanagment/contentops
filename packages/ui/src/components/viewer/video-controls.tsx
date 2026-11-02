@@ -9,6 +9,8 @@ interface VideoControlsProps {
   playing: boolean
   onPlayingChange: (playing: boolean) => void
   onSeek: (seconds: number) => void
+  /** Играть нечего: превью ещё нет. Место управления остаётся, ничего не прыгает. */
+  disabled?: boolean
   /** Хронология, если она внесена: дорожка отрезков над управлением. */
   timeline?: readonly TimelineSegment[]
 }
@@ -23,6 +25,7 @@ export function VideoControls({
   playing,
   onPlayingChange,
   onSeek,
+  disabled = false,
   timeline,
 }: VideoControlsProps) {
   const segment = timeline ? segmentAt(timeline, positionSeconds) : undefined
@@ -47,6 +50,7 @@ export function VideoControls({
           variant="bar"
           size="icon"
           aria-label={playing ? 'Пауза' : 'Играть'}
+          disabled={disabled}
           onClick={() => onPlayingChange(!playing)}
         >
           {playing ? <PauseIcon /> : <PlayIcon />}
@@ -55,10 +59,12 @@ export function VideoControls({
           type="range"
           min={0}
           max={durationSeconds}
-          value={positionSeconds}
+          step="any"
+          value={Math.min(positionSeconds, durationSeconds)}
+          disabled={disabled}
           onChange={(event) => onSeek(Number(event.target.value))}
           aria-label="Позиция"
-          className="h-1 flex-1 cursor-pointer accent-foreground"
+          className="h-1 flex-1 cursor-pointer accent-foreground disabled:cursor-default disabled:opacity-40"
         />
         <span className="shrink-0 text-muted-foreground text-sm tabular-nums">
           {formatDuration(positionSeconds)} / {formatDuration(durationSeconds)}

@@ -4,12 +4,19 @@ import { ToggleGroup, ToggleGroupItem } from '@contentops/ui/components/toggle-g
 import { Viewer, type ViewerCompare } from '@contentops/ui/components/viewer'
 import { useMemo } from 'react'
 import { useToday } from '@/data/api-session'
+import { useItem } from '@/data/object'
 import { useObjectActions } from '@/objects/use-object-actions'
 import { objectDownloadOptions } from '../header/download-options'
 import { objectMetaParts } from '../header/object-meta'
 import { useObjectPage } from '../object-context'
 import { type ObjectSearch, viewerKeyOf } from '../search'
-import { masterVersionFile, type ViewerEntry, viewerEntries } from './viewer-files'
+import {
+  BUILDING_REFETCH_MS,
+  isBuilding,
+  masterVersionFile,
+  type ViewerEntry,
+  viewerEntries,
+} from './viewer-files'
 
 /**
  * Просмотр объекта (DESIGN §3.5, §4.6): чёрный экран, стрелки листают файлы объекта, у
@@ -51,6 +58,9 @@ function OpenViewer({ detail, search, entries, index, entry }: OpenViewerProps) 
       ? (masterVersionFile(detail, version) ?? entry.file)
       : entry.file
   const compare = useCompare(detail, search)
+  useItem(model.code, detail.entry.id, {
+    refetchInterval: isBuilding([shown, compare?.left, compare?.right]) && BUILDING_REFETCH_MS,
+  })
   const timeline = isMaster ? timelineOf(detail) : undefined
   const processing = master?.state.kind === 'processing' && isMaster ? master.state : null
 

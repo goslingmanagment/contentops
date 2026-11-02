@@ -219,7 +219,7 @@ export function registerApiRoutes(app: FastifyInstance, options: ApiRouteOptions
             return reply.code(304).send()
           }
           if (answer instanceof FileAnswer) {
-            return sendFile(request, reply, answer, options.filesDirect === true)
+            return await sendFile(request, reply, answer, options.filesDirect === true)
           }
           reply.code(entry.route.success)
           const version = entry.route.versioned ? versionOf(answer) : null
