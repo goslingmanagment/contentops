@@ -5,6 +5,7 @@ import {
   fanFileName,
   type NameRole,
   type NameSlot,
+  type ShowOrder,
 } from '@contentops/contracts/download-name'
 import { enqueueWork, type Queryable, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
@@ -166,12 +167,35 @@ export interface Choice {
   /** Name role and number; set frames for posting are renumbered `ed01…` (naming §11). */
   role: NameRole
   ordinal: number | null
+  /** A sexting file's number in the show order, `_07_` before the role (naming §5). */
+  order?: ShowOrder | null
 }
 
 const own = (file: FileRow): Choice => ({ file, role: file.role, ordinal: file.ordinal })
 
-/** What each kind gives (SPEC §9.3, DESIGN §4.5), in posting order. */
+/**
+ * The show order of a sexting (naming §5): photos and videos are numbered by role apart, so
+ * the name carries the common order too; other types have none.
+ */
+export function withShowOrder(
+  type: ItemType,
+  files: readonly FileRow[],
+  choices: Choice[],
+): Choice[] {
+  if (type !== 'SXT') return choices
+  const shown = files.filter((f) => f.display_position !== null).sort(byPosition)
+  return choices.map((choice) => {
+    const index = shown.indexOf(choice.file) + 1
+    return index > 0 ? { ...choice, order: { index, total: shown.length } } : choice
+  })
+}
+
+/** What each kind gives (SPEC §9.3, DESIGN §4.5), in posting order, with the show order. */
 export function pickFiles(type: ItemType, files: readonly FileRow[], kind: DownloadKind): Choice[] {
+  return withShowOrder(type, files, choose(type, files, kind))
+}
+
+function choose(type: ItemType, files: readonly FileRow[], kind: DownloadKind): Choice[] {
   const photos = files.filter((f) => f.media_kind === 'image')
   const video = mainVideo(files)
   switch (kind) {
@@ -237,6 +261,7 @@ function nameOf(input: NameInput, pick: Choice, ext: string): string {
     id: input.item.public_id,
     title: input.item.title ?? '',
     title_en: input.item.title_en,
+    order: pick.order ?? null,
     role: pick.role,
     ordinal: pick.ordinal,
     uniq: pick.file.variant_no > 0 ? pick.file.variant_no : null,
@@ -352,7 +377,7 @@ export async function supplyOf(
  */
 export async function planDownload(tx: Tx, input: PlanInput): Promise<DownloadPlan> {
   const picks = input.picks
-    ? input.picks.map(own)
+    ? withShowOrder(input.item.type, input.files, input.picks.map(own))
     : pickFiles(input.item.type, input.files, input.kind)
   const receiptId = randomUUID()
   const strip = input.stripMetadata
