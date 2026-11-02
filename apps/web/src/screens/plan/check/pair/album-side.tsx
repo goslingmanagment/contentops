@@ -1,6 +1,6 @@
 import { Button } from '@contentops/ui/components/button'
 import { CopyIcon } from 'lucide-react'
-import { useActionToast } from '@/actions/action-toast-context'
+import { useCopy } from '@/actions/use-copy'
 
 interface AlbumSideProps {
   /** «SXT-005 Розовые стринги». */
@@ -14,15 +14,7 @@ interface AlbumSideProps {
  * обход Hub. Картинок из альбома нет.
  */
 export function AlbumSide({ album, fact }: AlbumSideProps) {
-  const toast = useActionToast()
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(album)
-      toast.show({ message: 'Имя альбома скопировано' })
-    } catch (error) {
-      toast.showFailure(error, { failed: 'Не скопировалось' })
-    }
-  }
+  const copy = useCopy()
   return (
     <>
       <p className="text-base">
@@ -31,7 +23,7 @@ export function AlbumSide({ album, fact }: AlbumSideProps) {
           variant="ghost"
           size="icon-sm"
           aria-label="Копировать имя альбома"
-          onClick={() => void copy()}
+          onClick={() => void copy(album, 'Имя альбома скопировано')}
           className="ml-1 align-middle"
         >
           <CopyIcon />

@@ -13,7 +13,7 @@ import { Button } from '@contentops/ui/components/button'
 import { InfoSection } from '@contentops/ui/components/info-panel'
 import { useNavigate } from '@tanstack/react-router'
 import { CheckIcon, CopyIcon, DownloadIcon, XIcon } from 'lucide-react'
-import { useActionToast } from '@/actions/action-toast-context'
+import { useCopy } from '@/actions/use-copy'
 import { useToday } from '@/data/api-session'
 import { useIntegrations } from '@/data/integrations'
 import { StatusLine } from '@/objects/status-line'
@@ -209,15 +209,7 @@ function PageAction({ page }: { page: ItemPagePlacement }) {
  */
 function AlbumLine({ name }: { name: string }) {
   const { canAct } = useObjectPage()
-  const toast = useActionToast()
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(name)
-      toast.show({ message: 'Имя альбома скопировано' })
-    } catch (error) {
-      toast.showFailure(error, { failed: 'Не скопировалось' })
-    }
-  }
+  const copy = useCopy()
   return (
     <p className="flex min-w-0 items-start gap-1 text-muted-foreground text-sm">
       <span className="min-w-0 py-0.5">Альбом: «{name}»</span>
@@ -227,7 +219,7 @@ function AlbumLine({ name }: { name: string }) {
           size="icon-sm"
           aria-label="Копировать имя альбома"
           className="shrink-0"
-          onClick={() => void copy()}
+          onClick={() => void copy(name, 'Имя альбома скопировано')}
         >
           <CopyIcon />
         </Button>

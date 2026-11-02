@@ -2,7 +2,7 @@ import { Button } from '@contentops/ui/components/button'
 import { cn } from '@contentops/ui/lib/utils'
 import { ChevronRightIcon, CopyIcon } from 'lucide-react'
 import { useState } from 'react'
-import { useActionToast } from '@/actions/action-toast-context'
+import { useCopy } from '@/actions/use-copy'
 import { useMarkupField } from './use-markup-field'
 
 /**
@@ -11,20 +11,13 @@ import { useMarkupField } from './use-markup-field'
  */
 export function PlatformTexts() {
   const field = useMarkupField('platform_texts')
-  const toast = useActionToast()
+  const copyToBuffer = useCopy()
   const [open, setOpen] = useState(false)
   const texts = field?.field.key === 'platform_texts' ? field.field.value : null
   if (!texts) {
     return null
   }
-  const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast.show({ message: 'Текст скопирован' })
-    } catch (error) {
-      toast.showFailure(error, { failed: 'Не скопировалось' })
-    }
-  }
+  const copy = (text: string) => copyToBuffer(text, 'Текст скопирован')
   const rows = [
     { label: 'Стена', text: texts.wall },
     { label: 'Рассылка', text: texts.message },

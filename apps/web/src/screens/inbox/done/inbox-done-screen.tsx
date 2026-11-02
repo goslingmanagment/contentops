@@ -5,7 +5,7 @@ import { EmptyState, ErrorLine } from '@contentops/ui/components/state-lines'
 import { VirtualList } from '@contentops/ui/components/virtual-list'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useActionToast } from '@/actions/action-toast-context'
+import { useCopy } from '@/actions/use-copy'
 import { useInboxList } from '@/data/inbox'
 import { useRole } from '@/data/session'
 import { useHistoryScroll } from '@/lib/use-history-state'
@@ -53,17 +53,13 @@ export function InboxDoneScreen() {
   const openItem = (id: string) => void navigate({ to: '/$model/i/$id', params: { model, id } })
   const role = useRole()
   const canAct = role === 'owner' || role === 'manager'
-  const toast = useActionToast()
+  const copy = useCopy()
   const dialogs = useObjectDialogs()
   const { openPlanDialog } = usePlanDialog()
   const menuHandlers = {
     open: openItem,
     plan: (id: string) => openPlanDialog([id]),
-    copy: (id: string) =>
-      void navigator.clipboard.writeText(id).then(
-        () => toast.show({ message: `Скопировано: ${id}` }),
-        (error: unknown) => toast.showFailure(error, { failed: 'Не скопировалось' }),
-      ),
+    copy: (id: string) => void copy(id, `Скопировано: ${id}`),
     journal: (id: string) =>
       void navigate({ to: '/$model/journal', params: { model }, search: { item: id } }),
     changeType: (id: string) => dialogs.open({ kind: 'change-type', id }),

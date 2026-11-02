@@ -3,7 +3,7 @@ import type { ItemMenuModel, MenuAction } from '@contentops/ui/components/item-m
 import { useNavigate } from '@tanstack/react-router'
 import { CopyIcon, ExternalLinkIcon, HistoryIcon } from 'lucide-react'
 import { useCallback } from 'react'
-import { useActionToast } from '@/actions/action-toast-context'
+import { useCopy } from '@/actions/use-copy'
 
 /**
  * «⋯» события (§4.18): открыть объект, все его события и «Скопировать номер для
@@ -14,7 +14,7 @@ export function useJournalEventMenu(
   showItemEvents: (item: ItemId) => void,
 ): (event: JournalEvent) => ItemMenuModel {
   const navigate = useNavigate()
-  const toast = useActionToast()
+  const copy = useCopy()
   return useCallback(
     (event: JournalEvent) => {
       const item = event.item_id
@@ -41,14 +41,11 @@ export function useJournalEventMenu(
             id: 'request-id',
             label: 'Скопировать номер для разработчика',
             icon: CopyIcon,
-            onSelect: () => {
-              void navigator.clipboard?.writeText(event.request_id)
-              toast.show({ message: `Скопировано · ${event.request_id}` })
-            },
+            onSelect: () => void copy(event.request_id, `Скопировано · ${event.request_id}`),
           },
         ],
       }
     },
-    [model, navigate, showItemEvents, toast],
+    [copy, model, navigate, showItemEvents],
   )
 }
