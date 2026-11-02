@@ -456,6 +456,31 @@ describe('accept (schema §5, §9.3)', () => {
     })
   })
 
+  it('the day of shooting comes from EXIF of the bytes; a camera without a clock gives none', async () => {
+    const dayAfter = async (name: string, shot: string) => {
+      const path = `${LORA_ROOT}/6. Life/Съёмка ${name}/01.jpg`
+      h.dropbox.tree.addFile(path, 3100 + name.length)
+      await scan()
+      await fetchAll()
+      const { group_id, draft_id } = await groupOfPath(path)
+      await makeReady(draft_id)
+      await h.db.execute(sql`
+        INSERT INTO blob_probes (sha256, kind, recipe_digest, shot_at_local)
+        SELECT source_sha256, 'exif', 'test', ${shot}::timestamp FROM inbox_drafts
+         WHERE id = ${draft_id}::uuid`)
+      const accepted = await accept(group_id)
+      expect(accepted.statusCode, accepted.body).toBe(200)
+      const page = await call(app, {
+        method: 'GET',
+        url: `/api/v1/lora/i/${accepted.json().item_id}`,
+        as: owner,
+      })
+      return page.json().entry.shot_on
+    }
+    expect(await dayAfter('днём', '2026-08-06 14:02:00')).toBe('2026-08-06')
+    expect(await dayAfter('без часов', '1970-01-01 00:00:00')).toBeNull()
+  })
+
   it('reject keeps the bytes; reopen brings the draft back to «готово»', async () => {
     h.dropbox.tree.addFile(`${LORA_ROOT}/6. Life/Лишнее/01.jpg`, 2600)
     await scan()

@@ -652,6 +652,8 @@ const SYSTEM_PHRASE: Record<string, (row: LogRow, after: Map<string, string>) =>
   'upload.purge': (row) => `Из консоли ВМ удалены байты загрузки: ${row.subject_label}`,
   'repair.secondPersonUnchecked': (row) =>
     `Из консоли ВМ: второй человек в кадре снова «не проверено» у ${row.subject_label} ${plural(Number(row.subject_label), ['объекта', 'объектов', 'объектов'])}`,
+  'repair.shotOnFromExif': (row) =>
+    `Из консоли ВМ: дата съёмки из EXIF записана у ${row.subject_label} ${plural(Number(row.subject_label), ['объекта', 'объектов', 'объектов'])}`,
   bootstrap: () => 'Начальная настройка выполнена',
   'principal.create': (row) => `Заведён владелец: ${row.subject_label}`,
   'legacy.reserve': (row) => `Записаны старые номера, счётчики подняты: ${row.subject_label}`,
