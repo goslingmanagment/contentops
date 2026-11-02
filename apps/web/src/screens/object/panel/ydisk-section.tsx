@@ -3,6 +3,7 @@ import { cn } from '@contentops/ui/lib/utils'
 import { ChevronRightIcon, ExternalLinkIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useIntegrations } from '@/data/integrations'
+import { SOURCE_WORDS } from '@/objects/source-words'
 import { IntegrationPhrase } from '@/shell/integration/integration-phrase'
 import { useObjectPage } from '../object-context'
 
@@ -14,15 +15,18 @@ const OLD_NAME_KIND: Record<'folder' | 'file' | 'album' | 'number', string> = {
 }
 
 /**
- * На Я.Диске (DESIGN §4.4): путь моноширинным 12, «Открыть на Я.Диске ↗» и свёрнутые
- * «Старые имена». Имена с фанами приходят только тем, кто видит заказ.
+ * На Я.Диске или на Dropbox (DESIGN §4.4, §1.1): путь моноширинным 12, «Открыть на Я.Диске ↗»
+ * («Открыть в Dropbox ↗») и свёрнутые «Старые имена». Имена с фанами приходят только тем, кто
+ * видит заказ.
  */
 export function YdiskSection() {
   const { detail, model } = useObjectPage()
   const [open, setOpen] = useState(false)
+  const source = detail.ydisk.source ?? 'ydisk'
+  const words = SOURCE_WORDS[source]
   const disk = useIntegrations().data?.find(
     (integration) =>
-      integration.kind === 'ydisk' &&
+      integration.kind === source &&
       integration.model === model.code &&
       integration.state !== 'working',
   )
@@ -31,7 +35,7 @@ export function YdiskSection() {
   if (!detail.ydisk.path && oldNames.length === 0) return null
 
   return (
-    <InfoSection title="На Я.Диске">
+    <InfoSection title={words.on}>
       <p className="break-all font-mono text-muted-foreground text-xs">{detail.ydisk.path}</p>
       {disk ? <IntegrationPhrase line={disk.line} wrap /> : null}
       {detail.ydisk.url ? (
@@ -41,7 +45,7 @@ export function YdiskSection() {
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 self-start text-primary-ink text-sm hover:underline"
         >
-          Открыть на Я.Диске
+          {words.open}
           <ExternalLinkIcon className="size-3.5" />
         </a>
       ) : null}

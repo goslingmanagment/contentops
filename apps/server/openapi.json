@@ -4541,6 +4541,20 @@
               "url": {
                 "type": "string"
               },
+              "source": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "ydisk",
+                      "dropbox"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "old_names": {
                 "type": "array",
                 "items": {
@@ -4551,6 +4565,7 @@
             "required": [
               "path",
               "url",
+              "source",
               "old_names"
             ],
             "additionalProperties": false

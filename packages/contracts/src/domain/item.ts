@@ -93,9 +93,15 @@ export const ItemDetailSchema = z.object({
   fyp_versions: z.array(FypVersionSchema),
   markup: z.array(MarkupFieldSchema),
   provenance: z.array(ProvenanceLinkSchema),
+  /**
+   * Where the object's folder lies in its source (DESIGN §4.4 п. 4): the path in words
+   * «1. PPV / Bundles / [PPV-073]_birthday_07.08.26», the link to the source's web client and
+   * which source it is — «На Я.Диске» or «На Dropbox» (§1.1); `null` — made in ContentOps.
+   */
   ydisk: z.object({
     path: z.string(),
     url: z.string(),
+    source: z.enum(['ydisk', 'dropbox']).nullable(),
     old_names: z.array(OldNameSchema),
   }),
   pages: z.array(ItemPagePlacementSchema),

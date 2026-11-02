@@ -6,6 +6,7 @@ import { useMemo } from 'react'
 import { useCatalogIndex } from '@/data/catalog'
 import { usePromoChannels } from '@/data/promo'
 import type { ObjectDialogRequest } from '@/objects/dialogs/use-object-dialogs'
+import { SOURCE_WORDS } from '@/objects/source-words'
 import { useObjectActions } from '@/objects/use-object-actions'
 import { useMakePpvDialog } from '@/shell/dialogs/make-ppv-dialog-context'
 import { usePlanDialog } from '@/shell/dialogs/plan-dialog-context'
@@ -62,11 +63,15 @@ export function useObjectMenu(
 
   const links: MenuAction[] = [
     { id: 'copy', label: 'Скопировать ID', onSelect: () => void actions.copyIds() },
-    {
-      id: 'ydisk',
-      label: 'Показать на Я.Диске ↗',
-      onSelect: () => window.open(detail.ydisk.url, '_blank', 'noopener'),
-    },
+    ...(detail.ydisk.url
+      ? [
+          {
+            id: 'ydisk',
+            label: SOURCE_WORDS[detail.ydisk.source ?? 'ydisk'].show,
+            onSelect: () => window.open(detail.ydisk.url, '_blank', 'noopener'),
+          },
+        ]
+      : []),
     {
       id: 'journal',
       label: 'Журнал объекта',
