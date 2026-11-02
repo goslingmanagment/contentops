@@ -45,8 +45,11 @@ export function useAlreadyUploaded(
         toast.show({ message: `Отмечено залитым на ${account.label} · ${formatNumber(done)}` })
         return
       }
+      const unanswered = results.every(
+        (result) => result.ok || result.code === 'second_person_onlyfans',
+      )
       toast.show({
-        message: `Отмечено ${formatNumber(done)} из ${formatNumber(results.length)} · ${formatNumber(failed.length)} уже изменили`,
+        message: `Отмечено ${formatNumber(done)} из ${formatNumber(results.length)} · ${formatNumber(failed.length)} ${unanswered ? 'без ответа про второго человека' : 'уже изменили'}`,
         action: { label: 'Показать', onSelect: () => onShowFailed(failed) },
       })
     },

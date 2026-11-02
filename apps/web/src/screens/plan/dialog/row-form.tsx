@@ -185,7 +185,12 @@ export function RowFormView({ entry, data, preset, title, tabs, left, onDone }: 
         checkLines={checkLinesFor(rows.length)}
         summary={count > 0 ? rowsSummary(entry.id, values, chosenAssignee) : 'Выберите страницу'}
         submit={
-          <Button type="submit" form={formId} disabled={count === 0} pending={create.pending}>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={count === 0 || Boolean(check.summary?.question)}
+            pending={create.pending}
+          >
             {outside ? <CheckIcon /> : <CalendarPlusIcon />}
             {submitLabel}
           </Button>

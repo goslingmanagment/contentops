@@ -135,7 +135,12 @@ export function MultiFormView({ entries, data, preset, onDone }: MultiFormViewPr
         checkLines={checkLinesFor(spread.newRows.length)}
         summary={`${rowsWord(count)} · ${pagesLabel(chosenPages)}`}
         submit={
-          <Button type="submit" form={formId} disabled={count === 0} pending={create.pending}>
+          <Button
+            type="submit"
+            form={formId}
+            disabled={count === 0 || Boolean(check.summary?.question)}
+            pending={create.pending}
+          >
             <CalendarPlusIcon />
             {count > 0 ? `Поставить ${formatNumber(count)}` : 'Поставить'}
           </Button>

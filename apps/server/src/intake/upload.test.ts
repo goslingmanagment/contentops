@@ -57,6 +57,14 @@ beforeAll(async () => {
       rawPurpose: 'fyp',
       files: [{ role: 'raw' }, { role: 'raw' }],
     },
+    {
+      type: 'raw',
+      number: 78,
+      title: 'Съёмка без ответа про второго человека',
+      rawPurpose: 'ppv',
+      secondPerson: null,
+      files: [{ role: 'raw' }],
+    },
   ])
 })
 afterAll(() => server.close())
@@ -546,6 +554,72 @@ describe('a montage for a plan row (SPEC §6.1, §7)', () => {
       awaiting_montage: unknown
     }
   }
+
+  it('an OnlyFans row under a montage asks about its source; the montage takes the answer', async () => {
+    const row = {
+      item_id: null,
+      account: 'lora-of',
+      surface: 'wall',
+      date: today,
+      time: '22:30',
+      fyp_version: null,
+      assignee: null,
+      note: null,
+      requires_new_upload: false,
+      awaiting_montage: { from_item: 'RAW-0078', expected_type: 'ppv', file_keys: ['raw01'] },
+      marked: null,
+    }
+    const put = () =>
+      call(server.app, {
+        method: 'POST',
+        url: '/api/v1/lora/plan/rows',
+        as: owner,
+        key: newKey(),
+        body: { rows: [row] },
+      })
+    const refused = await put()
+    expect(refused.json().rejected[0]).toMatchObject({
+      code: 'second_person_onlyfans',
+      question: { kind: 'second_person', item_id: 'RAW-0078' },
+    })
+    const source = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/i/RAW-0078',
+      as: owner,
+    })
+    expect(source.json().entry.second_person).toBeNull()
+    const answered = await call(server.app, {
+      method: 'PATCH',
+      url: '/api/v1/lora/i/RAW-0078/flags',
+      as: owner,
+      key: newKey(),
+      ifMatch: source.json().version,
+      body: { second_person: false },
+    })
+    expect(answered.statusCode, answered.body).toBe(200)
+    const placed = await put()
+    expect(placed.statusCode, placed.body).toBe(201)
+    const bytes = randomBytes(9_100)
+    const uploadId = await tusUpload(server.app, {
+      model: 'lora',
+      as: owner,
+      name: 'montage-of.mp4',
+      bytes,
+      kind: 'master_version',
+    })
+    const answer = await command(owner, {
+      kind: 'master_version',
+      target: { kind: 'plan_row', row_id: placed.json().rows[0].id },
+      files: [file(uploadId, 'montage-of.mp4', bytes, 'video')],
+    })
+    expect(answer.statusCode, answer.body).toBe(201)
+    const made = await call(server.app, {
+      method: 'GET',
+      url: `/api/v1/lora/i/${answer.json().item_id}`,
+      as: owner,
+    })
+    expect(made.json().entry.second_person).toBe(false)
+  })
 
   it('«ждёт монтаж» → upload → a new FYP accepted at upload and put into the row', async () => {
     const rowId = await waitingRow()

@@ -79,7 +79,7 @@ const RULES: readonly Rule[] = [
     const from = addDays(today, 1 - PERIOD_DAYS[period])
     return (entry) => entry.arrived_on >= from
   },
-  ({ second }) => (second ? (entry) => entry.second_person : null),
+  ({ second }) => (second ? (entry) => entry.second_person === true : null),
   ({ kind }) => (kind ? (entry) => entry.ppv_kind === kind : null),
   ({ noteaser }) => (noteaser ? (entry) => !entry.has_teaser : null),
   ({ nophotos }) => (nophotos ? (entry) => count(entry.photo_count) === 0 : null),

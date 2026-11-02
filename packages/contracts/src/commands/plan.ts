@@ -40,11 +40,25 @@ export const CreatePlanRowsCommandSchema = z.object({
 })
 export type CreatePlanRowsCommand = z.infer<typeof CreatePlanRowsCommandSchema>
 
+/** «Есть второй человек? · Нет · Есть» (DESIGN §4.13): the object nobody has answered about. */
+export const SecondPersonQuestionSchema = z.object({
+  kind: z.literal('second_person'),
+  item_id: ItemIdSchema,
+})
+
 export const CreatePlanRowsResultSchema = z.object({
   created: z.boolean(),
   rows: z.array(PlanRowSchema),
   /** The rows that stopped the batch, with the reason. */
-  rejected: z.array(z.object({ index: z.int().nonnegative(), code: z.string(), text: z.string() })),
+  rejected: z.array(
+    z.object({
+      index: z.int().nonnegative(),
+      code: z.string(),
+      text: z.string(),
+      /** The refusal waits for an answer about the second person (`RowCheckResult.question`). */
+      question: SecondPersonQuestionSchema.nullable().optional(),
+    }),
+  ),
 })
 export type CreatePlanRowsResult = z.infer<typeof CreatePlanRowsResultSchema>
 
@@ -60,10 +74,7 @@ export const RowCheckResultSchema = z.object({
    * An old object never checked for a second person, put on OnlyFans: «Есть второй человек?
    * · Нет · Есть» — asked once; a person or an agent answers with the object's flag.
    */
-  question: z
-    .object({ kind: z.literal('second_person'), item_id: ItemIdSchema })
-    .nullable()
-    .optional(),
+  question: SecondPersonQuestionSchema.nullable().optional(),
 })
 export type RowCheckResult = z.infer<typeof RowCheckResultSchema>
 

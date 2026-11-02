@@ -502,6 +502,9 @@ async function uploadForRow(
     UPDATE inbox_groups
        SET proposed_title = ${row.input_title},
            proposed_ppv_kind = ${type === 'PPV' ? 'bundle' : null},
+           has_second_person = (
+             SELECT has_second_person FROM content_items
+              WHERE model_id = ${model.id}::uuid AND id = ${row.input_item_id}::uuid),
            evidence = evidence || ${JSON.stringify({
              plan_row_id: row.id,
              montage_from: row.input_item_id,

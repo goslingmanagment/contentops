@@ -168,7 +168,9 @@ function actionFor(
   if (surfaces.some((surface) => isPlacedLevel(surface.verdict.level))) return null
   // Already in this page's plan: a second «Залить сейчас» would put a second row.
   if (surfaces.some((surface) => isInPlanLevel(surface.verdict.level))) return null
-  if (entry.second_person && platform === 'onlyfans') return null
+  if (entry.second_person === true && platform === 'onlyfans') return null
+  // Nobody answered about the second person: the «В план» window asks (DESIGN §4.13).
+  if (entry.second_person === null && platform === 'onlyfans') return 'В план'
   if (entry.type === 'fyp') return platform === 'fansly' ? 'В план' : null
   return UPLOAD_NOW_TYPES.includes(entry.type) ? 'Залить сейчас' : null
 }

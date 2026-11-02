@@ -57,6 +57,7 @@ export interface RowRecord {
   input_item_id: string | null
   input_item_type: DbItemType | null
   input_item_number: number | null
+  input_has_second_person: boolean | null
   uniq_variant_no: number | null
   marked_by: string | null
   marked_at: string | null
@@ -123,7 +124,8 @@ const ROW_COLUMNS = sql`
   r.slot_at::text AS slot_at, r.assignee_id, coalesce(r.assignee_id, a.default_assignee_id) AS executor_id,
   r.release_id, pr.release_date::text AS release_date, r.manifest_id, r.marked_manifest_id,
   r.expected_type, r.expected_role, r.input_manifest_id, im.origin_item_id AS input_item_id,
-  ii.type AS input_item_type, ii.number AS input_item_number, r.uniq_variant_no,
+  ii.type AS input_item_type, ii.number AS input_item_number,
+  ii.has_second_person AS input_has_second_person, r.uniq_variant_no,
   r.marked_by, r.marked_at::text AS marked_at, r.mark_kind,
   r.stated_occurred_at::text AS stated_occurred_at, r.requires_new_upload,
   r.caption, r.tier_refs, r.price_mills::text AS price_mills, r.repost, r.album_name,

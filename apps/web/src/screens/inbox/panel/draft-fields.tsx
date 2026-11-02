@@ -9,6 +9,7 @@ import {
 import { InfoSection } from '@contentops/ui/components/info-panel'
 import { Switch } from '@contentops/ui/components/switch'
 import { useId } from 'react'
+import { SecondPersonChoice } from '@/objects/second-person-choice'
 import { ChoiceField } from './choice-field'
 import { DraftTextField } from './draft-text-field'
 import { FieldRow } from './field-row'
@@ -88,16 +89,26 @@ export function DraftFields({ group, saver }: DraftFieldsProps) {
         />
       ) : null}
       {fields.type === 'promo' ? <PromoFields group={group} saver={saver} /> : null}
-      <div className="flex items-center justify-between gap-3">
-        <label htmlFor={secondId} className="text-base">
-          Второй человек в кадре
-        </label>
-        <Switch
-          id={secondId}
-          checked={fields.second_person}
-          onCheckedChange={(checked) => void saver.save({ second_person: checked })}
-        />
-      </div>
+      {fields.second_person === null ? (
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <span className="whitespace-nowrap text-base">Второй человек в кадре</span>
+          <span className="flex items-baseline gap-1.5 whitespace-nowrap text-sm">
+            <span className="text-muted-foreground">не проверено</span>
+            <SecondPersonChoice onAnswer={(yes) => void saver.save({ second_person: yes })} />
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor={secondId} className="text-base">
+            Второй человек в кадре
+          </label>
+          <Switch
+            id={secondId}
+            checked={fields.second_person}
+            onCheckedChange={(checked) => void saver.save({ second_person: checked })}
+          />
+        </div>
+      )}
       {fields.type === 'custom' ? (
         <>
           <ChoiceField

@@ -1179,7 +1179,10 @@
             ]
           },
           "second_person": {
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "delivered_on": {
             "anyOf": [
@@ -2110,6 +2113,16 @@
                 },
                 "text": {
                   "type": "string"
+                },
+                "question": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SecondPersonQuestion"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -2870,7 +2883,10 @@
             ]
           },
           "second_person": {
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "fan_name": {
             "anyOf": [
@@ -9839,21 +9855,7 @@
           "question": {
             "anyOf": [
               {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "second_person"
-                  },
-                  "item_id": {
-                    "$ref": "#/components/schemas/ItemId"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "item_id"
-                ],
-                "additionalProperties": false
+                "$ref": "#/components/schemas/SecondPersonQuestion"
               },
               {
                 "type": "null"
@@ -10138,6 +10140,23 @@
           "groups",
           "timeline",
           "inbox"
+        ],
+        "additionalProperties": false
+      },
+      "SecondPersonQuestion": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "second_person"
+          },
+          "item_id": {
+            "$ref": "#/components/schemas/ItemId"
+          }
+        },
+        "required": [
+          "kind",
+          "item_id"
         ],
         "additionalProperties": false
       },
@@ -11130,7 +11149,10 @@
             ]
           },
           "second_person": {
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "fan_name": {
             "anyOf": [

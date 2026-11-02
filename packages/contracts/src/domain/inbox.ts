@@ -124,7 +124,8 @@ export const DraftFieldsSchema = z.object({
   channel: z.string().nullable(),
   /** `new` or an existing collection `PRM-015`. */
   collection: z.string().nullable(),
-  second_person: z.boolean(),
+  /** `null` — nobody answered: the object stays «не проверено» after «Принять» (SPEC §7). */
+  second_person: z.boolean().nullable(),
   fan_name: FanNameSchema.nullable(),
   order_id: z.string().nullable(),
   shot_on: LocalDateSchema.nullable(),

@@ -186,7 +186,7 @@ function PageAction({ page }: { page: ItemPagePlacement }) {
   const run: Record<NonNullable<ItemPagePlacement['action']>, () => void> = {
     Сверить: () => void navigate({ to: '/$model/plan/check', params: { model: model.code } }),
     'Залить сейчас': () => upload.uploadNow(account),
-    'В план': () => openPlanDialog([detail.entry.id]),
+    'В план': () => openPlanDialog([detail.entry.id], { accounts: [account.code] }),
   }
   return (
     <div className="flex flex-col gap-2">
