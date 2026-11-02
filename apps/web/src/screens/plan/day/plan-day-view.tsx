@@ -22,6 +22,7 @@ import { cancelledRevealKey, rowsOfItem } from './day-list'
 import type { DayListHandlers } from './day-list-view'
 import { DaySummary } from './day-summary'
 import { DayTitle } from './day-title'
+import { MissedEarlier } from './missed-earlier'
 import { useDayItems } from './use-day-items'
 import { useDayKeys } from './use-day-keys'
 
@@ -193,6 +194,14 @@ export function PlanDayView({ date }: { date: LocalDate }) {
         canDownload={access.canAct}
         onSelectRelease={(chosen) => selectRows(chosen.row_ids)}
       />
+      {date === today && data ? (
+        <MissedEarlier
+          model={model.code}
+          missed={data.missed_before}
+          pages={pages}
+          search={search}
+        />
+      ) : null}
       <RefreshStrip active={day.isFetching && data !== undefined} />
       <DayBody
         query={day}

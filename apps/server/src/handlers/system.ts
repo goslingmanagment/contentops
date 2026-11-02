@@ -7,7 +7,7 @@ import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { hubLatency } from '../hub/views'
 import { evaluateRow, loadState } from '../plan/state'
-import { todayRows } from '../plan/views'
+import { missedBefore, todayRows } from '../plan/views'
 import type { Services } from '../services'
 import { diskViews, readHostSpace, type SpaceOptions, spaceCard } from '../space'
 
@@ -96,7 +96,8 @@ const NEEDS_STEP: ReadonlySet<string> = new Set(['planned', 'missed', 'blocked_s
 
 /**
  * Counters of the left column (DESIGN §2.2): today's rows the person posts that still need a
- * step (the owner sees every page), whether one of them is missed; «Приехало» counts with 2в.
+ * step (the owner sees every page) and ▲ «пропущено» of the previous 7 days; red when one of
+ * them is missed; «Приехало» counts with 2в.
  */
 async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelCounters> {
   const scope = await modelScopeOf(db, code)
@@ -110,11 +111,12 @@ async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelC
   const steps = verdicts.filter(
     (verdict) => NEEDS_STEP.has(verdict.level) || verdict.sign === 'turn',
   )
+  const earlier = missedBefore(state, actor.role === 'owner' ? null : actor.id)
   return {
     model: code,
     inbox: 0,
-    plan: steps.length,
-    plan_missed: steps.some((verdict) => verdict.level === 'missed'),
+    plan: steps.length + earlier.length,
+    plan_missed: earlier.length > 0 || steps.some((verdict) => verdict.level === 'missed'),
     attention: verdicts.some((verdict) => verdict.sign === 'turn' || verdict.sign === 'trouble'),
   }
 }

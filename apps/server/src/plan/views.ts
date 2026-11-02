@@ -461,6 +461,24 @@ const NEEDS_STEP = new Set<PlacementVerdict['level']>([
   'blocked_second_person',
 ])
 
+/** How far back «Пропущено раньше» and the counter look (DESIGN §2.2, §4.11). */
+export const MISSED_DAYS = 7
+
+/** ▲ «пропущено» of the previous 7 days, newest first: rows nobody marked in time. */
+export function missedBefore(state: PlanState, mine: string | null = null): RowRecord[] {
+  const today = todayOf(state)
+  const from = addDays(today, -MISSED_DAYS)
+  return live(state.rows)
+    .filter(
+      (row) =>
+        row.slot_date >= from &&
+        row.slot_date < today &&
+        isMine(row, mine) &&
+        evaluateRow(state, row).level === 'missed',
+    )
+    .sort((left, right) => right.slot_date.localeCompare(left.slot_date))
+}
+
 export async function dayView(
   context: ViewContext,
   date: LocalDate,
@@ -514,6 +532,10 @@ export async function dayView(
       (sum, row) => sum + (row.copy?.state === 'ready' ? row.copy.size_bytes : 0),
       0,
     ),
+    missed_before:
+      date === todayOf(state)
+        ? missedBefore(state, mine).map((row) => ({ date: row.slot_date, account: row.account }))
+        : [],
   }
 }
 

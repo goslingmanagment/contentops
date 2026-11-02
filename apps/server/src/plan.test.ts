@@ -528,6 +528,38 @@ describe('«пропущено» (SPEC §5)', () => {
     })
     expect(scheduled.json().verdict.level).toBe('scheduled')
   })
+
+  it('earlier missed rows stay visible: «Пропущено раньше» on today and the counter (DESIGN §2.2)', async () => {
+    const [old, edge, outside] = await put(owner, [
+      row({ item_id: 'SET-074', account: 'lora-of', date: day(-3), time: '11:00' }),
+      row({ item_id: 'SET-073', account: 'lora-1', date: day(-7), time: '11:00' }),
+      row({ item_id: 'SET-073', account: 'lora-of', date: day(-8), time: '11:00' }),
+    ])
+    expect([old, edge, outside].map((one) => one?.verdict.level)).toEqual([
+      'missed',
+      'missed',
+      'missed',
+    ])
+    const today = await planDay(TODAY, owner)
+    expect(today.missed_before).toEqual(
+      expect.arrayContaining([
+        { date: day(-3), account: 'lora-of' },
+        { date: day(-7), account: 'lora-1' },
+      ]),
+    )
+    expect(today.missed_before).not.toContainEqual({ date: day(-8), account: 'lora-of' })
+    // Newest first: the line opens the nearest missed day.
+    const dates = today.missed_before.map((entry: { date: string }) => entry.date)
+    expect([...dates].sort().reverse()).toEqual(dates)
+    // Only on today.
+    expect((await planDay(day(-1), owner)).missed_before).toEqual([])
+    const counters = (
+      await call(server.app, { method: 'GET', url: '/api/v1/admin/counters', as: owner })
+    ).json()
+    const lora = counters.models.find((one: { model: string }) => one.model === 'lora')
+    expect(lora.plan).toBeGreaterThanOrEqual(today.missed_before.length)
+    expect(lora.plan_missed).toBe(true)
+  })
 })
 
 describe('the 6-second delete (SPEC §5)', () => {
