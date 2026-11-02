@@ -22,6 +22,7 @@ import { acceptRowMontage } from './upload'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** A new manual group of the same source with the fields of `fromId`. */
+/** A group of files taken out; the number of the old name stays with the folder's own group. */
 async function newManualGroup(
   tx: Tx,
   model: ModelScope,
@@ -35,7 +36,7 @@ async function newManualGroup(
       proposed_purpose, has_second_person
     )
     SELECT model_id, source_id, 'split:' || uuidv7()::text, 'manual', folder_object_id,
-           coalesce(evidence, '{}'::jsonb) || jsonb_build_object('split_from', id::text),
+           (coalesce(evidence, '{}'::jsonb) - 'number') || jsonb_build_object('split_from', id::text),
            ${overrides.type === undefined ? sql`proposed_type` : sql`${overrides.type}`},
            proposed_title, proposed_title_en, proposed_description, proposed_tags,
            proposed_ppv_kind,

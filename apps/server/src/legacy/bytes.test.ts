@@ -615,6 +615,10 @@ describe('«Принять» by a person, a group of the old corpus', () => {
       call(app, { method: 'POST', url, as: owner, key: newKey(), body })
     const split = await post(`/api/v1/lora/inbox/groups/${group_id}:split`, { file_keys: [id] })
     expect(split.statusCode).toBe(201)
+    const { rows: taken } = await h.db.execute<{ number: unknown }>(sql`
+      SELECT g.evidence -> 'number' AS number FROM inbox_groups g
+        JOIN inbox_drafts d ON d.group_id = g.id WHERE d.id = ${id}::uuid`)
+    expect(taken[0]?.number).toBeNull()
     await readyAll()
     const accepted = await post(`/api/v1/lora/inbox/groups/${group_id}:accept`, { as: 'default' })
     expect(accepted.json()).toMatchObject({ item_id: 'PPV-071' })
