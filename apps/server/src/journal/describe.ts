@@ -649,6 +649,7 @@ const SYSTEM_PHRASE: Record<string, (row: LogRow, after: Map<string, string>) =>
       : `Из консоли ВМ изменён агент «${row.subject_label}»`,
   'smoke.setup': (row) => `Из консоли ВМ заведены смоук-проверки: ${row.subject_label}`,
   'person.ops': (row) => `Из консоли ВМ заведён человек: ${row.subject_label}`,
+  'contractor.ops': (row) => `Из консоли ВМ заведён подрядчик: ${row.subject_label}`,
   'upload.purge': (row) => `Из консоли ВМ удалены байты загрузки: ${row.subject_label}`,
   'repair.secondPersonUnchecked': (row) =>
     `Из консоли ВМ: второй человек в кадре снова «не проверено» у ${row.subject_label} ${plural(Number(row.subject_label), ['объекта', 'объектов', 'объектов'])}`,
