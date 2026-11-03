@@ -131,6 +131,7 @@ export function importParseHandler(): WorkHandler {
       currentCounters: await countersOf(db, modelId),
       vaultAlbums: inputs.vaultAlbums,
       foreignModelNames: model.foreign,
+      ...(inputs.notContent.length > 0 ? { notContent: inputs.notContent } : {}),
     })
     const report: ImportReport = summarizePlan(plan, {
       mode,
@@ -567,10 +568,14 @@ interface CaseRow {
 const rootOf = (path: string) => path.split('/')[0] ?? ''
 const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1)
 
-/** Files right in a root, grouped as intake groups them (SPEC §6.1): 1–2 files — a short shoot. */
+/**
+ * Files right in a root, grouped as intake groups them (SPEC §6.1): 1–2 files — a short shoot.
+ * Not content (`notContent`) is no shoot.
+ */
 export function shortShoots(
   listing: readonly SnapshotEntry[],
   timezone: string,
+  notContent: ReadonlySet<string> = new Set(),
 ): { key: string; root: string; day: string; files: SnapshotEntry[] }[] {
   const loose = listing.filter(
     (entry) =>
@@ -578,7 +583,8 @@ export function shortShoots(
       !entry.archiveEntry &&
       entry.relative.split('/').length === 2 &&
       rootOf(entry.relative) !== 'Старый формат' &&
-      mediaKindOf(nameOf(entry.relative), entry.mediaType ?? null) !== null,
+      mediaKindOf(nameOf(entry.relative), entry.mediaType ?? null) !== null &&
+      !notContent.has(entry.relative),
   )
   const groups = new Map<string, { root: string; day: string; files: SnapshotEntry[] }>()
   const clusters = new Map<string, number>()
@@ -690,7 +696,8 @@ async function openCases(
       },
     })
   }
-  for (const shoot of shortShoots(input.listing, input.model.timezone)) {
+  const notContent = new Set(plan.entries.filter((e) => e.context.notContent).map((e) => e.path))
+  for (const shoot of shortShoots(input.listing, input.model.timezone, notContent)) {
     const [first] = shoot.files
     if (!first) continue
     const count = shoot.files.length

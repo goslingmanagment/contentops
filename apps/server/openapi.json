@@ -5541,11 +5541,17 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "not_content": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
           "registry_rows",
-          "vault_albums"
+          "vault_albums",
+          "not_content"
         ],
         "additionalProperties": false
       },
@@ -11546,6 +11552,20 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/VaultAlbumEvidenceInput"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "not_content": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               {

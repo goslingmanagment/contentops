@@ -91,6 +91,7 @@ export async function snapshotListing(
     resource_id: string | null
     md5: string | null
     sha256: string | null
+    content_hash: string | null
     size: string
     created_at: string | null
     modified_at: string | null
@@ -101,6 +102,7 @@ export async function snapshotListing(
   }>(sql`
     SELECT r.id AS revision_id, o.id AS object_id, r.frozen_path AS path, o.resource_id,
            encode(r.md5, 'hex') AS md5, encode(r.remote_sha256, 'hex') AS sha256,
+           encode(r.content_hash, 'hex') AS content_hash,
            r.byte_size::text AS size, r.remote_created_at::text AS created_at,
            r.remote_modified_at::text AS modified_at, r.remote_shot_at::text AS shot_at,
            r.media_type, ar.frozen_path AS archive_path, o.archive_entry_no AS entry_no
@@ -162,6 +164,7 @@ export async function snapshotListing(
       size: Number(row.size),
       md5: row.md5,
       sha256: row.sha256,
+      contentHash: row.content_hash,
       createdAt: iso(row.created_at),
       modifiedAt: iso(row.modified_at),
       shotAt: iso(row.shot_at),

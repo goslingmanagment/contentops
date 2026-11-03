@@ -8,9 +8,11 @@ import type {
   LegacyRoot,
 } from '@contentops/contracts/domain/legacy'
 import type { Queryable } from '@contentops/db'
+import { contextOf } from '@contentops/legacy'
 import { sourcePath } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
+import { readInputs } from './inputs'
 import { labelMappings } from './labels'
 import { type ImportReport, lastImportWork } from './parse'
 import { snapshotOf } from './snapshot'
@@ -437,8 +439,20 @@ async function progressOf(
   const roots = new Map<string, LegacyRoot>(
     ROOTS.map((root) => [root, { root, accepted: 0, old_names: 0, disputed: 0, waiting: 0 }]),
   )
+  // Not content takes no draft (SPEC §6.3): it waits for nothing.
+  const { notContent } = await readInputs(q, modelId)
+  const skip = (relative: string, member: boolean, done: boolean) =>
+    !member &&
+    !done &&
+    Boolean(
+      contextOf(relative, {
+        isDir: false,
+        ...(notContent.length > 0 ? { notContent } : {}),
+      }).notContent,
+    )
   for (const row of rows) {
     const relative = sourcePath(row.path, snapshot.rootPath).relative
+    if (skip(relative, row.member, row.done)) continue
     const folder = relative.split('/').slice(0, -1).join('/')
     folders.set(folder, (folders.get(folder) ?? true) && row.done)
     const root = roots.get(displayRoot(relative, row.member)) as LegacyRoot

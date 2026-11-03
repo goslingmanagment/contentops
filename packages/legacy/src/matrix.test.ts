@@ -551,8 +551,147 @@ const MATRIX: MatrixRow[] = [
   },
 ]
 
+/**
+ * The shapes of a Telegram-mirrored archive (Ари, 03.11.2026; legacy-and-import §10) on
+ * fictional names: packs named by the ID, export names, the `SEX` alias, message numbers,
+ * «✅ ЗАПОЩЕНО», FYP sources and takes, references, not-content and message folders.
+ */
+const PACKS: MatrixRow[] = [
+  {
+    row: 'пак `PPV-NNN Название` в разделе своего типа — номер с резервом, название',
+    path: '1. PPV/PPV-005 Синее платье, масло',
+    isDir: true,
+    context: { area: 'ppv', typeHint: 'PPV' },
+    claims: [
+      ['number', { type: 'PPV', number: 5, form: 'pack', reserves: true }],
+      ['title', { text: 'Синее платье, масло' }],
+    ],
+  },
+  {
+    row: 'пак с датой впереди `ДД.ММ.ГГ SXT-NNN Название`',
+    path: '5. Sextings/12.10.26 SXT-004 Красное бельё',
+    isDir: true,
+    claims: [
+      ['date', { date: expect.objectContaining({ iso: '2026-10-12' }) }],
+      ['number', { type: 'SXT', number: 4, form: 'pack', reserves: true }],
+      ['title', { text: 'Красное бельё' }],
+    ],
+  },
+  {
+    row: '`SEX` — их слово для SXT',
+    path: '5. Sextings/01.07.26 SEX-001 пак',
+    isDir: true,
+    claims: [['number', { type: 'SXT', number: 1, form: 'pack', reserves: true }]],
+  },
+  {
+    row: 'ID без скобок вне раздела своего типа — только упоминание',
+    path: '7. Монтажи/Агент/PPV-005',
+    isDir: true,
+    context: { area: 'montage', typeHint: 'FYP' },
+    claims: [['number', { type: 'PPV', number: 5, form: 'loose', reserves: false }]],
+  },
+  {
+    row: '`FYP NN — задание` в цикле — номер задания, не номер фупа',
+    path: '2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш',
+    isDir: true,
+    context: { typeHint: 'RAW', rawPurpose: 'fyp' },
+    claims: [
+      ['number', { type: 'FYP', number: 1, form: 'loose', reserves: false }],
+      ['title', { text: 'Флеш' }],
+    ],
+  },
+  {
+    row: 'имя выгрузки: мастер с длительностью — ID без резерва, роль, длительность',
+    path: '1. PPV/PPV-005 Синее платье, масло/PPV-005_blue-dress-oil_master__7m12s.mov',
+    claims: [
+      ['number', { type: 'PPV', number: 5, form: 'export', reserves: false }],
+      ['title', { text: 'blue dress oil', lang: 'en' }],
+      ['role', { role: 'master', ordinal: null }],
+      ['duration', { seconds: 432, approximate: false }],
+    ],
+  },
+  {
+    row: 'имя выгрузки: кадр второй версии',
+    path: '1. PPV/PPV-005 Синее платье, масло/PPV-005_blue-dress-oil_pic04_v2.jpg',
+    claims: [['role', { role: 'pic', ordinal: 4, version: 2 }]],
+  },
+  {
+    row: 'имя выгрузки секстинга: порядок показа и номер роли',
+    path: '5. Sextings/12.10.26 SXT-004 Красное бельё/SXT-004_03_clip02.mov',
+    claims: [
+      ['number', { type: 'SXT', number: 4, form: 'export', reserves: false }],
+      ['role', { role: 'clip', ordinal: 2, position: 3 }],
+    ],
+  },
+  {
+    row: 'файл под номером сообщения Telegram',
+    path: '4. Sets/05-07.06.26 новая квартира (не разобрано)/176543.jpg',
+    claims: [['origin', { origin: 'messenger' }]],
+  },
+  {
+    row: 'номер сообщения приклеен к имени камеры',
+    path: '2. FYP/2. Цикл 2 июнь — исходники/Пробы образов 07.06/IMG_7077_175668.MOV',
+    context: { typeHint: 'RAW', rawPurpose: 'fyp' },
+    claims: [
+      ['origin', { origin: 'camera' }],
+      ['origin', { origin: 'messenger' }],
+    ],
+  },
+  {
+    row: '«✅ ЗАПОЩЕНО ДД.ММ» готового фупа — то же, что `posted_ДД.ММ`',
+    path: '7. Монтажи/готовые фупы/✅ ЗАПОЩЕНО 02.09 — warm up.mp4',
+    context: { typeHint: 'FYP' },
+    claims: [
+      ['posted', usage('posted', idx(1), '--09-02')],
+      ['title', { text: 'warm up' }],
+    ],
+  },
+  {
+    row: 'дубли задания фупа — сырьё для фупов',
+    path: '2. FYP/3. Цикл 3 сентябрь — исходники/FYP 02/Дубли/IMG_9382.MOV',
+    context: { typeHint: 'RAW', rawPurpose: 'fyp' },
+    claims: [['origin', { origin: 'camera' }]],
+  },
+  {
+    row: 'папка дня в 2. FYP — съёмка модели, сырьё для фупов',
+    path: '2. FYP/18.10.26/IMG_1128.MOV',
+    context: { typeHint: 'RAW', rawPurpose: 'fyp' },
+    claims: [['origin', { origin: 'camera' }]],
+  },
+  {
+    row: 'задание «Повторить реф…» с дублями — контент',
+    path: '2. FYP/2. Цикл 2 июнь — исходники/FYP 02 — Повторить реф без лица/Дубли/IMG_6797.MOV',
+    context: { typeHint: 'RAW' },
+    claims: [['origin', { origin: 'camera' }]],
+  },
+  {
+    row: 'реф в `ТЗ/` — не контент, заявок нет',
+    path: '2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш/ТЗ/tz_212.mp4',
+    context: { notContent: 'рефы и карточки заказов' },
+    claims: [],
+  },
+  {
+    row: '`ТЗ рефы`, `карточки и рефы заказов`, `Отменённый реф` — не контент',
+    path: '3. Customs/карточки и рефы заказов/01.10.26_1658.jpg',
+    context: { notContent: 'рефы и карточки заказов' },
+    claims: [],
+  },
+  {
+    row: 'папка «не контент» — не контент',
+    path: '8. Other/не контент/группа/1131.jpg',
+    context: { notContent: 'не контент' },
+    claims: [],
+  },
+  {
+    row: 'переписка (`личка`, `чат группы`) — тип решает человек',
+    path: '8. Other/личка/29.09.26/204929.jpg',
+    context: { typeHint: null },
+    claims: [['origin', { origin: 'messenger' }]],
+  },
+]
+
 describe('legacy §8 matrix', () => {
-  it.each(MATRIX)('$row', ({ path, isDir, context, claims, unknown }) => {
+  it.each([...MATRIX, ...PACKS])('$row', ({ path, isDir, context, claims, unknown }) => {
     const parsed = parseLegacyPath(`disk:/${path}`, {
       isDir: isDir ?? false,
       foreignModelNames: ['Bea'],
@@ -569,5 +708,16 @@ describe('legacy §8 matrix', () => {
       expect(path.normalize('NFC')).toContain(claim.raw_fragment)
       expect(claim.claim_key).toMatch(/^[0-9a-f]{10}:[a-z_]+:\d+/)
     }
+    if (claims.length === 0) expect(parsed.claims).toEqual([])
+  })
+
+  it('a path of the model list is not content; nothing else is', () => {
+    const notContent = ['_опись', '3. Customs/[CUS-001]_a_02.09.26/1227.jpg']
+    const of = (path: string) =>
+      parseLegacyPath(path, { isDir: false, notContent }).context.notContent
+    expect(of('_опись/контактные листы/photos_01.jpg')).toBe('по списку модели')
+    expect(of('3. Customs/[CUS-001]_a_02.09.26/1227.jpg')).toBe('по списку модели')
+    expect(of('3. Customs/[CUS-001]_a_02.09.26/IMG_9187.MOV')).toBeUndefined()
+    expect(of('_описание/x.jpg')).toBeUndefined()
   })
 })

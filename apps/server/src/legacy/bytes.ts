@@ -68,6 +68,8 @@ export interface BytesReport {
   fetch_queued: number
   unpack_queued: number
   not_media: number
+  /** Media of the scope that is not content (SPEC §6.3): no draft. */
+  not_content: number
   accepted_now: number
   aliased_now: number
   /** Accepted customs linked to their orders now: the orders came after them (SPEC §6.3). */
@@ -78,12 +80,16 @@ export interface BytesReport {
 
 const rootOf = (path: string) => path.split('/')[0] ?? ''
 
-/** The roots before this one in the order must have every file taken into the import. */
+/**
+ * The roots before this one in the order must have every file taken into the import; not
+ * content takes no draft (SPEC §6.3).
+ */
 async function checkOrder(
   q: Queryable,
   snapshot: SnapshotWork,
   listing: readonly SnapshotEntry[],
   roots: readonly string[],
+  parsed: ReadonlyMap<string, ParsedLegacyPath>,
 ): Promise<void> {
   const wanted = Math.min(...roots.map((root) => ORDER.indexOf(displayRoot(root))))
   const earlier = new Set(ORDER.slice(0, Math.max(0, wanted)))
@@ -92,7 +98,8 @@ async function checkOrder(
       !e.isDir &&
       !e.archiveEntry &&
       earlier.has(displayRoot(e.relative)) &&
-      mediaKindOf(e.relative, e.mediaType ?? null) !== null,
+      mediaKindOf(e.relative, e.mediaType ?? null) !== null &&
+      !parsed.get(e.relative)?.context.notContent,
   )
   if (pending.length === 0) return
   const { rows } = await q.execute<{ n: number }>(sql`
@@ -143,13 +150,16 @@ export async function importBytes(ctx: WorkContext): Promise<WorkSuccess> {
     )
   }
   const listing = await snapshotListing(db, snapshot)
-  if (!input.force) await checkOrder(db, snapshot, listing, input.roots)
   const inputs = await readInputs(db, modelId)
+  const plan = planLegacyImport(listing, {
+    registry: inputs.registry,
+    ...(inputs.notContent.length > 0 ? { notContent: inputs.notContent } : {}),
+  })
+  const parsed = new Map<string, ParsedLegacyPath>(plan.entries.map((e) => [e.path, e]))
+  if (!input.force) await checkOrder(db, snapshot, listing, input.roots, parsed)
   const { rows: model } = await db.execute<{ code: string; title: string; timezone: string }>(sql`
     SELECT code, title, timezone FROM models WHERE id = ${modelId}::uuid`)
   const { code, title, timezone } = model[0] as { code: string; title: string; timezone: string }
-  const plan = planLegacyImport(listing, { registry: inputs.registry })
-  const parsed = new Map<string, ParsedLegacyPath>(plan.entries.map((e) => [e.path, e]))
   const byPath = new Map(listing.map((e) => [e.relative, e]))
 
   const inScope = (path: string) =>
@@ -172,6 +182,7 @@ export async function importBytes(ctx: WorkContext): Promise<WorkSuccess> {
     parsed,
     registry: inputs.registry,
     timezone,
+    packs: plan.packs,
   })
   const scope = await batchScope(db, modelId)
   const report: BytesReport = {
@@ -187,6 +198,7 @@ export async function importBytes(ctx: WorkContext): Promise<WorkSuccess> {
     fetch_queued: 0,
     unpack_queued: 0,
     not_media: files.length - media.length,
+    not_content: media.filter((e) => parsed.get(e.relative)?.context.notContent).length,
     accepted_now: 0,
     aliased_now: 0,
     orders_linked: 0,

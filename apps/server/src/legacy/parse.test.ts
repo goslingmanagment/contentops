@@ -169,7 +169,21 @@ describe('the metadata pass over the fictional disk', () => {
       key: newKey(),
       body: { registry: FIXTURE_REGISTRY },
     })
-    expect(inputs.json()).toEqual({ registry_rows: 12, vault_albums: 0 })
+    expect(inputs.json()).toEqual({ registry_rows: 12, vault_albums: 0, not_content: 0 })
+    // The model's list of what is not content: set and taken back, the registry stays.
+    for (const [value, count] of [
+      [['_опись', '3. Customs/[CUS-001]_a_02.09.26/1227.jpg'], 2],
+      [null, 0],
+    ] as const) {
+      const set = await call(app, {
+        method: 'PUT',
+        url: '/api/v1/lora/legacy/inputs',
+        as: owner,
+        key: newKey(),
+        body: { not_content: value },
+      })
+      expect(set.json()).toEqual({ registry_rows: 12, vault_albums: 0, not_content: count })
+    }
     const before = await footprint(h.db)
     const started = await call(app, {
       method: 'POST',

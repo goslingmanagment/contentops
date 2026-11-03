@@ -64,10 +64,22 @@ export interface NumberPayload {
   /**
    * `bracket` — `[PPV-066]`, `[Set-002]`; `sexting` — `sexting_012`; `registry` — a row of
    * the PPV registry; `fyp_batch` — `FYP_16_30.04.25`; `old_format` — `001 bndl …` of
-   * «Старый формат»; `loose` — `ppv73`, `PPV 73` inside a name; `evidence` — a vault album.
+   * «Старый формат»; `loose` — `ppv73`, `PPV 73` inside a name; `evidence` — a vault album;
+   * `pack` — a folder named by the ID without brackets in the section of its type, the
+   * object's pack (`PPV-001 Белое бельё`, `18.10.26 SXT-002 …`, `01.07.26 SEX-001 пак`);
+   * `export` — a file named by the export grammar (naming §5: `PPV-001_slug_master.mov`).
    */
-  form: 'bracket' | 'sexting' | 'registry' | 'fyp_batch' | 'old_format' | 'loose' | 'evidence'
-  /** Only folders `[TYPE-NNN]`, `sexting_NNN` and the registry reserve (SPEC §6.3–6.4). */
+  form:
+    | 'bracket'
+    | 'sexting'
+    | 'registry'
+    | 'fyp_batch'
+    | 'old_format'
+    | 'loose'
+    | 'evidence'
+    | 'pack'
+    | 'export'
+  /** Only folders `[TYPE-NNN]`, `sexting_NNN`, packs and the registry reserve (SPEC §6.3–6.4). */
   reserves: boolean
 }
 
@@ -99,10 +111,17 @@ export interface DurationPayload {
 }
 
 export interface RolePayload {
-  /** Role proposed by the word; `null` — only an ordinal (`12.mov`, `йога 3`). */
-  role: 'master' | 'teaser' | 'ed' | 'raw' | null
+  /**
+   * Role proposed by the word; `null` — only an ordinal (`12.mov`, `йога 3`). A file named by
+   * the export grammar names any role of naming §5 (`pic03`, `clip01`).
+   */
+  role: 'master' | 'teaser' | 'ed' | 'raw' | 'pic' | 'clip' | 'thumb' | 'cap' | null
   ordinal: number | null
   word: string
+  /** Export names only: `_NN_` before the role — the file's place in the order of showing. */
+  position?: number
+  /** Export names only: `_vN` — the version the name was given. */
+  version?: number
 }
 
 export interface TitlePayload {
@@ -200,6 +219,7 @@ export type LegacyArea =
   | 'smm'
   | 'bg'
   | 'old_format'
+  | 'montage'
   | 'root'
   | 'unknown'
 
@@ -226,6 +246,12 @@ export interface PathContext {
   foreignModel: string | null
   /** `3. Customs/отобранное на PPV/…`: provenance by md5 (legacy §8). */
   selectedForPpv: boolean
+  /**
+   * Not content, with the reason: a folder `не контент`, references and order cards (`ТЗ`,
+   * `рефы`, `карточки`), or a path of the model's list (`legacy.not_content`). Such an entry
+   * claims nothing, gets no draft and is counted apart (SPEC §6.3 «Сверка»). Absent — content.
+   */
+  notContent?: string
 }
 
 export interface ParsedLegacyPath {
@@ -241,4 +267,9 @@ export interface ParseOptions {
   isDir: boolean
   /** Names of other models (`Ari`): a root archive with such a word is parked. */
   foreignModelNames?: readonly string[]
+  /**
+   * The model's list of what is not content (`legacy.not_content`): root-relative paths of
+   * folders or files; everything under a listed folder is not content.
+   */
+  notContent?: readonly string[]
 }

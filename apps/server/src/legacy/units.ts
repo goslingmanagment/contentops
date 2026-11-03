@@ -1,14 +1,27 @@
-import type { ItemTypeCode, LegacyClaim, ParsedLegacyPath, RegistryClaim } from '@contentops/legacy'
+import type {
+  ItemTypeCode,
+  LegacyClaim,
+  PackPlan,
+  ParsedLegacyPath,
+  RegistryClaim,
+} from '@contentops/legacy'
 import { localDay, looseGroupOf, mediaKindOf, UPLOAD_CLUSTER_MS } from '../intake/grouping'
 import type { SnapshotEntry } from './snapshot'
 
 /**
  * The units of the old disk the byte import accepts (SPEC §6.1 grouping, §6.3): a numbered
- * folder (`[PPV-0NN]…`, `sexting_NNN…`, `[Set-NNN]…`) with everything below it is one object; a
- * folder without a number is one object with its role and tag subfolders (`ed/`, `original/`,
- * `optional/`); a FYP or a custom video is an object by itself; files right in a root are
- * grouped by the shooting day or the upload window, as intake groups them. An archive is one
- * unit until a person splits it by its folders (◆ «Разделить архив?»).
+ * folder (`[PPV-0NN]…`, `sexting_NNN…`, `[Set-NNN]…`, a pack `PPV-001 Белое бельё`) with
+ * everything below it is one object; a folder without a number is one object with its role and
+ * tag subfolders (`ed/`, `original/`, `Дубли/`); a FYP or a custom video is an object by itself,
+ * except the only video of an order folder of customs (`05.10.26 <покупатель> <что>`), which is
+ * that folder's custom; files right in a root are grouped by the shooting day or the upload
+ * window, as intake groups them. An archive is one unit until a person splits it by its folders
+ * (◆ «Разделить архив?»).
+ *
+ * A pack holds its object (`PackPlan` of the dry run): an old folder of its number sharing its
+ * bytes and the copies of its files elsewhere join its group, where equal bytes are one file and
+ * the rest aliases (SPEC §6.2). Copies for the platform inside a pack (`сжатое для волта`) are a
+ * group of their own without a type: a person decides. Not content makes no unit.
  */
 
 export interface LegacyUnit {
@@ -74,6 +87,23 @@ export interface UnitsInput {
   parsed: ReadonlyMap<string, ParsedLegacyPath>
   registry: readonly RegistryClaim[]
   timezone: string
+  /** Packs of the dry run: their old folders and the copies of their files. */
+  packs?: readonly PackPlan[]
+}
+
+/** Copies for the platform a pack keeps beside its originals: not new material. */
+const PLATFORM_COPIES = /сжат|compress|(?<![\p{L}])crf\s?\d|normaliz|для\s+(волта|vault)/iu
+/** A folder of customs named by its order: the date first (`05.10.26 <покупатель> <что>`). */
+const ORDER_FOLDER = /^\d{1,2}\.\d{1,2}\.\d{2}(?:\s|$)/u
+/** `10.04.26 ванная топлес`: the date first, then what was shot — the day of the shoot. */
+const SHOOT_FOLDER = /^\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4})\s+\S/u
+
+/** The day a shoot folder names (`YYYY-MM-DD`): the object's day when its files carry none. */
+function shootDay(folder: ParsedLegacyPath | undefined): string | null {
+  if (!folder?.isDir || !SHOOT_FOLDER.test(folder.name)) return null
+  const date = folder.claims.find((c) => c.kind === 'date')
+  const iso = date?.kind === 'date' ? (date.payload.date?.iso ?? null) : null
+  return iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : null
 }
 
 export function legacyUnits(input: UnitsInput): LegacyUnit[] {
@@ -82,6 +112,25 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
   const clusters = new Map<string, { start: number; key: string }>()
   const registryOf = (name: string) =>
     input.registry.find((row) => row.payload.folder === name || nameOf(row.payload.folder) === name)
+  // A pack and what is the same object as it is: old folders of its number, copies of its files.
+  const packOfFolder = new Map<string, PackPlan>()
+  const packOfCopy = new Map<string, PackPlan>()
+  for (const pack of input.packs ?? []) {
+    for (const folder of pack.folders) packOfFolder.set(folder, pack)
+    for (const copy of pack.copies) packOfCopy.set(copy, pack)
+  }
+  const objectsOf = (paths: readonly string[]) =>
+    paths.flatMap((path) => {
+      const entry = byPath.get(path)
+      return entry ? [entry.objectId] : []
+    })
+  // Videos of each folder of customs: the only one of an order folder is that folder's custom.
+  const videosIn = new Map<string, number>()
+  for (const file of input.files) {
+    if (mediaKindOf(nameOf(file.relative), file.mediaType ?? null) !== 'video') continue
+    const parent = parentOf(file.relative)
+    videosIn.set(parent, (videosIn.get(parent) ?? 0) + 1)
+  }
 
   const unit = (key: string, make: () => Omit<LegacyUnit, 'key' | 'files'>): LegacyUnit => {
     let found = units.get(key)
@@ -92,9 +141,17 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
     return found
   }
 
-  const folderUnit = (folder: SnapshotEntry, anchor: SnapshotEntry, archive: boolean) => {
+  const folderUnit = (
+    folder: SnapshotEntry,
+    anchor: SnapshotEntry,
+    archive: boolean,
+    untyped = false,
+    file?: ParsedLegacyPath,
+  ) => {
     const own = parsed.get(folder.relative)
-    const number = numberOf(own)
+    const number = untyped ? null : numberOf(own)
+    // Takes of a FYP (`…/Дубли/…`) make their folder raw material for FYPs (SPEC §6.1).
+    const takes = file?.context.typeHint === 'RAW' && file.context.rawPurpose === 'fyp'
     const registry =
       number?.payload.type === 'PPV' ? registryOf(nameOf(folder.relative)) : undefined
     const title = own?.claims.find((c) => c.kind === 'title')
@@ -103,6 +160,10 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
       ...(own?.claims.flatMap((c) => (c.kind === 'tag' ? [c.payload.tag] : [])) ?? []),
     ]
     const resource = anchor.resourceId ?? anchor.objectId
+    const pack =
+      number?.payload.form === 'pack'
+        ? input.packs?.find((p) => p.path === folder.relative)
+        : undefined
     return unit(
       archive ? `archive:${anchor.revisionId}:${folder.relative}` : `folder:${resource}`,
       () => ({
@@ -110,9 +171,13 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
         folder,
         path: folder.relative,
         root: rootOf(folder.relative),
-        type: number?.payload.type ?? typeOf(parsed.get(anchor.relative)) ?? typeOf(own),
+        type: untyped
+          ? null
+          : takes && !number
+            ? 'RAW'
+            : (number?.payload.type ?? typeOf(parsed.get(anchor.relative)) ?? typeOf(own)),
         ppvKind: own?.context.ppvKind ?? registry?.payload.ppv_kind ?? null,
-        purpose: own?.context.rawPurpose ?? null,
+        purpose: takes && !number ? 'fyp' : (own?.context.rawPurpose ?? null),
         title: title?.kind === 'title' ? title.payload.text : null,
         titleEn: registry?.payload.title_en ?? null,
         tags: [...new Set(tags)],
@@ -125,7 +190,16 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
             }
           : null,
         archiveFolders: [],
-        evidence: { legacy: { unit: folder.relative, anchor: anchor.objectId } },
+        evidence: {
+          legacy: {
+            unit: folder.relative,
+            anchor: anchor.objectId,
+            // Old folders of the pack's number: their claims settle with the object.
+            ...(pack && pack.folders.length > 0 ? { folders: objectsOf(pack.folders) } : {}),
+          },
+          ...(untyped ? { platform_copies: true } : {}),
+          ...(!archive && shootDay(own) ? { shot_day: shootDay(own) } : {}),
+        },
       }),
     )
   }
@@ -135,6 +209,8 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
     const root = parts[0] ?? ''
     const own = parsed.get(file.relative)
     const media = mediaKindOf(nameOf(file.relative), file.mediaType ?? null)
+    // Not content (SPEC §6.3): no unit, no draft; the reconciliation counts it apart.
+    if (own?.context.notContent) continue
 
     // A member of an archive: the archive is the unit until a person splits it by its parts —
     // the numbered folders inside, else its top folders.
@@ -184,6 +260,15 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
       continue
     }
 
+    // A copy of a pack's file elsewhere (`1. PPV/19.10.26/…`, `7. Монтажи/Агент/PPV-016/…`):
+    // the same file again, in the pack's group.
+    const copyOf = packOfCopy.get(file.relative)
+    const copyHolder = copyOf ? byPath.get(copyOf.path) : undefined
+    if (copyHolder) {
+      folderUnit(copyHolder, copyHolder, false).files.push(file)
+      continue
+    }
+
     // A folder of a channel or contractor in SMM is a collection of «Промо» (SPEC §6.3): the
     // folder right above the files, as the dry run lists them for marking.
     if (own?.context.area === 'smm' && parts.length > 2) {
@@ -211,20 +296,46 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
       }
     }
 
-    // The nearest numbered folder above the file holds it.
+    // The nearest numbered folder above the file holds it; an old folder of a pack's number
+    // sharing its bytes is the pack's.
     let numbered: SnapshotEntry | null = null
+    let below: string | null = null
     for (let n = parts.length - 1; n > 1; n--) {
       const dir = byPath.get(parts.slice(0, n).join('/'))
       if (dir && numberOf(parsed.get(dir.relative))) {
         numbered = dir
+        below = n + 1 < parts.length ? parts.slice(0, n + 1).join('/') : null
         break
       }
     }
     if (numbered) {
-      folderUnit(numbered, numbered, false).files.push(file)
+      const pack = packOfFolder.get(numbered.relative)
+      const holder = (pack ? byPath.get(pack.path) : undefined) ?? numbered
+      // Copies for the platform beside a pack's originals: their own group, a person decides.
+      const sub = below ? byPath.get(below) : undefined
+      if (
+        sub?.isDir &&
+        numberOf(parsed.get(holder.relative))?.payload.form === 'pack' &&
+        PLATFORM_COPIES.test(nameOf(sub.relative))
+      ) {
+        folderUnit(sub, sub, false, true).files.push(file)
+        continue
+      }
+      folderUnit(holder, holder, false).files.push(file)
       continue
     }
     const type = typeOf(own)
+    // The only video of an order folder of customs is that folder's custom, with its photos.
+    const parent = parentOf(file.relative)
+    const orderFolder =
+      type === 'CUS' && parts.length === 3 && ORDER_FOLDER.test(nameOf(parent)) ? parent : null
+    if (orderFolder && (videosIn.get(orderFolder) ?? 0) === 1) {
+      const folder = byPath.get(orderFolder)
+      if (folder) {
+        folderUnit(folder, folder, false).files.push(file)
+        continue
+      }
+    }
     // A FYP montage or a custom video is an object by itself.
     if (media === 'video' && (type === 'FYP' || type === 'CUS')) {
       unit(`single:${file.resourceId ?? file.objectId}`, () => ({
@@ -240,7 +351,14 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
         tags: [],
         number: null,
         archiveFolders: [],
-        evidence: { legacy: { unit: file.relative, anchor: file.objectId } },
+        evidence: {
+          legacy: {
+            unit: file.relative,
+            anchor: file.objectId,
+            // A custom of an order folder with several videos: the folder names the order.
+            ...(orderFolder ? { order_folder: orderFolder } : {}),
+          },
+        },
       })).files.push(file)
       continue
     }
@@ -249,7 +367,7 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
     while (depth > 2 && structural(parsed.get(parts.slice(0, depth).join('/')))) depth -= 1
     const folder = depth >= 2 ? byPath.get(parts.slice(0, depth).join('/')) : undefined
     if (folder) {
-      folderUnit(folder, folder, false).files.push(file)
+      folderUnit(folder, folder, false, false, own).files.push(file)
       continue
     }
     // Right in a root: by the shooting day or the upload window (SPEC §6.1).

@@ -160,7 +160,8 @@
   lora [ГГГГ-ММ-ДД] > реестр.jsonl`.
 - Разбор старых имён по снимку (SPEC §6.3–6.4) — командами CLI с токеном агента или
   владельца: выгрузка реестра PPV — `pnpm contentops legacy inputs --model lora --body
-  @inputs.json` (`{"registry": "<таблица Markdown, CSV или TSV>"}`; там же `vault_albums`);
+  @inputs.json` (`{"registry": "<таблица Markdown, CSV или TSV>"}`; там же `vault_albums` и
+  `not_content` — пути папок и файлов снимка, которые не контент: без заявок и черновика);
   сухой прогон — `pnpm contentops import plan --model lora --wait --json` (отчёт в операции,
   ничего не пишет); его отчёт для чтения — `docker compose exec -T worker node dist/ops.js
   import-report lora > прогон.md` — с настоящими именами, в git не класть; проход —

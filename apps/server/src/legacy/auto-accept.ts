@@ -6,6 +6,7 @@ import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import { acceptGroup } from '../intake/accept'
 import { acceptedDuplicate, resolveAlias } from '../intake/fetch'
+import { fillShotOn } from '../intake/shot-date'
 import { linkCustom, orderForGroup } from './customs'
 import { channelOf, importPacks, linkDuplicates } from './promo'
 import { collisions, numberUnits } from './review'
@@ -186,6 +187,7 @@ export async function autoAcceptGroup(
       return accepted
     })
     await settleClaims(tx, model.id, groupId, result.item_id, number.claim, group.evidence.number)
+    await fillShotDay(tx, model.id, groupId, result.item_id)
     if (channelId) {
       const { rows: made } = await tx.execute<{ id: string }>(sql`
         SELECT id FROM content_items
@@ -222,7 +224,9 @@ export async function acceptKeepingLegacyNumber(
   const group = rows[0]
   const unit = group?.evidence?.legacy ? group.evidence.number : null
   if (!unit || unit.type !== group?.proposed_type || body.as !== 'default' || body.extend) {
-    return acceptGroup(tx, model, actor, groupId, body)
+    const accepted = await acceptGroup(tx, model, actor, groupId, body)
+    if (group?.evidence?.legacy) await fillShotDay(tx, model.id, groupId, accepted.item_id)
+    return accepted
   }
   const number = await numberFor(tx, model.id, unit)
   if ('queue' in number) {
@@ -235,7 +239,21 @@ export async function acceptKeepingLegacyNumber(
     legacy: { number: number.number },
   })
   await settleClaims(tx, model.id, groupId, result.item_id, number.claim, unit)
+  await fillShotDay(tx, model.id, groupId, result.item_id)
   return result
+}
+
+/**
+ * The day a shoot folder of the old disk names (`10.04.26 ванная топлес`, `units.ts`) is the
+ * object's day when its files carried none: photos a messenger saved keep no EXIF.
+ */
+async function fillShotDay(tx: Tx, modelId: string, groupId: string, publicId: string) {
+  const { rows } = await tx.execute<{ id: string; day: string | null }>(sql`
+    SELECT i.id, g.evidence ->> 'shot_day' AS day
+      FROM content_items i JOIN inbox_groups g ON g.model_id = i.model_id AND g.id = ${groupId}::uuid
+     WHERE i.model_id = ${modelId}::uuid AND public_item_id(i.type, i.number) = ${publicId}`)
+  const row = rows[0]
+  if (row?.day) await fillShotOn(tx, modelId, row.id, row.day)
 }
 
 /**
@@ -336,13 +354,21 @@ async function settleClaims(
   number: NumberClaim | null,
   unit: UnitNumber | null | undefined,
 ) {
-  const { rows } = await tx.execute<{ id: string; anchor: string | null; unit: string | null }>(sql`
+  const { rows } = await tx.execute<{
+    id: string
+    anchor: string | null
+    unit: string | null
+    folders: string[] | null
+  }>(sql`
     SELECT i.id, g.evidence -> 'legacy' ->> 'anchor' AS anchor,
-           g.evidence -> 'legacy' ->> 'unit' AS unit
+           g.evidence -> 'legacy' ->> 'unit' AS unit,
+           g.evidence -> 'legacy' -> 'folders' AS folders
       FROM content_items i JOIN inbox_groups g ON g.model_id = i.model_id AND g.id = ${groupId}::uuid
      WHERE i.model_id = ${modelId}::uuid AND public_item_id(i.type, i.number) = ${publicId}`)
   const item = rows[0]
   if (!item) return
+  // Old folders of a pack's number (SPEC §6.3): the same object, their claims settle with it.
+  const folders = Array.isArray(item.folders) ? item.folders : []
   await tx.execute(sql`
     UPDATE legacy_claims c
        SET resolution = 'resolved', resolved_item_id = ${item.id}::uuid, resolved_at = now(),
@@ -357,6 +383,8 @@ async function settleClaims(
                      WHERE d.model_id = ${modelId}::uuid AND d.applied_item_id = ${item.id}::uuid)))
             OR (c.claim_kind = 'number' AND c.source_object_id = ${item.anchor}::uuid
                 AND c.claim_key = ${unit?.claimKey ?? null})
+            OR (c.claim_kind IN ('number', 'title', 'tag', 'role')
+                AND c.source_object_id = ANY (${sql.param(folders)}::uuid[]))
             OR c.id = ${number?.registry_claim_id ?? null}::uuid)`)
   if (number) {
     await tx.execute(sql`
@@ -368,6 +396,13 @@ async function settleClaims(
   const aliases: { kind: string; value: string }[] = []
   if (item.unit)
     aliases.push({ kind: 'legacy_name', value: item.unit.slice(item.unit.lastIndexOf('/') + 1) })
+  if (folders.length > 0) {
+    const { rows: names } = await tx.execute<{ name: string }>(sql`
+      SELECT current_name AS name FROM source_objects
+       WHERE model_id = ${modelId}::uuid AND id = ANY (${sql.param(folders)}::uuid[])
+       ORDER BY current_name`)
+    for (const { name } of names) aliases.push({ kind: 'legacy_name', value: name })
+  }
   if (unit) {
     const old = `${unit.type}-${String(unit.number).padStart(unit.type === 'FYP' || unit.type === 'RAW' ? 4 : 3, '0')}`
     if (old !== publicId) aliases.push({ kind: 'legacy_id', value: old })

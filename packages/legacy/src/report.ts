@@ -140,6 +140,19 @@ export function planMarkdown(report: LegacyPlanReport): string {
         c.reason,
       ]),
     ),
+    '## Паки: папка — свой объект',
+    '',
+    'Пак держит номер; старая папка того же номера с общими файлами — тот же объект, копии файлов пака — алиасы.',
+    '',
+    ...table(
+      ['Номер', 'Пак', 'Та же папка', 'Копий'],
+      report.packs.map((p) => [
+        id(p.type, p.number),
+        p.path,
+        p.folders.join('; '),
+        p.copies.length,
+      ]),
+    ),
     '## Метки старых имён: подтверждает КМ',
     '',
     ...table(
@@ -197,6 +210,12 @@ export function planMarkdown(report: LegacyPlanReport): string {
         a.entriesListed,
         a.incomplete ? 'да' : 'нет',
       ]),
+    ),
+    '## Не контент: без черновика',
+    '',
+    ...table(
+      ['Папка или файл', 'Почему', 'Файлов', 'Объём'],
+      report.notContent.map((n) => [n.path, n.reason, n.files, bytes(n.bytes)]),
     ),
     '## Неполный вход',
     '',
