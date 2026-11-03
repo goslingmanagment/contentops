@@ -137,5 +137,7 @@ export type VaultAlbumEvidenceInput = z.infer<typeof VaultAlbumEvidenceSchema>
 export const LegacyInputsSchema = z.object({
   registry_rows: z.int().nonnegative(),
   vault_albums: z.int().nonnegative(),
+  /** Paths of the model's list of what is not content. */
+  not_content: z.int().nonnegative(),
 })
 export type LegacyInputs = z.infer<typeof LegacyInputsSchema>

@@ -28,6 +28,8 @@ export interface LegacyListingEntry {
   size?: number | null
   md5?: string | null
   sha256?: string | null
+  /** Dropbox `content_hash`: the source's own sum, equal bytes — equal hash. */
+  contentHash?: string | null
   /** Upload time (`cr` of the snapshot), ISO. */
   createdAt?: string | null
   modifiedAt?: string | null
@@ -54,6 +56,8 @@ export interface LegacyImportOptions {
   /** Vault album titles the agent read from Hub — evidence for SXT-010/011 (SPEC §6.4). */
   vaultAlbums?: readonly VaultAlbumEvidence[]
   foreignModelNames?: readonly string[]
+  /** The model's list of what is not content (`legacy.not_content`, root-relative paths). */
+  notContent?: readonly string[]
   /** Examples per label for the КМ (default 5). */
   exampleLimit?: number
 }
@@ -177,6 +181,31 @@ export interface DuplicatePlan {
   paths: string[]
 }
 
+/**
+ * A pack (`PPV-001 Белое бельё`, form `pack`) is its object: an old folder of the same number
+ * that shares a file with it is the same object, and a file elsewhere with the bytes of a pack
+ * file — in the same section, or under a folder naming the number — is that file again. Neither
+ * is a collision of §6.4: the evidence is the bytes.
+ */
+export interface PackPlan {
+  type: ItemTypeCode
+  number: number
+  /** The pack folder: it holds the number and the object. */
+  path: string
+  /** Old folders of the same number with a file of the pack. */
+  folders: string[]
+  /** Files elsewhere with the bytes of a pack file. */
+  copies: string[]
+}
+
+/** Not content (SPEC §6.3 «Сверка»): no claims, no draft; by the topmost such folder. */
+export interface NotContentPlan {
+  path: string
+  reason: string
+  files: number
+  bytes: number
+}
+
 export interface CoveragePlan {
   entries: number
   files: number
@@ -203,6 +232,8 @@ export interface LegacyImportPlan {
   smmFolders: SmmFolderPlan[]
   archives: ArchivePlan[]
   duplicates: DuplicatePlan[]
+  packs: PackPlan[]
+  notContent: NotContentPlan[]
   incompleteInputs: string[]
   coverage: CoveragePlan
 }
@@ -244,6 +275,7 @@ function rowsOf(listing: readonly LegacyListingEntry[], options: LegacyImportOpt
       parsed: parseLegacyPath(path, {
         isDir: entry.isDir,
         foreignModelNames: options.foreignModelNames,
+        ...(options.notContent ? { notContent: options.notContent } : {}),
       }),
     }
   })
@@ -264,6 +296,8 @@ interface Unit {
   effective: number
   key: string
   name: string
+  /** `pack` — `PPV-001 Белое бельё`; the rest are the old forms. */
+  form: string
   locations: { path: string; resourceId: string | null }[]
   registry: RegistryClaim | null
   typo: boolean
@@ -317,6 +351,7 @@ function collectUnits(rows: Row[]): Unit[] {
         effective: number,
         key,
         name: parsed.name,
+        form: claim.payload.form,
         locations: [location],
         registry: null,
         typo: false,
@@ -329,6 +364,127 @@ function collectUnits(rows: Row[]): Unit[] {
     }
   }
   return [...units.values()]
+}
+
+/** `sha256:…`, `md5:…` or `dropbox:…` — equal bytes, equal key; `null` without a hash. */
+export function bytesKey(entry: LegacyListingEntry): string | null {
+  if (entry.sha256) return `sha256:${entry.sha256.toLowerCase()}`
+  if (entry.md5) return `md5:${entry.md5.toLowerCase()}`
+  if (entry.contentHash) return `dropbox:${entry.contentHash.toLowerCase()}`
+  return null
+}
+
+/** The nearest folder above a path whose own name reserves a number, with that claim. */
+function holderOf(
+  path: string,
+  numbered: ReadonlyMap<string, ClaimOf<'number'>>,
+): { path: string; claim: ClaimOf<'number'> } | null {
+  const parts = path.split('/')
+  for (let n = parts.length - 1; n >= 1; n--) {
+    const dir = parts.slice(0, n).join('/')
+    const claim = numbered.get(dir)
+    if (claim) return { path: dir, claim }
+  }
+  return null
+}
+
+/**
+ * Packs and what is the same object as they are (`PackPlan`): units of old folders sharing a
+ * file with a pack of their number leave the list of units — the pack holds the number alone.
+ */
+function packsOf(rows: Row[], units: Unit[]): { packs: PackPlan[]; units: Unit[] } {
+  const numbered = new Map<string, ClaimOf<'number'>>()
+  for (const { parsed } of rows) {
+    if (!parsed.isDir) continue
+    const claim = parsed.claims.find(
+      (c): c is ClaimOf<'number'> =>
+        c.kind === 'number' && c.payload.reserves && c.payload.form !== 'registry',
+    )
+    if (claim) numbered.set(parsed.path, claim)
+  }
+  const packFolders = [...numbered.entries()].filter(([, c]) => c.payload.form === 'pack')
+  if (packFolders.length === 0) return { packs: [], units }
+  const files = rows.filter(
+    (r) => !r.parsed.isDir && !r.parsed.context.notContent && !r.entry.archiveEntry,
+  )
+  const hashesOf = new Map<string, Set<string>>()
+  const fileHolder = new Map<string, string | null>()
+  for (const { entry, parsed } of files) {
+    const holder = holderOf(parsed.path, numbered)
+    fileHolder.set(parsed.path, holder?.path ?? null)
+    const key = bytesKey(entry)
+    if (!holder || !key) continue
+    const set = hashesOf.get(holder.path) ?? new Set<string>()
+    set.add(key)
+    hashesOf.set(holder.path, set)
+  }
+  const packs: PackPlan[] = []
+  const merged = new Set<string>()
+  for (const [path, claim] of packFolders.sort(([a], [b]) => byText(a, b))) {
+    if (merged.has(path)) continue
+    const { type, number } = claim.payload
+    const own = hashesOf.get(path) ?? new Set<string>()
+    const folders = [...numbered.entries()]
+      .filter(
+        ([other, c]) =>
+          other !== path &&
+          !merged.has(other) &&
+          c.payload.type === type &&
+          c.payload.number === number &&
+          [...(hashesOf.get(other) ?? [])].some((h) => own.has(h)),
+      )
+      .map(([other]) => other)
+      .sort(byText)
+    for (const folder of folders) merged.add(folder)
+    const held = new Set([path, ...folders])
+    const root = path.split('/')[0]
+    const copies = files
+      .filter(({ entry, parsed }) => {
+        const key = bytesKey(entry)
+        const holder = fileHolder.get(parsed.path) ?? null
+        if (!key || !own.has(key) || (holder !== null && held.has(holder))) return false
+        if (holder !== null) return false
+        if (parsed.path.split('/')[0] === root) return true
+        // `7. Монтажи/Агент/PPV-001/…`: a folder of the path names the number.
+        return rows.some(
+          (r) =>
+            r.parsed.isDir &&
+            parsed.path.startsWith(`${r.parsed.path}/`) &&
+            r.parsed.claims.some(
+              (c) => c.kind === 'number' && c.payload.type === type && c.payload.number === number,
+            ),
+        )
+      })
+      .map(({ parsed }) => parsed.path)
+      .sort(byText)
+    packs.push({ type, number, path, folders, copies })
+  }
+  const kept = units.filter((u) => !u.locations.some((l) => merged.has(l.path)))
+  return { packs, units: kept }
+}
+
+function notContentOf(rows: Row[]): NotContentPlan[] {
+  const out = new Map<string, NotContentPlan>()
+  const reasonOf = new Map(rows.map((r) => [r.parsed.path, r.parsed.context.notContent]))
+  for (const { parsed, entry } of rows) {
+    const reason = parsed.context.notContent
+    if (!reason || parsed.isDir) continue
+    // The topmost folder (or the file itself) that is not content for this reason.
+    const parts = parsed.path.split('/')
+    let top = parsed.path
+    for (let n = 1; n < parts.length; n++) {
+      const dir = parts.slice(0, n).join('/')
+      if (reasonOf.get(dir) === reason) {
+        top = dir
+        break
+      }
+    }
+    const plan = out.get(top) ?? { path: top, reason, files: 0, bytes: 0 }
+    plan.files += 1
+    plan.bytes += entry.size ?? 0
+    out.set(top, plan)
+  }
+  return [...out.values()].sort((a, b) => byText(a.path, b.path))
 }
 
 function linkRegistry(units: Unit[], registry: readonly RegistryClaim[]): Unit[] {
@@ -370,6 +526,7 @@ function linkRegistry(units: Unit[], registry: readonly RegistryClaim[]): Unit[]
       effective: number,
       key: `registry:${row.claim_key}`,
       name: row.payload.folder,
+      form: 'registry',
       locations: [],
       registry: row,
       typo: false,
@@ -460,9 +617,14 @@ function unitPlan(unit: Unit): CollisionUnitPlan {
   }
 }
 
+/**
+ * SXT-010/011 (SPEC §6.4): a source naming them reserves them; otherwise they are holes — only
+ * where a higher sexting number is claimed, a disk whose sextings stop below them has no hole.
+ */
 function sextingEvidence(
   rows: Row[],
   albums: readonly VaultAlbumEvidence[],
+  highest: number,
 ): { plans: SextingEvidencePlan[]; units: Unit[] } {
   const sortedAlbums = [...albums].sort(
     (a, b) => byText(a.source, b.source) || byText(a.title, b.title),
@@ -497,6 +659,7 @@ function sextingEvidence(
         effective: number,
         key: `vault:${album.source}`,
         name: album.title,
+        form: 'evidence',
         locations: [],
         registry: null,
         typo: false,
@@ -507,6 +670,7 @@ function sextingEvidence(
         reason: 'название альбома vault называет номер',
       })
     }
+    if (evidence.length === 0 && number >= highest) continue
     plans.push({ number, status: evidence.length > 0 ? 'reserve' : 'hole', evidence })
   }
   return { plans, units }
@@ -764,9 +928,10 @@ export function planLegacyImport(
   options: LegacyImportOptions = {},
 ): LegacyImportPlan {
   const rows = rowsOf(listing, options)
-  const units = collectUnits(rows)
+  const { packs, units } = packsOf(rows, collectUnits(rows))
   const registryOnly = linkRegistry(units, options.registry ?? [])
-  const sextings = sextingEvidence(rows, options.vaultAlbums ?? [])
+  const highestSxt = Math.max(0, ...units.filter((u) => u.type === 'SXT').map((u) => u.claimed))
+  const sextings = sextingEvidence(rows, options.vaultAlbums ?? [], highestSxt)
   const all = [...units, ...registryOnly, ...sextings.units]
   const groups = decide([...units, ...sextings.units])
   const reserve = reserveOf(all, options.currentCounters ?? {})
@@ -807,6 +972,8 @@ export function planLegacyImport(
     smmFolders: smmFoldersOf(rows),
     archives: archivesOf(rows),
     duplicates: duplicatesOf(rows),
+    packs,
+    notContent: notContentOf(rows),
     incompleteInputs: rows.filter((r) => r.entry.incomplete).map((r) => r.parsed.path),
     coverage: coverageOf(rows),
   }

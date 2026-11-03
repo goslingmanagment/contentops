@@ -11,8 +11,9 @@ import { snapshotOf } from './snapshot'
  * «Можно освобождать» (PLAN этап 7, 9а; SPEC §12.2): the roots of the old disk whose local copy
  * may be unpinned in the Я.Диск client — every file of the root went into the import and has a
  * green outcome of the reconciliation (accepted, an alias of accepted bytes, rejected by a person
- * with a reason, an archive accounted by its members, not media), every accepted file has its
- * master on our disk, and the copy holds nothing the snapshot does not know. For each such root
+ * with a reason, an archive accounted by its members, not media, not content), every accepted
+ * file has its master on our disk, and the copy holds nothing the snapshot does not know. For
+ * each such root
  * the files with their sizes, the bytes the copy holds (the gain to expect), the object, the
  * SHA-256 of the source bytes the import checked against the snapshot's MD5, and the master.
  *
@@ -28,6 +29,7 @@ const DONE: ReadonlySet<Outcome> = new Set([
   'rejected',
   'archive',
   'not_media',
+  'not_content',
 ])
 
 export interface ReleaseFile {
@@ -162,6 +164,7 @@ const OUTCOME: Record<Outcome, string> = {
   blocked: 'заблокирован',
   waiting: 'ожидает',
   not_media: 'не медиа',
+  not_content: 'не контент',
   unexplained: 'НЕОБЪЯСНЁН',
 }
 

@@ -108,6 +108,7 @@ export function legacyHandlers(services: Services): HandlerRegistry {
           writeInputs(tx, modelOf(ctx).id, actor.id, {
             ...(body.registry !== undefined ? { registry: body.registry } : {}),
             ...(body.vault_albums !== undefined ? { vault_albums: body.vault_albums } : {}),
+            ...(body.not_content !== undefined ? { not_content: body.not_content } : {}),
           }),
         ),
     },

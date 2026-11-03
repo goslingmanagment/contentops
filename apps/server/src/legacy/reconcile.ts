@@ -1,8 +1,10 @@
 import type { Queryable, WorkContext, WorkSuccess } from '@contentops/db'
 import { WorkError } from '@contentops/db'
+import { contextOf } from '@contentops/legacy'
 import { sourcePath } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import { mediaKindOf } from '../intake/grouping'
+import { readInputs } from './inputs'
 import { displayRoot, ROOTS } from './review'
 import { type SnapshotWork, snapshotOf } from './snapshot'
 
@@ -10,9 +12,9 @@ import { type SnapshotWork, snapshotOf } from './snapshot'
  * The reconciliation with the snapshot (SPEC §6.3 «Сверка», PLAN этап 3 — the exit artifact):
  * every revision the snapshot pinned has exactly one outcome — accepted, an alias of accepted
  * bytes, rejected with its author and reason, an archive accounted by its members, blocked or
- * waiting with a concrete reason; the counts by root add up to the snapshot, members of
- * archives are a denominator of their own. The work writes nothing but its report; stage 3
- * closes at zero unexplained rows.
+ * waiting with a concrete reason, not content by a rule of the import (no draft); the counts by
+ * root add up to the snapshot, members of archives are a denominator of their own. The work
+ * writes nothing but its report; stage 3 closes at zero unexplained rows.
  */
 
 export const RECONCILE_DATASET = 'reconcile'
@@ -25,6 +27,7 @@ export type Outcome =
   | 'blocked'
   | 'waiting'
   | 'not_media'
+  | 'not_content'
   | 'unexplained'
 
 export interface RootCount {
@@ -69,6 +72,8 @@ export interface Row extends Record<string, unknown> {
   master_sha: string | null
   master_state: string | null
   item: string | null
+  /** Not content by a rule of the import or the model's list (SPEC §6.3): it takes no draft. */
+  not_content?: boolean
 }
 
 export function classify(row: Row): { outcome: Outcome; reason: string | null } {
@@ -81,6 +86,7 @@ export function classify(row: Row): { outcome: Outcome; reason: string | null } 
   if (row.draft_state === null) {
     const name = row.path.slice(row.path.lastIndexOf('/') + 1)
     if (mediaKindOf(name, null) === null) return { outcome: 'not_media', reason: null }
+    if (row.not_content) return { outcome: 'not_content', reason: null }
     return { outcome: 'waiting', reason: 'not_imported_yet' }
   }
   if (row.draft_state === 'resolved') {
@@ -144,6 +150,17 @@ export async function rowsOf(q: Queryable, snapshot: SnapshotWork): Promise<Row[
       LEFT JOIN inbox_drafts sd ON sd.model_id = r.model_id AND sd.source_revision_id = succ.id
      WHERE r.model_id = ${snapshot.modelId}::uuid AND r.frozen_by_work_id = ${snapshot.id}::uuid
      ORDER BY r.frozen_path`)
+  // What the import takes no draft of: the same rules as the pass (`@contentops/legacy`).
+  const { notContent } = await readInputs(q, snapshot.modelId)
+  for (const row of rows) {
+    if (row.member || row.draft_state !== null) continue
+    const relative = sourcePath(row.path, snapshot.rootPath).relative
+    const context = contextOf(relative, {
+      isDir: false,
+      ...(notContent.length > 0 ? { notContent } : {}),
+    })
+    if (context.notContent) row.not_content = true
+  }
   return rows
 }
 
@@ -220,6 +237,7 @@ const LABEL: Record<Outcome, string> = {
   blocked: 'заблокировано',
   waiting: 'ожидает',
   not_media: 'не медиа',
+  not_content: 'не контент',
   unexplained: 'НЕОБЪЯСНЕНО',
 }
 

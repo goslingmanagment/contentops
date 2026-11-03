@@ -194,4 +194,34 @@ describe('the decision', () => {
       'через 9 дн. после карточки',
     ])
   })
+
+  it('a custom of an order folder answers to its other names: the reply line of the model links', () => {
+    // `05.10.26 fanfox кресло/IMG_7002.MOV` — the model replied to the card with that file.
+    const reply = { text: 'IMG_7002.MOV', ref: 'tg:3/128/1733' }
+    const chair = order('a', { buyer: 'fanfox', lines: [reply] })
+    const other = order('b', { buyer: 'someone' })
+    const folder = custom('05.10.26 fanfox кресло', { alsoNamed: ['IMG_7002', '1724'] })
+    expect(decide(folder, [chair, other], [])).toMatchObject({
+      kind: 'link',
+      candidate: { order: { id: 'a' }, identity: 'line', evidence: ['tg:3/128/1733'] },
+    })
+    // A clip of an order folder with several clips is called by the folder too: the buyer.
+    const clip = custom('IMG_7003', { alsoNamed: ['10.10.26 owlbear спорт и ванна'] })
+    expect(decide(clip, [order('c', { buyer: 'owlbear' })], [])).toMatchObject({
+      kind: 'link',
+      candidate: { identity: 'buyer' },
+    })
+    // Without other names nothing changes: the file's name alone says nothing here.
+    expect(decide(custom('IMG_7003'), [order('c', { buyer: 'owlbear' })], [])).toEqual({
+      kind: 'none',
+    })
+  })
+
+  it('a reply line does not outweigh a second candidate: two orders of one buyer ask', () => {
+    const reply = { text: 'IMG_9527.MOV', ref: 'tg:3/128/1384' }
+    const first = order('a', { buyer: 'boxer', lines: [reply] })
+    const second = order('b', { buyer: 'boxer' })
+    const folder = custom('[CUS-003]_pov_3min_boxer_16.09.26', { alsoNamed: ['IMG_9527'] })
+    expect(decide(folder, [first, second], [])).toMatchObject({ kind: 'ask' })
+  })
 })

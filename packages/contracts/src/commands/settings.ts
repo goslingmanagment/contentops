@@ -63,10 +63,13 @@ export type ResolveDisputeCommand = z.infer<typeof ResolveDisputeCommandSchema>
 
 /**
  * Inputs of the legacy import (SPEC §6.3–6.4): the PPV registry export as text (Markdown, CSV
- * or TSV) and the vault album titles read in Hub. A field left out stays; `null` removes it.
+ * or TSV), the vault album titles read in Hub and the model's list of what is not content —
+ * root-relative paths of folders or files of the snapshot the import takes no draft of. A field
+ * left out stays; `null` removes it.
  */
 export const UpdateLegacyInputsCommandSchema = z.object({
   registry: z.string().nullable().optional(),
   vault_albums: z.array(VaultAlbumEvidenceSchema).nullable().optional(),
+  not_content: z.array(z.string().min(1)).nullable().optional(),
 })
 export type UpdateLegacyInputsCommand = z.infer<typeof UpdateLegacyInputsCommandSchema>

@@ -98,12 +98,18 @@ class Scanner {
 
 // ── Patterns ────────────────────────────────────────────────────────────────────────────
 
-const TYPE_CODES = '(PPV|SET|SXT|CUS|CST|FYP|LIFE|RAW|PRM)'
+/** `SEX` is the word of Ари's archive for SXT (`01.07.26 SEX-001 пак`), `CST` an old one for CUS. */
+const TYPE_CODES = '(PPV|SET|SXT|SEX|CUS|CST|FYP|LIFE|RAW|PRM)'
 const BRACKET_ID = new RegExp(`\\[\\s*${TYPE_CODES}\\s*[-_ ]?\\s*(\\d{1,6})\\s*\\]`, 'giu')
 const LOOSE_ID = new RegExp(
   `(?<![\\p{L}\\d])${TYPE_CODES}[\\s_-]?(\\d{1,6})(?![\\p{L}\\d.,:])`,
   'giu',
 )
+/** The ID as the export writes it (naming §5): type, hyphen, three to six digits. */
+const STRICT_ID = new RegExp(`(?<![\\p{L}\\d\\[])${TYPE_CODES}-(\\d{3,6})(?![\\p{L}\\d\\]])`, 'giu')
+/** Naming §5 `EXPORT`: a file named by the export grammar. */
+const EXPORT_NAME =
+  /^(?<id>(?:PPV|SET|SXT|CUS|FYP|LIFE|RAW|PRM)-\d{3,6})(?:_(?<slug>[a-z][a-z0-9]*(?:-[a-z0-9]+)*))?(?:_(?<pos>\d{2,3}))?_(?<role>master|teaser|pic|raw|ed|clip|thumb|cap)(?<ord>\d{2,3})?(?:_u(?<uniq>[1-9]\d*))?(?:_v(?<version>[2-9]|[1-9]\d+))?(?:__(?<account>[a-z0-9]+-[a-z0-9]+)_(?<date>\d{4}-\d{2}-\d{2})(?:_(?<hhmm>\d{4}))?)?(?:__(?<dur>\d+)m(?<sec>\d{2})s)?\.(?<ext>[a-z0-9]{2,4})$/iu
 
 const CAPCUT = /lv_0_(\d{14})/giu
 const IOS_COPY = /copy_[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}/giu
@@ -113,8 +119,13 @@ const CONTRACTOR_EXPORT = new RegExp(
   `^${MONTH_WORD}_(?:photo|video)_(\\d{1,4})_(?:[a-z0-9]+_)*[0-9a-f]{8,12}$`,
   'iu',
 )
-/** `5400000000000000001.jpg`, `1000100001.jpg` — ids of a messenger or an Android gallery. */
-const LONG_NUMBER = /^\d{7,20}(?:\s*\(\d{1,2}\))?$/u
+/**
+ * `5400000000000000001.jpg`, `1000100001.jpg` — ids of a messenger or an Android gallery;
+ * `175282.jpg` — a file a Telegram mirror saved under its message number.
+ */
+const LONG_NUMBER = /^\d{5,20}(?:\s*\(\d{1,2}\))?$/u
+/** `IMG_7077_175668.MOV`: the message number a mirror glued to the camera name. */
+const MESSAGE_TAIL = /(?<=\uE000)_(\d{5,7})$/gu
 const MESSENGER_PHOTO = /(?:photo|video)_(\d{4})-(\d{2})-(\d{2})_\d{2}-\d{2}-\d{2}/giu
 const SCREENSHOT =
   /(?:Снимок экрана|Screenshot|Screen Shot)\s*(\d{4})-(\d{2})-(\d{2})(?:\s*(?:в|at)\s*\d{1,2}[.:]\d{2}[.:]\d{2})?/giu
@@ -125,7 +136,7 @@ const CAMERA =
 const DUPLICATE_SUFFIX = /\s*\(\d{1,2}\)(?=\s*$)/gu
 
 const NON_USED = /non[\s_]?used/giu
-const USAGE_STEM = /(\d)?\s?(used|ued|usd|posted)/giu
+const USAGE_STEM = /(\d)?\s?(used|ued|usd|posted|(?:✅\s*)?запощено)/giu
 
 const DATE_CORE = '(\\d{1,2})(?:\\.\\.|[.,])(\\d{1,2})(?:[.,](20\\d{2}|\\d{2}))?'
 /** A date ends at a non-digit, or runs into a clock (`3.10.2510:41`) or a label (`11.091used`). */
@@ -194,7 +205,8 @@ const STRUCTURAL = [
 ]
 const FOLDER_ROLE: readonly [RegExp, 'ed' | 'raw'][] = [
   [/^(ed|отобрано|отобранное)$/iu, 'ed'],
-  [/^(original|originals|оригиналы|оригинал|исходники|исходник)$/iu, 'raw'],
+  // `Дубли` — the takes of a FYP task (Ари's `2. FYP/<цикл>/FYP NN/Дубли`).
+  [/^(original|originals|оригиналы|оригинал|исходники|исходник|дубли)$/iu, 'raw'],
 ]
 const TAG_FOLDER = /^(optional|extra|нюды)$/iu
 const VENDOR = /^SteadyContent$/iu
@@ -268,8 +280,11 @@ function scanUsage(s: Scanner): void {
   for (let m = USAGE_STEM.exec(text); m !== null; m = USAGE_STEM.exec(text)) {
     let start = m.index
     let prefix = m[1] ? Number(m[1]) : null
-    const stem = (m[2] ?? '').toLowerCase()
-    const stemStart = m.index + m[0].length - stem.length
+    const word = (m[2] ?? '').toLowerCase()
+    // «✅ ЗАПОЩЕНО 02.09» of a ready FYP: the same statement as `posted_02.09`.
+    const stem = word.endsWith('запощено') ? 'posted' : word
+    if (stem !== word) prefix = null
+    const stemStart = m.index + m[0].length - word.length
     if (prefix !== null) {
       const before = text[start - 1] ?? ''
       const afterLabel = start === previousEnd
@@ -279,7 +294,7 @@ function scanUsage(s: Scanner): void {
       }
     }
     const letterBefore = /\p{L}/u.test(text[stemStart - 1] ?? '')
-    let at = stemStart + stem.length
+    let at = stemStart + word.length
     const notes: string[] = []
     if (stem === 'ued' || stem === 'usd') notes.push('typo')
     if (prefix !== null) notes.push('prefix')
@@ -458,7 +473,70 @@ function toClaims(name: string, drafts: Draft[]): LegacyClaim[] {
 
 const typeOf = (code: string): ItemTypeCode => {
   const upper = code.toUpperCase()
-  return (upper === 'CST' ? 'CUS' : upper) as ItemTypeCode
+  if (upper === 'CST') return 'CUS'
+  return (upper === 'SEX' ? 'SXT' : upper) as ItemTypeCode
+}
+
+const EXPORT_ROLE = new Set(['master', 'teaser', 'pic', 'raw', 'ed', 'clip', 'thumb', 'cap'])
+
+/**
+ * A file named by the export grammar (naming §5): `PPV-001_slug_master__9m06s.mov`,
+ * `SXT-002_04_clip01.mov`, `PPV-007_slug_pic02_v2.jpg`. The name says the object, the role and
+ * the number of the role, the place in the order of showing and the length; the ID of a file
+ * reserves nothing — the folder holds the number (SPEC §6.3). `null` — not such a name.
+ */
+function exportClaims(name: string, stem: string): LegacyClaim[] | null {
+  const m = new RegExp(EXPORT_NAME.source, 'diu').exec(name)
+  const g = m?.groups
+  const at = m?.indices?.groups
+  if (!m || !g || !at || !EXPORT_ROLE.has((g.role ?? '').toLowerCase())) return null
+  const s = new Scanner(stem)
+  const span = (key: string) => at[key] as [number, number]
+  const [id0, id1] = span('id')
+  const [type = '', digits = ''] = (g.id ?? '').split('-')
+  s.claim('number', id0, id1, {
+    type: typeOf(type),
+    number: Number(digits),
+    form: 'export',
+    reserves: false,
+  })
+  if (g.slug) {
+    const [a, b] = span('slug')
+    s.claim('title', a, b, { text: g.slug.replaceAll('-', ' '), lang: languageOf(g.slug) })
+  }
+  const roleStart = g.pos ? span('pos')[0] : span('role')[0]
+  const roleEnd = Math.max(
+    ...(['role', 'ord', 'uniq', 'version'] as const).flatMap((key) =>
+      at[key] ? [at[key][1]] : [],
+    ),
+  )
+  const role = (g.role ?? '').toLowerCase()
+  s.claim('role', roleStart, roleEnd, {
+    role,
+    ordinal: g.ord ? Number(g.ord) : null,
+    word: role,
+    ...(g.pos ? { position: Number(g.pos) } : {}),
+    ...(g.version ? { version: Number(g.version) } : {}),
+  })
+  if (g.account && g.date) {
+    const [a] = span('account')
+    const end = at.hhmm ? at.hhmm[1] : span('date')[1]
+    const [y, mo, d] = g.date.split('-').map(Number)
+    s.claim('date', a, end, {
+      date: makeDate(y ?? 0, mo ?? 0, d ?? 0),
+      unset: false,
+      until: null,
+    })
+  }
+  if (g.dur && g.sec) {
+    const [a] = span('dur')
+    const [, b] = span('sec')
+    s.claim('duration', a, b + 1, {
+      seconds: Number(g.dur) * 60 + Number(g.sec),
+      approximate: false,
+    })
+  }
+  return toClaims(name, s.drafts)
 }
 
 export function parseLegacyName(name: string, ctx: NameContext): LegacyClaim[] {
@@ -467,6 +545,10 @@ export function parseLegacyName(name: string, ctx: NameContext): LegacyClaim[] {
   const whole = stem.trim()
 
   if (STRUCTURAL.some((p) => p.test(whole))) return []
+  if (!ctx.isDir) {
+    const exported = exportClaims(name, stem)
+    if (exported) return exported
+  }
   if (ctx.isDir) {
     for (const [pattern, role] of FOLDER_ROLE) {
       if (pattern.test(whole)) {
@@ -545,6 +627,25 @@ export function parseLegacyName(name: string, ctx: NameContext): LegacyClaim[] {
     })
   })
 
+  // A pack: a folder named by the ID without brackets in the section of its type
+  // (`1. PPV/PPV-001 Белое бельё`, `5. Sextings/18.10.26 SXT-002 …`, `01.07.26 SEX-001 пак`).
+  // Elsewhere (`7. Монтажи/Агент/PPV-001`) the ID is a loose mention below.
+  const section = ctx.area === 'old_format' ? undefined : OLD_FORMAT_TYPE[ctx.subArea ?? 'unknown']
+  if (ctx.isDir && section && !s.drafts.some((d) => d.kind === 'number')) {
+    let packs = 0
+    s.take(STRICT_ID, (m) => {
+      const type = typeOf(m[1] ?? '')
+      if (type !== section || packs > 0) return false
+      packs += 1
+      s.claim('number', m.index, m.index + m[0].length, {
+        type,
+        number: Number(m[2]),
+        form: 'pack',
+        reserves: true,
+      })
+    })
+  }
+
   // Origins of the bytes (naming §8): evidence, not a classification.
   s.take(CAPCUT, (m) => {
     s.claim('role', m.index, m.index + m[0].length, { role: 'teaser', ordinal: null, word: 'lv_0' })
@@ -578,6 +679,9 @@ export function parseLegacyName(name: string, ctx: NameContext): LegacyClaim[] {
     s.claim('origin', m.index, m.index + m[0].length, {
       origin: vendor ? 'vendor_camera' : 'camera',
     })
+  })
+  s.take(MESSAGE_TAIL, (m) => {
+    s.claim('origin', m.index, m.index + m[0].length, { origin: 'messenger' })
   })
   s.take(DUPLICATE_SUFFIX, () => true)
 

@@ -21,6 +21,11 @@
 export interface CustomFacts {
   /** As the model named it: the file without its extension, or the folder. */
   name: string
+  /**
+   * Other names of the same custom (an order folder `05.10.26 <покупатель> <что>` of the
+   * import): the folder of a clip, the files of the folder's custom. They count as the name.
+   */
+  alsoNamed?: readonly string[]
   /** Seconds of the video: its probe, else `MM:SS` at the start of the name. */
   durationS: number | null
   /** When it appeared in the source (`remote_created_at`). */
@@ -316,13 +321,15 @@ export function candidatesOf(
   options: MatchOptions = {},
 ): Candidate[] {
   const out: Candidate[] = []
-  const nameKeys = words(custom.name).map(skeleton)
+  const names = [custom.name, ...(custom.alsoNamed ?? [])]
+  const allWords = names.flatMap(words)
+  const nameKeys = allWords.map(skeleton)
   for (const order of orders) {
     if (ruledOut(custom, order)) continue
     const signals: string[] = []
     const evidence: string[] = []
     let identity: Identity | null = null
-    const line = order.lines.find((one) => sameLine(custom.name, one.text))
+    const line = order.lines.find((one) => names.some((name) => sameLine(name, one.text)))
     if (line) {
       identity = 'line'
       signals.push(`строка модели «${line.text.trim()}»`)
@@ -331,10 +338,10 @@ export function candidatesOf(
     const buyer = buyerNames(order).find((key) => nameKeys.some((own) => sameName(own, key)))
     if (buyer) {
       identity = identity ?? 'buyer'
-      const shown = words(custom.name).find((word) => sameName(skeleton(word), buyer)) ?? buyer
+      const shown = allWords.find((word) => sameName(skeleton(word), buyer)) ?? buyer
       signals.push(`покупатель в имени: «${shown}»`)
     }
-    const brief = briefWords(custom.name, order.brief, options)
+    const brief = briefWords(names.join(' '), order.brief, options)
     if (brief.length > 0) signals.push(`в ТЗ: ${brief.map((word) => `«${word}»`).join(', ')}`)
     if (signals.length === 0) continue
     if (custom.video && custom.durationS !== null && order.durationRaw) {

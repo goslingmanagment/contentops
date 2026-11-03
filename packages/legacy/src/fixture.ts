@@ -181,3 +181,92 @@ export const FIXTURE_DISK: LegacyListingEntry[] = [
   file('Bea FYP — монтаж (КМ) — 2026-08-18.zip', 6_500),
   file('IMG_7707.mov', 900, { md5: 'b'.repeat(32) }),
 ]
+
+const packFile = (path: string, contentHash: string | null = null, size = 1000) => ({
+  path: `/${path}`,
+  isDir: false,
+  size,
+  contentHash,
+  createdAt: '2026-10-20T10:00:00+00:00',
+})
+
+/**
+ * A fictional archive in the shapes of a Telegram-mirrored Dropbox (Ари's, 03.11.2026): an old
+ * folder `[PPV-NNN]_…` and a pack `PPV-NNN Название` of the same PPV with the export names of
+ * ContentOps, nightly date folders, a montage root with copies of the packs, customs by order
+ * folders, FYP sources by cycles with takes and references, not-content folders. Names, nicks
+ * and descriptions are made up; equal `contentHash` — equal bytes. The model's list of what is
+ * not content is `FIXTURE_PACKS_NOT_CONTENT`.
+ */
+export const FIXTURE_PACKS: LegacyListingEntry[] = [
+  packFile('README.txt'),
+  // PPV-001: the old folder and the pack share the master; the old folder has its photos.
+  packFile('1. PPV/[PPV-001]_oil_dress_8min_05.06.26/IMG_5001.MOV', 'p1-old-teaser'),
+  packFile('1. PPV/[PPV-001]_oil_dress_8min_05.06.26/IMG_5002.JPG', 'p1-photo'),
+  packFile('1. PPV/[PPV-001]_oil_dress_8min_05.06.26/IMG_5003.MOV', 'p1-master', 9000),
+  packFile(
+    '1. PPV/PPV-001 Синее платье, масло/PPV-001_blue-dress-oil_master__8m02s.mov',
+    'p1-master',
+    9000,
+  ),
+  packFile('1. PPV/PPV-001 Синее платье, масло/PPV-001_blue-dress-oil_teaser__0m14s.mp4', 'p1-t'),
+  // PPV-002: a pack alone, with raw takes and a second version of a picture.
+  packFile('1. PPV/PPV-002 Красный халат/PPV-002_red-robe_pic01.jpg', 'p2-pic01'),
+  packFile('1. PPV/PPV-002 Красный халат/PPV-002_red-robe_pic02_v2.jpg', 'p2-pic02'),
+  packFile('1. PPV/PPV-002 Красный халат/PPV-002_red-robe_raw01__3m10s.mov', 'p2-raw01', 5000),
+  packFile('1. PPV/PPV-002 Красный халат/PPV-002_red-robe_teaser__0m14s.mp4', 'p2-teaser'),
+  // PPV-003: an old folder and a pack without a common file stay a collision for a person.
+  packFile('1. PPV/[PPV-003]_window_light_12.07.26/IMG_5100.MOV', 'p3-old'),
+  packFile('1. PPV/PPV-003 Свет из окна/PPV-003_window-light_master__4m00s.mov', 'p3-master'),
+  // The nightly drop with a copy of the master of PPV-001.
+  packFile('1. PPV/19.10.26/IMG_6001.MOV', 'p1-master', 9000),
+  packFile('2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш/Дубли/IMG_0031.MOV', 'f1'),
+  packFile('2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш/ТЗ/tz_212.mp4', 'f1-ref'),
+  packFile('2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш/ТЗ.txt'),
+  packFile('2. FYP/2. Цикл 2 июнь — исходники/FYP 02 — Повторить реф без лица/Дубли/IMG_6797.MOV'),
+  packFile('2. FYP/18.10.26/IMG_1128.MOV', 'f2'),
+  packFile('2. FYP/ТЗ рефы/13.10.26/ref_03.mp4', 'f3-ref'),
+  packFile('2. FYP/INDEX.md'),
+  packFile('3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26/IMG_7001.MOV', 'c1'),
+  packFile('3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26/1227.jpg', 'c1-card'),
+  packFile('3. Customs/05.10.26 fanfox кресло/IMG_7002.MOV', 'c2'),
+  packFile('3. Customs/05.10.26 fanfox кресло/1724.jpg', 'c2-photo'),
+  packFile('3. Customs/10.10.26 owlbear спорт и ванна/IMG_7003.MOV', 'c3'),
+  packFile('3. Customs/10.10.26 owlbear спорт и ванна/IMG_7004.MOV', 'c4'),
+  // The custom PPV-002 was cut from: the same bytes, its own object (SPEC §6.1).
+  packFile('3. Customs/12.10.26 fanfox халат/IMG_7005.MOV', 'p2-raw01', 5000),
+  packFile('3. Customs/карточки и рефы заказов/01.10.26_1658.jpg', 'c-card'),
+  // A nightly drop of the customs topic: two orders may share a day.
+  packFile('3. Customs/17.10.26/IMG_1109.JPG', 'c5-photo'),
+  packFile('3. Customs/17.10.26/IMG_1110.MOV', 'c5'),
+  packFile('4. Sets/10.04.26 ванная топлес/IMG_3227.JPG', 's1'),
+  packFile('4. Sets/05-07.06.26 новая квартира (не разобрано)/175282.jpg', 's2'),
+  packFile('5. Sextings/01.07.26 SEX-001 пак/IMG_8001.MOV', 'x1'),
+  packFile('5. Sextings/01.07.26 SEX-001 пак/IMG_8002.JPG', 'x2'),
+  packFile(
+    '5. Sextings/01.07.26 SEX-001 пак/сжатое для волта (CRF22)/028__тизинг__IMG_8001.mp4',
+    'x3',
+  ),
+  packFile('5. Sextings/18.10.26 SXT-002 Белое бельё/SXT-002_01_pic01.jpg', 'x4'),
+  packFile('5. Sextings/18.10.26 SXT-002 Белое бельё/SXT-002_02_clip01.mov', 'x5'),
+  packFile('5. Sextings/12.10.26 пак №2/IMG_8101.JPG', 'x6'),
+  packFile('6. Life/31.10.26/IMG_0035.JPG', 'l1'),
+  packFile('7. Монтажи/Агент/PPV-002/PPV-002_red-robe_pic01.jpg', 'p2-pic01'),
+  packFile('7. Монтажи/Агент/PPV-002/PPV-002_red-robe_teaser__0m14s.mp4', 'p2-teaser'),
+  packFile('7. Монтажи/Редактор/Bea 01.mov', 'm1'),
+  packFile('7. Монтажи/готовые фупы/✅ ЗАПОЩЕНО 02.09 — warm up (norm).mp4', 'm2'),
+  packFile('7. Монтажи/готовые фупы/02 — warm up.txt'),
+  packFile('8. Other/не контент/группа/1131.jpg', 'o1'),
+  packFile('8. Other/личка/29.09.26/204929.jpg', 'o2'),
+  packFile('8. Other/пробы и тесты/147383.jpg', 'o3'),
+  packFile('_опись/manifest.csv'),
+  packFile('_опись/контактные листы/photos_01.jpg', 'o4'),
+  packFile('_тест-заливки/SXT-003_01_pic01.jpg', 'x6'),
+]
+
+/** The model's list of what is not content (`legacy.not_content`) for `FIXTURE_PACKS`. */
+export const FIXTURE_PACKS_NOT_CONTENT = [
+  '_опись',
+  '_тест-заливки',
+  '3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26/1227.jpg',
+]

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { FIXTURE_DISK, FIXTURE_REGISTRY } from './fixture.ts'
+import {
+  FIXTURE_DISK,
+  FIXTURE_PACKS,
+  FIXTURE_PACKS_NOT_CONTENT,
+  FIXTURE_REGISTRY,
+} from './fixture.ts'
 import { type LegacyListingEntry, planLegacyImport } from './plan.ts'
 import { parsePpvRegistry } from './registry.ts'
 
@@ -245,6 +250,95 @@ describe('the rest of the dry-run report', () => {
   it('incomplete inputs are listed and do not block', () => {
     const q = plan([...FIXTURE_DISK, { path: '9. SMM/Unreadable', isDir: true, incomplete: true }])
     expect(q.incompleteInputs).toEqual(['9. SMM/Unreadable'])
+  })
+})
+
+describe('packs of a mirrored archive (SPEC §6.3, legacy-and-import §10)', () => {
+  const p = planLegacyImport(FIXTURE_PACKS, { notContent: FIXTURE_PACKS_NOT_CONTENT })
+  const claim = (type: string, number: number) =>
+    p.numberClaims.filter((c) => c.type === type && c.claimedNumber === number)
+
+  it('a pack and an old folder of its number sharing a file are one PPV, no collision', () => {
+    expect(claim('PPV', 1)).toEqual([
+      expect.objectContaining({
+        decision: 'keep',
+        assignedNumber: 1,
+        source: expect.objectContaining({ path: '1. PPV/PPV-001 Синее платье, масло' }),
+      }),
+    ])
+    expect(p.packs.find((k) => k.number === 1 && k.type === 'PPV')).toMatchObject({
+      folders: ['1. PPV/[PPV-001]_oil_dress_8min_05.06.26'],
+      copies: ['1. PPV/19.10.26/IMG_6001.MOV'],
+    })
+    expect(p.collisions.some((c) => c.type === 'PPV' && c.number === 1)).toBe(false)
+  })
+
+  it('without a common file the old folder and the pack stay a collision for a person', () => {
+    expect(p.collisions).toEqual([
+      expect.objectContaining({ type: 'PPV', number: 3, resolution: 'unclear' }),
+    ])
+    expect(claim('PPV', 3).map((c) => c.decision)).toEqual(['unclear', 'unclear'])
+  })
+
+  it('two old folders sharing bytes without a pack stay a collision (the Лора case)', () => {
+    const q = planLegacyImport([
+      { path: '5. Sextings/sexting_003_yoga_05.03.25/1.jpg', isDir: false, md5: 'a'.repeat(32) },
+      {
+        path: '5. Sextings/sexting_003_yoga_05.03.25_normalized_for_vault (1)/1.jpg',
+        isDir: false,
+        md5: 'a'.repeat(32),
+      },
+    ])
+    expect(q.packs).toEqual([])
+    expect(q.collisions).toEqual([expect.objectContaining({ type: 'SXT', number: 3 })])
+  })
+
+  it('copies of pack files: the same section, or a folder naming the number; a custom is not one', () => {
+    expect(p.packs.find((k) => k.type === 'PPV' && k.number === 2)?.copies).toEqual([
+      '7. Монтажи/Агент/PPV-002/PPV-002_red-robe_pic01.jpg',
+      '7. Монтажи/Агент/PPV-002/PPV-002_red-robe_teaser__0m14s.mp4',
+    ])
+    const copies = p.packs.flatMap((k) => k.copies)
+    expect(copies).not.toContain('3. Customs/12.10.26 fanfox халат/IMG_7005.MOV')
+  })
+
+  it('numbers: packs and old folders reserve, file names and FYP tasks do not', () => {
+    expect(p.reserve).toEqual([
+      expect.objectContaining({ type: 'PPV', maxClaimed: 3, next: 4 }),
+      // The test upload `SXT-003_01_pic01.jpg` is not content and names no number.
+      expect.objectContaining({ type: 'SXT', maxClaimed: 2, next: 3 }),
+      expect.objectContaining({ type: 'CUS', maxClaimed: 1, next: 2 }),
+    ])
+    expect(p.numberClaims.some((c) => c.type === 'FYP')).toBe(false)
+  })
+
+  it('not content: rule folders and the model list, without claims or unparsed names', () => {
+    expect(p.notContent.map((n) => [n.path, n.reason])).toEqual([
+      ['2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш/ТЗ', 'рефы и карточки заказов'],
+      ['2. FYP/ТЗ рефы', 'рефы и карточки заказов'],
+      ['3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26/1227.jpg', 'по списку модели'],
+      ['3. Customs/карточки и рефы заказов', 'рефы и карточки заказов'],
+      ['8. Other/не контент', 'не контент'],
+      ['_опись', 'по списку модели'],
+      ['_тест-заливки', 'по списку модели'],
+    ])
+    const skipped = p.entries.filter((e) => e.context.notContent)
+    expect(skipped.every((e) => e.claims.length === 0)).toBe(true)
+    expect(p.unparsed).toEqual([])
+  })
+
+  it('sextings that stop at 002 have no SXT-010/011 holes', () => {
+    expect(p.sextings).toEqual([])
+  })
+
+  it('«✅ ЗАПОЩЕНО» is a label for the КМ', () => {
+    expect(p.labels).toEqual([expect.objectContaining({ label: 'posted', count: 1 })])
+  })
+
+  it('the disk of Лора has no packs and nothing not content', () => {
+    const lora = plan()
+    expect(lora.packs).toEqual([])
+    expect(lora.notContent).toEqual([])
   })
 })
 

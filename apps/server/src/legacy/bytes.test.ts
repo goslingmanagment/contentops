@@ -3,12 +3,17 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type Db, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
-import type { LegacyListingEntry } from '@contentops/legacy'
-import { FIXTURE_REGISTRY } from '@contentops/legacy/fixture'
+import { type LegacyListingEntry, planLegacyImport, relativePath } from '@contentops/legacy'
+import {
+  FIXTURE_PACKS,
+  FIXTURE_PACKS_NOT_CONTENT,
+  FIXTURE_REGISTRY,
+} from '@contentops/legacy/fixture'
 import { fakeBytes, recordingRetry } from '@contentops/sources/testing'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fetchHandler } from '../intake/fetch'
+import { mediaKindOf } from '../intake/grouping'
 import { drain, type IntakeHarness, intakeHarness, LORA_ROOT, setSwitch } from '../intake/testing'
 import { createLogger } from '../logger'
 import type { BlobStore } from '../media/storage'
@@ -21,10 +26,12 @@ import { autoAcceptForDraft } from './auto-accept'
 import { importBytes } from './bytes'
 import { writeInputs } from './inputs'
 import { enqueueImport } from './parse'
-import type { ReconcileReport } from './reconcile'
+import { classify, type ReconcileReport, type Row } from './reconcile'
 import { releaseMarkdown, releaseReport } from './release'
+import type { SnapshotEntry } from './snapshot'
 import { snapshotOf } from './snapshot'
 import { freezeDisk, plantDisk, runImport, runQueued, zipOf } from './testing'
+import { legacyUnits } from './units'
 
 /**
  * The byte half of stage 3 (SPEC §6.3 «Байты, папка за папкой», «Архивы», «Сверка») on a
@@ -672,5 +679,166 @@ describe('«Можно освобождать» (SPEC §12.2)', () => {
     await writeFile(list, `${lines}\n${JSON.stringify(extra)}\n`)
     const smm = (await releaseReport(h.db, 'lora', list)).roots.find((r) => r.root === '9. SMM')
     expect(smm).toMatchObject({ ready: false, blockers: { 'в копии, но не в снимке': 1 } })
+  })
+})
+
+/**
+ * The units of a Telegram-mirrored archive (Ари's shapes, `FIXTURE_PACKS`): a pack and the old
+ * folder of its number with their copies are one group, not content is no group, takes are raw
+ * material for FYPs, an order folder with one video is one custom, platform copies in a pack
+ * wait for a person.
+ */
+describe('units of a mirrored archive', () => {
+  const listing: SnapshotEntry[] = []
+  const byPath = new Map<string, SnapshotEntry>()
+  for (const entry of FIXTURE_PACKS) {
+    const relative = relativePath(entry.path)
+    const row = {
+      ...entry,
+      path: relative,
+      relative,
+      raw: entry.path,
+      objectId: `obj:${relative}`,
+      revisionId: `rev:${relative}`,
+      resourceId: `id:${relative}`,
+    }
+    listing.push(row)
+    byPath.set(relative, row)
+    const parts = relative.split('/')
+    for (let n = 1; n < parts.length; n++) {
+      const dir = parts.slice(0, n).join('/')
+      if (byPath.has(dir)) continue
+      const folder = {
+        path: dir,
+        relative: dir,
+        raw: `/${dir}`,
+        isDir: true,
+        objectId: `obj:${dir}`,
+        revisionId: null,
+      }
+      listing.push(folder)
+      byPath.set(dir, folder)
+    }
+  }
+  const plan = planLegacyImport(listing, { notContent: FIXTURE_PACKS_NOT_CONTENT })
+  const parsed = new Map(plan.entries.map((e) => [e.path, e]))
+  const media = listing.filter((e) => !e.isDir && mediaKindOf(e.relative, null) !== null)
+  const units = legacyUnits({
+    files: media,
+    byPath,
+    parsed,
+    registry: [],
+    timezone: 'Europe/Moscow',
+    packs: plan.packs,
+  })
+  const unitOf = (file: string) => units.find((u) => u.files.some((f) => f.relative === file))
+  const names = (u: ReturnType<typeof unitOf>) => u?.files.map((f) => f.relative.split('/').pop())
+
+  it('a pack, the old folder of its number and a copy elsewhere are one group with its number', () => {
+    const ppv = unitOf(
+      '1. PPV/PPV-001 Синее платье, масло/PPV-001_blue-dress-oil_master__8m02s.mov',
+    )
+    expect(ppv).toMatchObject({
+      key: 'folder:obj:1. PPV/PPV-001 Синее платье, масло',
+      type: 'PPV',
+      title: 'Синее платье, масло',
+      number: { type: 'PPV', number: 1, anchor: 'obj:1. PPV/PPV-001 Синее платье, масло' },
+      evidence: { legacy: { folders: ['obj:1. PPV/[PPV-001]_oil_dress_8min_05.06.26'] } },
+    })
+    expect(names(ppv)?.sort()).toEqual([
+      'IMG_5001.MOV',
+      'IMG_5002.JPG',
+      'IMG_5003.MOV',
+      'IMG_6001.MOV',
+      'PPV-001_blue-dress-oil_master__8m02s.mov',
+      'PPV-001_blue-dress-oil_teaser__0m14s.mp4',
+    ])
+    // Copies of a pack in the montage root go with it: equal bytes are one file there.
+    expect(unitOf('7. Монтажи/Агент/PPV-002/PPV-002_red-robe_pic01.jpg')?.number?.number).toBe(2)
+    expect(
+      units
+        .filter((u) => u.type === 'PPV')
+        .map((u) => u.number?.number)
+        .sort(),
+    ).toEqual([1, 2, 3, 3])
+  })
+
+  it('the custom a PPV was cut from stays a custom of its own', () => {
+    expect(unitOf('3. Customs/12.10.26 fanfox халат/IMG_7005.MOV')).toMatchObject({
+      type: 'CUS',
+      number: null,
+    })
+  })
+
+  it('an order folder with one video is one custom; with two, a custom per video named by it', () => {
+    const chair = unitOf('3. Customs/05.10.26 fanfox кресло/IMG_7002.MOV')
+    expect(names(chair)?.sort()).toEqual(['1724.jpg', 'IMG_7002.MOV'])
+    expect(chair?.evidence).toMatchObject({
+      legacy: { order_folder: '3. Customs/05.10.26 fanfox кресло' },
+    })
+    const two = ['IMG_7003.MOV', 'IMG_7004.MOV'].map((n) =>
+      unitOf(`3. Customs/10.10.26 owlbear спорт и ванна/${n}`),
+    )
+    expect(two.map((u) => u?.grouping)).toEqual(['single', 'single'])
+    expect(two[0]?.evidence).toMatchObject({
+      legacy: { order_folder: '3. Customs/10.10.26 owlbear спорт и ванна' },
+    })
+    expect(unitOf('3. Customs/17.10.26/IMG_1110.MOV')).toMatchObject({ grouping: 'single' })
+    expect(names(unitOf('3. Customs/17.10.26/IMG_1109.JPG'))).toEqual(['IMG_1109.JPG'])
+    // A numbered custom answers to its files too; a bare day is a drop, a custom per clip.
+    expect(
+      unitOf('3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26/IMG_7001.MOV')?.evidence,
+    ).toMatchObject({
+      legacy: { order_folder: '3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26' },
+    })
+  })
+
+  it('takes of a FYP task and a day of the FYP root are raw material for FYPs', () => {
+    expect(
+      unitOf('2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш/Дубли/IMG_0031.MOV'),
+    ).toMatchObject({
+      path: '2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш',
+      type: 'RAW',
+      purpose: 'fyp',
+    })
+    expect(unitOf('2. FYP/18.10.26/IMG_1128.MOV')).toMatchObject({ type: 'RAW', purpose: 'fyp' })
+    expect(unitOf('7. Монтажи/Редактор/Bea 01.mov')).toMatchObject({
+      type: 'FYP',
+      grouping: 'single',
+    })
+  })
+
+  it('platform copies in a pack and messages wait for a person; not content makes no group', () => {
+    expect(
+      unitOf('5. Sextings/01.07.26 SEX-001 пак/сжатое для волта (CRF22)/028__тизинг__IMG_8001.mp4'),
+    ).toMatchObject({ type: null, number: null, evidence: { platform_copies: true } })
+    expect(unitOf('5. Sextings/01.07.26 SEX-001 пак/IMG_8001.MOV')?.number?.number).toBe(1)
+    expect(unitOf('8. Other/личка/29.09.26/204929.jpg')?.type).toBeNull()
+    for (const file of [
+      '2. FYP/1. Цикл 1 март — исходники/FYP 01 — Флеш/ТЗ/tz_212.mp4',
+      '2. FYP/ТЗ рефы/13.10.26/ref_03.mp4',
+      '3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26/1227.jpg',
+      '3. Customs/карточки и рефы заказов/01.10.26_1658.jpg',
+      '8. Other/не контент/группа/1131.jpg',
+      '_опись/контактные листы/photos_01.jpg',
+      '_тест-заливки/SXT-003_01_pic01.jpg',
+    ]) {
+      expect(unitOf(file)).toBeUndefined()
+    }
+  })
+
+  it('the reconciliation counts a file not content without a draft apart', () => {
+    const row = {
+      path: '/_опись/x.jpg',
+      member: false,
+      container: false,
+      unreadable: false,
+      draft_state: null,
+    } as unknown as Row
+    expect(classify({ ...row, not_content: true })).toEqual({
+      outcome: 'not_content',
+      reason: null,
+    })
+    expect(classify(row)).toEqual({ outcome: 'waiting', reason: 'not_imported_yet' })
   })
 })

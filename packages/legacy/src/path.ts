@@ -37,9 +37,46 @@ export function areaOfSection(name: string): LegacyArea | null {
       return 'bg'
     case 'старый формат':
       return 'old_format'
+    case 'монтажи':
+      return 'montage'
     default:
       return null
   }
+}
+
+/**
+ * Folders whose files are not content (SPEC §6.3 «Сверка»: no draft, counted apart): a folder
+ * named so, references a model was given (`ТЗ`, `ТЗ рефы`, `Отменённый реф`) and order cards
+ * (`карточки и рефы заказов`). The model's own list (`legacy.not_content`) adds paths.
+ */
+const NOT_CONTENT: readonly [RegExp, string][] = [
+  [/^не\s+контент$/iu, 'не контент'],
+  // By the start of the name only: «FYP 02 — Повторить реф без лица» is a task with takes.
+  [/^(тз|рефы|референсы?|отмен[её]нный\s+реф|карточки)(?![\p{L}\d])/iu, 'рефы и карточки заказов'],
+]
+
+/** A folder of FYP sources (SPEC §6.1, #84): its clips are raw material, not ready FYPs. */
+const FYP_SOURCES = /исходник|сырь[её]|оригинал|(?<![\p{L}])(sources?|raw|originals?)(?![\p{L}])/iu
+/** `Дубли` — the takes a model shot for a FYP; a bare date folder — what she sent that day. */
+const FYP_TAKES = /^(дубли|\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4}))$/iu
+/** Messages of a chat or a DM (`личка`, `чат группы`): what they are, a person decides. */
+const MESSAGES = /^(личка|чат(?:\s.*)?)$/iu
+
+/** The reason a path is not content, or `undefined`. */
+function notContentOf(
+  folders: readonly string[],
+  path: string,
+  list: readonly string[] | undefined,
+): string | undefined {
+  for (const folder of folders) {
+    const found = NOT_CONTENT.find(([pattern]) => pattern.test(nfc(folder).trim()))
+    if (found) return found[1]
+  }
+  const listed = (list ?? []).some((entry) => {
+    const own = relativePath(entry)
+    return own !== '' && (path === own || path.startsWith(`${own}/`))
+  })
+  return listed ? 'по списку модели' : undefined
 }
 
 const CHANNEL = /^(twitter|instagram|reddit|sfs|yt|gif сайты|tiktok|флешинги)$/iu
@@ -58,6 +95,8 @@ const TYPE_OF_AREA: Partial<Record<LegacyArea, ItemTypeCode | 'LIFE|SET'>> = {
   life: 'LIFE',
   pictures: 'LIFE|SET',
   other: 'RAW',
+  // `7. Монтажи` — ready clips of the editors: a finished clip is a FYP (SPEC §6.1).
+  montage: 'FYP',
 }
 
 /**
@@ -131,6 +170,18 @@ export function contextOf(path: string, options: ParseOptions): PathContext {
   }
   if (area === 'root' || area === 'unknown') typeHint = isArchive || options.isDir ? null : 'RAW'
   if (area === 'old_format' && subArea === 'old_format') typeHint = null
+  // Folders below the root, the entry itself too when it is a folder.
+  const folders = inner.slice(1, options.isDir ? inner.length : -1)
+  if (subArea === 'fyp' && area !== 'old_format') {
+    if (folders.some((f) => FYP_SOURCES.test(f) || FYP_TAKES.test(nfc(f).trim()))) {
+      typeHint = 'RAW'
+      rawPurpose = 'fyp'
+    }
+  }
+  if (area !== 'smm' && folders.some((f) => MESSAGES.test(nfc(f).trim()))) typeHint = null
+  const notContent = archive
+    ? undefined
+    : notContentOf(folders, inner.join('/'), options.notContent)
 
   return {
     root: segments.length > 1 || options.isDir ? (segments[0] ?? '') : '',
@@ -146,6 +197,7 @@ export function contextOf(path: string, options: ParseOptions): PathContext {
     isArchive,
     foreignModel,
     selectedForPpv,
+    ...(notContent ? { notContent } : {}),
   }
 }
 
@@ -168,6 +220,7 @@ export function parseLegacyPath(path: string, options: ParseOptions): ParsedLega
     name,
     isDir: options.isDir,
     context,
-    claims: name === '' ? [] : parseLegacyName(name, nameContext),
+    // Not content claims nothing: its names are no statement about the catalog.
+    claims: name === '' || context.notContent ? [] : parseLegacyName(name, nameContext),
   }
 }

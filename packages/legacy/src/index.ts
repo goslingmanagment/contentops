@@ -11,6 +11,7 @@ export { parseLegacyName } from './name.ts'
 export { areaOfSection, contextOf, parseLegacyPath } from './path.ts'
 export {
   type ArchivePlan,
+  bytesKey,
   type CollisionPlan,
   type CollisionUnitPlan,
   type CounterReservePlan,
@@ -20,10 +21,12 @@ export {
   type LegacyImportOptions,
   type LegacyImportPlan,
   type LegacyListingEntry,
+  type NotContentPlan,
   type NumberClaimPlan,
   type NumberClaimSource,
   type NumberDecision,
   type OldFormatPlan,
+  type PackPlan,
   planLegacyImport,
   type SextingEvidencePlan,
   type SmmFolderPlan,

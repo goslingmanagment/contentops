@@ -79,6 +79,8 @@ interface FileRow extends Record<string, unknown> {
   public_id: string | null
   grouping: string
   unit: string | null
+  /** A custom of an order folder with several videos: the folder names the order. */
+  order_folder: string | null
   order_id: string | null
   asked: boolean
   path: string | null
@@ -99,10 +101,27 @@ export interface OpenCustom {
   evidence: string[]
 }
 
+const stemOf = (path: string) =>
+  path
+    .slice(path.lastIndexOf('/') + 1)
+    .replace(/\.[\p{L}\p{N}]{2,5}$/u, '')
+    .trim()
+
 /** `3. Customs/12:40 гимнастика.mov` → `12:40 гимнастика`; a folder keeps its name. */
 function unitName(unit: string, grouping: string): string {
-  const base = unit.slice(unit.lastIndexOf('/') + 1)
-  return grouping === 'single' ? base.replace(/\.[\p{L}\p{N}]{2,5}$/u, '').trim() : base.trim()
+  return grouping === 'single' ? stemOf(unit) : unit.slice(unit.lastIndexOf('/') + 1).trim()
+}
+
+/**
+ * The other names of a custom of an order folder (`05.10.26 <покупатель> <что>`): a clip of it
+ * is also called by the folder, the folder's custom also by the names of its files — what the
+ * model's reply to the card named (SPEC §6.3).
+ */
+function otherNames(files: readonly FileRow[], grouping: string): string[] {
+  const folder = files[0]?.order_folder
+  if (!folder) return []
+  if (grouping === 'single') return [folder.slice(folder.lastIndexOf('/') + 1).trim()]
+  return [...new Set(files.flatMap((file) => (file.path ? [stemOf(file.path)] : [])))]
 }
 
 function customsOf(rows: readonly FileRow[]): OpenCustom[] {
@@ -111,6 +130,7 @@ function customsOf(rows: readonly FileRow[]): OpenCustom[] {
   return [...byKey.values()].map((files) => {
     const first = files[0] as FileRow
     const name = unitName(first.unit ?? first.path ?? '', first.grouping)
+    const alsoNamed = otherNames(files, first.grouping)
     const kinds = files.map((file) => mediaKindOf(file.path ?? '', null))
     const durations = files.flatMap((file) =>
       file.duration_ms === null ? [] : [Number(file.duration_ms) / 1000],
@@ -123,6 +143,7 @@ function customsOf(rows: readonly FileRow[]): OpenCustom[] {
       asked: files.some((file) => file.asked),
       facts: {
         name,
+        ...(alsoNamed.length > 0 ? { alsoNamed } : {}),
         durationS: durations.length > 0 ? Math.max(...durations) : headSeconds(name),
         at: times.length > 0 ? (times.sort()[0] as string) : null,
         video: kinds.includes('video'),
@@ -148,6 +169,7 @@ const FILE_SOURCE = sql`
 export async function openCustomGroups(q: Queryable, modelId: string): Promise<OpenCustom[]> {
   const { rows } = await q.execute<FileRow>(sql`
     SELECT g.id AS key, NULL AS public_id, g.grouping, g.evidence -> 'legacy' ->> 'unit' AS unit,
+           g.evidence -> 'legacy' ->> 'order_folder' AS order_folder,
            g.custom_order_id AS order_id,
            EXISTS (SELECT 1 FROM inbox_draft_candidates c
                     WHERE c.model_id = d.model_id AND c.draft_id = d.id AND c.kind = 'order') AS asked,
@@ -168,7 +190,8 @@ export async function openCustomGroups(q: Queryable, modelId: string): Promise<O
 export async function unlinkedCustoms(q: Queryable, modelId: string): Promise<OpenCustom[]> {
   const { rows } = await q.execute<FileRow>(sql`
     SELECT i.id AS key, public_item_id(i.type, i.number) AS public_id, g.grouping,
-           g.evidence -> 'legacy' ->> 'unit' AS unit, NULL AS order_id,
+           g.evidence -> 'legacy' ->> 'unit' AS unit,
+           g.evidence -> 'legacy' ->> 'order_folder' AS order_folder, NULL AS order_id,
            EXISTS (SELECT 1 FROM inbox_draft_candidates c JOIN inbox_drafts x
                      ON x.model_id = c.model_id AND x.id = c.draft_id
                     WHERE c.model_id = i.model_id AND x.applied_item_id = i.id AND c.kind = 'order')
