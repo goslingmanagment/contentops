@@ -101,14 +101,27 @@ export interface OpenCustom {
   evidence: string[]
 }
 
+const stemOf = (path: string) =>
+  path
+    .slice(path.lastIndexOf('/') + 1)
+    .replace(/\.[\p{L}\p{N}]{2,5}$/u, '')
+    .trim()
+
+/** `3. Customs/12:40 гимнастика.mov` → `12:40 гимнастика`; a folder keeps its name. */
+function unitName(unit: string, grouping: string): string {
+  return grouping === 'single' ? stemOf(unit) : unit.slice(unit.lastIndexOf('/') + 1).trim()
+}
+
 /**
- * `3. Customs/12:40 гимнастика.mov` → `12:40 гимнастика`; a folder keeps its name, and so does
- * the order folder of a video (`05.10.26 <покупатель> <что>/IMG_0392.MOV` → the folder).
+ * The other names of a custom of an order folder (`05.10.26 <покупатель> <что>`): a clip of it
+ * is also called by the folder, the folder's custom also by the names of its files — what the
+ * model's reply to the card named (SPEC §6.3).
  */
-function unitName(unit: string, grouping: string, orderFolder: string | null = null): string {
-  if (orderFolder) return orderFolder.slice(orderFolder.lastIndexOf('/') + 1).trim()
-  const base = unit.slice(unit.lastIndexOf('/') + 1)
-  return grouping === 'single' ? base.replace(/\.[\p{L}\p{N}]{2,5}$/u, '').trim() : base.trim()
+function otherNames(files: readonly FileRow[], grouping: string): string[] {
+  const folder = files[0]?.order_folder
+  if (!folder) return []
+  if (grouping === 'single') return [folder.slice(folder.lastIndexOf('/') + 1).trim()]
+  return [...new Set(files.flatMap((file) => (file.path ? [stemOf(file.path)] : [])))]
 }
 
 function customsOf(rows: readonly FileRow[]): OpenCustom[] {
@@ -116,7 +129,8 @@ function customsOf(rows: readonly FileRow[]): OpenCustom[] {
   for (const row of rows) byKey.set(row.key, [...(byKey.get(row.key) ?? []), row])
   return [...byKey.values()].map((files) => {
     const first = files[0] as FileRow
-    const name = unitName(first.unit ?? first.path ?? '', first.grouping, first.order_folder)
+    const name = unitName(first.unit ?? first.path ?? '', first.grouping)
+    const alsoNamed = otherNames(files, first.grouping)
     const kinds = files.map((file) => mediaKindOf(file.path ?? '', null))
     const durations = files.flatMap((file) =>
       file.duration_ms === null ? [] : [Number(file.duration_ms) / 1000],
@@ -129,6 +143,7 @@ function customsOf(rows: readonly FileRow[]): OpenCustom[] {
       asked: files.some((file) => file.asked),
       facts: {
         name,
+        ...(alsoNamed.length > 0 ? { alsoNamed } : {}),
         durationS: durations.length > 0 ? Math.max(...durations) : headSeconds(name),
         at: times.length > 0 ? (times.sort()[0] as string) : null,
         video: kinds.includes('video'),

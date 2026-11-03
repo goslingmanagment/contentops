@@ -236,6 +236,9 @@ export const FIXTURE_PACKS: LegacyListingEntry[] = [
   // The custom PPV-002 was cut from: the same bytes, its own object (SPEC §6.1).
   packFile('3. Customs/12.10.26 fanfox халат/IMG_7005.MOV', 'p2-raw01', 5000),
   packFile('3. Customs/карточки и рефы заказов/01.10.26_1658.jpg', 'c-card'),
+  // A nightly drop of the customs topic: two orders may share a day.
+  packFile('3. Customs/17.10.26/IMG_1109.JPG', 'c5-photo'),
+  packFile('3. Customs/17.10.26/IMG_1110.MOV', 'c5'),
   packFile('4. Sets/10.04.26 ванная топлес/IMG_3227.JPG', 's1'),
   packFile('4. Sets/05-07.06.26 новая квартира (не разобрано)/175282.jpg', 's2'),
   packFile('5. Sextings/01.07.26 SEX-001 пак/IMG_8001.MOV', 'x1'),

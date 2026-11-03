@@ -93,8 +93,12 @@ export interface UnitsInput {
 
 /** Copies for the platform a pack keeps beside its originals: not new material. */
 const PLATFORM_COPIES = /сжат|compress|(?<![\p{L}])crf\s?\d|normaliz|для\s+(волта|vault)/iu
-/** A folder of customs named by its order: the date first (`05.10.26 <покупатель> <что>`). */
-const ORDER_FOLDER = /^\d{1,2}\.\d{1,2}\.\d{2}(?:\s|$)/u
+/**
+ * A folder of customs named by its order: the date, then who and what (`05.10.26 <покупатель>
+ * <что>`). A bare day (`17.10.26`) is a nightly drop that may hold several orders: a custom per
+ * clip there, as anywhere.
+ */
+const ORDER_FOLDER = /^\d{1,2}\.\d{1,2}\.\d{2}\s+\S/u
 /** `10.04.26 ванная топлес`: the date first, then what was shot — the day of the shoot. */
 const SHOOT_FOLDER = /^\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4})\s+\S/u
 
@@ -124,6 +128,10 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
       const entry = byPath.get(path)
       return entry ? [entry.objectId] : []
     })
+  const orderFolderOf = (path: string) =>
+    typeOf(parsed.get(path)) === 'CUS' &&
+    path.split('/').length === 2 &&
+    ORDER_FOLDER.test(nameOf(path))
   // Videos of each folder of customs: the only one of an order folder is that folder's custom.
   const videosIn = new Map<string, number>()
   for (const file of input.files) {
@@ -196,6 +204,11 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
             anchor: anchor.objectId,
             // Old folders of the pack's number: their claims settle with the object.
             ...(pack && pack.folders.length > 0 ? { folders: objectsOf(pack.folders) } : {}),
+            // The custom of an order folder (or of a numbered one, `[CUS-001]_…`) answers to
+            // the names of its files too: what the model's reply to the card named.
+            ...(orderFolderOf(folder.relative) || number?.payload.type === 'CUS'
+              ? { order_folder: folder.relative }
+              : {}),
           },
           ...(untyped ? { platform_copies: true } : {}),
           ...(!archive && shootDay(own) ? { shot_day: shootDay(own) } : {}),
@@ -327,8 +340,7 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
     const type = typeOf(own)
     // The only video of an order folder of customs is that folder's custom, with its photos.
     const parent = parentOf(file.relative)
-    const orderFolder =
-      type === 'CUS' && parts.length === 3 && ORDER_FOLDER.test(nameOf(parent)) ? parent : null
+    const orderFolder = type === 'CUS' && orderFolderOf(parent) ? parent : null
     if (orderFolder && (videosIn.get(orderFolder) ?? 0) === 1) {
       const folder = byPath.get(orderFolder)
       if (folder) {
@@ -355,7 +367,7 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
           legacy: {
             unit: file.relative,
             anchor: file.objectId,
-            // A custom of an order folder with several videos: the folder names the order.
+            // A custom of an order folder with several videos: the folder names the order too.
             ...(orderFolder ? { order_folder: orderFolder } : {}),
           },
         },

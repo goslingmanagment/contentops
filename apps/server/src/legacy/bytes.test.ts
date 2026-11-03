@@ -771,16 +771,25 @@ describe('units of a mirrored archive', () => {
   })
 
   it('an order folder with one video is one custom; with two, a custom per video named by it', () => {
-    expect(names(unitOf('3. Customs/05.10.26 fanfox кресло/IMG_7002.MOV'))?.sort()).toEqual([
-      '1724.jpg',
-      'IMG_7002.MOV',
-    ])
+    const chair = unitOf('3. Customs/05.10.26 fanfox кресло/IMG_7002.MOV')
+    expect(names(chair)?.sort()).toEqual(['1724.jpg', 'IMG_7002.MOV'])
+    expect(chair?.evidence).toMatchObject({
+      legacy: { order_folder: '3. Customs/05.10.26 fanfox кресло' },
+    })
     const two = ['IMG_7003.MOV', 'IMG_7004.MOV'].map((n) =>
       unitOf(`3. Customs/10.10.26 owlbear спорт и ванна/${n}`),
     )
     expect(two.map((u) => u?.grouping)).toEqual(['single', 'single'])
     expect(two[0]?.evidence).toMatchObject({
       legacy: { order_folder: '3. Customs/10.10.26 owlbear спорт и ванна' },
+    })
+    expect(unitOf('3. Customs/17.10.26/IMG_1110.MOV')).toMatchObject({ grouping: 'single' })
+    expect(names(unitOf('3. Customs/17.10.26/IMG_1109.JPG'))).toEqual(['IMG_1109.JPG'])
+    // A numbered custom answers to its files too; a bare day is a drop, a custom per clip.
+    expect(
+      unitOf('3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26/IMG_7001.MOV')?.evidence,
+    ).toMatchObject({
+      legacy: { order_folder: '3. Customs/[CUS-001]_shower_4min_fanfox_02.09.26' },
     })
   })
 
