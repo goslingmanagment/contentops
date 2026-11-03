@@ -617,9 +617,14 @@ function unitPlan(unit: Unit): CollisionUnitPlan {
   }
 }
 
+/**
+ * SXT-010/011 (SPEC §6.4): a source naming them reserves them; otherwise they are holes — only
+ * where a higher sexting number is claimed, a disk whose sextings stop below them has no hole.
+ */
 function sextingEvidence(
   rows: Row[],
   albums: readonly VaultAlbumEvidence[],
+  highest: number,
 ): { plans: SextingEvidencePlan[]; units: Unit[] } {
   const sortedAlbums = [...albums].sort(
     (a, b) => byText(a.source, b.source) || byText(a.title, b.title),
@@ -665,6 +670,7 @@ function sextingEvidence(
         reason: 'название альбома vault называет номер',
       })
     }
+    if (evidence.length === 0 && number >= highest) continue
     plans.push({ number, status: evidence.length > 0 ? 'reserve' : 'hole', evidence })
   }
   return { plans, units }
@@ -924,7 +930,8 @@ export function planLegacyImport(
   const rows = rowsOf(listing, options)
   const { packs, units } = packsOf(rows, collectUnits(rows))
   const registryOnly = linkRegistry(units, options.registry ?? [])
-  const sextings = sextingEvidence(rows, options.vaultAlbums ?? [])
+  const highestSxt = Math.max(0, ...units.filter((u) => u.type === 'SXT').map((u) => u.claimed))
+  const sextings = sextingEvidence(rows, options.vaultAlbums ?? [], highestSxt)
   const all = [...units, ...registryOnly, ...sextings.units]
   const groups = decide([...units, ...sextings.units])
   const reserve = reserveOf(all, options.currentCounters ?? {})

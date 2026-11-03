@@ -327,6 +327,10 @@ describe('packs of a mirrored archive (SPEC §6.3, legacy-and-import §10)', () 
     expect(p.unparsed).toEqual([])
   })
 
+  it('sextings that stop at 002 have no SXT-010/011 holes', () => {
+    expect(p.sextings).toEqual([])
+  })
+
   it('«✅ ЗАПОЩЕНО» is a label for the КМ', () => {
     expect(p.labels).toEqual([expect.objectContaining({ label: 'posted', count: 1 })])
   })
