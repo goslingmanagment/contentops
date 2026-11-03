@@ -157,6 +157,15 @@ export async function autoAcceptGroup(
   if (aliased === drafts.length) {
     return channelId ? promoOfDuplicates(tx, model, group, channelId) : { kind: 'alias' }
   }
+  // A group of the import that already made its object takes no more files by itself: what
+  // comes to it later is a copy of a pack file from another root (`units.ts`), and its original
+  // waits in another group — it becomes an alias when that one is accepted (SPEC §6.2).
+  if (!channelId) {
+    const { rows: made } = await tx.execute(sql`
+      SELECT 1 FROM content_items
+       WHERE model_id = ${model.id}::uuid AND created_from_group_id = ${groupId}::uuid`)
+    if (made.length > 0) return { kind: 'waiting', reason: 'object_made' }
+  }
   if (drafts.some((d) => !d.ready)) return { kind: 'waiting', reason: 'not_ready' }
   if (!group.proposed_type) return queue(tx, model.id, groupId, 'needs_type')
   const number = await numberFor(tx, model.id, group.evidence.number)
