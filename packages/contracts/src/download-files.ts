@@ -23,7 +23,7 @@ export interface DeliveryOptions {
   uniq?: number | null
   /** Прежняя версия мастера («v1 · до правки»); без неё — текущая. */
   version?: number | null
-  /** Модель: у файла «Для фана» имя `lora-custom.mp4`. */
+  /** Модель: у файла «Для фана» имя `<модель>-custom.mp4`; без неё «Для фана» не выдаётся. */
   model?: string
 }
 
@@ -249,7 +249,9 @@ export function deliveryOf(
 ): Delivery {
   if (kind === 'fan') {
     const video = mainVideo(files)
-    const name = fanFileName(options.model ?? 'lora')
+    // The name is the model's (`ari-custom.mp4`): without the model there is no name to give.
+    if (!options.model) throw new Error('«Для фана»: the model is not given')
+    const name = fanFileName(options.model)
     const fan = video
       ? [{ role: 'master' as const, ordinal: null, name, file: video, note: null }]
       : []

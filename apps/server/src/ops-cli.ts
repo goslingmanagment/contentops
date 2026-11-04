@@ -13,7 +13,7 @@ import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
-import { opsAgent, opsContractor, opsPerson, opsPolicy, opsSwitch } from './ops-owner'
+import { opsAgent, opsContractor, opsGrant, opsPerson, opsPolicy, opsSwitch } from './ops-owner'
 import { smokeSetup } from './smoke/setup'
 
 /**
@@ -89,6 +89,7 @@ const USAGE = `usage:
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
   ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
   ops.js person <login> --name <имя> --role manager|reader --models <a,b>   (a temporary password once)
+  ops.js grant <login> --models <a,b>      (the models a person already there lacks)
   ops.js contractor <name> --model <m> [--channel <code>] [--contact <text>] [--format upload|master|compat]
   ops.js switch <integration> <switch>=on|off ...   (ydisk.lora scan=on, agents enabled=on)
   ops.js policy <key> <json|off> [--model <m>] [--page <p>] [--type PPV]   (thresholds, hub_ad_markers…)`
@@ -292,6 +293,20 @@ async function main(argv: string[]): Promise<number> {
           login,
           name: values.name,
           role: values.role,
+          models: values.models
+            .split(',')
+            .map((code) => code.trim())
+            .filter(Boolean),
+        }),
+      )
+      return 0
+    }
+    if (command === 'grant') {
+      const [login] = positionals
+      if (!login || !values.models) throw new Error(USAGE)
+      out(
+        await opsGrant(db, {
+          login,
           models: values.models
             .split(',')
             .map((code) => code.trim())
