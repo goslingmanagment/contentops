@@ -182,13 +182,27 @@ export const FIXTURE_DISK: LegacyListingEntry[] = [
   file('IMG_7707.mov', 900, { md5: 'b'.repeat(32) }),
 ]
 
-const packFile = (path: string, contentHash: string | null = null, size = 1000) => ({
+const packFile = (
+  path: string,
+  contentHash: string | null = null,
+  size = 1000,
+  extra: Partial<LegacyListingEntry> = {},
+) => ({
   path: `/${path}`,
   isDir: false,
   size,
   contentHash,
   createdAt: '2026-10-20T10:00:00+00:00',
+  ...extra,
 })
+
+/** `count` photos of a folder, `IMG_<first>.JPG` on, shot on `day` (EXIF) when it is given. */
+const photos = (folder: string, first: number, count: number, day: string | null = null) =>
+  Array.from({ length: count }, (_, i) =>
+    packFile(`${folder}/IMG_${first + i}.JPG`, `${folder}#${first + i}`, 1000, {
+      shotAt: day ? `${day}T12:00:00+00:00` : null,
+    }),
+  )
 
 /**
  * A fictional archive in the shapes of a Telegram-mirrored Dropbox (Ари's, 03.11.2026): an old
@@ -250,6 +264,25 @@ export const FIXTURE_PACKS: LegacyListingEntry[] = [
   packFile('5. Sextings/18.10.26 SXT-002 Белое бельё/SXT-002_01_pic01.jpg', 'x4'),
   packFile('5. Sextings/18.10.26 SXT-002 Белое бельё/SXT-002_02_clip01.mov', 'x5'),
   packFile('5. Sextings/12.10.26 пак №2/IMG_8101.JPG', 'x6'),
+  packFile('5. Sextings/12.10.26 пак №2/IMG_8102.MOV', 'x7'),
+  packFile('5. Sextings/12.10.26 пак №2/IMG_8103.MOV', 'x8'),
+  // What else the sextings of a mirror hold (Ари's, 03.11.2026): photo sets, a set with one
+  // stray clip, a copy from a computer, a collection over two years, the drop of one night with
+  // two shoots — none of them a sexting by its section alone (SPEC §6.3).
+  ...photos('5. Sextings/17.04.26 розовый халтер', 8301, 4, '2026-04-17'),
+  packFile('5. Sextings/09.04.26 лонгслив леггинсы/IMG_8310.MOV', 'x9'),
+  ...photos('5. Sextings/09.04.26 лонгслив леггинсы', 8311, 12, '2026-04-09'),
+  ...photos('5. Sextings/с мака 30.06', 8331, 3),
+  packFile('5. Sextings/11.03.26 архив тизеров 2025-26/IMG_8340.MOV', 'x10'),
+  ...photos('5. Sextings/11.03.26 архив тизеров 2025-26', 8341, 2),
+  packFile('5. Sextings/19.10.26/IMG_8350.MOV', 'x11'),
+  packFile('5. Sextings/19.10.26/IMG_8351.MOV', 'x12'),
+  ...photos('5. Sextings/19.10.26', 8352, 4, '2026-10-19'),
+  // Sets: one shoot is a set; photos two years apart are several shoots.
+  ...photos('4. Sets/17.04.26 гардеробная', 3301, 3, '2026-04-17'),
+  ...photos('4. Sets/20.04.26 красный топ', 3311, 2, '2026-04-20'),
+  ...photos('4. Sets/20.04.26 красный топ', 3313, 1, '2024-02-10'),
+  ...photos('6. Life/11.03.26 архив селфи 2025', 9101, 2),
   packFile('6. Life/31.10.26/IMG_0035.JPG', 'l1'),
   packFile('7. Монтажи/Агент/PPV-002/PPV-002_red-robe_pic01.jpg', 'p2-pic01'),
   packFile('7. Монтажи/Агент/PPV-002/PPV-002_red-robe_teaser__0m14s.mp4', 'p2-teaser'),

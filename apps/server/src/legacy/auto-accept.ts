@@ -8,6 +8,7 @@ import { acceptGroup } from '../intake/accept'
 import { acceptedDuplicate, applyDuplicate } from '../intake/fetch'
 import { fillShotOn } from '../intake/shot-date'
 import { linkCustom, orderForGroup } from './customs'
+import { askAboutGroup, type Doubt, doubtOfGroup } from './doubt'
 import { channelOf, importPacks, linkDuplicates } from './promo'
 import { collisions, numberUnits } from './review'
 
@@ -16,9 +17,10 @@ import { collisions, numberUnits } from './review'
  * спора в «Новое» не попадают»): a group of the import whose files are ready is accepted when
  * nothing about it is in dispute — its type is known from the section, and its old number, if
  * the name claims one, is settled: kept with no other folder on it, or decided by a person
- * (a new number, a typo). Anything else waits in a queue: «Разбор старого» for the number,
- * «Приехало» for a ◆ of acceptance. Fields of the claims go to the object with the origin
- * «импорт»; the claims point at it.
+ * (a new number, a typo). A folder without a number has only its section for a type: the import
+ * takes it only when its files agree with that type and make one shoot (`doubt.ts`). Anything
+ * else waits in a queue: «Разбор старого» for the number, «Приехало» for a ◆ of acceptance.
+ * Fields of the claims go to the object with the origin «импорт»; the claims point at it.
  */
 
 /** Who accepts: the import itself; the journal context names it. */
@@ -42,6 +44,7 @@ export interface UnitNumber {
 
 interface GroupRow extends Record<string, unknown> {
   id: string
+  grouping: string
   closed_at: string | null
   custom_order_id: string | null
   proposed_type: string | null
@@ -51,6 +54,7 @@ interface GroupRow extends Record<string, unknown> {
     number?: UnitNumber | null
     queue?: string
     promo?: { channel: string | null; folder: string }
+    doubt?: Doubt
   } | null
 }
 
@@ -118,7 +122,8 @@ export async function autoAcceptGroup(
   actor: Actor = IMPORT_ACTOR,
 ): Promise<AutoOutcome> {
   const { rows } = await tx.execute<GroupRow>(sql`
-    SELECT id, closed_at, custom_order_id, proposed_type, proposed_title, evidence FROM inbox_groups
+    SELECT id, grouping, closed_at, custom_order_id, proposed_type, proposed_title, evidence
+      FROM inbox_groups
      WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
   const group = rows[0]
   if (!group?.evidence?.legacy) return { kind: 'waiting', reason: 'not_legacy' }
@@ -171,6 +176,12 @@ export async function autoAcceptGroup(
   }
   if (drafts.some((d) => !d.ready)) return { kind: 'waiting', reason: 'not_ready' }
   if (!group.proposed_type) return queue(tx, model.id, groupId, 'needs_type')
+  // A new number by the import itself only where the files prove the type of the section and
+  // one shoot (SPEC §6.3); asked once — a person's answer, by its hand, is not asked again.
+  if (actor === IMPORT_ACTOR && !group.evidence.number && !group.evidence.doubt) {
+    const doubt = await doubtOfGroup(tx, model.id, group)
+    if (doubt) return askAboutGroup(tx, model.id, groupId, doubt)
+  }
   const number = await numberFor(tx, model.id, group.evidence.number)
   if ('queue' in number) return queue(tx, model.id, groupId, number.queue)
   // An old custom and its order (SPEC §6.3, `customs-match.ts`): one order — linked with the
@@ -224,7 +235,8 @@ export async function acceptKeepingLegacyNumber(
   body: AcceptCommand,
 ): Promise<AcceptResult> {
   const { rows } = await tx.execute<GroupRow>(sql`
-    SELECT id, closed_at, custom_order_id, proposed_type, proposed_title, evidence FROM inbox_groups
+    SELECT id, grouping, closed_at, custom_order_id, proposed_type, proposed_title, evidence
+      FROM inbox_groups
      WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
   const group = rows[0]
   const unit = group?.evidence?.legacy ? group.evidence.number : null

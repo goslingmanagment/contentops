@@ -178,6 +178,11 @@ export const DraftHintSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('other_model'), model: ModelCodeSchema, text: z.string() }),
   /** ◆ «Подставить монтаж в строку?»: the plan row as the upload saw it and as it is now. */
   z.object({ kind: z.literal('row_change'), was: z.string(), now: z.string() }),
+  /**
+   * ◆ «Что это?» on a folder of the old corpus without a number: why the import did not take it
+   * by its section (SPEC §6.3) — «Только фото — это сет?», «Несколько съёмок: …».
+   */
+  z.object({ kind: z.literal('import_doubt'), text: z.string() }),
 ])
 export type DraftHint = z.infer<typeof DraftHintSchema>
 

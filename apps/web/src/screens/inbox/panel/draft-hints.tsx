@@ -5,7 +5,11 @@ import { InfoSection } from '@contentops/ui/components/info-panel'
 type SimilarHint = Extract<DraftHint, { kind: 'similar' }>
 
 /** Эти подсказки стоят в блоке решения, а не в списке подсказок. */
-const IN_DECISION: ReadonlySet<DraftHint['kind']> = new Set(['other_model', 'row_change'])
+const IN_DECISION: ReadonlySet<DraftHint['kind']> = new Set([
+  'other_model',
+  'row_change',
+  'import_doubt',
+])
 
 interface DraftHintsProps {
   hints: readonly DraftHint[]

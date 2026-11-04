@@ -8,6 +8,7 @@ import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { lockOpenDrafts, rejectGroup, reopenGroup } from '../intake/accept'
 import {
+  answerType,
   chooseOrder,
   decide,
   mergeGroups,
@@ -160,6 +161,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             subjectLabel: group.title ?? id,
             after: body,
           })
+          if (body.type) await answerType(tx, model.id, [id])
           // A group that became a custom asks which order it is (SPEC §8.2).
           if (body.type === 'custom') await suggestOrders(tx, model.id, [id])
           if (body.type !== undefined || body.order_id !== undefined) {
@@ -366,6 +368,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             after: { type: body.type },
           })
           const typed = results.filter((result) => result.ok).map((result) => result.id)
+          await answerType(tx, model.id, typed)
           if (body.type === 'custom') await suggestOrders(tx, model.id, typed)
           await acceptAnswered(tx, model, actor, typed)
           return { results }

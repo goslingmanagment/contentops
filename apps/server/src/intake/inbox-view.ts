@@ -59,6 +59,8 @@ interface GroupRow extends Record<string, unknown> {
     was?: string
     now?: string
     legacy?: unknown
+    /** The question of the import on a folder without a number (`legacy/doubt.ts`). */
+    doubt?: { kind: string; text: string }
   } | null
   proposed_type: values.ContentType | null
   proposed_title: string | null
@@ -336,7 +338,9 @@ export function activeState(
   for (const draft of drafts) {
     if (draft.blocked_reason === 'video_in_set' && refused) continue
     const decision = draft.blocked_reason ? DECISION[draft.blocked_reason] : undefined
-    if (decision) return { state: decision, block: 'Сначала примите решение' }
+    // The import's question on the folder is the line: «Только фото — это сет?».
+    const asked = draft.blocked_reason === 'needs_type' ? group.evidence?.doubt?.text : undefined
+    if (decision) return { state: decision, block: asked ?? 'Сначала примите решение' }
   }
   if (refused) {
     return { state: { kind: 'decision', decision: refused.decision }, block: refused.message }
@@ -582,7 +586,12 @@ function view(
             ...extras.hints,
             { kind: 'row_change', was: group.evidence.was, now: group.evidence.now ?? '' },
           ]
-        : extras.hints,
+        : state.kind === 'decision' &&
+            state.decision === 'what_is_it' &&
+            group.evidence?.doubt &&
+            drafts.some((draft) => draft.blocked_reason === 'needs_type')
+          ? [{ kind: 'import_doubt', text: group.evidence.doubt.text }, ...extras.hints]
+          : extras.hints,
     files: files.map((file) => fileOf(model, file)),
     candidates: extras.candidates,
     archive_entries: null,
