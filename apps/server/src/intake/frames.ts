@@ -1,6 +1,7 @@
 import type { Queryable, Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { ApiProblem } from '../errors'
+import { phashSuggestDistance } from './phash'
 
 /**
  * A processed frame of a set (SPEC §6.1): it is bound to its source frame by the name the
@@ -83,12 +84,7 @@ export async function frameChoices(
   setItemId: string,
   draftSha: Buffer | null,
 ): Promise<FrameChoice[]> {
-  const { rows: limit } = await q.execute<{ value: unknown }>(sql`
-    SELECT value FROM policy_settings
-     WHERE key = 'phash_suggest_threshold' AND account_id IS NULL AND item_type IS NULL
-       AND (model_id IS NULL OR model_id = ${model.id}::uuid) AND value IS NOT NULL
-     ORDER BY model_id NULLS LAST LIMIT 1`)
-  const threshold = Number(limit[0]?.value)
+  const threshold = await phashSuggestDistance(q, model.id)
   const { rows } = await q.execute<{
     ordinal: number
     generation: string | null
@@ -121,7 +117,7 @@ export async function frameChoices(
         ratio: '3:4',
         url: row.generation ? `/api/v1/${model.code}/g/${row.generation}/thumb-640.webp` : null,
       },
-      similar: Number.isFinite(threshold) && row.distance !== null && row.distance <= threshold,
+      similar: threshold !== null && row.distance !== null && row.distance <= threshold,
     }
   })
 }
