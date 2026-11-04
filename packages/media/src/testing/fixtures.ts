@@ -66,7 +66,7 @@ const FILE: Record<FixtureName, string> = {
 }
 
 /** Bump with any change below: it re-keys the cache. */
-const GENERATOR_VERSION = 6
+const GENERATOR_VERSION = 7
 
 /** Neutral fixture metadata (no real place: the zero point). */
 export const FIXTURE_TAGS = {
@@ -481,11 +481,34 @@ class Generator {
       'aac',
       this.out('corrupt'),
     ])
-    // Two small damaged spots: decodes with errors and loses at most a couple of frames.
+    // Two damaged video frames: decodes with errors and loses at most a couple of frames. The
+    // damage starts at the slice header (after the 4-byte length and the NAL header), which the
+    // decoder always reports. A fixed share of the file did not: where it lands depends on the
+    // encoders' output, which changes with the CPU count (x264 threads) and the architecture
+    // (AAC), and on 8 cores the damaged bytes decoded silently.
+    const { stdout } = await runToolChecked(
+      this.paths.ffprobe,
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'packet=pos,size',
+        '-of',
+        'json',
+        this.out('corrupt'),
+      ],
+      { captureStdout: true },
+    )
+    const packets = (JSON.parse(stdout) as { packets: { pos: string; size: string }[] }).packets
     const bytes = await readFile(this.out('corrupt'))
     for (const at of [0.4, 0.6]) {
-      const from = Math.floor(bytes.length * at)
-      for (let i = from; i < from + 64; i++) bytes[i] = (bytes[i] as number) ^ 0x5a
+      const packet = packets[Math.floor(packets.length * at)]
+      if (!packet) throw new Error('corrupt fixture: no video packets')
+      const from = Number(packet.pos) + 5
+      const to = Math.min(from + 64, Number(packet.pos) + Number(packet.size))
+      for (let i = from; i < to; i++) bytes[i] = (bytes[i] as number) ^ 0x5a
     }
     await writeFile(this.out('corrupt'), bytes)
     await padToBitrate(this.out('corrupt'), 2, 16e6)
