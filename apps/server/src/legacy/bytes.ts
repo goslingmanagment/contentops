@@ -14,7 +14,7 @@ import { mediaKindOf } from '../intake/grouping'
 import { autoAcceptGroup, IMPORT_ACTOR } from './auto-accept'
 import { attachAcceptedCustoms } from './customs'
 import { readInputs } from './inputs'
-import { displayRoot, ROOTS } from './review'
+import { type DisplayRoot, displayRoot, ROOTS } from './review'
 import { type SnapshotEntry, type SnapshotWork, snapshotListing, snapshotOf } from './snapshot'
 import { type LegacyUnit, legacyUnits } from './units'
 
@@ -31,18 +31,22 @@ import { type LegacyUnit, legacyUnits } from './units'
 
 export const BYTES_DATASET = 'bytes'
 
-/** The order of the import (SPEC §6.3): PPV → секстинги → сеты → … → «Старый формат». */
-const ORDER = [
-  'PPV',
-  'Секстинги',
-  'Сеты',
-  'Кастомы',
-  'FYP',
-  'Остальное',
-  'Архивы',
-  'SMM',
-  '«Старый формат»',
+/**
+ * The order of the import (SPEC §6.3): PPV → секстинги → сеты → … → «Старый формат». The roots
+ * shown apart from «Остальное» (Монтажи, Лайф, Фото, BG) take its turn together with it.
+ */
+const ORDER: readonly (readonly DisplayRoot[])[] = [
+  ['PPV'],
+  ['Секстинги'],
+  ['Сеты'],
+  ['Кастомы'],
+  ['FYP'],
+  ['Монтажи', 'Лайф', 'Фото', 'BG', 'Остальное'],
+  ['Архивы'],
+  ['SMM'],
+  ['«Старый формат»'],
 ]
+const turnOf = (relative: string) => ORDER.findIndex((turn) => turn.includes(displayRoot(relative)))
 
 export interface BytesInput {
   /** Top folders of the old disk: `1. PPV`, `5. Sextings`. */
@@ -91,13 +95,12 @@ async function checkOrder(
   roots: readonly string[],
   parsed: ReadonlyMap<string, ParsedLegacyPath>,
 ): Promise<void> {
-  const wanted = Math.min(...roots.map((root) => ORDER.indexOf(displayRoot(root))))
-  const earlier = new Set(ORDER.slice(0, Math.max(0, wanted)))
+  const wanted = Math.min(...roots.map(turnOf))
   const pending = listing.filter(
     (e) =>
       !e.isDir &&
       !e.archiveEntry &&
-      earlier.has(displayRoot(e.relative)) &&
+      turnOf(e.relative) < wanted &&
       mediaKindOf(e.relative, e.mediaType ?? null) !== null &&
       !parsed.get(e.relative)?.context.notContent,
   )
@@ -107,13 +110,11 @@ async function checkOrder(
      WHERE model_id = ${snapshot.modelId}::uuid
        AND source_revision_id = ANY (${sql.param(pending.flatMap((e) => (e.revisionId ? [e.revisionId] : [])))}::uuid[])`)
   if ((rows[0]?.n ?? 0) < pending.length) {
-    const first = ORDER.find(
-      (root) => earlier.has(root) && pending.some((e) => displayRoot(e.relative) === root),
-    )
+    const [first] = [...pending].sort((a, b) => turnOf(a.relative) - turnOf(b.relative))
     throw new WorkError(
       'permanent',
       'import_order',
-      `порядок импорта (SPEC §6.3): сначала «${first}» — его файлы ещё не взяты`,
+      `порядок импорта (SPEC §6.3): сначала «${displayRoot(first?.relative ?? '')}» — его файлы ещё не взяты`,
     )
   }
 }
