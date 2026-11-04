@@ -108,12 +108,14 @@ const BLOCKED = new Set<string>(values.draftBlockedReasons)
 
 /**
  * One group: accepted, an alias of accepted bytes, waiting for its files, or left in a queue
- * with the reason on the group. Runs in a savepoint: a refusal changes nothing else.
+ * with the reason on the group. Runs in a savepoint: a refusal changes nothing else. `actor` —
+ * the import itself, or the person whose answer in «Приехало» settled the group.
  */
 export async function autoAcceptGroup(
   tx: Tx,
   model: ModelScope,
   groupId: string,
+  actor: Actor = IMPORT_ACTOR,
 ): Promise<AutoOutcome> {
   const { rows } = await tx.execute<GroupRow>(sql`
     SELECT id, closed_at, custom_order_id, proposed_type, proposed_title, evidence FROM inbox_groups
@@ -141,7 +143,9 @@ export async function autoAcceptGroup(
   if (drafts.length === 0) return { kind: 'waiting', reason: 'nothing_open' }
   // A file changed in the cloud after the snapshot (SPEC §6.3): the group goes on with the
   // current revision, marked «изменён после снимка»; the frozen one keeps its outcome aside.
-  if (await setAsideChanged(tx, model.id, groupId)) return autoAcceptGroup(tx, model, groupId)
+  if (await setAsideChanged(tx, model.id, groupId)) {
+    return autoAcceptGroup(tx, model, groupId, actor)
+  }
   const blocked = drafts.find((d) => d.blocked_reason)
   if (blocked) return { kind: 'queue', reason: blocked.blocked_reason as string }
   // The same bytes as an accepted file (two copies of one archive): an alias, not an object —
@@ -178,19 +182,12 @@ export async function autoAcceptGroup(
   if (order?.kind === 'ask') return queue(tx, model.id, groupId, 'ambiguous_order')
   try {
     const result = await tx.transaction(async (inner) => {
-      const accepted = await acceptGroup(inner, model, IMPORT_ACTOR, groupId, {
+      const accepted = await acceptGroup(inner, model, actor, groupId, {
         as: 'default',
         legacy: { number: number.number, promoChannelId: channelId },
       })
       if (order?.kind === 'link') {
-        await linkCustom(
-          inner,
-          model,
-          accepted.item_id,
-          order.candidate,
-          order.evidence,
-          IMPORT_ACTOR,
-        )
+        await linkCustom(inner, model, accepted.item_id, order.candidate, order.evidence, actor)
       }
       return accepted
     })
@@ -442,6 +439,33 @@ export async function autoAcceptForDraft(tx: Tx, modelId: string, draftId: strin
   const row = rows[0]
   if (!row) return null
   return autoAcceptGroup(tx, { id: modelId, code: row.code, name: row.title }, row.group_id)
+}
+
+/**
+ * A person's answer in «Приехало» to groups of the import (a ◆, «Разделить», «Слить», the type,
+ * the order): what is no longer in dispute goes at once, by their hand, as the import would
+ * take it by itself (SPEC §6.3), and so do the groups split from it. «Новое» shows the old
+ * corpus only with something for a person, so a settled group waiting for the next run of the
+ * import was lost to its screen. What is still disputed stays where it shows — a new ◆ here, a
+ * number in «Разбор старого»; files not ready yet go when they are (`autoAcceptForDraft`).
+ */
+export async function acceptAnswered(
+  tx: Tx,
+  model: ModelScope,
+  actor: Actor,
+  groupIds: readonly string[],
+): Promise<void> {
+  if (groupIds.length === 0) return
+  const ids = [...groupIds]
+  const { rows } = await tx.execute<{ id: string }>(sql`
+    SELECT g.id FROM inbox_groups g
+     WHERE g.model_id = ${model.id}::uuid AND g.closed_at IS NULL AND g.evidence ? 'legacy'
+       AND (g.id = ANY (${sql.param(ids)}::uuid[])
+            OR g.evidence ->> 'split_from' = ANY (${sql.param(ids)}::text[]))
+     ORDER BY g.id = ANY (${sql.param(ids)}::uuid[]) DESC, g.created_at, g.id`)
+  for (const row of rows) {
+    await tx.transaction((inner) => autoAcceptGroup(inner, model, row.id, actor))
+  }
 }
 
 /** Groups of the import over these source objects (a decided number): try them again. */

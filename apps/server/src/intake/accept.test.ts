@@ -397,6 +397,70 @@ describe('accept (schema §5, §9.3)', () => {
     expect(rows[0]?.n).toBe(0)
   })
 
+  it('a ◆ answered on a group of the import is accepted at once, not lost out of «Новое»', async () => {
+    // A set of the old disk with a video: the import refused it and marked the ◆ (auto-accept).
+    const root = `${LORA_ROOT}/4. Sets/Старый пляж`
+    h.dropbox.tree.addFile(`${root}/01.jpg`, 5201)
+    h.dropbox.tree.addFile(`${root}/clip.mp4`, 5202)
+    await scan()
+    await fetchAll()
+    const photo = await groupOfPath(`${root}/01.jpg`)
+    const video = await groupOfPath(`${root}/clip.mp4`)
+    expect(video.group_id).toBe(photo.group_id)
+    await makeReady(photo.draft_id)
+    await makeReady(video.draft_id)
+    await withActorTx(
+      h.db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test', requestId: randomUUID() },
+      async (tx) => {
+        await tx.execute(sql`
+          UPDATE inbox_groups
+             SET proposed_type = 'SET',
+                 evidence = coalesce(evidence, '{}'::jsonb)
+                   || jsonb_build_object('legacy', jsonb_build_object('unit', '4. Sets/Старый пляж'),
+                                         'queue', 'video_in_set')
+           WHERE id = ${photo.group_id}::uuid`)
+        await tx.execute(sql`
+          UPDATE inbox_drafts SET blocked_reason = 'video_in_set'
+           WHERE group_id = ${photo.group_id}::uuid`)
+      },
+    )
+    const listed = async (state: string) =>
+      (
+        await call(app, { method: 'GET', url: `/api/v1/lora/inbox?state=${state}`, as: owner })
+      ).json().items as { id: string; state: { kind: string; item_id?: string; by?: object } }[]
+    expect((await listed('active')).find((g) => g.id === photo.group_id)?.state).toEqual({
+      kind: 'decision',
+      decision: 'video_in_set',
+    })
+
+    const decided = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${photo.group_id}:decide`,
+      as: owner,
+      key: newKey(),
+      body: { decision: 'video_in_set', destination: 'raw' },
+    })
+    expect(decided.statusCode, decided.body).toBe(200)
+    // Nothing is in dispute any more: the set goes by the hand of the person who answered,
+    // and the video with it as raw material (SPEC §6.3), both in «Решённое».
+    expect(decided.json().state).toMatchObject({
+      kind: 'accepted',
+      how: 'new',
+      by: { type: 'person', name: 'Владелец' },
+    })
+    const accepted = await listed('accepted')
+    const set = accepted.find((g) => g.id === photo.group_id)
+    expect(set?.state.item_id).toMatch(/^SET-/)
+    const { rows } = await h.db.execute<{ group_id: string }>(sql`
+      SELECT group_id FROM inbox_drafts WHERE id = ${video.draft_id}::uuid`)
+    const raw = accepted.find((g) => g.id === rows[0]?.group_id)
+    expect(raw?.state.item_id).toMatch(/^RAW-/)
+    const active = (await listed('active')).map((g) => g.id)
+    expect(active).not.toContain(photo.group_id)
+    expect(active).not.toContain(rows[0]?.group_id)
+  })
+
   it('nobody answered about the second person: the object stays «не проверено» (SPEC §7)', async () => {
     const flagAfter = async (name: string, answer: boolean | null) => {
       const path = `${LORA_ROOT}/6. Life/Второй человек ${name}/01.jpg`

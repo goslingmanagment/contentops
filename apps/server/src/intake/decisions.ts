@@ -424,8 +424,13 @@ export async function decide(
           reason: 'no_dispute',
         })
       }
-      if (body.keep) await clear('id_collision')
-      else await rejectGroup(tx, model, actor, groupId, 'номер занят другой папкой')
+      if (body.keep) {
+        await clear('id_collision')
+        // The old name's number is not claimed again: the next acceptance would hit it anew.
+        await tx.execute(sql`
+          UPDATE inbox_groups SET evidence = evidence - 'number'
+           WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid AND evidence ? 'number'`)
+      } else await rejectGroup(tx, model, actor, groupId, 'номер занят другой папкой')
       break
     }
     case 'which_frame': {

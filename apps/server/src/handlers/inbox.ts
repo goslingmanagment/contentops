@@ -20,7 +20,7 @@ import { ITEM_TO_DB_TYPE, inboxGroup, inboxList } from '../intake/inbox-view'
 import { suggestOrders } from '../intake/order-suggest'
 import { dropStagedOfGroup } from '../intake/staging'
 import { createUpload } from '../intake/upload'
-import { acceptKeepingLegacyNumber } from '../legacy/auto-accept'
+import { acceptAnswered, acceptKeepingLegacyNumber } from '../legacy/auto-accept'
 import { findChannel } from '../promo/views'
 import type { Services } from '../services'
 
@@ -162,6 +162,9 @@ export function inboxHandlers(services: Services): HandlerRegistry {
           })
           // A group that became a custom asks which order it is (SPEC §8.2).
           if (body.type === 'custom') await suggestOrders(tx, model.id, [id])
+          if (body.type !== undefined || body.order_id !== undefined) {
+            await acceptAnswered(tx, model, actor, [id])
+          }
           return inboxGroup(tx, model, id)
         }),
 
@@ -255,7 +258,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
         }),
 
       merge: ({ body, ctx }) =>
-        command({ ctx, body }, async (tx) => {
+        command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx)
           const into = await mergeGroups(tx, model, body.group_ids)
           await logAction(tx, {
@@ -265,13 +268,15 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             subjectLabel: 'Слито',
             after: { Групп: String(body.group_ids.length) },
           })
+          await acceptAnswered(tx, model, actor, [into])
           return inboxGroup(tx, model, into)
         }),
 
       split: ({ params, body, ctx }) =>
-        command({ ctx, body }, async (tx) => {
+        command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx)
-          const created = await splitGroup(tx, model, groupId(params.group), body.file_keys)
+          const id = groupId(params.group)
+          const created = await splitGroup(tx, model, id, body.file_keys)
           await logAction(tx, {
             modelId: model.id,
             subjectKind: 'inbox_groups',
@@ -279,6 +284,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             subjectLabel: 'Разделено',
             after: { Файлов: String(body.file_keys.length) },
           })
+          await acceptAnswered(tx, model, actor, [id])
           return inboxGroup(tx, model, created)
         }),
 
@@ -294,6 +300,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             subjectLabel: 'Решение',
             after: body,
           })
+          await acceptAnswered(tx, model, actor, [id])
           return inboxGroup(tx, model, id)
         }),
 
@@ -337,7 +344,7 @@ export function inboxHandlers(services: Services): HandlerRegistry {
         }),
 
       setType: ({ body, ctx }) =>
-        command({ ctx, body }, async (tx) => {
+        command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx)
           const results = []
           for (const raw of body.group_ids) {
@@ -358,10 +365,9 @@ export function inboxHandlers(services: Services): HandlerRegistry {
             subjectLabel: `${results.filter((result) => result.ok).length} групп`,
             after: { type: body.type },
           })
-          if (body.type === 'custom') {
-            const typed = results.filter((result) => result.ok).map((result) => result.id)
-            await suggestOrders(tx, model.id, typed)
-          }
+          const typed = results.filter((result) => result.ok).map((result) => result.id)
+          if (body.type === 'custom') await suggestOrders(tx, model.id, typed)
+          await acceptAnswered(tx, model, actor, typed)
           return { results }
         }),
 

@@ -620,24 +620,34 @@ describe('the reconciliation with the snapshot', () => {
   })
 })
 
-describe('«Принять» by a person, a group of the old corpus', () => {
-  it('keeps the number of the old name and settles its claims, not the next of the counter', async () => {
+describe('«Разделить» by a person, a group of the old corpus', () => {
+  it('both parts go at once: the number of the old name kept and its claims settled', async () => {
     const path = `disk:${PATH('1. PPV/Bundles/[PPV-071]_slow_strip_tights_23.07.26')}`
     const { rows } = await h.db.execute<{ group_id: string; id: string }>(sql`
       SELECT d.group_id, d.id FROM inbox_drafts d JOIN source_revisions r ON r.id = d.source_revision_id
        WHERE r.frozen_path = ${`${path}/c.mov`}`)
     const { group_id, id } = rows[0] as { group_id: string; id: string }
-    const post = (url: string, body: object) =>
-      call(app, { method: 'POST', url, as: owner, key: newKey(), body })
-    const split = await post(`/api/v1/lora/inbox/groups/${group_id}:split`, { file_keys: [id] })
+    const split = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${group_id}:split`,
+      as: owner,
+      key: newKey(),
+      body: { file_keys: [id] },
+    })
     expect(split.statusCode).toBe(201)
-    const { rows: taken } = await h.db.execute<{ number: unknown }>(sql`
-      SELECT g.evidence -> 'number' AS number FROM inbox_groups g
-        JOIN inbox_drafts d ON d.group_id = g.id WHERE d.id = ${id}::uuid`)
-    expect(taken[0]?.number).toBeNull()
-    await readyAll()
-    const accepted = await post(`/api/v1/lora/inbox/groups/${group_id}:accept`, { as: 'default' })
-    expect(accepted.json()).toMatchObject({ item_id: 'PPV-071' })
+    // The split answers «Видео больше двух»: nothing is in dispute, neither part waits out of
+    // sight for the next run of the import — the person's hand accepts both (SPEC §6.3).
+    expect(split.json().state).toMatchObject({ kind: 'accepted', item_id: 'PPV-074' })
+    const group = await call(app, {
+      method: 'GET',
+      url: `/api/v1/lora/inbox/groups/${group_id}`,
+      as: owner,
+    })
+    expect(group.json().state).toMatchObject({
+      kind: 'accepted',
+      item_id: 'PPV-071',
+      by: { type: 'person' },
+    })
     const { rows: claims } = await h.db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM legacy_claims c JOIN content_items i ON i.id = c.resolved_item_id
        WHERE c.claim_kind = 'number' AND public_item_id(i.type, i.number) = 'PPV-071'`)
