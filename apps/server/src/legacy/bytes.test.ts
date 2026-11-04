@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type Db, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
-import { type LegacyListingEntry, planLegacyImport, relativePath } from '@contentops/legacy'
+import { type LegacyListingEntry, planLegacyImport } from '@contentops/legacy'
 import {
   FIXTURE_PACKS,
   FIXTURE_PACKS_NOT_CONTENT,
@@ -24,11 +24,11 @@ import { call, newKey, signIn } from '../testing/server'
 import { unpackArchiveHandler } from './archive'
 import { autoAcceptForDraft } from './auto-accept'
 import { importBytes } from './bytes'
+import { snapshotListing } from './fixture-disk'
 import { writeInputs } from './inputs'
 import { enqueueImport } from './parse'
 import { classify, type ReconcileReport, type Row } from './reconcile'
 import { releaseMarkdown, releaseReport } from './release'
-import type { SnapshotEntry } from './snapshot'
 import { snapshotOf } from './snapshot'
 import { freezeDisk, plantDisk, runImport, runQueued, zipOf } from './testing'
 import { legacyUnits } from './units'
@@ -507,15 +507,40 @@ describe('5. Sextings and archives', () => {
     })
     expect(split.statusCode, `${featureGroup} ${split.body}`).toBe(200)
     await readyAll()
-    const sxt = (await items()).filter((i) => i.id.startsWith('SXT'))
-    expect(sxt).toEqual([
+    const sxt = () => items().then((all) => all.filter((i) => i.id.startsWith('SXT')))
+    expect(await sxt()).toEqual([
       { id: 'SXT-010', origin: 'import', files: 1 },
       { id: 'SXT-011', origin: 'import', files: 2 },
       // Its 2.jpg changed after the snapshot: the current revision goes in its place.
       { id: 'SXT-012', origin: 'import', files: 2 },
-      // extra.zip: no number, the counter; its copy is an alias of the same bytes.
-      { id: 'SXT-013', origin: 'import', files: 2 },
     ])
+    // extra.zip: no number and only photos — not a sexting by its section alone (SPEC §6.3):
+    // no new number by the import, ◆ «Что это?» with the question in «Приехало».
+    const { rows: extra } = await h.db.execute<{ id: string }>(sql`
+      SELECT DISTINCT group_id AS id FROM inbox_drafts WHERE path LIKE '%/extra.zip/%'`)
+    const extraGroup = extra[0]?.id as string
+    const asked = await call(app, {
+      method: 'GET',
+      url: `/api/v1/lora/inbox/groups/${extraGroup}`,
+      as: owner,
+    })
+    expect(asked.json()).toMatchObject({
+      state: { kind: 'decision', decision: 'what_is_it' },
+      accept_block: 'Только фото — это сет?',
+      hints: [{ kind: 'import_doubt', text: 'Только фото — это сет?' }],
+    })
+    // A person's answer accepts it at once, by their hand, with the next number of the counter.
+    const answered = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/inbox/groups/${extraGroup}:decide`,
+      as: owner,
+      key: newKey(),
+      body: { decision: 'what_is_it', type: 'sexting' },
+    })
+    expect(answered.statusCode, answered.body).toBe(200)
+    expect(answered.json().state).toMatchObject({ kind: 'accepted', item_id: 'SXT-013' })
+    // Its copy asked the same; the accepted bytes make it an alias at once (SPEC §6.2).
+    expect((await sxt()).at(-1)).toEqual({ id: 'SXT-013', origin: 'import', files: 2 })
     const { rows } = await h.db.execute<{ outcome: string; n: number }>(sql`
       SELECT outcome, count(*)::int AS n FROM inbox_drafts
        WHERE path LIKE '%extra%' GROUP BY outcome ORDER BY outcome`)
@@ -699,37 +724,7 @@ describe('«Можно освобождать» (SPEC §12.2)', () => {
  * wait for a person.
  */
 describe('units of a mirrored archive', () => {
-  const listing: SnapshotEntry[] = []
-  const byPath = new Map<string, SnapshotEntry>()
-  for (const entry of FIXTURE_PACKS) {
-    const relative = relativePath(entry.path)
-    const row = {
-      ...entry,
-      path: relative,
-      relative,
-      raw: entry.path,
-      objectId: `obj:${relative}`,
-      revisionId: `rev:${relative}`,
-      resourceId: `id:${relative}`,
-    }
-    listing.push(row)
-    byPath.set(relative, row)
-    const parts = relative.split('/')
-    for (let n = 1; n < parts.length; n++) {
-      const dir = parts.slice(0, n).join('/')
-      if (byPath.has(dir)) continue
-      const folder = {
-        path: dir,
-        relative: dir,
-        raw: `/${dir}`,
-        isDir: true,
-        objectId: `obj:${dir}`,
-        revisionId: null,
-      }
-      listing.push(folder)
-      byPath.set(dir, folder)
-    }
-  }
+  const { listing, byPath } = snapshotListing(FIXTURE_PACKS)
   const plan = planLegacyImport(listing, { notContent: FIXTURE_PACKS_NOT_CONTENT })
   const parsed = new Map(plan.entries.map((e) => [e.path, e]))
   const media = listing.filter((e) => !e.isDir && mediaKindOf(e.relative, null) !== null)

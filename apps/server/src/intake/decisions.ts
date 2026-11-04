@@ -339,6 +339,19 @@ export async function chooseOrder(
        AND blocked_reason = 'ambiguous_order'`)
 }
 
+/**
+ * A type a person chose answers ◆ «Что это?» (`needs_type`) wherever it is chosen: the ◆ itself,
+ * the field «Тип» of the panel or «Тип» of a batch. The import's question on a group of the old
+ * corpus (`legacy/doubt.ts`) is settled by it too.
+ */
+export async function answerType(tx: Tx, modelId: string, groupIds: readonly string[]) {
+  if (groupIds.length === 0) return
+  await tx.execute(sql`
+    UPDATE inbox_drafts SET blocked_reason = NULL, updated_at = now(), row_version = row_version + 1
+     WHERE model_id = ${modelId}::uuid AND group_id = ANY (${sql.param([...groupIds])}::uuid[])
+       AND blocked_reason = 'needs_type' AND state <> 'resolved'`)
+}
+
 /** Answers to ◆ «нужно решение». */
 export async function decide(
   tx: Tx,
@@ -361,7 +374,7 @@ export async function decide(
       await tx.execute(sql`
         UPDATE inbox_groups SET proposed_type = ${ITEM_TO_DB_TYPE[body.type]}
          WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
-      await clear('needs_type')
+      await answerType(tx, model.id, [groupId])
       if (body.type === 'custom') await suggestOrders(tx, model.id, [groupId])
       break
     case 'which_order':

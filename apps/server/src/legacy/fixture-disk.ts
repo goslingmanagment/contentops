@@ -1,9 +1,10 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { LegacyListingEntry } from '@contentops/legacy'
+import { type LegacyListingEntry, relativePath } from '@contentops/legacy'
 import type { FakeTree } from '@contentops/sources/testing'
 import { writeZip } from '../media/zip'
+import type { SnapshotEntry } from './snapshot'
 
 /**
  * A fictional old disk on the fake Yandex Disk (PLAN этап 3: fictional names in the shapes of
@@ -54,4 +55,46 @@ export function plantDisk(
       ...(entry.shotAt ? { shotAt: new Date(entry.shotAt) } : {}),
     })
   }
+}
+
+/**
+ * A listing as a snapshot of it reads (`snapshot.ts`): the files with their ids and every folder
+ * above them, by root-relative path — the input of the units of the dry run.
+ */
+export function snapshotListing(entries: readonly LegacyListingEntry[]): {
+  listing: SnapshotEntry[]
+  byPath: Map<string, SnapshotEntry>
+} {
+  const listing: SnapshotEntry[] = []
+  const byPath = new Map<string, SnapshotEntry>()
+  for (const entry of entries) {
+    const relative = relativePath(entry.path)
+    const row = {
+      ...entry,
+      path: relative,
+      relative,
+      raw: entry.path,
+      objectId: `obj:${relative}`,
+      revisionId: `rev:${relative}`,
+      resourceId: `id:${relative}`,
+    }
+    listing.push(row)
+    byPath.set(relative, row)
+    const parts = relative.split('/')
+    for (let n = 1; n < parts.length; n++) {
+      const dir = parts.slice(0, n).join('/')
+      if (byPath.has(dir)) continue
+      const folder = {
+        path: dir,
+        relative: dir,
+        raw: `/${dir}`,
+        isDir: true,
+        objectId: `obj:${dir}`,
+        revisionId: null,
+      }
+      listing.push(folder)
+      byPath.set(dir, folder)
+    }
+  }
+  return { listing, byPath }
 }

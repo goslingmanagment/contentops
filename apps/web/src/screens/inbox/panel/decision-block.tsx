@@ -68,6 +68,8 @@ function WhichOrder({ group, pending, decide }: DecisionProps) {
 function WhatIsIt({ group, now, pending, decide }: DecisionProps) {
   const [file] = group.files
   const cloud = useSourceName(useCurrentModel().code)
+  // Папка старого диска без номера: почему импорт не принял её по разделу сам (SPEC §6.3).
+  const doubt = findHint(group.hints, 'import_doubt')
   const facts = [
     groupOrigin(group, cloud),
     file ? `Имя: ${file.file_name}` : null,
@@ -75,6 +77,7 @@ function WhatIsIt({ group, now, pending, decide }: DecisionProps) {
   ].filter((fact) => fact !== null)
   return (
     <InfoSection title="Что это?">
+      {doubt ? <p className="font-medium text-sm">{doubt.text}</p> : null}
       <ul className="flex flex-col gap-0.5 text-sm">
         {facts.map((fact) => (
           <li key={fact}>{fact}</li>
