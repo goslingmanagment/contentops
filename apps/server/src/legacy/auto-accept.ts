@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import { acceptGroup } from '../intake/accept'
-import { acceptedDuplicate, resolveAlias } from '../intake/fetch'
+import { acceptedDuplicate, applyDuplicate } from '../intake/fetch'
 import { fillShotOn } from '../intake/shot-date'
 import { linkCustom, orderForGroup } from './customs'
 import { channelOf, importPacks, linkDuplicates } from './promo'
@@ -144,15 +144,14 @@ export async function autoAcceptGroup(
   if (await setAsideChanged(tx, model.id, groupId)) return autoAcceptGroup(tx, model, groupId)
   const blocked = drafts.find((d) => d.blocked_reason)
   if (blocked) return { kind: 'queue', reason: blocked.blocked_reason as string }
-  // The same bytes as an accepted file (two copies of one archive): an alias, not an object.
+  // The same bytes as an accepted file (two copies of one archive): an alias, not an object —
+  // except custom ↔ PPV, two objects over the same bytes (SPEC §6.1 p. 1).
   let aliased = 0
   for (const draft of drafts) {
     if (!draft.sha) continue
     const dup = await acceptedDuplicate(tx, model.id, draft.sha)
-    if (dup) {
-      await resolveAlias(tx, model.id, draft.id, dup, null)
-      aliased += 1
-    }
+    const twin = { id: draft.id, type: group.proposed_type, source_object_id: null }
+    if (dup && (await applyDuplicate(tx, model.id, twin, dup)) === 'alias') aliased += 1
   }
   if (aliased === drafts.length) {
     return channelId ? promoOfDuplicates(tx, model, group, channelId) : { kind: 'alias' }

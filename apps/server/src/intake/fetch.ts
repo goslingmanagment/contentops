@@ -357,7 +357,7 @@ async function acceptedHolder(
  * except custom ↔ PPV, where the draft goes on to a new object over the same bytes and the
  * link stays a candidate (SPEC §6.1 p. 1).
  */
-async function applyDuplicate(
+export async function applyDuplicate(
   tx: Tx,
   modelId: string,
   draft: { id: string; type: string | null; source_object_id: string | null },

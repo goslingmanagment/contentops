@@ -16,6 +16,7 @@ import { bindGenerations } from '../media/renditions'
 import { lockBlobForReference } from '../media/storage-ops'
 import { completeRevision, markDeliveredParts } from '../orders/writes'
 import { aliasOpenDuplicates, resolveAlias } from './fetch'
+import { type ExportRole, exportRoleOf, type PackNumber } from './grouping'
 import { appendRefusal, newObjectRefusal } from './refusal'
 import { fillShotOn, shotOnOfDrafts } from './shot-date'
 
@@ -124,6 +125,8 @@ interface GroupRow extends Record<string, unknown> {
   /** «Канал ▾» and «Подборка ▾» of a promo pack (DESIGN §4.8); no collection — a new one. */
   proposed_channel_id: string | null
   proposed_collection_id: string | null
+  /** The number the folder's name gives (`PPV-018 Название`, discovery's `evidence.pack`). */
+  pack: PackNumber | null
 }
 
 interface DraftRow extends Record<string, unknown> {
@@ -161,6 +164,7 @@ export async function lockGroupForDecision(
     SELECT g.id, g.source_id, g.proposed_type, g.proposed_title, g.proposed_title_en,
            g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
            g.has_second_person, g.custom_order_id, g.proposed_channel_id, g.proposed_collection_id,
+           g.evidence -> 'pack' AS pack,
            (SELECT i.id FROM content_items i
              WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_item_id
       FROM inbox_groups g
@@ -199,48 +203,158 @@ export async function lockOpenDrafts(
   return rows
 }
 
-/** Roles of the files of a new object by its type (naming §3, `values.rolesByType`). */
-function rolesFor(type: DbType, drafts: readonly DraftRow[], promo = false): Map<string, Role> {
+/** A role the file asks for: a person's choice on the screen, else its export name. */
+interface WantedRole {
+  role: Role
+  ordinal: number | null
+  /** `_NN_` of an export name: the place in the order of showing. */
+  position: number | null
+  /** The export name says it: the file takes its place in the order of the names. */
+  named: boolean
+}
+
+const VIDEO_ROLES = new Set<Role>(['master', 'teaser', 'clip'])
+const PHOTO_ROLES = new Set<Role>(['pic', 'ed', 'thumb'])
+
+function fileName(draft: DraftRow): string {
+  return (draft.client_filename ?? draft.path ?? '').split('/').at(-1) ?? ''
+}
+
+/**
+ * Roles the files of a new object ask for (SPEC §6.3, naming §5): the role a person set on the
+ * screen, else the one the export name of the file — or of a twin with its bytes — says
+ * (`PPV-018_slug_teaser__0m14s.mp4`, `SXT-002_04_clip01.mov`). Only a role the type owns and the
+ * file's media takes counts; a single role (`master`, `teaser`) and a numbered one (`pic07`)
+ * go to the first file that asks for it.
+ */
+function wantedRoles(
+  type: DbType,
+  files: readonly DraftRow[],
+  twins: readonly { draft: DraftRow; of: DraftRow }[],
+): Map<string, WantedRole> {
+  const named = new Map<string, ExportRole>()
+  for (const draft of [...files, ...twins.map((twin) => twin.draft)]) {
+    const role = exportRoleOf(fileName(draft))
+    const keeper = twins.find((twin) => twin.draft === draft)?.of ?? draft
+    if (role && !named.has(keeper.id)) named.set(keeper.id, role)
+  }
+  const wanted = new Map<string, WantedRole>()
+  const taken = new Set<string>()
+  for (const draft of files) {
+    const name = named.get(draft.id)
+    const role = draft.proposed_role ?? name?.role ?? null
+    if (!role || !rolesFits(type, role)) continue
+    const video = draft.media_kind === 'video'
+    if ((VIDEO_ROLES.has(role) && !video) || (PHOTO_ROLES.has(role) && video)) continue
+    const fromName = draft.proposed_role === null || draft.proposed_role === name?.role
+    const ordinal = ORDINAL_ROLES.has(role) && fromName ? (name?.ordinal ?? null) : null
+    const slot = ORDINAL_ROLES.has(role) ? (ordinal === null ? null : `${role}${ordinal}`) : role
+    if (slot !== null && taken.has(slot)) continue
+    if (slot !== null) taken.add(slot)
+    wanted.set(draft.id, {
+      role,
+      ordinal,
+      position: fromName ? (name?.position ?? null) : null,
+      named: fromName && name !== undefined,
+    })
+  }
+  return wanted
+}
+
+/** Files that name their place go first in that order: position, role, number of the role. */
+const ROLE_RANK: Role[] = ['master', 'teaser', 'pic', 'clip', 'raw', 'ed', 'thumb', 'cap']
+
+function byWantedOrder(wanted: ReadonlyMap<string, WantedRole>) {
+  const rank = (draft: DraftRow): [number, number, number, number] => {
+    const one = wanted.get(draft.id)
+    if (!one?.named) return [1, 0, 0, 0]
+    return [0, one.position ?? 0, ROLE_RANK.indexOf(one.role), one.ordinal ?? 0]
+  }
+  return (left: DraftRow, right: DraftRow) => {
+    const a = rank(left)
+    const b = rank(right)
+    for (let i = 0; i < a.length; i++) {
+      const delta = (a[i] as number) - (b[i] as number)
+      if (delta !== 0) return delta
+    }
+    return 0
+  }
+}
+
+/**
+ * Roles of the files of a new object by its type (naming §3, `values.rolesByType`): first what
+ * the files ask for (`wantedRoles`), then the rest by the rule of the type — the largest video
+ * of a PPV is its master, the next its teaser.
+ */
+function rolesFor(
+  type: DbType,
+  drafts: readonly DraftRow[],
+  promo = false,
+  wanted: ReadonlyMap<string, WantedRole> = new Map(),
+): Map<string, Role> {
   const videos = drafts.filter((draft) => draft.media_kind === 'video')
   const photos = drafts.filter((draft) => draft.media_kind !== 'video')
   const roles = new Map<string, Role>()
-  const bySize = [...videos].sort((a, b) => Number(b.byte_size ?? 0) - Number(a.byte_size ?? 0))
   const refused = newObjectRefusal(type, videos.length, photos.length)
   if (refused) throw blocked(refused.reason, refused.message)
+  if (type === 'PRM' && !promo) throw blocked('promo_channel', 'Сначала выберите канал')
+  for (const [id, one] of wanted) roles.set(id, one.role)
+  const taken = new Set(roles.values())
+  const restVideos = videos.filter((draft) => !roles.has(draft.id))
+  const restPhotos = photos.filter((draft) => !roles.has(draft.id))
+  const bySize = [...restVideos].sort((a, b) => Number(b.byte_size ?? 0) - Number(a.byte_size ?? 0))
   switch (type) {
-    case 'PPV':
-      for (const [index, draft] of bySize.entries()) {
-        roles.set(draft.id, index === 0 ? 'master' : 'teaser')
-      }
-      for (const draft of photos) roles.set(draft.id, 'pic')
+    case 'PPV': {
+      const free = (['master', 'teaser'] as const).filter((role) => !taken.has(role))
+      for (const [index, draft] of bySize.entries()) roles.set(draft.id, free[index] ?? 'teaser')
+      for (const draft of restPhotos) roles.set(draft.id, 'pic')
       break
+    }
     case 'CUS':
-      for (const draft of videos) roles.set(draft.id, 'master')
-      for (const draft of photos) roles.set(draft.id, 'pic')
+      for (const draft of restVideos) roles.set(draft.id, 'master')
+      for (const draft of restPhotos) roles.set(draft.id, 'pic')
       break
     case 'FYP':
-      roles.set(videos[0]?.id as string, 'master')
+      if (restVideos[0]) roles.set(restVideos[0].id, 'master')
       break
     case 'SET':
-      for (const draft of photos) roles.set(draft.id, 'raw')
+      for (const draft of restPhotos) roles.set(draft.id, 'raw')
       break
     case 'SXT':
     case 'LIFE':
-      for (const draft of videos) roles.set(draft.id, 'clip')
-      for (const draft of photos) roles.set(draft.id, 'pic')
-      break
-    case 'RAW':
-      for (const draft of drafts) roles.set(draft.id, 'raw')
-      break
     case 'PRM':
       // A collection of its channel (SPEC §6.3, §7.1): a folder of `9. SMM`, a past one of the
-      // old disk, or a pack the KM gave a channel.
-      if (!promo) throw blocked('promo_channel', 'Сначала выберите канал')
-      for (const draft of videos) roles.set(draft.id, 'clip')
-      for (const draft of photos) roles.set(draft.id, 'pic')
+      // old disk, or a pack the KM gave a channel — its own files are clips and photos.
+      for (const draft of restVideos) roles.set(draft.id, 'clip')
+      for (const draft of restPhotos) roles.set(draft.id, 'pic')
+      break
+    case 'RAW':
+      for (const draft of [...restVideos, ...restPhotos]) roles.set(draft.id, 'raw')
       break
   }
   return roles
+}
+
+/**
+ * The number a pack's name gives (SPEC §6.4, `PPV-018 Название`): kept while the counter has not
+ * reached it — whoever named the pack took the next number; a number the counter already gave
+ * or reserved goes to the counter's next, and the journal says the name's number was taken.
+ */
+async function packNumber(
+  tx: Tx,
+  modelId: string,
+  type: DbType,
+  pack: PackNumber | null,
+): Promise<{ number: number | null; taken: string | null }> {
+  if (!pack || pack.type !== type) return { number: null, taken: null }
+  const { rows } = await tx.execute<{ next: number }>(sql`
+    SELECT next_number AS next FROM id_counters
+     WHERE model_id = ${modelId}::uuid AND type = ${type} AND legacy_reserved_at IS NOT NULL
+     FOR UPDATE`)
+  const next = rows[0]?.next
+  if (next === undefined) return { number: null, taken: null }
+  if (pack.number >= next) return { number: pack.number, taken: null }
+  return { number: null, taken: publicIdOf(type, pack.number) }
 }
 
 /** Role of a file added to an existing object by «Дополнить…». */
@@ -627,7 +741,10 @@ export async function acceptGroup(
     throw blocked('separate', 'Сначала вынесите файлы в отдельную группу')
   }
   const channelId = options.legacy?.promoChannelId ?? group.proposed_channel_id
-  const roles = target ? null : rolesFor(type, files, Boolean(channelId))
+  const wanted = target ? new Map<string, WantedRole>() : wantedRoles(type, files, twins)
+  const roles = target ? null : rolesFor(type, files, Boolean(channelId), wanted)
+  // Files that name their place are shown in that order (naming §5).
+  if (!target) files.sort(byWantedOrder(wanted))
 
   // Bytes by ascending SHA-256 (schema §9.3): two accepts over shared bytes never deadlock.
   const masters = [...new Set(files.map((draft) => draft.master_hex as string))].sort()
@@ -639,6 +756,7 @@ export async function acceptGroup(
 
   let item: ItemRef
   let how: AcceptResult['how']
+  let packTaken: string | null = null
   // The day of shooting from EXIF of the accepted bytes (SPEC §6.3); a promo collection has none.
   const shotOn =
     type === 'PRM'
@@ -654,7 +772,9 @@ export async function acceptGroup(
     await setJournalItem(tx, item.id)
     await fillShotOn(tx, model.id, item.id, shotOn)
   } else {
-    const kept = options.legacy?.number ?? null
+    const fromPack = options.legacy ? null : await packNumber(tx, model.id, type, group.pack)
+    packTaken = fromPack?.taken ?? null
+    const kept = options.legacy?.number ?? fromPack?.number ?? null
     const number = kept ?? (await issueNumber(tx, model.id, type))
     if (kept !== null) await claimNumber(tx, model.id, type, kept)
     // A delivery without its own title is called as the order is (DESIGN §6.6: the PPV made
@@ -686,6 +806,12 @@ export async function acceptGroup(
   }
 
   const ordinals = await nextOrdinals(tx, model.id, item.id)
+  // Numbers the names give (`pic07`) are theirs; the other files of the role come after them.
+  for (const one of wanted.values()) {
+    if (one.ordinal !== null) {
+      ordinals.set(one.role, Math.max(ordinals.get(one.role) ?? 0, one.ordinal))
+    }
+  }
   let position = await nextPosition(tx, model.id, item.id)
   const created: CreatedFile[] = []
   for (const draft of files) {
@@ -719,11 +845,14 @@ export async function acceptGroup(
       continue
     }
     // A handle is never reused (schema §4): a removed `ed07` sends the file to the next number.
+    const named = wanted.get(draft.id)
     const ordinal = !ORDINAL_ROLES.has(role)
       ? null
       : bound !== null && !sameFrame?.taken
         ? bound
-        : (ordinals.get(role) ?? 0) + 1
+        : named?.role === role && named.ordinal !== null
+          ? named.ordinal
+          : (ordinals.get(role) ?? 0) + 1
     if (ordinal !== null) ordinals.set(role, Math.max(ordinals.get(role) ?? 0, ordinal))
     const written = await writeVersion(tx, model.id, draft, actor, { itemId: item.id, media })
     if (bound !== null) await processedFrom(tx, model.id, item.id, bound, written.versionId, actor)
@@ -854,6 +983,7 @@ export async function acceptGroup(
       Файлов: String(created.length),
       ...(twins.length + elsewhere > 0 ? { Дублей: String(twins.length + elsewhere) } : {}),
       ...(asIs > 0 ? { 'Как есть': `битый исходник: ${asIs}` } : {}),
+      ...(packTaken ? { 'Номер из имени': `${packTaken} занят` } : {}),
       ...(how === 'upload' ? { Принято: 'при загрузке' } : {}),
     },
   })

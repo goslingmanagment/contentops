@@ -1119,3 +1119,140 @@ describe('◆ decisions without their case', () => {
     ).toMatchObject({ reason: 'no_plan_row' })
   })
 })
+
+describe('a tree a Telegram mirror fills (SPEC §6.1, §6.3–6.4)', () => {
+  const pack = `${LORA_ROOT}/1. PPV/PPV-018 Белая майка, масло`
+  const name = (role: string) => `${pack}/PPV-018_white-tank_${role}`
+
+  const asTest = (query: ReturnType<typeof sql>) =>
+    withActorTx(
+      h.db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test', requestId: randomUUID() },
+      (tx) => tx.execute(query),
+    )
+
+  beforeAll(async () => {
+    // The legacy pass has reserved PPV up to 017: the counter gives 018 next.
+    await asTest(sql`
+      UPDATE id_counters SET legacy_reserved_at = now(), next_number = 18
+       WHERE model_id = ${h.modelId}::uuid AND type = 'PPV'`)
+  })
+
+  async function readyGroup(path: string) {
+    const { group_id } = await groupOfPath(path)
+    const { rows } = await h.db.execute<{ id: string }>(sql`
+      SELECT id FROM inbox_drafts WHERE group_id = ${group_id}::uuid AND state <> 'resolved'`)
+    for (const row of rows) await makeReady(row.id)
+    return group_id
+  }
+
+  it('a pack keeps the number of its name; the export names give roles, numbers and order', async () => {
+    // The teaser is the larger file: the name wins over the size.
+    h.dropbox.tree.addFile(name('master__2m26s.mp4'), 5300)
+    h.dropbox.tree.addFile(name('teaser__0m14s.mp4'), 9300)
+    h.dropbox.tree.addFile(name('pic02.jpg'), 2302)
+    h.dropbox.tree.addFile(name('pic01.jpg'), 2301)
+    // A copy of the teaser for the editors: its own group until the pack is accepted.
+    const copy = `${LORA_ROOT}/7. Монтажи/Агент/PPV-018/PPV-018_white-tank_teaser__0m14s.mp4`
+    h.dropbox.tree.addFile(copy, h.dropbox.tree.get(name('teaser__0m14s.mp4'))?.bytes as Buffer)
+    await scan()
+    await fetchAll()
+    const group = await readyGroup(name('pic01.jpg'))
+    const { rows: proposed } = await h.db.execute<{ title: string; pack: unknown }>(sql`
+      SELECT proposed_title AS title, evidence -> 'pack' AS pack FROM inbox_groups
+       WHERE id = ${group}::uuid`)
+    expect(proposed[0]).toEqual({ title: 'Белая майка, масло', pack: { type: 'PPV', number: 18 } })
+    const response = await accept(group)
+    expect(response.statusCode).toBe(200)
+    expect(response.json().item_id).toBe('PPV-018')
+    expect(await counter('PPV')).toBe(19)
+    const { rows } = await h.db.execute<{ file: string; role: string; ordinal: number | null }>(sql`
+      SELECT regexp_replace(d.path, '^.*_white-tank_', '') AS file, m.role, m.ordinal
+        FROM inbox_drafts d
+        JOIN asset_versions v ON v.id = d.applied_version_id
+        JOIN item_memberships m ON m.asset_id = v.asset_id
+       WHERE d.group_id = ${group}::uuid ORDER BY m.display_position`)
+    expect(rows).toEqual([
+      { file: 'master__2m26s.mp4', role: 'master', ordinal: null },
+      { file: 'teaser__0m14s.mp4', role: 'teaser', ordinal: null },
+      { file: 'pic01.jpg', role: 'pic', ordinal: 1 },
+      { file: 'pic02.jpg', role: 'pic', ordinal: 2 },
+    ])
+    const { rows: copies } = await h.db.execute<{ outcome: string; type: string }>(sql`
+      SELECT d.outcome, g.proposed_type AS type FROM inbox_drafts d
+        JOIN inbox_groups g ON g.id = d.group_id WHERE d.path = ${copy}`)
+    expect(copies).toEqual([{ outcome: 'alias', type: 'PPV' }])
+  })
+
+  it('a pack whose number the counter already gave gets the next one, and the journal says so', async () => {
+    const taken = `${LORA_ROOT}/1. PPV/PPV-005 Повтор номера`
+    h.dropbox.tree.addFile(`${taken}/PPV-005_again_master__1m00s.mp4`, 5400)
+    await scan()
+    await fetchAll()
+    const group = await readyGroup(`${taken}/PPV-005_again_master__1m00s.mp4`)
+    const response = await accept(group)
+    expect(response.json().item_id).toBe('PPV-019')
+    const { rows } = await h.db.execute<{ after: [string, string][] }>(sql`
+      SELECT after FROM action_log WHERE action = 'draft.accept' AND subject_label = 'PPV-019'`)
+    expect(rows[0]?.after).toContainEqual(['Номер из имени', 'PPV-005 занят'])
+  })
+
+  it('a twin without an export name takes the role its named twin gives', async () => {
+    const day = `${LORA_ROOT}/1. PPV/PPV-020 Двойник`
+    h.dropbox.tree.addFile(`${day}/PPV-020_twin_teaser__0m14s.mp4`, 9500)
+    h.dropbox.tree.addFile(
+      `${day}/IMG_0001.mp4`,
+      h.dropbox.tree.get(`${day}/PPV-020_twin_teaser__0m14s.mp4`)?.bytes as Buffer,
+    )
+    h.dropbox.tree.addFile(`${day}/IMG_0002.mp4`, 5500)
+    await scan()
+    await fetchAll()
+    const group = await readyGroup(`${day}/IMG_0002.mp4`)
+    expect((await accept(group)).json().item_id).toBe('PPV-020')
+    const { rows } = await h.db.execute<{ size: string; role: string }>(sql`
+      SELECT d.byte_size AS size, m.role FROM inbox_drafts d
+        JOIN asset_versions v ON v.id = d.applied_version_id
+        JOIN item_memberships m ON m.asset_id = v.asset_id
+       WHERE d.group_id = ${group}::uuid AND d.outcome = 'new_item' ORDER BY m.role`)
+    // By size alone the larger teaser would have been the master.
+    expect(rows).toEqual([
+      { size: '5500', role: 'master' },
+      { size: '9500', role: 'teaser' },
+    ])
+  })
+
+  it('not content gets no draft; day folders, takes and montages group as the import does', async () => {
+    await asTest(sql`
+      INSERT INTO policy_settings (model_id, key, value)
+      VALUES (${h.modelId}::uuid, 'legacy.not_content', '{"paths": ["_тест-заливки"]}'::jsonb)`)
+    const files = {
+      card: `${LORA_ROOT}/3. Customs/карточки и рефы заказов/03.11.26_3033.jpg`,
+      listed: `${LORA_ROOT}/_тест-заливки/SXT-003_01_pic01.jpg`,
+      takeOne: `${LORA_ROOT}/2. FYP/01.11.26/IMG_0110.mp4`,
+      takeTwo: `${LORA_ROOT}/2. FYP/01.11.26/IMG_0128.mp4`,
+      montage: `${LORA_ROOT}/7. Монтажи/Алиса/Ari 02.mp4`,
+      dm: `${LORA_ROOT}/8. Other/личка/02.11.26/227295.jpg`,
+    }
+    for (const [index, path] of Object.values(files).entries()) {
+      h.dropbox.tree.addFile(path, 4100 + index)
+    }
+    await scan()
+    const { rows } = await h.db.execute<{
+      path: string
+      type: string | null
+      purpose: string | null
+      title: string | null
+      grouping: string
+    }>(sql`
+      SELECT d.path, g.proposed_type AS type, g.proposed_purpose AS purpose,
+             g.proposed_title AS title, g.grouping
+        FROM inbox_drafts d JOIN inbox_groups g ON g.id = d.group_id
+       WHERE d.path = ANY (${sql.param(Object.values(files))}::text[]) ORDER BY d.path`)
+    expect(rows).toEqual([
+      { path: files.takeOne, type: 'RAW', purpose: 'fyp', title: '01.11.26', grouping: 'folder' },
+      { path: files.takeTwo, type: 'RAW', purpose: 'fyp', title: '01.11.26', grouping: 'folder' },
+      { path: files.montage, type: 'FYP', purpose: null, title: 'Ari 02', grouping: 'single' },
+      { path: files.dm, type: null, purpose: null, title: '02.11.26', grouping: 'folder' },
+    ])
+  })
+})
