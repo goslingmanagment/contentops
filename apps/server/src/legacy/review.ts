@@ -8,7 +8,7 @@ import type {
   LegacyRoot,
 } from '@contentops/contracts/domain/legacy'
 import type { Queryable } from '@contentops/db'
-import { contextOf } from '@contentops/legacy'
+import { areaOfSection, contextOf } from '@contentops/legacy'
 import { sourcePath } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
@@ -38,35 +38,54 @@ const option = (key: string, label: string, input: DisputeOption['input'] = null
   input,
 })
 
-/** Roots of the old disk in the order of DESIGN §4.9. */
+/**
+ * Roots of the old disk in the order of DESIGN §4.9. The sections SPEC §6.3 knows besides
+ * (Монтажи, Life, Pictures, BG) stand before «Остальное», which keeps the unknown folders.
+ */
 export const ROOTS = [
   'PPV',
   'Секстинги',
   'Сеты',
   'Кастомы',
   'FYP',
+  'Монтажи',
+  'Лайф',
+  'Фото',
+  'BG',
   'Остальное',
   'SMM',
   'Архивы',
   '«Старый формат»',
 ] as const
+export type DisplayRoot = (typeof ROOTS)[number]
+
+const ROOT_OF_AREA: Partial<Record<NonNullable<ReturnType<typeof areaOfSection>>, DisplayRoot>> = {
+  ppv: 'PPV',
+  sextings: 'Секстинги',
+  sets: 'Сеты',
+  customs: 'Кастомы',
+  fyp: 'FYP',
+  montage: 'Монтажи',
+  life: 'Лайф',
+  pictures: 'Фото',
+  bg: 'BG',
+  smm: 'SMM',
+  old_format: '«Старый формат»',
+}
 
 const ARCHIVE = /\.(zip|rar|7z|tar|gz|tgz)$/i
 
-/** The root of DESIGN §4.9 a path of the old disk belongs to (first component). */
-export function displayRoot(relative: string, member = false): string {
+/**
+ * The root of DESIGN §4.9 a path of the old disk belongs to, by its first folder as the importer
+ * reads it (`1. PPV`, `7. Монтажи`, `Старый формат` — any number, any model).
+ */
+export function displayRoot(relative: string, member = false): DisplayRoot {
   if (member) return 'Архивы'
   const parts = relative.split('/')
   const first = parts[0] ?? ''
   if (parts.length === 1 && ARCHIVE.test(first)) return 'Архивы'
-  if (/^старый формат$/i.test(first)) return '«Старый формат»'
-  if (/^1\.\s*ppv$/i.test(first)) return 'PPV'
-  if (/^2\.\s*fyp$/i.test(first)) return 'FYP'
-  if (/^3\.\s*customs?$/i.test(first)) return 'Кастомы'
-  if (/^4\.\s*sets?$/i.test(first)) return 'Сеты'
-  if (/^5\.\s*sextings?$/i.test(first)) return 'Секстинги'
-  if (/^9\.\s*smm$/i.test(first)) return 'SMM'
-  return 'Остальное'
+  const area = areaOfSection(first)
+  return (area && ROOT_OF_AREA[area]) || 'Остальное'
 }
 
 const pad = (type: string, n: number) =>
@@ -101,6 +120,8 @@ export interface NumberUnit extends Record<string, unknown> {
   claim_kind: string
   form: string | null
   registry_number: number | null
+  /** The root of the object's source: the path is relative to it (`disk:/`, Dropbox `''`). */
+  source_root: string | null
 }
 
 export async function numberUnits(q: Queryable, modelId: string): Promise<NumberUnit[]> {
@@ -109,10 +130,12 @@ export async function numberUnits(q: Queryable, modelId: string): Promise<Number
            n.decided_by, n.decided_at::text AS decided_at, p.display_name AS by_name,
            n.registry_claim_id, n.claim_id, n.source_object_id AS object_id,
            o.current_name AS name, o.current_path AS path, c.claim_kind,
-           c.payload ->> 'form' AS form, (r.payload ->> 'number')::int AS registry_number
+           c.payload ->> 'form' AS form, (r.payload ->> 'number')::int AS registry_number,
+           s.root_path AS source_root
       FROM legacy_number_claims n
       JOIN legacy_claims c ON c.model_id = n.model_id AND c.id = n.claim_id
       JOIN source_objects o ON o.model_id = n.model_id AND o.id = n.source_object_id
+      JOIN sources s ON s.model_id = o.model_id AND s.id = o.source_id
       LEFT JOIN legacy_claims r ON r.model_id = n.model_id AND r.id = n.registry_claim_id
       LEFT JOIN principals p ON p.id = n.decided_by
      WHERE n.model_id = ${modelId}::uuid AND c.resolution <> 'ignored'
@@ -188,7 +211,11 @@ function base(id: string, kind: DisputeKind, root: string, title: string): Dispu
 
 const thumb = (objectId: string) => ({ key: `legacy:${objectId}`, ratio: '3:4' as const })
 
-function numberDisputes(units: readonly NumberUnit[], rootOf: (path: string) => string): Dispute[] {
+/** The root of DESIGN §4.9 of a unit's object, relative to the root of its own source. */
+const rootOf = (unit: NumberUnit | undefined): DisplayRoot =>
+  unit ? displayRoot(sourcePath(unit.path, unit.source_root ?? '').relative) : 'Остальное'
+
+function numberDisputes(units: readonly NumberUnit[]): Dispute[] {
   const out: Dispute[] = []
   for (const [key, group] of collisions(units)) {
     const [type = 'PPV', number = '0'] = key.split(':')
@@ -208,7 +235,7 @@ function numberDisputes(units: readonly NumberUnit[], rootOf: (path: string) => 
       ...base(
         `number.${type}.${number}`,
         'number_taken',
-        rootOf(group[0]?.path ?? ''),
+        rootOf(group[0]),
         `${id} у ${COUNT_WORD[folders.length] ?? folders.length} папок`,
       ),
       fragment: folders.map((unit) => unit.name).join(' · '),
@@ -230,7 +257,7 @@ function numberDisputes(units: readonly NumberUnit[], rootOf: (path: string) => 
       ...base(
         `typo.${unit.id}`,
         'number_typo',
-        rootOf(unit.path),
+        rootOf(unit),
         `${unit.name} — в реестре ${registry === null ? '?' : String(registry).padStart(3, '0')}`,
       ),
       fragment: unit.name,
@@ -326,7 +353,8 @@ async function caseDisputes(q: Queryable, modelId: string): Promise<Dispute[]> {
       ...base(
         `case.${row.id}`,
         kind,
-        displayRoot(details.path ?? details.root ?? ''),
+        // `root` is the first folder relative to the source; a draft's `path` is raw.
+        displayRoot(details.root ?? sourcePath(details.path ?? '', '').relative),
         details.title ?? fallback,
       ),
       fragment:
@@ -369,27 +397,13 @@ export async function legacyDisputes(
   report: ImportReport | null = null,
 ): Promise<Dispute[]> {
   const units = await numberUnits(q, modelId)
-  const rootOf = await rootResolver(q, modelId)
-  return [
-    ...numberDisputes(units, rootOf),
-    ...(await caseDisputes(q, modelId)),
-    ...foreignArchives(report),
-  ]
+  return [...numberDisputes(units), ...(await caseDisputes(q, modelId)), ...foreignArchives(report)]
 }
 
 /** «Разбор старого · 38» on the tab: cases a person still has to decide. */
 export async function openDisputeCount(q: Queryable, modelId: string): Promise<number> {
   const disputes = await legacyDisputes(q, modelId)
   return disputes.filter((dispute) => !dispute.resolved && !dispute.postponed).length
-}
-
-/** Source path → root of DESIGN §4.9, relative to the root of the object's source. */
-async function rootResolver(q: Queryable, modelId: string): Promise<(path: string) => string> {
-  const { rows } = await q.execute<{ root_path: string | null }>(sql`
-    SELECT root_path FROM sources
-     WHERE model_id = ${modelId}::uuid AND kind = 'yandex_disk' ORDER BY created_at LIMIT 1`)
-  const root = rows[0]?.root_path ?? 'disk:/'
-  return (path: string) => displayRoot(sourcePath(path, root).relative)
 }
 
 // ── Progress ──────────────────────────────────────────────────────────────────────────
