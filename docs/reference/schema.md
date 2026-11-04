@@ -411,7 +411,8 @@ GIN `tsv`. Статус хронологии — строка `annotation_fields
 **`blob_phashes`** — перцептивный хэш фото (§6.2, §12.0). PK `(sha256, algorithm,
 algo_version, normalization)`, `phash bit(64)`, `computed_at`. Подсказка «похоже на
 фото № 7 из сета 69» ищется по версиям текущей модели полным проходом с
-`bit_count(phash # :probe)`; порог — `policy_settings`. Ничего не объединяет.
+`bit_count(phash # :probe)`; порог — `policy_settings` `phash_suggest_threshold` в процентах
+похожести, как на экране «Пороги»: 90 — различаются не больше 6 из 64 бит. Ничего не объединяет.
 
 **`master_checks`** — как и чем получен мастер (§9.2): что сделано (`decision`), исход
 проверки (`verdict`), кадры, звук, метаданные, размеры, время, отчёт; индекс

@@ -34,6 +34,7 @@ const THRESHOLDS: Record<
     label: 'Напоминание обхода альбома',
     unit: 'дней',
   },
+  // A percent of the 64 pHash bits that match; the hints turn it into a distance (intake/phash).
   frame_similarity: { key: 'phash_suggest_threshold', label: 'Похожесть кадров', unit: '%' },
   auto_accept: { key: 'intake_auto_accept', label: 'Автопринятие', unit: '' },
 }
@@ -212,6 +213,9 @@ export function thresholdHandlers({ db, command }: Services): HandlerRegistry {
       updateThreshold: ({ body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
           const meta = THRESHOLDS[body.key]
+          if (meta.unit === '%' && body.value !== null && body.value > 100) {
+            throw new ApiProblem('invalid_request', `${meta.label} — от 0 до 100 %`)
+          }
           const target = await targetOf(tx, body.scope, body.scope_value)
           const existing = await storedRow(tx, meta.key, target)
           const field = `${meta.label}${target.where}`

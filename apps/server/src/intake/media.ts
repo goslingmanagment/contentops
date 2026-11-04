@@ -8,6 +8,7 @@ import { registerBlob } from '../media/storage-ops'
 import { inputSha } from '../media/work/common'
 import { deriveImageHandler } from '../media/work/derive'
 import { encodeMasterHandler } from '../media/work/master'
+import { phashSuggestDistance } from './phash'
 
 /**
  * The media works of a draft (SPEC §6.1 steps 2–3) with what intake adds to them: a draft
@@ -90,17 +91,12 @@ function derivePhotoForDraft(env: MediaEnv): WorkHandler {
 
 /**
  * «Похоже на фото № 7 из сета 69 — сравнить» (SPEC §6.2): the current versions of accepted
- * photos of the model within the pHash distance `phash_suggest_threshold` become candidates
- * of the draft — a hint, never a merge. No threshold set — no hints (schema §9.2).
+ * photos of the model at least as similar as `phash_suggest_threshold` (a percent) become
+ * candidates of the draft — a hint, never a merge. No threshold set — no hints (schema §9.2).
  */
 async function similarPhotos(tx: Tx, modelId: string, draftId: string, sha: Buffer) {
-  const { rows } = await tx.execute<{ value: unknown }>(sql`
-    SELECT value FROM policy_settings
-     WHERE key = 'phash_suggest_threshold' AND account_id IS NULL AND item_type IS NULL
-       AND (model_id IS NULL OR model_id = ${modelId}::uuid) AND value IS NOT NULL
-     ORDER BY model_id NULLS LAST LIMIT 1`)
-  const threshold = Number(rows[0]?.value)
-  if (!Number.isFinite(threshold)) return
+  const threshold = await phashSuggestDistance(tx, modelId)
+  if (threshold === null) return
   await tx.execute(sql`
     INSERT INTO inbox_draft_candidates (model_id, draft_id, kind, item_id, version_id, score, signals)
     SELECT ${modelId}::uuid, ${draftId}::uuid, 'similar_photo', near.item_id, near.version_id,
