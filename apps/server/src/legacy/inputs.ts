@@ -40,6 +40,16 @@ export async function readInputs(q: Queryable, modelId: string): Promise<ImportI
   }
 }
 
+/** Only the model's list of what is not content: the scan reads it for every batch. */
+export async function readNotContent(q: Queryable, modelId: string): Promise<string[]> {
+  const { rows } = await q.execute<{ value: unknown }>(sql`
+    SELECT value FROM policy_settings
+     WHERE model_id = ${modelId}::uuid AND account_id IS NULL AND item_type IS NULL
+       AND key = ${NOT_CONTENT_KEY}`)
+  const paths = (rows[0]?.value as { paths?: unknown } | null)?.paths
+  return Array.isArray(paths) ? paths.map(String) : []
+}
+
 async function setSetting(
   tx: Tx,
   modelId: string,

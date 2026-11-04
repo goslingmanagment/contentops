@@ -40,7 +40,7 @@ async function newManualGroup(
       proposed_purpose, has_second_person
     )
     SELECT model_id, source_id, 'split:' || uuidv7()::text, 'manual', folder_object_id,
-           (coalesce(evidence, '{}'::jsonb) - 'number') || jsonb_build_object('split_from', id::text),
+           (coalesce(evidence, '{}'::jsonb) - 'number' - 'pack') || jsonb_build_object('split_from', id::text),
            ${overrides.type === undefined ? sql`proposed_type` : sql`${overrides.type}`},
            proposed_title, proposed_title_en, proposed_description, proposed_tags,
            proposed_ppv_kind,
@@ -128,7 +128,7 @@ async function splitVideos(
         proposed_purpose, has_second_person
       )
       SELECT model_id, source_id, ${key}, 'single', folder_object_id,
-             (coalesce(evidence, '{}'::jsonb) - 'number')
+             (coalesce(evidence, '{}'::jsonb) - 'number' - 'pack')
                || jsonb_build_object('path', ${draft.path}::text, 'split_from', id::text),
              proposed_type, ${titleOf(draft)}, proposed_title_en, proposed_description,
              proposed_tags, proposed_ppv_kind, proposed_purpose, has_second_person

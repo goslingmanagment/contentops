@@ -19,6 +19,7 @@ import { ApiProblem } from '../errors'
 import { openDisputeCount } from '../legacy/review'
 import { mediaPreviews } from '../media/previews'
 import { frameChoices } from './frames'
+import { exportRoleOf } from './grouping'
 import { appendRefusal, newObjectRefusal, type Refusal } from './refusal'
 import { sourceThumbPath } from './source-thumbs'
 
@@ -458,11 +459,15 @@ const ROLE_LABEL: Record<FileRole, string> = {
 
 function fileOf(model: string, draft: FileRow): DraftFile {
   const video = draft.media_kind === 'video'
+  // The role a person chose, else the one the export name says (`…_teaser__0m14s.mp4`).
+  const named = exportRoleOf(baseName(draft.path))
   const role: FileRole =
-    (draft.proposed_role && ROLE[draft.proposed_role]) || (video ? 'master' : 'photo')
+    (draft.proposed_role && ROLE[draft.proposed_role]) ||
+    (named && ROLE[named.role]) ||
+    (video ? 'master' : 'photo')
   const position =
     role === 'photo' || role === 'clip' || role === 'raw'
-      ? (draft.proposed_ordinal ?? Number(draft.position))
+      ? (draft.proposed_ordinal ?? named?.ordinal ?? Number(draft.position))
       : null
   return {
     key: draft.id,

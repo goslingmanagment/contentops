@@ -7,6 +7,7 @@ import {
   type SourceEntry,
 } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
+import { readNotContent } from '../legacy/inputs'
 import { channelOf } from '../legacy/promo'
 import {
   clusterStart,
@@ -14,6 +15,7 @@ import {
   type LooseGroup,
   looseGroupOf,
   mediaKindOf,
+  notContentOf,
   placementOf,
   titleFromFileName,
   typeOfFile,
@@ -178,6 +180,8 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`scan:${source.id}`}, 0))`)
     const stats = emptyStats()
     const grown = new Set<string>()
+    // The model's own list of what is not content (`legacy.not_content`, SPEC §6.3).
+    const notContent = input.drafts === false ? [] : await readNotContent(tx, source.modelId)
     // Folders first: the group of a file holds its folder object.
     const folders = new Map<string, FolderRef>(input.folders)
     for (const folder of folders.values()) {
@@ -202,6 +206,8 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
       if (revision.frozen) continue
       const media = mediaKindOf(entry.name, entry.mediaType)
       if (!media) continue
+      // Not content (SPEC §6.3): the revision is known, no draft — as the import takes it.
+      if (notContentOf(relativeOf(entry), notContent)) continue
       const groupId = await groupOf(tx, input, entry, media === 'video')
       if (await ensureDraft(tx, source, groupId, revision, entry)) {
         stats.drafts += 1
@@ -439,11 +445,17 @@ async function groupOf(
       key: `folder:${folder.resourceId}`,
       grouping: 'folder',
       folderResourceId: folder.resourceId,
-      title: folder.name,
+      title: kind?.title || folder.name,
       type: kind?.type ?? type,
       purpose: kind?.purpose ?? null,
       channelId,
-      evidence: { ...evidence, path: folder.raw, ...promo },
+      // The number a pack's name gives (SPEC §6.4): «Принять» keeps it while it is free.
+      evidence: {
+        ...evidence,
+        path: folder.raw,
+        ...promo,
+        ...(kind?.pack ? { pack: kind.pack } : {}),
+      },
     }
   } else {
     const folder = relative.length >= 2 ? folderAt(1) : undefined
