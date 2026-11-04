@@ -12,17 +12,31 @@ concurrency:
   group: check-${{ github.ref }}
   cancel-in-progress: true
 
+# Runners: GitHub-hosted ubuntu-24.04, unless the repository variable CI_POOL=pc sends the
+# jobs to the owner's own runners (label ci-pc): since 2026-11-04 a Linux arm64 VM on his Mac
+# with no access to the Mac's files or keys, because GitHub locked its hosted runners over
+# billing. A rerun (attempt > 1) and a fork's PR go to GitHub; a fork can edit this file, so
+# the real fence is the repository's setting: a PR from an outside contributor runs nothing
+# until someone approves it. Unset CI_POOL to go back.
+#
+# Our runners are arm64, keep their Docker, caches and home between jobs, and have no sudo:
+# the product image builds there with ARCH=arm64 (Dockerfile; amd64 emulated would outlast the
+# jobs, and production builds its own amd64 image from the tag), FFmpeg is BtbN's arm64 build
+# of the same commit, layers stay in the runner's Docker instead of the Actions cache, and the
+# browsers' system libraries come with the VM.
 jobs:
   check:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_POOL == 'pc' && github.run_attempt == '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","ci-pc"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
 
@@ -31,79 +45,105 @@ jobs:
   # The pipeline tests of the server also need PostgreSQL: Testcontainers in the image reaches
   # the runner's Docker through its socket. Both runs share the generated fixtures.
   media:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_POOL == 'pc' && github.run_attempt == '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","ci-pc"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
+    env:
+      IMAGE: contentops-media-test:ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+        id: buildx
         with:
+          driver: ${{ runner.environment == 'self-hosted' && 'docker' || 'docker-container' }}
+      - uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_SUMMARY: "false"
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: .
           target: media-test
+          build-args: ARCH=${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }}
           load: true
-          tags: contentops-media-test:ci
-          cache-from: type=gha,scope=media-test
-          cache-to: type=gha,scope=media-test,mode=max
+          tags: ${{ env.IMAGE }}
+          cache-from: ${{ runner.environment == 'github-hosted' && 'type=gha,scope=media-test' || '' }}
+          cache-to: ${{ runner.environment == 'github-hosted' && 'type=gha,scope=media-test,mode=max' || '' }}
       - name: Media tests in the product image
         run: |
           mkdir -p "$RUNNER_TEMP/fixtures"
           docker run --rm -v "$RUNNER_TEMP/fixtures:/fixtures" -e CONTENTOPS_FIXTURE_DIR=/fixtures \
-            contentops-media-test:ci
+            "$IMAGE"
+      # The socket of the runner's Docker: rootless on our runners (DOCKER_HOST), the system one
+      # on GitHub's.
       - name: Pipeline tests on the database in the product image
         run: |
+          sock="${DOCKER_HOST:-unix:///var/run/docker.sock}"
           docker run --rm -v "$RUNNER_TEMP/fixtures:/fixtures" -e CONTENTOPS_FIXTURE_DIR=/fixtures \
-            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${sock#unix://}:/var/run/docker.sock" \
             --add-host=host.docker.internal:host-gateway \
             -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal \
             -e TESTCONTAINERS_RYUK_DISABLED=true \
-            contentops-media-test:ci pnpm --filter @contentops/server test:media
+            "$IMAGE" pnpm --filter @contentops/server test:media
+      # Our runner's Docker outlives the job: drop this run's tag (the layers stay cached).
+      - name: Remove this run's image
+        if: always() && runner.environment == 'self-hosted'
+        run: docker rmi "$IMAGE" > /dev/null 2>&1 || true
 
   # End-to-end browser scenarios of both roles (apps/e2e, SPEC §12.0 «Тесты»): PostgreSQL by
   # Testcontainers, migrations, bootstrap and the seeded catalog with real media, the server
   # roles with the FFmpeg build the image pins, the production build of the interface behind
   # `vite preview` (it proxies /api as nginx does), Chromium. Every integration is off.
   e2e:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_POOL == 'pc' && github.run_attempt == '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","ci-pc"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
       - run: pnpm install --frozen-lockfile
       - name: Pinned FFmpeg of the Dockerfile
         id: ffmpeg
+        env:
+          SUFFIX: ${{ runner.arch == 'ARM64' && '_ARM64' || '' }}
         run: |
-          echo "url=$(sed -n 's/^ARG FFMPEG_URL=//p' Dockerfile)" >> "$GITHUB_OUTPUT"
-          echo "sha=$(sed -n 's/^ARG FFMPEG_SHA256=//p' Dockerfile)" >> "$GITHUB_OUTPUT"
+          echo "url=$(sed -n "s/^ARG FFMPEG_URL${SUFFIX}=//p" Dockerfile)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sed -n "s/^ARG FFMPEG_SHA256${SUFFIX}=//p" Dockerfile)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6
+        if: runner.environment == 'github-hosted'
         with:
           path: ~/.cache/contentops-ffmpeg
           key: ffmpeg-${{ steps.ffmpeg.outputs.sha }}
+      # One directory per pinned build: our runners keep it between jobs, and two jobs may
+      # unpack it at once, so it lands with one rename.
       - name: FFmpeg on PATH
         env:
           URL: ${{ steps.ffmpeg.outputs.url }}
           SHA: ${{ steps.ffmpeg.outputs.sha }}
         run: |
-          dir="$HOME/.cache/contentops-ffmpeg"
+          dir="$HOME/.cache/contentops-ffmpeg/$SHA"
           if [ ! -x "$dir/ffmpeg" ]; then
             curl -fsSL --retry 3 "$URL" -o "$RUNNER_TEMP/ffmpeg.tar.xz"
             echo "$SHA  $RUNNER_TEMP/ffmpeg.tar.xz" | sha256sum -c -
-            mkdir -p "$dir"
-            tar -xJf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$dir" --strip-components=2 \
+            mkdir -p "$RUNNER_TEMP/ffmpeg" "${dir%/*}"
+            tar -xJf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP/ffmpeg" --strip-components=2 \
               --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
+            mv -T "$RUNNER_TEMP/ffmpeg" "$dir" 2> /dev/null || test -x "$dir/ffmpeg"
           fi
           echo "$dir" >> "$GITHUB_PATH"
       - name: Playwright version
         id: playwright
         run: echo "version=$(node -p "require('./apps/e2e/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6
+        if: runner.environment == 'github-hosted'
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.playwright.outputs.version }}
-      - run: pnpm --filter @contentops/e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter @contentops/e2e exec playwright install ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }} chromium
       - run: pnpm --filter @contentops/web build
       - run: pnpm --filter @contentops/e2e e2e
       - if: failure()
@@ -120,21 +160,35 @@ jobs:
   # The stack of the VM (docker-compose.yml) builds from the tag there: the app and proxy
   # images and the compose file are checked here first.
   image:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_POOL == 'pc' && github.run_attempt == '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","ci-pc"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
+    env:
+      IMAGE: contentops-proxy:ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+        id: buildx
         with:
+          driver: ${{ runner.environment == 'self-hosted' && 'docker' || 'docker-container' }}
+      - uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_SUMMARY: "false"
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
           context: .
           target: proxy
+          build-args: ARCH=${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }}
+          tags: ${{ env.IMAGE }}
           cache-from: |
-            type=gha,scope=media-test
-            type=gha,scope=image
-          cache-to: type=gha,scope=image,mode=max
+            ${{ runner.environment == 'github-hosted' && 'type=gha,scope=media-test' || '' }}
+            ${{ runner.environment == 'github-hosted' && 'type=gha,scope=image' || '' }}
+          cache-to: ${{ runner.environment == 'github-hosted' && 'type=gha,scope=image,mode=max' || '' }}
       - name: Compose file with the example settings
         run: |
           sed -e 's/^\(POSTGRES_PASSWORD\|MIGRATE_DB_PASSWORD\|APP_DB_PASSWORD\)=$/\1=ci/' \
             .env.example > .env
           docker compose config -q
+      - name: Remove this run's image
+        if: always() && runner.environment == 'self-hosted'
+        run: docker rmi "$IMAGE" > /dev/null 2>&1 || true

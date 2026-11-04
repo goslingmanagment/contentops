@@ -2,6 +2,8 @@
 # check=skip=FromPlatformFlagConstDisallowed
 #
 # The product's single image (SPEC §12.0–12.1): linux/amd64, Node 24, pinned media tools.
+# `--build-arg ARCH=arm64` builds the same stages natively on arm64 with BtbN's arm64 build of
+# the same FFmpeg commit: only CI on the owner's Mac does that (no amd64 emulation there).
 #
 #   base        runtime of every role: Node, static FFmpeg/ffprobe with SVT-AV1, system
 #               libvips with libheif + libde265 (HEIC is read only, no x265), jemalloc
@@ -21,22 +23,34 @@
 # accepts it); bump both together.
 
 ARG NODE_IMAGE=node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
+ARG ARCH=amd64
 
-FROM --platform=linux/amd64 ${NODE_IMAGE} AS ffmpeg
+FROM scratch AS ffmpeg-amd64
 ARG FFMPEG_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-linux64-gpl-8.1.tar.xz
 ARG FFMPEG_SHA256=c733b4b2951e5957e15505f788b2c65a7a41b6da4b289e295852cc38079b4d2b
-ADD --checksum=sha256:${FFMPEG_SHA256} ${FFMPEG_URL} /tmp/ffmpeg.tar.xz
+ADD --checksum=sha256:${FFMPEG_SHA256} ${FFMPEG_URL} /ffmpeg.tar.xz
+
+FROM scratch AS ffmpeg-arm64
+ARG FFMPEG_URL_ARM64=https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n8.1.2-50-g1a748fe2cd-linuxarm64-gpl-8.1.tar.xz
+ARG FFMPEG_SHA256_ARM64=ae5da4f51b9052390f414005f8ab26c1eed1268f327cce7cb79aa076b29bd66e
+ADD --checksum=sha256:${FFMPEG_SHA256_ARM64} ${FFMPEG_URL_ARM64} /ffmpeg.tar.xz
+
+FROM ffmpeg-${ARCH} AS ffmpeg-tarball
+
+FROM --platform=linux/${ARCH} ${NODE_IMAGE} AS ffmpeg
+COPY --from=ffmpeg-tarball /ffmpeg.tar.xz /tmp/ffmpeg.tar.xz
 RUN apt-get update \
  && apt-get install -y --no-install-recommends xz-utils \
  && mkdir -p /opt/ffmpeg \
  && tar -xJf /tmp/ffmpeg.tar.xz -C /opt/ffmpeg --strip-components=2 \
       --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
 
-FROM --platform=linux/amd64 ${NODE_IMAGE} AS base
+FROM --platform=linux/${ARCH} ${NODE_IMAGE} AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libvips42t64 libheif1 libheif-plugin-libde265 libde265-0 libjemalloc2 \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -s /usr/lib/*-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so.2
 COPY --from=ffmpeg /opt/ffmpeg/ffmpeg /opt/ffmpeg/ffprobe /usr/local/bin/
 # Node (npm, pnpm, the app) offers classic TLS key exchange only. The pilot's ISP drops TLS
 # 1.3 handshakes to Cloudflare (npm registry, Docker Hub, AI APIs) that carry a post-quantum
@@ -54,7 +68,7 @@ RUN mkdir -p /usr/local/share/contentops \
  && ffmpeg -hide_banner -version | head -n 1 \
  && npm install -g pnpm@12.0.0 \
  && npm cache clean --force
-ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
+ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2 \
     CONTENTOPS_PACKAGES_FILE=/usr/local/share/contentops/packages.txt
 
 FROM base AS deps

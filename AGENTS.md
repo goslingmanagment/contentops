@@ -35,11 +35,17 @@ Agency Hub (`README.md`, `PRD.md`).
   --frozen-lockfile`); тестам с базой нужен запущенный Docker (Testcontainers). На winpc разработка — только в WSL
   (потолок 2 GB: T3 и лёгкие агенты); сборки и тесты — на Mac и в CI. Локально — только
   тайпчек, линт и тесты затронутого пакета (`pnpm --filter <пакет> typecheck`, `… test`,
-  `pnpm biome check <пути>`). CI — GitHub Actions на GitHub-hosted `ubuntu-24.04` с
-  первого PR 1а: `pnpm check` (тайпчек, Biome, тесты, Testcontainers). Медиатестам
+  `pnpm biome check <пути>`). CI — GitHub Actions (`.github/workflows/check.yml`):
+  `pnpm check` (тайпчек, Biome, тесты, Testcontainers). С 04.11.2026 GitHub-hosted
+  раннеры заблокированы биллингом, и CI идёт на своих раннерах `mac-contentops-*` в ВМ `ci`
+  на Маке владельца (arm64, переменная репо `CI_POOL=pc`; устройство — скилл `ci-pool`);
+  без переменной, при перезапуске и для PR из форка — на GitHub-hosted `ubuntu-24.04`.
+  CI идёт, пока Мак не спит. Медиатестам
   `@contentops/media` нужны закреплённые FFmpeg и libvips с HEIC, поэтому они идут в
   образе продукта (цель `media-test` в `Dockerfile`, в CI — джоб `media`); локально —
-  `docker build --platform linux/amd64 --target media-test -t co-media . && docker run --rm co-media`.
+  `docker build --platform linux/amd64 --target media-test -t co-media . && docker run --rm co-media`
+  (на Маке быстрее родной arm64: `--build-arg ARCH=arm64` без `--platform`; так собирает
+  CI на Маке, прод — всегда amd64).
   Сквозные сценарии в браузере — `apps/e2e` (Playwright, в CI — джоб `e2e`): стек с базой,
   воркерами и сборкой интерфейса поднимают сами, все интеграции выключены. Локально — по
   одному сценарию (нужны Docker и FFmpeg): `pnpm --filter @contentops/web build &&
