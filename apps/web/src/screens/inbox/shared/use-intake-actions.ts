@@ -188,11 +188,24 @@ export function useIntakeActions({ onShow, onDecided }: ActionsOptions = {}) {
       }
       putGroup(group)
       onDecided?.(group, group.state.kind === 'accepted' ? 'gone' : 'stay')
-      if (command.decision === 'video_in_set') {
-        toast.show({ message: videoDoneMessage(command.destination, 1) })
-      }
-      if (command.decision === 'split_videos') {
-        toast.show({ message: 'Разделено по роликам' })
+      const said =
+        command.decision === 'video_in_set'
+          ? videoDoneMessage(command.destination, 1)
+          : command.decision === 'split_videos'
+            ? 'Разделено по роликам'
+            : null
+      // Группа импорта без спора принимается сразу после ответа (SPEC §6.3): полоска так и
+      // говорит, иначе она молча уходит из «Нового».
+      const { state } = group
+      if (state.kind === 'accepted') {
+        toast.show({
+          message: [said, acceptedMessage({ ...state, next_step: null })]
+            .filter((part) => part !== null)
+            .join(' · '),
+          action: { label: 'Открыть', onSelect: () => openItem(state.item_id) },
+        })
+      } else if (said) {
+        toast.show({ message: said })
       }
     },
   })
@@ -235,11 +248,20 @@ export function useIntakeActions({ onShow, onDecided }: ActionsOptions = {}) {
     failed: 'Не выделилось',
     run: ({ group, keys }, key) => commands.split(group.id, keys, key),
     invalidates: changed,
-    onSuccess: (part) =>
-      toast.show({
-        message: `Выделено в новую группу · ${part.file_count}`,
-        action: onShow ? { label: 'Показать', onSelect: () => onShow([part.id]) } : undefined,
-      }),
+    onSuccess: (part) => {
+      const { state } = part
+      toast.show(
+        state.kind === 'accepted'
+          ? {
+              message: `Выделено · ${acceptedMessage({ ...state, next_step: null })}`,
+              action: { label: 'Открыть', onSelect: () => openItem(state.item_id) },
+            }
+          : {
+              message: `Выделено в новую группу · ${part.file_count}`,
+              action: onShow ? { label: 'Показать', onSelect: () => onShow([part.id]) } : undefined,
+            },
+      )
+    },
   })
 
   const restore = useIntentMutation<string, InboxGroup>({

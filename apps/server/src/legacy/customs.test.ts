@@ -293,7 +293,7 @@ describe('the customs import with the orders of the old cards', () => {
     expect(rows.map((row) => row.actor)).toEqual(['импорт', 'Владелец'])
   })
 
-  it('a person answers «Какой заказ?» and accepts the delivery', async () => {
+  it('a person answers «Какой заказ?» and the delivery is accepted at once', async () => {
     const red = await customOf('5:00 вся в зелёном')
     const decided = await call(app, {
       method: 'POST',
@@ -303,15 +303,9 @@ describe('the customs import with the orders of the old cards', () => {
       body: { decision: 'which_order', order_id: (orders.red2 as Order).id },
     })
     expect(decided.statusCode).toBe(200)
-    const accepted = await call(app, {
-      method: 'POST',
-      url: `/api/v1/lora/inbox/groups/${red?.group}:accept`,
-      as: owner,
-      key: newKey(),
-      body: { as: 'default' },
-    })
-    expect(accepted.statusCode).toBe(200)
-    const item = accepted.json().item_id as string
+    // Nothing else is in dispute: the custom does not wait out of «Новое» (SPEC §6.3).
+    expect(decided.json().state).toMatchObject({ kind: 'accepted', by: { type: 'person' } })
+    const item = decided.json().state.item_id as string
     expect(await deliveries()).toContainEqual(
       expect.objectContaining({ item, order: messageOf(orders.red2 as Order) }),
     )
