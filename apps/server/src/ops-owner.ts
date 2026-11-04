@@ -170,8 +170,8 @@ export interface OpsPersonResult {
 /**
  * `ops.js person <login> --name <имя> --role manager|reader --models <a,b>` — «Добавить человека»
  * of «Люди и доступ» (DESIGN §4.19) for a stack whose owner has no browser session: the КМ who
- * confirms the labels of stage 3. A taken login is refused; a new password —
- * `contentops-db reset-password`.
+ * confirms the labels of stage 3. A taken login is refused: more models — `ops.js grant`, a new
+ * password — `contentops-db reset-password`.
  */
 export async function opsPerson(
   db: Db,
@@ -189,7 +189,11 @@ export async function opsPerson(
     const models = await modelsByCodes(tx, input.models)
     const { rows: taken } = await tx.execute<{ id: string }>(sql`
       SELECT id FROM principals WHERE login = ${login}`)
-    if (taken.length > 0) throw new Error(`login ${login} is taken: contentops-db reset-password`)
+    if (taken.length > 0) {
+      throw new Error(
+        `login ${login} is taken: more models — ops.js grant ${login} --models <a,b>, a new password — contentops-db reset-password`,
+      )
+    }
     const { rows } = await tx.execute<{ id: string }>(sql`
       INSERT INTO principals (kind, login, display_name, gender, role, password_hash)
       VALUES ('human', ${login}, ${name}, ${genderOfName(name)}, ${role.data}, ${passwordHash})
@@ -209,6 +213,65 @@ export async function opsPerson(
       after: { Логин: login, Роль: ROLE_LABEL[role.data], Модели: await modelNames(tx, now) },
     })
     return { login, id, name, role: role.data, models: now, temporary_password: password }
+  })
+}
+
+export interface OpsGrantResult {
+  login: string
+  id: string
+  name: string
+  /** The models the person has now; `added` — those this command gave. */
+  models: string[]
+  added: string[]
+}
+
+/**
+ * `ops.js grant <login> --models <a,b>` — the models a person already there lacks, as «Люди и
+ * доступ» gives them (DESIGN §4.19): none taken away, the role stays. Nothing to add — nothing
+ * is written. The journal shows «Модели» before and after, as the screen writes it.
+ */
+export async function opsGrant(
+  db: Db,
+  input: { login: string; models: readonly string[] },
+): Promise<OpsGrantResult> {
+  const login = input.login.trim().toLowerCase()
+  if (!login) throw new Error('grant needs a login')
+  if (input.models.length === 0) throw new Error('grant needs --models')
+  return withActorTx(db, context('person.grant.ops'), async (tx) => {
+    const models = await modelsByCodes(tx, input.models)
+    const { rows: found } = await tx.execute<{ id: string; name: string }>(sql`
+      SELECT id, display_name AS name FROM principals
+       WHERE kind = 'human' AND disabled_at IS NULL AND login = ${login}
+       FOR UPDATE`)
+    const person = found[0]
+    if (!person) throw new Error(`no person ${login}: ops.js person ${login} --name … adds one`)
+    const before = await liveModels(tx, person.id)
+    const { rows: granted } = await tx.execute<{ code: string }>(sql`
+      INSERT INTO principal_grants (model_id, principal_id)
+      SELECT m.id, ${person.id}::uuid FROM models m
+       WHERE m.id = ANY(${sql.param(models.map((model) => model.id))}::uuid[])
+         AND NOT EXISTS (SELECT 1 FROM principal_grants g
+                          WHERE g.model_id = m.id AND g.principal_id = ${person.id}::uuid
+                            AND g.revoked_at IS NULL)
+      RETURNING (SELECT code FROM models WHERE id = model_id) AS code`)
+    const now = await liveModels(tx, person.id)
+    if (granted.length > 0) {
+      await logAction(tx, {
+        modelId: null,
+        subjectKind: 'principals',
+        subjectId: person.id,
+        subjectLabel: person.name,
+        before: { Модели: await modelNames(tx, before) },
+        after: { Модели: await modelNames(tx, now) },
+      })
+    }
+    return {
+      login,
+      id: person.id,
+      name: person.name,
+      models: now,
+      added: granted.map((row) => row.code),
+    }
   })
 }
 

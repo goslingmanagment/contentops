@@ -1,8 +1,9 @@
 import type { IntegrationDownReason } from '@contentops/contracts/domain/integrations'
-import type { SystemState } from '@contentops/contracts/domain/system'
+import { type SystemState, thresholdFor } from '@contentops/contracts/domain/system'
 import { formatNumber } from '@contentops/contracts/format'
 import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
+import { readThresholds } from '../handlers/thresholds'
 import { HUB_ERROR_CODES } from './sync'
 
 /**
@@ -181,12 +182,14 @@ const round = (hours: number) => Math.round(hours * 10) / 10
 export async function hubLatency(q: Queryable): Promise<SystemState['hub_latency']> {
   const { rows } = await q.execute<{
     label: string
+    model: string
+    account: string
     median_s: number | null
     p90_s: number | null
     max_s: number | null
     n: number
   }>(sql`
-    SELECT a.title || ' ' || m.title AS label,
+    SELECT a.title || ' ' || m.title AS label, m.code AS model, a.code AS account,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY d.s) AS median_s,
            percentile_cont(0.9) WITHIN GROUP (ORDER BY d.s) AS p90_s,
            max(d.s) AS max_s, count(*)::int AS n
@@ -195,17 +198,20 @@ export async function hubLatency(q: Queryable): Promise<SystemState['hub_latency
       JOIN models m ON m.id = a.model_id
      CROSS JOIN LATERAL (SELECT extract(epoch FROM p.first_observed_at - p.published_at)::float8 AS s) d
      WHERE p.published_at > now() - interval '30 days' AND d.s >= 0
-     GROUP BY a.model_id, a.id, a.title, m.title`)
+     GROUP BY a.model_id, a.id, a.title, a.code, m.title, m.code`)
   if (rows.length === 0) return null
   const { rows: all } = await q.execute<{ median_s: number | null; max_s: number | null }>(sql`
     SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY d.s) AS median_s, max(d.s) AS max_s
       FROM hub_posts p
      CROSS JOIN LATERAL (SELECT extract(epoch FROM p.first_observed_at - p.published_at)::float8 AS s) d
      WHERE p.published_at > now() - interval '30 days' AND d.s >= 0`)
-  const windows = await thresholds(q)
-  const wait = windows.wait ?? DEFAULT_WAIT_HOURS
+  // The windows of each page, as matching and the plan read them (page, then model, then all).
+  const thresholds = await readThresholds(q)
   const warnings: string[] = []
   for (const row of rows) {
+    const target = { model: row.model, account: row.account }
+    const wait = thresholdFor(thresholds, 'wait_hub_hours', target) ?? DEFAULT_WAIT_HOURS
+    const notOut = thresholdFor(thresholds, 'not_published_hours', target)
     const p90 = (row.p90_s ?? 0) / 3600
     const max = (row.max_s ?? 0) / 3600
     if (p90 > wait) {
@@ -213,29 +219,16 @@ export async function hubLatency(q: Queryable): Promise<SystemState['hub_latency
         `${row.label}: 9 из 10 постов — до ${formatNumber(round(p90))} ч, дольше «ждём» ${formatNumber(wait)} ч`,
       )
     }
-    if (windows.notOut !== null && max > windows.notOut) {
+    if (notOut !== null && max > notOut) {
       warnings.push(
-        `${row.label}: до ${formatNumber(round(max))} ч, дольше «не вышло» ${formatNumber(windows.notOut)} ч`,
+        `${row.label}: до ${formatNumber(round(max))} ч, дольше «не вышло» ${formatNumber(notOut)} ч`,
       )
     }
   }
   return {
     typical_hours: round((all[0]?.median_s ?? 0) / 3600),
     max_hours: round((all[0]?.max_s ?? 0) / 3600),
-    wait_window_hours: wait,
+    wait_window_hours: thresholdFor(thresholds, 'wait_hub_hours') ?? DEFAULT_WAIT_HOURS,
     warning: warnings.length > 0 ? warnings.join(' · ') : null,
   }
-}
-
-/** The global «ждём Hub» and «не вышло» windows, in hours; no value — not set. */
-async function thresholds(q: Queryable): Promise<{ wait: number | null; notOut: number | null }> {
-  const { rows } = await q.execute<{ key: string; value: unknown }>(sql`
-    SELECT key, value FROM policy_settings
-     WHERE key IN ('hub_wait_window', 'hub_not_out_window')
-       AND model_id IS NULL AND account_id IS NULL AND item_type IS NULL`)
-  const value = (key: string) => {
-    const found = rows.find((row) => row.key === key)?.value
-    return typeof found === 'number' ? found : null
-  }
-  return { wait: value('hub_wait_window'), notOut: value('hub_not_out_window') }
 }
