@@ -156,6 +156,7 @@ export const PINNED_FIELDS = {
     expectedCount: 'int',
     observedUniqueCount: 'int',
     reasonCode: 'string',
+    nextProbeAt: 'timestamp',
     updatedAt: 'timestamp',
   },
   sync_streams: {

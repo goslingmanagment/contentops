@@ -1750,9 +1750,11 @@ Testcontainers одноразовые, стенд — `docker compose down -v`; 
   подтвердить» от этого не появляется (30.10.2026); `last_error` —
   своя ошибка опроса (текста ошибки в `sync_streams` нет);
   для датасета постов `window_from/to`, `expected_count`, `observed_count`,
-  `stop_reason`, `proven_complete_at` остаются NULL, пока в `capture_coverage` Hub нет
-  плана для постов (E7); когда появится — заполняются только при `status =
-  provider_exhausted` с `proof`, крайние даты без доказательства интервал не задают;
+  `stop_reason`, `proven_complete_at` — из плана `posts` в `capture_coverage` Hub (E7, для
+  Fansly с 05.11.2026) и только при `status = provider_exhausted` с `proof` и
+  `nextProbeAt` впереди, иначе NULL; крайние даты без доказательства интервал не задают;
+  в `blockers` пробел `before_capture_floor` (окно чтения раньше начала записи Hub) не даёт
+  `gaps_present`, остальные пробелы дают;
   привязка к попытке работы `hub_sync`. Отрицательный вывод по постам требует
   последнего успешного планового опроса не старше двух интервалов.
 - **`posting_plan_rows.requires_new_upload`**: `false` выполнено точным членством с
