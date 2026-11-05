@@ -32,8 +32,20 @@ describe('placementOf (SPEC §6.1)', () => {
     expect(clip('2. FYP/clip.mov')).toEqual({ kind: 'single' })
     expect(clip('2. FYP/Октябрь/clip.mov')).toEqual({ kind: 'single' })
     expect(clip('3. Customs/12-01 курьер.mov')).toEqual({ kind: 'single' })
-    expect(clip('3. Customs/4 Видео/clip.mov')).toEqual({ kind: 'single' })
     expect(clip('BG/clip.mov')).toEqual({ kind: 'single' })
+  })
+
+  it('a folder of customs that answers one card is one custom; a day and a choice for PPV are not', () => {
+    // «видео из 4 этапов»: four clips and their montage, the model's answer to one card.
+    expect(clip('3. Customs/4 Видео/clip.mov')).toEqual({ kind: 'folder', folderDepth: 2 })
+    expect(clip('3. Customs/4 Видео/части/clip.mov')).toEqual({ kind: 'folder', folderDepth: 2 })
+    expect(clip('3. Customs/05.10.26 fanfox кресло/IMG_7002.MOV')).toEqual({
+      kind: 'folder',
+      folderDepth: 2,
+    })
+    // A nightly drop of a mirror and a choice of many customs: a custom per clip.
+    expect(clip('3. Customs/17.10.26/IMG_1110.MOV')).toEqual({ kind: 'single' })
+    expect(clip('3. Customs/отобранное на PPV/Растяжка.mov')).toEqual({ kind: 'single' })
   })
 
   it('a folder of FYP sources is one shoot of raw material for FYPs', () => {

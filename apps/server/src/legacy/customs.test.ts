@@ -190,9 +190,15 @@ async function customOf(name: string) {
 }
 
 async function deliveries() {
-  const { rows } = await h.db.execute<{ item: string; order: string; signals: string[] }>(sql`
+  const { rows } = await h.db.execute<{
+    item: string
+    order: string
+    signals: string[]
+    at: string
+  }>(sql`
     SELECT public_item_id(i.type, i.number) AS item, o.tg_message_id::text AS order,
-           d.basis -> 'signals' AS signals
+           d.basis -> 'signals' AS signals,
+           to_char(d.delivered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI') AS at
       FROM custom_order_deliveries d JOIN content_items i ON i.id = d.item_id
       JOIN custom_orders o ON o.id = d.order_id
      WHERE d.retracts_id IS NULL ORDER BY 1`)
@@ -240,6 +246,10 @@ describe('the customs import with the orders of the old cards', () => {
     expect(byLine?.signals).toContain('строка модели «12:40 гимнастика»')
     const byBuyer = linked.find((row) => row.item === felix?.item)
     expect(byBuyer?.signals).toContain('покупатель в имени: «феликс»')
+    // Delivered when the model wrote her line, not when the copy came to the disk; without a
+    // message — when the file came.
+    expect(byLine?.at).toBe('2026-08-01T09:00')
+    expect(byBuyer?.at).toBe('2026-08-01T10:00')
 
     // The brief alone: ◆ «Какой заказ?» with both red orders, the group waits.
     const red = await customOf('5:00 вся в зелёном')

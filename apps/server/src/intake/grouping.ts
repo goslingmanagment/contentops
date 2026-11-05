@@ -18,7 +18,8 @@ import {
  * in the model's folder itself) is grouped by its EXIF day, without EXIF by a cluster of up to
  * 45 minutes from the first file. One object is one clip, as in the import of the old disk
  * (`legacy/units.ts`): a video under `2. FYP` or `3. Customs` is a group by itself at any depth,
- * a loose video in `BG` too; a folder of FYP sources (`2. FYP/FYP исходники`) is one shoot, and
+ * a loose video in `BG` too — except a folder of customs that answers one card (`4 Видео`), one
+ * custom of its clips and photos; a folder of FYP sources (`2. FYP/FYP исходники`) is one shoot, and
  * so is raw material for FYPs by its names: a take of a task (`11-2.MOV`), the folder of a FYP
  * contractor (`SteadyContent`, a group per month in it), photos and files of the camera right in
  * `2. FYP` (by the shooting day or the upload window, as files right in a root go). In
@@ -52,6 +53,12 @@ const FYP_TAKES = /^дубли$/iu
 const FYP_TASK = /^FYP\s?\d{1,3}(?!\d)/iu
 /** The ID alone (`PPV-018`): a folder that keeps copies of that object's files. */
 const ID_FOLDER = /^(PPV|SET|SXT|SEX|CUS|FYP|LIFE|RAW|PRM)-(\d{3,6})$/iu
+/**
+ * Folders of customs that hold many orders: a bare day (`17.10.26`), the nightly drop of a mirror,
+ * and a choice for PPV (`отобранное на PPV`). Any other folder right in `3. Customs` answers one
+ * card (`4 Видео`, `05.10.26 <покупатель> <что>`): one custom of its clips and photos.
+ */
+const MANY_ORDERS = /^(?:\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4})|.*отобранное\s+на\s+ppv.*)$/iu
 
 export type Placement =
   /** The file is an object by itself, whatever folder it lies in. */
@@ -177,6 +184,11 @@ export function placementOf(relative: readonly string[], isVideo: boolean): Plac
       }
     }
     if (isVideo) return { kind: 'single' }
+  }
+  // The folder of the answer to one card is one custom: the clips are the parts of one video
+  // (`3. Customs/4 Видео` — «видео из 4 этапов» and their montage), SPEC §6.1.
+  if (CUSTOM_ROOT.test(root) && dirs >= 2 && !MANY_ORDERS.test((relative[1] ?? '').trim())) {
+    return { kind: 'folder', folderDepth: 2 }
   }
   if (isVideo && (FYP_ROOT.test(root) || CUSTOM_ROOT.test(root))) return { kind: 'single' }
   if (dirs >= 2) {

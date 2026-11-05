@@ -153,7 +153,7 @@ describe('one clip is one group (SPEC §6.1)', () => {
     await scan('dropbox', 'full')
   })
 
-  it('videos under the FYP root and in a subfolder of customs become one group each', async () => {
+  it('videos under the FYP root are one group each; a folder of customs answers one card', async () => {
     const fyp = await groupsUnder('2. FYP/')
     const made = fyp.map((g) => [g.grouping, g.proposed_type, g.proposed_title, g.files.length])
     expect(made).toEqual(
@@ -162,11 +162,11 @@ describe('one clip is one group (SPEC §6.1)', () => {
         ['single', 'FYP', 'b', 1],
       ]),
     )
+    // «видео из 4 этапов»: the clips of the folder are the parts of one custom.
     const customs = await groupsUnder('3. Customs/4 Видео/')
-    expect(customs.map((g) => [g.grouping, g.proposed_type, g.proposed_title])).toEqual([
-      ['single', 'CUS', 'c1'],
-      ['single', 'CUS', 'c2'],
-    ])
+    expect(
+      customs.map((g) => [g.grouping, g.proposed_type, g.proposed_title, g.files.length]),
+    ).toEqual([['folder', 'CUS', '4 Видео', 2]])
   })
 
   it('a folder of FYP sources is one RAW shoot; a photo right in 2. FYP is raw for FYPs too', async () => {
