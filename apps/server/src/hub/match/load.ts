@@ -505,10 +505,15 @@ export async function receiptsFor(
     width: number | null
     height: number | null
   }>(sql`
-    SELECT e.id, e.file_name, e.asset_id, e.asset_version_id, s.created_in_item_id AS item_id,
+    SELECT e.id, e.file_name, e.asset_id, e.asset_version_id,
+           -- The object that holds the file now (it moves with «Перенести в…», «Слить»).
+           coalesce(owner.item_id, s.created_in_item_id) AS item_id,
            e.duration_ms::text AS duration_ms, e.width, e.height
       FROM download_receipt_entries e
       JOIN assets s ON s.model_id = e.model_id AND s.id = e.asset_id
+      LEFT JOIN item_memberships owner
+        ON owner.model_id = e.model_id AND owner.asset_id = e.asset_id AND owner.kind = 'owned'
+       AND owner.removed_at IS NULL
      WHERE e.model_id = ${page.modelId}::uuid
        AND e.file_name_norm LIKE ANY (${sql.param(ids.map((id) => `${id}\\_%`))}::text[])`)
   const wanted = new Set(cores.map((core) => core.key))
