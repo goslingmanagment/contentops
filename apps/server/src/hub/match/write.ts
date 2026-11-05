@@ -245,6 +245,34 @@ export async function publicationPlacement(
   return (rows[0] as { id: string }).id
 }
 
+/** The placement of a publication on a surface, read only. */
+export async function placementByRefs(
+  tx: Tx,
+  page: Page,
+  surfaceId: string,
+  refs: Refs,
+): Promise<string | null> {
+  return (await byRefs(tx, page, surfaceId, refs))?.id ?? null
+}
+
+/**
+ * The object of a placement of the history pass, set again (SPEC §7: the pass reviews its own
+ * candidates): another object, or none when no evidence of the pass stands on it any more.
+ */
+export async function setPlacementItem(
+  tx: Tx,
+  page: Page,
+  placementId: string,
+  itemId: string | null,
+): Promise<boolean> {
+  const result = await tx.execute(sql`
+    UPDATE placements SET item_id = ${itemId}::uuid, item_type = ${await itemType(tx, page, itemId)},
+           row_version = row_version + 1
+     WHERE model_id = ${page.modelId}::uuid AND id = ${placementId}::uuid
+       AND item_id IS DISTINCT FROM ${itemId}::uuid`)
+  return (result.rowCount ?? 0) > 0
+}
+
 /**
  * The earlier placement without an external ID the same publication belongs to (SPEC §7): a
  * legacy claim of the object on the page and surface on the same day. Two such — none: the

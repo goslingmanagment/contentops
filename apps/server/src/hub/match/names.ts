@@ -18,16 +18,49 @@ export interface NameCore {
 
 const KNOWN_EXT = /\.[a-z0-9]{2,4}$/i
 
-/** The core of a download name; `null` — not a name ContentOps gave. */
-export function nameCore(filename: string | null | undefined): NameCore | null {
+function nameGroups(
+  filename: string | null | undefined,
+): Record<string, string | undefined> | null {
   if (!filename) return null
   const trimmed = filename.trim().normalize('NFC')
   // The platform may give another extension or none: the grammar wants one.
   const withExt = KNOWN_EXT.test(trimmed) ? trimmed.toLowerCase() : `${trimmed.toLowerCase()}.x0`
   const upperId = withExt.replace(/^([a-z]+)-/, (prefix) => prefix.toUpperCase())
-  const match = EXPORT_NAME_PATTERN.exec(upperId)
-  if (!match?.groups) return null
-  const { id, role, ord, uniq, version } = match.groups
+  return EXPORT_NAME_PATTERN.exec(upperId)?.groups ?? null
+}
+
+/**
+ * The file of the catalog a download name points at, as `<type>-<number>|<handle>`
+ * (`SXT-3|pic67`, `FYP-412|u2`, `PPV-73|master`): the object, the role and its number, the unique
+ * version (naming §5). The number of the file in the order of showing (`_85_`) and the version
+ * are not part of it (naming §5: «опознание по ID, роли и номеру роли»).
+ */
+export function nameHandle(filename: string | null | undefined): string | null {
+  const groups = nameGroups(filename)
+  if (!groups?.id || !groups.role) return null
+  return handleKey(groups.id, groups.role, groups.ord ? Number(groups.ord) : null, groups.uniq)
+}
+
+/** `SXT-003`, `pic`, 67 → `SXT-3|pic67`: one key for the name and the catalog. */
+export function handleKey(
+  publicId: string,
+  role: string,
+  ordinal: number | null,
+  uniq?: string | number | null,
+): string | null {
+  const id = /^([A-Za-z]+)-0*(\d+)$/.exec(publicId)
+  if (!id) return null
+  const variant = uniq ? Number(uniq) : 0
+  const handle =
+    variant > 0 ? `u${variant}` : ordinal ? `${role}${String(ordinal).padStart(2, '0')}` : role
+  return `${(id[1] as string).toUpperCase()}-${Number(id[2])}|${handle.toLowerCase()}`
+}
+
+/** The core of a download name; `null` — not a name ContentOps gave. */
+export function nameCore(filename: string | null | undefined): NameCore | null {
+  const groups = nameGroups(filename)
+  if (!groups) return null
+  const { id, role, ord, uniq, version } = groups
   if (!id || !role) return null
   const ordinal = ord ? Number(ord) : 0
   const file = `${role}${ord ?? ''}${uniq ? `_u${uniq}` : ''}${version ? `_v${version}` : ''}`

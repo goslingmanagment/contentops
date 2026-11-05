@@ -1734,7 +1734,9 @@ Testcontainers одноразовые, стенд — `docker compose down -v`; 
 - **`placement_evidence`**: ключи дедупликации `exact:<media_ref>:<observation_id>`,
   `cand:<plan_row_id>:<manifest_id>:<observation_id>`, `cand:hist:<asset_id>:<observation_id>`
   (история без плана, SPEC §7, 30.09.2026; только Fansly — на OnlyFans прохода нет, старое
-  КМ отмечает «Уже залито» пакетом или «Было», 30.10.2026) и `pub:<hub_publication_id>:<observation_id>`
+  КМ отмечает «Уже залито» пакетом или «Было», 30.10.2026; снятый проходом кандидат —
+  `retract` с `corrects_id`, ключом `retract:<id>` и `payload.kind = history_retract`, а
+  поставленный снова после снятия — с хвостом `:1`, `:2`…, 05.11.2026) и `pub:<hub_publication_id>:<observation_id>`
   (с 5б: строка, отправленная через Hub, получает `hub / observed / exact` по
   `platform_post_ref`, без сопоставления); полезная нагрузка кандидата —
   строка плана (у истории её нет), состав, сигналы (`dt_minutes`, `count_match`, `metadata_hits`,
@@ -1792,7 +1794,11 @@ Testcontainers одноразовые, стенд — `docker compose down -v`; 
     дни; у поста на стене и в FYP оба размещения несут одну сумму; подпись с платформы
     переносится на размещение каждым прогоном;
   - старые имена прохода по истории — `aliases` `legacy_name`, `legacy_path` и имена файлов
-    на диске (`source_objects` через `aliases.source_object_id`);
+    на диске (`source_objects` через `aliases.source_object_id`); имя скачивания — по живым
+    членствам объекта (роль и номер роли) и по `sub_handle` перенесённых файлов; объект
+    файла — по живому членству `owned`, не по `created_in_item_id`; день съёмки файла —
+    `blob_probes` его исходника, иначе `remote_shot_at`, иначе `content_items.shot_on`
+    (05.11.2026);
   - случаи «Сверить» не хранятся: `r-<строка>` и `p-<пост Hub>` вычисляются из плана, улик и
     зеркала на каждый запрос; «пост без плана» показывается за последние 30 дней (старше —
     дело прохода по истории), день плана считает посты без плана только своего дня.

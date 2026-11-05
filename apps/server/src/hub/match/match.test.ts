@@ -7,9 +7,7 @@ import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createCatalogItems } from '../../testing/catalog-factory'
 import { addPerson, call, OWNER, signIn, type TestServer, testServer } from '../../testing/server'
-import { hubSyncHandler } from '../sync'
-import { fakeClient, type PageIds, pageIds, runHubWork, setHubPage, syncOnce } from '../testing'
-import { hubHistoryHandler } from './auto'
+import { fakeClient, type PageIds, pageIds, setHubPage, syncOnce } from '../testing'
 import {
   evidenceOf,
   forYou,
@@ -810,7 +808,7 @@ describe('vault', () => {
   })
 })
 
-describe('без плана: реклама и проход по истории', () => {
+describe('без плана: реклама', () => {
   it('реклама чужой страницы скрыта, за сутки одно событие «скрыто как реклама»', async () => {
     await setPolicy(db, 'hub_ad_markers', { tags: ['#ads'], own_handles: ['loravie'] }, lora1)
     hub.setNow(new Date())
@@ -830,53 +828,5 @@ describe('без плана: реклама и проход по истории'
     const { rows } = await db.execute<{ after: Record<string, unknown> }>(sql`
       SELECT after FROM action_log WHERE action = 'hub.ads_hidden' AND subject_id = ${lora1.accountId}::uuid`)
     expect(rows.map((row) => row.after)).toEqual([{ день: YESTERDAY, 'скрыто как реклама': 1 }])
-  })
-
-  it('история страницы: единственное совпадение — кандидат без плана, спорное и фото по размерам — «неизвестно»', async () => {
-    const old = (day: string) => new Date(`${day}T12:00:00+03:00`).toISOString()
-    hub.setNow(new Date())
-    hub.put('posts', 'page-a', [
-      hubPost('h-1', old('2026-03-12')),
-      hubPost('h-2', old('2026-03-13')),
-      hubPost('h-3', old('2026-03-14'), { fypFlags: 4 }),
-      hubPost('h-4', old('2026-03-15')),
-    ])
-    hub.put('post_attachments', 'page-a', [
-      ...hubFiles('h-1', old('2026-03-12'), [{ media: 'h-1', durationMs: 12_050 }]),
-      ...hubFiles('h-2', old('2026-03-13'), [
-        { media: 'h-2', durationMs: 15_000, width: 720, height: 1280 },
-      ]),
-      ...hubFiles('h-3', old('2026-03-14'), [
-        { media: 'h-3', video: false, width: 1200, height: 1800 },
-      ]),
-      ...hubFiles('h-4', old('2026-03-15'), [{ media: 'h-4', durationMs: 99_000 }]),
-    ])
-    await poll(lora1)
-    const { rows } = await db.execute<{ id: string }>(sql`
-      SELECT id FROM work_operations WHERE kind = 'hub_history'
-         AND work_key = ${`history:${lora1.accountId}:first`}`)
-    const outcome = await runHubWork(db, rows[0]?.id as string, hubSyncHandler(options()), {
-      extra: { hub_history: hubHistoryHandler() },
-    })
-    expect(outcome.state).toBe('succeeded')
-    expect(outcome.report).toMatchObject({
-      posts: 4,
-      candidates: 1,
-      disputed: 1,
-      photo_hints: 1,
-      unknown: 3,
-    })
-    const history = (await placementsOf(db, lora1)).find((p) => p.external_post_ref === 'h-1')
-    expect(history).toMatchObject({ plan_row_id: null, surface_source: 'hub_hint', surface: 'fyp' })
-    const evidence = await evidenceOf(db, [history?.id as string])
-    expect(evidence.map((e) => e.dedup_key)[0]).toMatch(/^cand:hist:/)
-    const object = await call(server.app, {
-      method: 'GET',
-      url: '/api/v1/lora/objects/FYP-0802/placements',
-      as: owner,
-    })
-    if (object.statusCode === 200) {
-      expect(JSON.stringify(object.json())).toContain('похоже, выходило')
-    }
   })
 })

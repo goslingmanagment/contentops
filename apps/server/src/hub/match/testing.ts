@@ -270,7 +270,9 @@ export function vaultFile(
   memberRef: string,
   media: string,
   options: {
+    /** The card's caption; it is also the uploaded file's name unless `uploadName` says. */
     name?: string | null
+    uploadName?: string
     walkedAt: string
     membershipAt?: string
     durationMs?: number | null
@@ -290,7 +292,7 @@ export function vaultFile(
     fullWalkRef: `walk-${albumRef}`,
     fullWalkObservedCount: 1,
     customFilename: options.name ?? null,
-    filename: options.name ?? `${media}.bin`,
+    filename: options.uploadName ?? options.name ?? `${media}.bin`,
     mimeType: options.video === false ? 'image/jpeg' : 'video/mp4',
     durationMs: options.video === false ? null : (options.durationMs ?? 9_000),
     originalWidth: options.width ?? 1080,
