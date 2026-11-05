@@ -1,4 +1,4 @@
--- 0015_video_prints: «Похоже на ролик» at intake (SPEC §6.2).
+-- 0016_video_prints: «Похоже на ролик» at intake (SPEC §6.2).
 --
 -- A montage of Ари came two or three times: the editor's original, a second export and a copy
 -- from the Я.Диск queue with the loudness evened out — other bytes, the same picture. Each

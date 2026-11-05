@@ -414,7 +414,7 @@ algo_version, normalization)`, `phash bit(64)`, `computed_at`. Подсказк�
 `bit_count(phash # :probe)`; порог — `policy_settings` `phash_suggest_threshold` в процентах
 похожести, как на экране «Пороги»: 90 — различаются не больше 6 из 64 бит. Ничего не объединяет.
 
-**`video_prints`** — отпечаток ролика (§6.2, миграция 0015): `sha256` байтов, из которых
+**`video_prints`** — отпечаток ролика (§6.2, миграция 0016): `sha256` байтов, из которых
 собрано превью (исходник черновика или версии, как `rendition_generations.input_sha256`),
 `algorithm`, `algo_version` (PK вместе), `duration_ms` — длительность картинки (видеодорожки
 превью, не контейнера), `frames bit(64)[]` — pHash десяти кадров в серединах десяти равных
@@ -1697,7 +1697,7 @@ LLM.
 | 5 | `0010_hub_matching` | таблиц нет: `placements.surface_source` дополнен `hub_hint` (схема §9.6) |
 | после 3 (03.11.2026) | `0012_inbox_reads` | таблиц нет: индекс последней работы забора ревизии для «Приехало» (SPEC §12.0); номера поздних файлов ниже сдвигаются |
 | после 3 (03.11.2026) | `0013_inbox_promo` | таблиц нет: канал и подборка промо-группы «Приехало» (`inbox_groups.proposed_channel_id`, `proposed_collection_id`) |
-| после 3 (05.11.2026) | `0015_video_prints` | `video_prints` (1): отпечатки роликов; кандидат `similar_video`, ◆ `video_copy`, работа `video_print` (SPEC §6.2) |
+| после 3 (05.11.2026) | `0016_video_prints` | `video_prints` (1): отпечатки роликов; кандидат `similar_video`, ◆ `video_copy`, работа `video_print` (SPEC §6.2) |
 | 8 (8а) | `0010_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
