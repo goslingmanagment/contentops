@@ -169,7 +169,7 @@ describe('one clip is one group (SPEC §6.1)', () => {
     ])
   })
 
-  it('a folder of FYP sources is one RAW shoot; a photo in the root waits for its type', async () => {
+  it('a folder of FYP sources is one RAW shoot; a photo right in 2. FYP is raw for FYPs too', async () => {
     const sources = await groupsUnder('2. FYP/FYP исходники/')
     expect(sources.map((g) => [g.grouping, g.proposed_type, g.files.length])).toEqual([
       ['folder', 'RAW', 2],
@@ -179,7 +179,7 @@ describe('one clip is one group (SPEC §6.1)', () => {
        WHERE group_key = ${sources[0]?.group_key as string}`)
     expect(rows).toEqual([{ purpose: 'fyp' }])
     const photo = (await groupsUnder('2. FYP/cover')).map((g) => g.proposed_type)
-    expect(photo).toEqual([null])
+    expect(photo).toEqual(['RAW'])
   })
 
   it('the night pass leaves a draft where a person put it, a moved file follows its folder', async () => {

@@ -1,5 +1,12 @@
 import type { values } from '@contentops/db'
-import { areaOfSection, contextOf, type LegacyClaim, parseLegacyName } from '@contentops/legacy'
+import {
+  areaOfSection,
+  contextOf,
+  fypRawOfName,
+  isFypVendorFolder,
+  type LegacyClaim,
+  parseLegacyName,
+} from '@contentops/legacy'
 
 /**
  * Grouping of discovered files into intake groups (SPEC §6.1). Pure rules; the database part
@@ -11,7 +18,10 @@ import { areaOfSection, contextOf, type LegacyClaim, parseLegacyName } from '@co
  * in the model's folder itself) is grouped by its EXIF day, without EXIF by a cluster of up to
  * 45 minutes from the first file. One object is one clip, as in the import of the old disk
  * (`legacy/units.ts`): a video under `2. FYP` or `3. Customs` is a group by itself at any depth,
- * a loose video in `BG` too; a folder of FYP sources (`2. FYP/FYP исходники`) is one shoot. In
+ * a loose video in `BG` too; a folder of FYP sources (`2. FYP/FYP исходники`) is one shoot, and
+ * so is raw material for FYPs by its names: a take of a task (`11-2.MOV`), the folder of a FYP
+ * contractor (`SteadyContent`, a group per month in it), photos and files of the camera right in
+ * `2. FYP` (by the shooting day or the upload window, as files right in a root go). In
  * `9. SMM` the folder right above the files is the group, a collection of the channel its path
  * names (`9. SMM/Gif сайты/Октябрь/нюд`), as the import makes it (SPEC §6.3).
  *
@@ -49,7 +59,7 @@ export type Placement =
   /** Inside the folder made of the first `folderDepth` components of `relative`. */
   | { kind: 'folder'; folderDepth: number; proposal?: FolderProposal }
   /** Right in a root (`folderDepth` 1) or in the model's folder itself (0). */
-  | { kind: 'root'; folderDepth: 0 | 1 }
+  | { kind: 'root'; folderDepth: 0 | 1; proposal?: FolderProposal }
 
 /** The number a folder's name gives its object: a pack, or a folder of its copies. */
 export interface PackNumber {
@@ -115,6 +125,8 @@ function fypRawDepth(folders: readonly string[]): number | null {
   return dayDepth === null ? takesDepth : Math.min(takesDepth, dayDepth)
 }
 
+const RAW_FOR_FYP: FolderProposal = { type: 'RAW', purpose: 'fyp' }
+
 /** `relative` — path components of the file, its name last. */
 export function placementOf(relative: readonly string[], isVideo: boolean): Placement {
   const dirs = relative.length - 1
@@ -123,15 +135,25 @@ export function placementOf(relative: readonly string[], isVideo: boolean): Plac
   if (FYP_ROOT.test(root)) {
     // A day folder and the takes of a task: raw for FYPs, a group per day or task (SPEC §6.3).
     const raw = fypRawDepth(folders)
-    if (raw !== null) {
-      return { kind: 'folder', folderDepth: raw, proposal: { type: 'RAW', purpose: 'fyp' } }
-    }
+    if (raw !== null) return { kind: 'folder', folderDepth: raw, proposal: RAW_FOR_FYP }
     const sources = folders.findIndex((name) => FYP_SOURCES.test(name))
     if (sources >= 0) {
       // A task of a cycle of sources (`FYP 01 — Микрофлеш`) is a group of its own.
       const task = folders.findIndex((name, i) => i > sources && FYP_TASK.test(name.trim()))
       const depth = task >= 0 ? task + 2 : sources + 2
-      return { kind: 'folder', folderDepth: depth, proposal: { type: 'RAW', purpose: 'fyp' } }
+      return { kind: 'folder', folderDepth: depth, proposal: RAW_FOR_FYP }
+    }
+    // The folder of a FYP contractor (`SteadyContent/January/11-2.MOV`): the model's sources for
+    // it, a group per folder right below it (a month), as the import takes them.
+    const vendor = folders.findIndex((name) => isFypVendorFolder(name))
+    if (vendor >= 0) {
+      return { kind: 'folder', folderDepth: Math.min(dirs, vendor + 3), proposal: RAW_FOR_FYP }
+    }
+    // A take of a task by its name; photos and files of the camera right in `2. FYP`.
+    if (fypRawOfName(relative.at(-1) ?? '', dirs === 1)) {
+      return dirs === 1
+        ? { kind: 'root', folderDepth: 1, proposal: RAW_FOR_FYP }
+        : { kind: 'folder', folderDepth: dirs, proposal: RAW_FOR_FYP }
     }
   }
   if (SMM_ROOT.test(root) && dirs >= 2) {

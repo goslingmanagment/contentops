@@ -59,6 +59,62 @@ const NOT_CONTENT: readonly [RegExp, string][] = [
 const FYP_SOURCES = /исходник|сырь[её]|оригинал|(?<![\p{L}])(sources?|raw|originals?)(?![\p{L}])/iu
 /** `Дубли` — the takes a model shot for a FYP; a bare date folder — what she sent that day. */
 const FYP_TAKES = /^(дубли|\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4}))$/iu
+/**
+ * The folder of a FYP contractor (`SteadyContent`): the model's sources put there for it to
+ * edit (owner 23.11.2025: «там исходники, он должен будет скинуть смонтированные»).
+ */
+const FYP_VENDOR = /^steadycontent$/iu
+/**
+ * A take of a FYP task by its name: `11-2.MOV` — task 11, take 2; `1.3.mov`. A bare number is
+ * not one: `Posted/April 2025 (posted)/25.mov` is a posted FYP.
+ */
+const FYP_TAKE_NAME = /^\d{1,3}\s?[-.]\s?\d{1,2}(?:\s*\(\d{1,2}\))?$/u
+/**
+ * The name a phone or a camera gave a file (`IMG_3982.MOV`, `copy_<UUID>.mov`, `Видео
+ * 01.11.2026, 10 45 34 PM.mov`, `photo_2026-04-20_21-10-05.jpg`): a file as it was shot, not a
+ * ready FYP, which is named by its posts or its batch.
+ */
+const CAMERA_NAME = new RegExp(
+  [
+    '^(?:',
+    '(?:IMG|VID|MVI|DSC|PXL)_?E?\\d{3,8}(?:_\\d+)?',
+    '|copy_[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}',
+    '|(?:Видео|Фото|Video|Photo)\\s+\\d{1,2}\\.\\d{1,2}\\.\\d{4},?\\s+\\d{1,2}[\\s.:]\\d{2}[\\s.:]\\d{2}(?:\\s?[AP]M)?',
+    '|(?:photo|video)_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}(?:_\\d+)?',
+    ')(?:\\s*\\(\\d{1,2}\\))*$',
+  ].join(''),
+  'iu',
+)
+const PHOTO_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'heic',
+  'heif',
+  'webp',
+  'tif',
+  'tiff',
+  'dng',
+])
+
+/** `SteadyContent`: the folder of a FYP contractor, with the model's sources for it. */
+export function isFypVendorFolder(name: string): boolean {
+  return FYP_VENDOR.test(nfc(name).trim())
+}
+
+/**
+ * Raw material for FYPs by the name of a file of `2. FYP` (SPEC §6.1): a take of a task (`N-K`,
+ * `N.K`) at any depth; right in the section — a photo, or a file named by the camera (the takes of a
+ * task the model drops there, Лора's Dropbox from 27.10.2026). `null` — the name says nothing:
+ * a ready FYP is named by its posts (`used2_…`), its batch (`FYP_2_13.06.25`) or its editor.
+ */
+export function fypRawOfName(name: string, rightInSection: boolean): 'take' | 'camera' | null {
+  const { stem, ext } = splitExtension(nfc(name), false)
+  const whole = stem.trim()
+  if (FYP_TAKE_NAME.test(whole)) return 'take'
+  if (!rightInSection) return null
+  return (ext !== null && PHOTO_EXTENSIONS.has(ext)) || CAMERA_NAME.test(whole) ? 'camera' : null
+}
 /** Messages of a chat or a DM (`личка`, `чат группы`): what they are, a person decides. */
 const MESSAGES = /^(личка|чат(?:\s.*)?)$/iu
 
@@ -173,7 +229,14 @@ export function contextOf(path: string, options: ParseOptions): PathContext {
   // Folders below the root, the entry itself too when it is a folder.
   const folders = inner.slice(1, options.isDir ? inner.length : -1)
   if (subArea === 'fyp' && area !== 'old_format') {
-    if (folders.some((f) => FYP_SOURCES.test(f) || FYP_TAKES.test(nfc(f).trim()))) {
+    // Right in `2. FYP` (or `BG/2. FYP`): no folder between the section and the file.
+    const rightInSection = !options.isDir && inner.length === (subArea === area ? 2 : 3)
+    if (
+      folders.some(
+        (f) => FYP_SOURCES.test(f) || FYP_TAKES.test(nfc(f).trim()) || isFypVendorFolder(f),
+      ) ||
+      (!options.isDir && fypRawOfName(name, rightInSection) !== null)
+    ) {
       typeHint = 'RAW'
       rawPurpose = 'fyp'
     }

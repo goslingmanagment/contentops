@@ -468,7 +468,14 @@ async function groupOf(
             folderId,
             source.modelTimezone,
           )
-    const base = { folderResourceId: folder?.resourceId ?? null, type, evidence }
+    // Raw material for FYPs right in `2. FYP` (photos, files of the camera) is typed by its name.
+    const raw = placement.kind === 'root' ? placement.proposal : undefined
+    const base = {
+      folderResourceId: folder?.resourceId ?? null,
+      type: raw?.type ?? type,
+      purpose: raw?.purpose ?? null,
+      evidence,
+    }
     if (loose.grouping === 'single') {
       proposal = {
         ...base,

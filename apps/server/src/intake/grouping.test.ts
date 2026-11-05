@@ -55,8 +55,42 @@ describe('placementOf (SPEC §6.1)', () => {
     expect(clip('4. Sets/Set/deep/clip.mov')).toEqual({ kind: 'folder', folderDepth: 2 })
     expect(photo('3. Customs/4 Видео/frame.jpg')).toEqual({ kind: 'folder', folderDepth: 2 })
     expect(clip('8. Other/clip.mov')).toEqual({ kind: 'root', folderDepth: 1 })
-    expect(photo('2. FYP/frame.jpg')).toEqual({ kind: 'root', folderDepth: 1 })
     expect(clip('clip.mov')).toEqual({ kind: 'root', folderDepth: 0 })
+  })
+
+  it('raw material for FYPs by its names: takes, a contractor, the camera right in 2. FYP', () => {
+    const raw = { type: 'RAW', purpose: 'fyp' }
+    // Лора's Dropbox from 27.10.2026: the takes of the tasks, straight from the phone.
+    expect(clip('2. FYP/Видео 01.11.2026, 10 45 34 PM (1).mov')).toEqual({
+      kind: 'root',
+      folderDepth: 1,
+      proposal: raw,
+    })
+    expect(clip('2. FYP/IMG_3982.MOV')).toEqual({ kind: 'root', folderDepth: 1, proposal: raw })
+    expect(photo('2. FYP/Фото 01.11.2026, 7 57 08 PM.jpg')).toEqual({
+      kind: 'root',
+      folderDepth: 1,
+      proposal: raw,
+    })
+    expect(photo('2. FYP/frame.jpg')).toEqual({ kind: 'root', folderDepth: 1, proposal: raw })
+    // A take of a task by its name (`N-K`), wherever it lies.
+    expect(clip('2. FYP/Ноябрь/3-2.MOV')).toEqual({ kind: 'folder', folderDepth: 2, proposal: raw })
+    // The sources for a FYP contractor: a group per month of its folder.
+    expect(clip('2. FYP/SteadyContent/January/11-2.MOV')).toEqual({
+      kind: 'folder',
+      folderDepth: 3,
+      proposal: raw,
+    })
+    expect(clip('2. FYP/SteadyContent/December/1/IMG_1657.MOV')).toEqual({
+      kind: 'folder',
+      folderDepth: 3,
+      proposal: raw,
+    })
+    // A ready FYP is named by its batch, its posts or its editor; a bare number in Posted too.
+    expect(clip('2. FYP/FYP_2_13.06.25.mov')).toEqual({ kind: 'single' })
+    expect(clip('2. FYP/used2_16.11.25_IMG_4464.mov')).toEqual({ kind: 'single' })
+    expect(clip('2. FYP/Posted/April 2025 (posted)/25.mov')).toEqual({ kind: 'single' })
+    expect(clip('2. FYP/Posted/May 2026 (posted)/IMG_4669.mov')).toEqual({ kind: 'single' })
   })
 
   it('in 9. SMM the folder right above the files is the group; its path may name a channel', () => {
