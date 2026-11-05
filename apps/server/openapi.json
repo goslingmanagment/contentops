@@ -3083,6 +3083,12 @@
           "preview": {
             "$ref": "#/components/schemas/MediaPreview"
           },
+          "frames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MasterFrame"
+            }
+          },
           "shot_at": {
             "anyOf": [
               {

@@ -10,7 +10,7 @@ import {
   RecordVersionSchema,
   ThumbRefSchema,
 } from './common'
-import { FileRoleSchema, MediaKindSchema } from './files'
+import { FileRoleSchema, MasterFrameSchema, MediaKindSchema } from './files'
 import { ItemIdSchema, ItemTypeSchema } from './item-type'
 
 /** Stages of «готовится» (DESIGN §5.3). */
@@ -166,6 +166,11 @@ export const DraftFileSchema = z.object({
   thumb: ThumbRefSchema,
   /** What the viewer plays or shows, built from the source (SPEC §6.1); absent from the stub. */
   preview: MediaPreviewSchema.optional(),
+  /**
+   * Frames of a video from its first pass, up to ten at equal steps: «Сравнить» of «Похоже на
+   * ролик» puts them next to the frames of the accepted file. Only the group itself sends them.
+   */
+  frames: z.array(MasterFrameSchema).optional(),
   shot_at: InstantSchema.nullable(),
 })
 export type DraftFile = z.infer<typeof DraftFileSchema>

@@ -1,5 +1,5 @@
 import type { ActorRef } from '@contentops/contracts/domain/common'
-import type { FileRole } from '@contentops/contracts/domain/files'
+import type { FileRole, MasterFrame } from '@contentops/contracts/domain/files'
 import {
   type DraftFile,
   type DraftHint,
@@ -14,6 +14,7 @@ import { DEFAULT_PAGE_LIMIT } from '@contentops/contracts/domain/pagination'
 import { orderTitleOf } from '@contentops/contracts/order-card'
 import type { Queryable, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
+import { renditionUrl, thumbRatio } from '../catalog/entries'
 import { handleSql } from '../catalog/ids'
 import { instant, instantOrNull } from '../commands'
 import { ApiProblem } from '../errors'
@@ -1161,20 +1162,78 @@ async function withPreviews(
       source: row.source_hex,
     })),
   )
+  const frames = await draftFrames(
+    q,
+    model,
+    rows.flatMap((row) => (row.media_kind === 'video' && row.source_hex ? [row.source_hex] : [])),
+  )
   return files.map((file, index) => {
     const preview = previews[index]
     const row = rows[index]
     if (!preview || !row) return file
     // Not fetched or checked yet: the preview comes with the first pass after the bytes.
     const preparing = row.state === 'discovered' || row.state === 'processing'
+    const own = row.source_hex ? frames.get(row.source_hex) : undefined
     return {
       ...file,
       preview:
         preview.url || preview.building || !preparing
           ? preview
           : { ...preview, building: { progress: null } },
+      ...(own ? { frames: own } : {}),
     }
   })
+}
+
+/**
+ * Up to ten annotation frames of each video at equal steps (SPEC §9.3 `frames/NNNN.webp`),
+ * from the newest ready pass over its source: «Сравнить» of «Похоже на ролик» shows them.
+ */
+async function draftFrames(
+  q: Queryable,
+  model: { id: string; code: string },
+  sources: readonly string[],
+): Promise<Map<string, MasterFrame[]>> {
+  const out = new Map<string, MasterFrame[]>()
+  if (sources.length === 0) return out
+  const { rows } = await q.execute<{
+    sha: string
+    generation: string
+    name: string
+    frame_ms: number
+    width: number | null
+    height: number | null
+  }>(sql`
+    SELECT encode(g.input_sha256, 'hex') AS sha, g.id AS generation, a.name,
+           a.frame_ms::float8 AS frame_ms, a.width, a.height
+      FROM (SELECT DISTINCT ON (input_sha256) id, input_sha256 FROM rendition_generations
+             WHERE input_sha256 IN (SELECT decode(h, 'hex') FROM unnest(${sql.param([...sources])}::text[]) h)
+               AND kind = 'frames' AND state = 'ready' AND NOT meta_stripped
+             ORDER BY input_sha256, ready_at DESC) g
+      JOIN rendition_artifacts a ON a.generation_id = g.id AND a.state = 'ready'
+     WHERE a.frame_ms IS NOT NULL
+     ORDER BY 1, a.frame_ms`)
+  const bySource = new Map<string, (typeof rows)[number][]>()
+  for (const row of rows) bySource.set(row.sha, [...(bySource.get(row.sha) ?? []), row])
+  for (const [sha, all] of bySource) {
+    const step = Math.max(1, all.length / 10)
+    const picked = Array.from(
+      { length: Math.min(10, all.length) },
+      (_, i) => all[Math.floor(i * step)] as (typeof all)[number],
+    )
+    out.set(
+      sha,
+      picked.map((frame, i) => ({
+        t_s: Math.round(frame.frame_ms / 100) / 10,
+        thumb: {
+          key: `draft:${sha.slice(0, 12)}/frame${String(i + 1).padStart(2, '0')}`,
+          ratio: thumbRatio('video', frame.width, frame.height),
+          url: renditionUrl(model, frame.generation, frame.name),
+        },
+      })),
+    )
+  }
+  return out
 }
 
 /** `GET /{model}/inbox/groups/{group}`: the group with what is still open, else its decision. */
