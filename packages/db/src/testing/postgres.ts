@@ -46,6 +46,10 @@ export async function startPostgres(): Promise<{
 }> {
   const container = await new PostgreSqlContainer(POSTGRES_IMAGE)
     .withDatabase('postgres')
+    // Data in memory. The image keeps it in an anonymous volume, which a run killed without
+    // Ryuk or `docker rm -f` leaves behind; with a tmpfs there Docker makes no volume at all.
+    // Faster too: the server tests took 19 s instead of 30 s (05.11.2026).
+    .withTmpFs({ '/var/lib/postgresql': 'rw' })
     .withCommand([
       'postgres',
       '-c',

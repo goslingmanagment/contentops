@@ -79,6 +79,11 @@ Agency Hub (`README.md`, `PRD.md`).
 - **Грабли:** маршрут вида `{id}:verb` (таблица маршрутов в `packages/contracts`)
   Fastify 5 не разбирает — `/:id::verb` даёт один параметр `id::verb`; преобразователь
   маршрутов пишет `:id(^[^:/]+)::verb`.
+  Образ `postgres:18` хранит базу в безымянном томе: контейнер, удалённый `docker rm -f` без
+  `-v`, оставляет висящий том — сотни МБ, с восстановленным бэкапом гигабайты. Стенды
+  `pnpm dev:server` и `perf:stack` держат базу в самом контейнере; свой `docker run
+  postgres:18.6` — с `--tmpfs /var/lib/postgresql -e PGDATA=/var/lib/pgdata`, удалять —
+  `docker rm -fv`.
   Образцы настроек — сами конфиги: Vite и Tailwind 4 — `apps/web/vite.config.ts`, Drizzle —
   `packages/db/drizzle.config.ts`.
 - Код следует PRD/SPEC/PLAN и `design/DESIGN.md`. При расхождении или пробеле — самый

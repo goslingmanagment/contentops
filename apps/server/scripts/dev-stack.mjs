@@ -2,7 +2,8 @@
 // a fictional catalog of Лора and the server in watch mode on 127.0.0.1:3000. `pnpm dev`
 // (Vite) proxies `/api` to it.
 // Sign in as `dmitriy` with the password below. Data stays in the container between runs;
-// `docker rm -f contentops-dev-pg` starts from scratch.
+// `docker rm -fv contentops-dev-pg` starts from scratch (`-v` is for a container made before
+// 05.11.2026: its data is in a volume that `docker rm -f` alone leaves behind).
 // `DEV_FAKE_SOURCE=1` also starts a fake Dropbox of Lora with generated media
 // (`scripts/dev-source.ts`), turns its scan on and runs the `worker` role: «Приехало» fills
 // by itself within seconds.
@@ -70,6 +71,12 @@ if (state === 'missing') {
     CONTAINER,
     '-e',
     'POSTGRES_PASSWORD=dev',
+    // Data in the container's own layer, so removing the container takes it all. The image
+    // keeps it in an anonymous volume, and the tmpfs stops Docker making that volume.
+    '-e',
+    'PGDATA=/var/lib/pgdata',
+    '--tmpfs',
+    '/var/lib/postgresql',
     '-p',
     `127.0.0.1:${PORT}:5432`,
     IMAGE,

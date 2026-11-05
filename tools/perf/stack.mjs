@@ -7,7 +7,7 @@
 // config of `ops/nginx/contentops.conf` (only `web` points at the host).
 //
 // Interface: http://localhost:8180 · dmitriy / contentops-perf. Stays up until Ctrl-C;
-// `pnpm perf` measures against it. `docker rm -f contentops-perf-pg` starts from scratch.
+// `pnpm perf` measures against it. `docker rm -fv contentops-perf-pg` starts from scratch.
 // Needs Docker and FFmpeg on PATH.
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -68,6 +68,12 @@ if (state(PG) === 'missing') {
     PG,
     '-e',
     'POSTGRES_PASSWORD=perf',
+    // Data in the container's own layer, not in the image's anonymous volume (as in
+    // `apps/server/scripts/dev-stack.mjs`): removing the container leaves nothing behind.
+    '-e',
+    'PGDATA=/var/lib/pgdata',
+    '--tmpfs',
+    '/var/lib/postgresql',
     '-p',
     `127.0.0.1:${PG_PORT}:5432`,
     'postgres:18.6',
