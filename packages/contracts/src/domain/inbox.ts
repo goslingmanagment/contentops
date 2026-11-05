@@ -10,7 +10,7 @@ import {
   RecordVersionSchema,
   ThumbRefSchema,
 } from './common'
-import { FileRoleSchema, MediaKindSchema } from './files'
+import { FileRoleSchema, MasterFrameSchema, MediaKindSchema } from './files'
 import { ItemIdSchema, ItemTypeSchema } from './item-type'
 
 /** Stages of «готовится» (DESIGN §5.3). */
@@ -37,6 +37,11 @@ export const DecisionKindSchema = z.enum([
   'which_frame',
   /** More clips than the type takes (a FYP is one clip): split the group by its clips. */
   'split_videos',
+  /**
+   * A video close to an accepted one by its print (SPEC §6.2): a copy of it — an alias, as an
+   * exact duplicate — or a file of its own.
+   */
+  'video_copy',
 ])
 export type DecisionKind = z.infer<typeof DecisionKindSchema>
 
@@ -50,6 +55,7 @@ export const DECISION_LABEL: Record<DecisionKind, string> = {
   split_archive: 'Разделить архив?',
   which_frame: 'К какому кадру?',
   split_videos: 'Несколько роликов — разделить?',
+  video_copy: 'Похоже на ролик',
 }
 
 /** ▲ «ошибка». */
@@ -160,6 +166,11 @@ export const DraftFileSchema = z.object({
   thumb: ThumbRefSchema,
   /** What the viewer plays or shows, built from the source (SPEC §6.1); absent from the stub. */
   preview: MediaPreviewSchema.optional(),
+  /**
+   * Frames of a video from its first pass, up to ten at equal steps: «Сравнить» of «Похоже на
+   * ролик» puts them next to the frames of the accepted file. Only the group itself sends them.
+   */
+  frames: z.array(MasterFrameSchema).optional(),
   shot_at: InstantSchema.nullable(),
 })
 export type DraftFile = z.infer<typeof DraftFileSchema>
@@ -170,6 +181,25 @@ export const DraftHintSchema = z.discriminatedUnion('kind', [
     text: z.string(),
     item_id: ItemIdSchema,
     file_key: z.string(),
+  }),
+  /**
+   * «Похоже на ролик FYP-0019/master» (SPEC §6.2): the file `draft_key` of the group and the
+   * accepted file `file_key` of `item_id` have close prints. ◆ while nobody answered it.
+   */
+  z.object({
+    kind: z.literal('similar_video'),
+    text: z.string(),
+    item_id: ItemIdSchema,
+    /** Handle of the accepted file: `master`, `raw03`. */
+    file_key: z.string(),
+    /** The file of this group the hint is about. */
+    draft_key: z.string(),
+    /** 0–100: the share of the 64 bits that match, the median frame. */
+    similarity: z.int().min(0).max(100),
+    frames_close: z.int().nonnegative(),
+    frames: z.int().positive(),
+    /** Durations of the pictures, this file and the accepted one. */
+    duration_s: z.tuple([z.number().nonnegative(), z.number().nonnegative()]),
   }),
   z.object({ kind: z.literal('duration_mismatch'), text: z.string() }),
   z.object({ kind: z.literal('order_match'), text: z.string() }),

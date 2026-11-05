@@ -10,6 +10,7 @@ import { deriveImageHandler, deriveVideoHandler } from './work/derive'
 import { exportHandler } from './work/export'
 import { extractFrameHandler } from './work/frame'
 import { encodeMasterHandler } from './work/master'
+import { videoPrintHandler } from './work/print'
 import { verifyBlobsHandler } from './work/verify-blobs'
 
 type WorkRole = values.WorkRole
@@ -30,6 +31,7 @@ export function mediaHandlers(
         uniq_render: uniqRenderHandler(env),
         render_compat: renderCompatHandler(env),
         extract_frame: extractFrameHandler(env),
+        video_print: videoPrintHandler(env),
       }
     case 'worker-image':
       return { derive_image: deriveImageHandler(env) }

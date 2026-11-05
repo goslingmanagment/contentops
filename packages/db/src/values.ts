@@ -89,6 +89,7 @@ export const workKindsByRole = {
     'uniq_render',
     'render_compat',
     'extract_frame',
+    'video_print',
   ],
   'worker-image': ['derive_image'],
 } as const satisfies Record<WorkRole, readonly string[]>
@@ -136,6 +137,8 @@ export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
   render: 'copy',
   render_compat: 'copy',
   extract_frame: 'copy',
+  // Ten short seeks in a preview: next to the copies, never in the encoders' slot.
+  video_print: 'copy',
   derive_image: 'image',
 }
 
@@ -168,6 +171,7 @@ export const workKindQueue: Readonly<Record<WorkKind, WorkQueue | null>> = {
   uniq_render: 'copies',
   render_compat: 'copies',
   extract_frame: 'frames',
+  video_print: 'preview',
   derive_image: 'preview',
 }
 
@@ -214,6 +218,7 @@ export const killSwitchPrefixes = ['agents.token.', 'annotation.'] as const
 export const thresholdKeys = [
   'too_early_days',
   'phash_suggest_threshold',
+  'video_suggest_threshold',
   'intake_auto_accept',
   'hub_candidate_tolerance',
   'hub_exact_duration_ms',
@@ -534,6 +539,8 @@ export const draftBlockedReasons = [
   'row_changed',
   /** An archive with several folders inside: ◆ «Разделить архив?» (SPEC §6.3). */
   'archive_split',
+  /** A video close to an accepted one by its print: ◆ «Похоже на ролик» (SPEC §6.2). */
+  'video_copy',
 ] as const
 export type DraftBlockedReason = (typeof draftBlockedReasons)[number]
 
@@ -542,6 +549,7 @@ export const candidateKinds = [
   'existing_item',
   'exact_duplicate',
   'similar_photo',
+  'similar_video',
   'legacy_id',
   'source_parent',
   'content_type',

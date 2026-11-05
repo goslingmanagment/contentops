@@ -70,6 +70,12 @@ const CUSTOM_TYPES: Record<string, { name: string; declaration: string }> = {
     declaration:
       "const bit64 = customType<{ data: string; driverData: string }>({ dataType: () => 'bit(64)' })",
   },
+  // `video_prints.frames`: pull writes the element type and `.array()` after it.
+  'bit(64)[]': {
+    name: 'bit64',
+    declaration:
+      "const bit64 = customType<{ data: string; driverData: string }>({ dataType: () => 'bit(64)' })",
+  },
 }
 
 function fixMirrorSchema(source: string): string {
@@ -102,7 +108,9 @@ function fixMirrorSchema(source: string): string {
   // Imported for single-column self references, which pull writes as table FKs instead.
   if (fixed.split('AnyPgColumn').length === 2) fixed = fixed.replace('type AnyPgColumn, ', '')
   if (used.size > 0) {
-    const declarations = [...used].sort().map((type) => CUSTOM_TYPES[type]?.declaration)
+    const declarations = [
+      ...new Set([...used].sort().map((type) => CUSTOM_TYPES[type]?.declaration)),
+    ]
     fixed = fixed.replace(
       'import type { PgTableExtraConfigValue } from "drizzle-orm/pg-core"\n',
       'import type { PgTableExtraConfigValue } from "drizzle-orm/pg-core"\n' +

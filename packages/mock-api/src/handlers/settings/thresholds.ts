@@ -24,6 +24,7 @@ const RIVAL_THRESHOLD: Record<Threshold['key'], number | null> = {
   not_published_hours: 24,
   album_walk_reminder_days: 14,
   frame_similarity: 90,
+  video_similarity: 85,
   auto_accept: null,
 }
 

@@ -6,19 +6,22 @@ import { bindGenerations } from '../media/renditions'
 import { mimeOfExt, shaHex } from '../media/storage'
 import { registerBlob } from '../media/storage-ops'
 import { inputSha } from '../media/work/common'
-import { deriveImageHandler } from '../media/work/derive'
+import { deriveImageHandler, deriveVideoHandler } from '../media/work/derive'
 import { encodeMasterHandler } from '../media/work/master'
+import { videoPrintHandler } from '../media/work/print'
 import { phashSuggestDistance } from './phash'
+import { flagOpenCopies, similarVideos } from './video-copies'
 
 /**
  * The media works of a draft (SPEC §6.1 steps 2–3) with what intake adds to them: a draft
  * whose master is verified becomes «готово». A video's master comes from `encode_master`
  * (it writes the draft's master fields itself); a photo is its own master once it has been
  * decoded whole by `derive_image` (SPEC §9.2: no re-encoding), so the staged source is
- * registered as a blob and becomes the master of the draft.
+ * registered as a blob and becomes the master of the draft. A video close to an accepted one
+ * by its print asks ◆ «Похоже на ролик» before it is ready to be taken (SPEC §6.2).
  */
 
-async function markReady(tx: Tx, ctx: WorkContext): Promise<void> {
+async function markReady(tx: Tx, ctx: WorkContext, video = false): Promise<void> {
   if (!ctx.work.draftId || !ctx.work.modelId) return
   const { rowCount } = await tx.execute(sql`
     UPDATE inbox_drafts
@@ -26,10 +29,12 @@ async function markReady(tx: Tx, ctx: WorkContext): Promise<void> {
      WHERE model_id = ${ctx.work.modelId}::uuid AND id = ${ctx.work.draftId}::uuid
        AND state IN ('discovered', 'processing') AND master_verified_at IS NOT NULL`)
   if (!rowCount) return
-  // The old corpus accepts itself when nothing is in dispute (SPEC §6.3, DESIGN §4.9); a
-  // failure there never undoes the media work — the group just stays in its queue.
   const modelId = ctx.work.modelId
   const draftId = ctx.work.draftId
+  // The print was taken with the previews; the accepted library may have grown since.
+  if (video) await similarVideos(tx, modelId, draftId)
+  // The old corpus accepts itself when nothing is in dispute (SPEC §6.3, DESIGN §4.9); a
+  // failure there never undoes the media work — the group just stays in its queue.
   await tx.transaction((inner) => autoAcceptForDraft(inner, modelId, draftId)).catch(() => null)
 }
 
@@ -41,9 +46,43 @@ function encodeMasterForDraft(env: MediaEnv): WorkHandler {
       ...result,
       commit: async (tx) => {
         await result.commit?.(tx)
-        await markReady(tx, ctx)
+        await markReady(tx, ctx, true)
       },
     }
+  }
+}
+
+/** The previews of a draft's video and its print: the hint is found as soon as they are. */
+function deriveVideoForDraft(env: MediaEnv): WorkHandler {
+  const derive = deriveVideoHandler(env)
+  return async (ctx) => {
+    const result = (await derive(ctx)) ?? {}
+    const { draftId, modelId } = ctx.work
+    if (!draftId || !modelId) return result
+    return {
+      ...result,
+      commit: async (tx) => {
+        await result.commit?.(tx)
+        await similarVideos(tx, modelId, draftId)
+      },
+    }
+  }
+}
+
+/**
+ * A print of the library accepted before prints (`video_print`): the open drafts with these
+ * bytes get their hint, and the open drafts close to an accepted file with them get theirs.
+ */
+async function printedForIntake(tx: Tx, sha: Buffer): Promise<void> {
+  const { rows: drafts } = await tx.execute<{ model_id: string; id: string }>(sql`
+    SELECT model_id, id FROM inbox_drafts
+     WHERE source_sha256 = ${sha} AND state <> 'resolved' ORDER BY id`)
+  for (const draft of drafts) await similarVideos(tx, draft.model_id, draft.id)
+  const { rows: models } = await tx.execute<{ model_id: string }>(sql`
+    SELECT DISTINCT model_id FROM asset_versions
+     WHERE source_sha256 = ${sha} OR master_sha256 = ${sha}`)
+  for (const { model_id } of models) {
+    await flagOpenCopies(tx, model_id, null, [sha.toString('hex')])
   }
 }
 
@@ -125,7 +164,11 @@ export function intakeMediaHandlers(
 ): Partial<Record<values.WorkKind, WorkHandler>> {
   switch (role) {
     case 'worker-video':
-      return { encode_master: encodeMasterForDraft(env) }
+      return {
+        derive_video: deriveVideoForDraft(env),
+        encode_master: encodeMasterForDraft(env),
+        video_print: videoPrintHandler(env, printedForIntake),
+      }
     case 'worker-image':
       return { derive_image: derivePhotoForDraft(env) }
     default:

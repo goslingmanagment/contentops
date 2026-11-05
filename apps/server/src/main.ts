@@ -30,6 +30,7 @@ import { createMediaEnv } from './media/pipeline'
 import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
 import { BlobStore } from './media/storage'
 import { reconcileStorage } from './media/storage-ops'
+import { enqueueVideoPrints } from './media/work/print'
 import { enqueueOpenRowCopies } from './plan/composition'
 import { buildServer } from './server'
 import { createWorkGate } from './work-gate'
@@ -265,6 +266,11 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     // A new platform recipe: the open plan rows get their copies built ahead again (SPEC §9.3).
     const rows = await enqueueOpenRowCopies(db)
     logger.info({ rows }, 'plan copies checked')
+  }
+  if (role === 'worker-video') {
+    // Videos accepted before their prints get them, below every other work (SPEC §6.2).
+    const prints = await enqueueVideoPrints(db, env.versions.phash)
+    logger.info({ prints }, 'video prints queued')
   }
   const handlers: Partial<Record<values.WorkKind, WorkHandler>> = {
     ...mediaHandlers(role, env),

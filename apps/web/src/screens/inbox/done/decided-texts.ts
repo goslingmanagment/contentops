@@ -16,10 +16,11 @@ import { groupSource } from '../shared/group-source'
 type Accepted = Extract<InboxGroup['state'], { kind: 'accepted' }>
 type Rejected = Extract<InboxGroup['state'], { kind: 'rejected' }>
 
-/** «Диана», «агент приёмки», «при загрузке · Диана», «сам (дубль)». */
+/** «Диана», «агент приёмки», «при загрузке · Диана», «сам (дубль)», «Диана (копия)». */
 function acceptedBy(state: Accepted): string {
   if (state.how === 'duplicate') {
-    return 'сам (дубль)'
+    // Копию ролика (SPEC §6.2) записывает человек ответом на ◆, точный дубль — сам.
+    return state.by.type === 'system' ? 'сам (дубль)' : `${actorName(state.by)} (копия)`
   }
   if (state.how === 'upload') {
     return `при загрузке · ${state.by.name}`

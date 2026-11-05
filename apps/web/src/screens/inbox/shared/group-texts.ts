@@ -143,6 +143,11 @@ function readyDetail(
   }
 }
 
+/** «FYP-0019» не рвётся на плитке на «FYP-» и «0019»: после дефиса ID — word joiner. */
+function keepIds(text: string): string {
+  return text.replace(/\b([A-Z]{2,4})-(?=\d)/g, '$1-\u2060')
+}
+
 export interface GroupStateView {
   sign: StatusKind | null
   text: string
@@ -177,8 +182,15 @@ export function groupStateView(
       const words = [...head, changed ? 'изменён после снимка' : null]
       return { sign: null, text: words.filter(Boolean).join(' · '), progress: null }
     }
-    case 'decision':
-      return { sign: 'turn', text: DECISION_LABEL[state.decision], progress: null }
+    case 'decision': {
+      // ◆ «Похоже на ролик FYP-0019/master»: на плитке сразу видно, на что похоже.
+      const like = state.decision === 'video_copy' ? findHint(group.hints, 'similar_video') : null
+      return {
+        sign: 'turn',
+        text: like ? keepIds(like.text) : DECISION_LABEL[state.decision],
+        progress: null,
+      }
+    }
     case 'error':
       return {
         sign: 'trouble',

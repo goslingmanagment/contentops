@@ -196,7 +196,6 @@ export const workOperations = pgTable("work_operations", {
 		}).onDelete("restrict"),
 	unique("work_operations_work_key").on(table.kind, table.modelId, table.workKey),
 	unique("work_operations_model_id_id_key").on(table.id, table.modelId),
-	check("work_operations_kind_check", sql`kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text])`),
 	check("work_operations_state_check", sql`state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text, 'succeeded'::text, 'failed'::text, 'cancelled'::text])`),
 	check("work_operations_paused_reason_format", sql`paused_reason ~ '^switch_off:.+$'::text`),
 	check("work_operations_attempt_no_check", sql`attempt_no >= 0`),
@@ -207,6 +206,7 @@ export const workOperations = pgTable("work_operations", {
 	check("work_operations_running_lease", sql`(state <> 'running'::text) OR ((lease_owner IS NOT NULL) AND (lease_until IS NOT NULL))`),
 	check("work_operations_finished_at", sql`(state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL)`),
 	check("work_operations_model_targets", sql`(model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0)`),
+	check("work_operations_kind_check", sql`kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text])`),
 ]);
 
 export const policySettings = pgTable("policy_settings", {
@@ -580,6 +580,21 @@ export const blobPhashes = pgTable("blob_phashes", {
 }, (table): PgTableExtraConfigValue[] => [
 	primaryKey({ columns: [table.algoVersion, table.algorithm, table.normalization, table.sha256], name: "blob_phashes_pkey"}),
 	check("blob_phashes_sha256_check", sql`octet_length(sha256) = 32`),
+]);
+
+export const videoPrints = pgTable("video_prints", {
+	sha256: bytea("sha256").notNull(),
+	algorithm: text().notNull(),
+	algoVersion: text("algo_version").notNull(),
+	durationMs: integer("duration_ms").notNull(),
+	frames: bit64("frames").array().notNull(),
+	computedAt: timestamp("computed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("video_prints_duration").using("btree", table.algorithm.asc().nullsLast().op("int4_ops"), table.algoVersion.asc().nullsLast().op("text_ops"), table.durationMs.asc().nullsLast().op("text_ops")),
+	primaryKey({ columns: [table.algoVersion, table.algorithm, table.sha256], name: "video_prints_pkey"}),
+	check("video_prints_sha256_check", sql`octet_length(sha256) = 32`),
+	check("video_prints_duration_check", sql`duration_ms > 0`),
+	check("video_prints_frames_check", sql`((cardinality(frames) >= 1) AND (cardinality(frames) <= 32)) AND (array_position(frames, NULL::"bit") IS NULL)`),
 ]);
 
 export const surfaces = pgTable("surfaces", {
@@ -1193,6 +1208,7 @@ export const assetVersions = pgTable("asset_versions", {
 	createdBy: uuid("created_by"),
 }, (table): PgTableExtraConfigValue[] => [
 	index("asset_versions_master").using("btree", table.masterSha256.asc().nullsLast().op("bytea_ops")),
+	index("asset_versions_source").using("btree", table.sourceSha256.asc().nullsLast().op("bytea_ops")),
 	foreignKey({
 			columns: [table.modelId, table.sourceRevisionId],
 			foreignColumns: [sourceRevisions.id, sourceRevisions.modelId],
@@ -1582,7 +1598,7 @@ export const inboxDraftCandidates = pgTable("inbox_draft_candidates", {
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "inbox_draft_candidates_pkey"}),
 	unique("inbox_draft_candidates_link").on(table.draftId, table.itemId, table.kind, table.modelId, table.orderId, table.versionId),
-	check("inbox_draft_candidates_kind_check", sql`kind = ANY (ARRAY['order'::text, 'existing_item'::text, 'exact_duplicate'::text, 'similar_photo'::text, 'legacy_id'::text, 'source_parent'::text, 'content_type'::text])`),
+	check("inbox_draft_candidates_kind_check", sql`kind = ANY (ARRAY['order'::text, 'existing_item'::text, 'exact_duplicate'::text, 'similar_photo'::text, 'similar_video'::text, 'legacy_id'::text, 'source_parent'::text, 'content_type'::text])`),
 ]);
 
 export const downloadReceiptEntries = pgTable("download_receipt_entries", {
@@ -2884,7 +2900,6 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 	check("inbox_drafts_proposed_role_check", sql`proposed_role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text])`),
 	check("inbox_drafts_proposed_ordinal_check", sql`(proposed_ordinal >= 1) AND (proposed_ordinal <= 999)`),
 	check("inbox_drafts_proposed_life_use_check", sql`proposed_life_use = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text])`),
-	check("inbox_drafts_blocked_reason_check", sql`blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text, 'row_changed'::text, 'archive_split'::text])`),
 	check("inbox_drafts_reopen_count_check", sql`reopen_count >= 0`),
 	check("inbox_drafts_one_input", sql`num_nonnulls(source_revision_id, web_upload_id, from_version_id) = 1`),
 	check("inbox_drafts_outcome", sql`(state = 'resolved'::text) = (outcome IS NOT NULL)`),
@@ -2892,6 +2907,7 @@ export const inboxDrafts = pgTable("inbox_drafts", {
 	check("inbox_drafts_verified_master", sql`(master_verified_at IS NULL) OR (master_sha256 IS NOT NULL)`),
 	check("inbox_drafts_alias_target", sql`(outcome <> 'alias'::text) OR (duplicate_of_version_id IS NOT NULL)`),
 	check("inbox_drafts_rejected_at", sql`(outcome <> 'rejected'::text) OR (rejected_at IS NOT NULL)`),
+	check("inbox_drafts_blocked_reason_check", sql`blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text, 'row_changed'::text, 'archive_split'::text, 'video_copy'::text])`),
 ]);
 
 export const postingPlanRows = pgTable("posting_plan_rows", {

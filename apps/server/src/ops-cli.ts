@@ -3,16 +3,19 @@ import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { createDb, createPool, type Db, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
+import { detectToolVersions } from '@contentops/media'
 import { sql } from 'drizzle-orm'
 import { loadConfig } from './config'
 import { enqueueHistoryPass } from './hub/match/auto'
 import { enqueueFreeze, freezeRegister } from './intake/freeze'
+import { videoCopiesReport } from './intake/video-copies'
 import { importReportMarkdown } from './legacy/export'
 import { claimsCommand } from './legacy/materialize'
 import { releaseMarkdown, releaseReport } from './legacy/release'
 import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
+import { enqueueVideoPrints } from './media/work/print'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
 import { opsAgent, opsContractor, opsGrant, opsPerson, opsPolicy, opsSwitch } from './ops-owner'
 import { smokeSetup } from './smoke/setup'
@@ -54,6 +57,14 @@ import { smokeSetup } from './smoke/setup'
  *
  *   docker compose exec -T worker node dist/ops.js release-report <model> > release.md
  *
+ * Pairs «похоже на ролик» among the accepted videos of a model (SPEC §6.2): the copies an
+ * earlier intake took as objects of their own, the closest first, with their paths; `--min` —
+ * the similarity in percent (else `video_suggest_threshold`, else 85). It only reads; `--yes`
+ * also puts the prints still missing (`video_print`, the lowest priority) — `worker-video`
+ * puts them by itself on start, this is for a print that failed:
+ *
+ *   docker compose exec -T worker node dist/ops.js video-copies <model> [--min 85] [--yes]
+ *
  * The history pass of the Fansly pages with «Автосверка» on, again after a batch of the library
  * (SPEC §7; stages 7, 9a and «Старый формат» 9b) — one `hub_history` work per page:
  *
@@ -94,6 +105,7 @@ const USAGE = `usage:
   ops.js claims <model> [--yes]            (the claims an alias missed become placements)
   ops.js release-report <model> [--list <copy list>]   («Можно освобождать», Markdown, out of git)
   ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)
+  ops.js video-copies <model> [--min 85] [--yes]   (pairs «похоже на ролик»; --yes queues missing prints)
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
   ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
   ops.js person <login> --name <имя> --role manager|reader --models <a,b>   (a temporary password once)
@@ -154,6 +166,7 @@ async function main(argv: string[]): Promise<number> {
       channel: { type: 'string' },
       contact: { type: 'string' },
       format: { type: 'string' },
+      min: { type: 'string' },
     },
     allowPositionals: true,
   })
@@ -362,6 +375,37 @@ async function main(argv: string[]): Promise<number> {
       if (!model) throw new Error(USAGE)
       const queued = await enqueueHistoryPass(db, { model, account: account ?? null })
       out(queued)
+      return 0
+    }
+    if (command === 'video-copies') {
+      const [code] = positionals
+      if (!code) throw new Error(USAGE)
+      const { rows } = await db.execute<{ id: string; code: string }>(sql`
+        SELECT id, code FROM models WHERE code = ${code}`)
+      const model = rows[0]
+      if (!model) throw new Error(`${code}: no such model`)
+      const min = values.min === undefined ? null : Number(values.min)
+      if (min !== null && !Number.isFinite(min)) throw new Error('--min is a percent, 0–100')
+      // The setting of the model, as intake reads it, when no --min is given.
+      const { rows: set } = await db.execute<{ value: unknown }>(sql`
+        SELECT value FROM policy_settings
+         WHERE key = 'video_suggest_threshold' AND account_id IS NULL AND item_type IS NULL
+           AND (model_id IS NULL OR model_id = ${model.id}::uuid) AND value IS NOT NULL
+         ORDER BY model_id NULLS LAST LIMIT 1`)
+      const setting = typeof set[0]?.value === 'number' ? (set[0].value as number) : null
+      const report = await videoCopiesReport(db, model, min ?? setting)
+      if (!values.yes) {
+        out(report)
+        return 0
+      }
+      const { phash } = await detectToolVersions()
+      const queued = await enqueueVideoPrints(
+        db,
+        phash,
+        model.id,
+        new Date().toISOString().slice(0, 10),
+      )
+      out({ ...report, queued_prints: queued })
       return 0
     }
     if (command === 'freeze-export') {

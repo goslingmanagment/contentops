@@ -3,6 +3,7 @@ import {
   type InboxGroup,
   type ItemId,
   itemTypeOf,
+  type MasterFrame,
   type ModelCode,
 } from '@contentops/contracts'
 import type { CoverKind } from '@contentops/ui/components/thumb'
@@ -30,6 +31,42 @@ interface OpenPreview {
   index: number
   /** «Сравнить» у «Похоже на…»: новый файл слева и файл объекта справа. */
   compare?: { mine: string; item: ItemId; fileKey: string }
+}
+
+type ViewerFrame = NonNullable<ViewerFile['frames']>[number]
+
+/** Кадров в ленте сравнения двух роликов — как у «Сравнить v1 / v2» (DESIGN §3.5). */
+const COMPARE_FRAMES = 6
+
+/**
+ * Две ленты «Похоже на ролик» на общих моментах: равные шаги по более длинному ролику, у
+ * каждого — ближайший свой кадр разметки (кадры идут раз в несколько секунд, у короткого
+ * ролика их мало — пара кадров не повторяется).
+ */
+export function alignedFrames(
+  left: readonly MasterFrame[],
+  right: readonly MasterFrame[],
+  seconds: number,
+): [ViewerFrame[], ViewerFrame[]] | null {
+  if (left.length === 0 || right.length === 0 || seconds <= 0) {
+    return null
+  }
+  const nearest = (frames: readonly MasterFrame[], moment: number) =>
+    frames.reduce((best, frame) =>
+      Math.abs(frame.t_s - moment) < Math.abs(best.t_s - moment) ? frame : best,
+    )
+  const pairs = new Map<string, [MasterFrame, MasterFrame]>()
+  for (let i = 0; i < COMPARE_FRAMES; i++) {
+    const moment = (seconds * (i + 0.5)) / COMPARE_FRAMES
+    const pair: [MasterFrame, MasterFrame] = [nearest(left, moment), nearest(right, moment)]
+    pairs.set(`${pair[0].t_s}|${pair[1].t_s}`, pair)
+  }
+  const strip = (side: 0 | 1) =>
+    [...pairs.values()].map((pair) => ({
+      seconds: pair[side].t_s,
+      src: pair[side].thumb.url ?? null,
+    }))
+  return [strip(0), strip(1)]
 }
 
 /** «2:54 грудь попа · мастер · 2:54» — как у объекта (§3.5): группа, роль файла, длительность. */
@@ -80,10 +117,10 @@ export function useIntakePreview(model: ModelCode) {
     if (!leftDraft) {
       return null
     }
-    const left = viewerFileOf(leftDraft, kind)
+    let left = viewerFileOf(leftDraft, kind)
     const detail = target.data?.entry.id === item ? target.data : undefined
     const theirs = detail?.files.find((file) => file.key === fileKey)
-    const right: ViewerFile =
+    let right: ViewerFile =
       detail && theirs
         ? toViewerFile(detail.entry, theirs)
         : {
@@ -92,6 +129,19 @@ export function useIntakePreview(model: ModelCode) {
             aspect: leftDraft.thumb.ratio,
             kind: itemTypeOf(item),
           }
+    // Два ролика — две ленты кадров на общих моментах: свои кадры черновика и кадры мастера.
+    const strips =
+      leftDraft.media === 'video' && fileKey === 'master' && detail
+        ? alignedFrames(
+            leftDraft.frames ?? [],
+            detail.frames,
+            Math.max(left.durationSeconds ?? 0, right.durationSeconds ?? 0, 1),
+          )
+        : null
+    if (strips) {
+      left = { ...left, frames: strips[0] }
+      right = { ...right, frames: strips[1] }
+    }
     return {
       title: open.title,
       files: [left],
@@ -107,7 +157,13 @@ export function useIntakePreview(model: ModelCode) {
   }, [])
 
   const openCompare = useCallback((group: InboxGroup, hint: SimilarHint) => {
-    const mine = group.files.find((file) => file.media === 'photo') ?? group.files[0]
+    // «Похоже на ролик» говорит о своём файле группы; «Похоже на фото» — о первом фото.
+    const mine =
+      (hint.kind === 'similar_video'
+        ? group.files.find((file) => file.key === hint.draft_key)
+        : undefined) ??
+      group.files.find((file) => file.media === 'photo') ??
+      group.files[0]
     if (!mine) {
       return
     }

@@ -21,6 +21,11 @@ export const DecideCommandSchema = z.discriminatedUnion('decision', [
   /** «Разделить по роликам»: every video becomes a group of its own. */
   z.object({ decision: z.literal('split_videos') }),
   /**
+   * «Похоже на ролик»: `copy` — «Это копия», the file `file_key` is an alias of the accepted
+   * video it is close to; otherwise «Отдельный объект», the file goes on with its group.
+   */
+  z.object({ decision: z.literal('video_copy'), file_key: z.string(), copy: z.boolean() }),
+  /**
    * «Разложить по папкам»: every file goes to the group of its own folder, as discovery groups
    * it now (a group gathered before the rule of its root, e.g. a whole `9. SMM` channel).
    */

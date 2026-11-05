@@ -483,7 +483,9 @@ export async function queueMedia(
 /**
  * «Дубль-алиас» (schema §5, SPEC §6.1 p. 1): resolved by itself, the paths become aliases, and
  * the claims of the old name of the file (`used2_…`, SPEC §6.3) go to the object it is an alias
- * of — a repeat of a FYP in another month of `Posted` is a placement of that FYP.
+ * of — a repeat of a FYP in another month of `Posted` is a placement of that FYP. A copy with
+ * other bytes («Это копия» on ◆ «Похоже на ролик», SPEC §6.2) is the same alias by a person's
+ * word: its chosen candidate is the print's, not an exact duplicate.
  */
 export async function resolveAlias(
   tx: Tx,
@@ -493,19 +495,24 @@ export async function resolveAlias(
   sourceObjectId: string | null,
   /** A twin inside an accepted group: decided by the person who accepts, one journal row. */
   twin?: { decidedBy: string },
+  /** «Это копия»: the person who answered. */
+  copy?: { decidedBy: string },
 ): Promise<void> {
+  const decidedBy = twin?.decidedBy ?? copy?.decidedBy ?? null
   await tx.execute(sql`
     UPDATE inbox_drafts
        SET state = 'resolved', outcome = 'alias', duplicate_of_version_id = ${dup.version_id}::uuid,
            applied_item_id = ${dup.item_id}::uuid, applied_version_id = ${dup.version_id}::uuid,
-           decided_at = now(), decided_by = ${twin?.decidedBy ?? null}::uuid, blocked_reason = NULL,
+           decided_at = now(), decided_by = ${decidedBy}::uuid, blocked_reason = NULL,
            updated_at = now(), row_version = row_version + 1
      WHERE model_id = ${modelId}::uuid AND id = ${draftId}::uuid`)
-  await tx.execute(sql`
-    INSERT INTO inbox_draft_candidates (model_id, draft_id, kind, item_id, version_id, signals, chosen, chosen_at)
-    VALUES (${modelId}::uuid, ${draftId}::uuid, 'exact_duplicate', ${dup.item_id}::uuid,
-            ${dup.version_id}::uuid, '{"sha256": true}'::jsonb, true, now())
-    ON CONFLICT DO NOTHING`)
+  if (!copy) {
+    await tx.execute(sql`
+      INSERT INTO inbox_draft_candidates (model_id, draft_id, kind, item_id, version_id, signals, chosen, chosen_at)
+      VALUES (${modelId}::uuid, ${draftId}::uuid, 'exact_duplicate', ${dup.item_id}::uuid,
+              ${dup.version_id}::uuid, '{"sha256": true}'::jsonb, true, now())
+      ON CONFLICT DO NOTHING`)
+  }
   if (sourceObjectId) {
     await tx.execute(sql`
       INSERT INTO aliases (model_id, kind, value_raw, asset_id, source_object_id)
@@ -521,7 +528,7 @@ export async function resolveAlias(
      WHERE model_id = ${modelId}::uuid AND id = ${dup.item_id}::uuid`)
   await logAction(tx, {
     modelId,
-    action: 'draft.alias',
+    action: copy ? 'draft.copy' : 'draft.alias',
     subjectKind: 'inbox_drafts',
     subjectId: draftId,
     subjectLabel: rows[0]?.label ?? 'дубль',

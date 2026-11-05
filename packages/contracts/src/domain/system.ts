@@ -100,6 +100,7 @@ export const ThresholdSchema = z.object({
     'not_published_hours',
     'album_walk_reminder_days',
     'frame_similarity',
+    'video_similarity',
     'auto_accept',
   ]),
   label: z.string(),
