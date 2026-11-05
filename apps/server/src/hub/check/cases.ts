@@ -190,8 +190,11 @@ async function itemOfVersion(q: Queryable, page: Page, post: HubPostFacts): Prom
   const version = post.mains[0]?.matchedVersionId
   if (!version) return null
   const { rows } = await q.execute<{ item_id: string }>(sql`
-    SELECT a.created_in_item_id AS item_id FROM asset_versions v
+    SELECT coalesce(owner.item_id, a.created_in_item_id) AS item_id FROM asset_versions v
       JOIN assets a ON a.model_id = v.model_id AND a.id = v.asset_id
+      LEFT JOIN item_memberships owner
+        ON owner.model_id = a.model_id AND owner.asset_id = a.id AND owner.kind = 'owned'
+       AND owner.removed_at IS NULL
      WHERE v.model_id = ${page.modelId}::uuid AND v.id = ${version}::uuid`)
   return rows[0]?.item_id ?? null
 }

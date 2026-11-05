@@ -1374,6 +1374,17 @@
         "properties": {
           "type": {
             "$ref": "#/components/schemas/ItemTypeInput"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -6439,7 +6450,7 @@
           "group_ids"
         ]
       },
-      "MergeRawCommandInput": {
+      "MergeItemsCommandInput": {
         "type": "object",
         "properties": {
           "into": {
@@ -6550,6 +6561,26 @@
         "required": [
           "file_name",
           "size_bytes"
+        ]
+      },
+      "MoveFilesCommandInput": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "into": {
+            "$ref": "#/components/schemas/ItemIdInput"
+          }
+        },
+        "required": [
+          "keys",
+          "into"
         ]
       },
       "MoveRowCommandInput": {
@@ -15075,7 +15106,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MergeRawCommandInput"
+                "$ref": "#/components/schemas/MergeItemsCommandInput"
               }
             }
           }
@@ -15107,6 +15138,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ItemCreated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/i/{id}/files:move": {
+      "post": {
+        "operationId": "objectFiles.move",
+        "tags": [
+          "objectFiles"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFilesCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemDetail"
                 }
               }
             }

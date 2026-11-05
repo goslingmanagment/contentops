@@ -66,7 +66,11 @@ export const UploadNowCommandSchema = z.object({
 })
 export type UploadNowCommand = z.infer<typeof UploadNowCommandSchema>
 
-export const ChangeTypeCommandSchema = z.object({ type: ItemTypeSchema })
+/** «Сменить тип»: a promo collection needs its channel (`instagram`, `reddit`…). */
+export const ChangeTypeCommandSchema = z.object({
+  type: ItemTypeSchema,
+  channel: z.string().min(1).nullable().optional(),
+})
 export type ChangeTypeCommand = z.infer<typeof ChangeTypeCommandSchema>
 
 /** The own montage of «Загрузить свой монтаж»: it becomes the master once checked. */

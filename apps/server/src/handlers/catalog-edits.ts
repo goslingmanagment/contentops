@@ -16,7 +16,14 @@ import { findItem, type ItemRow, modelOf, publicIdOfRow } from '../catalog/ids'
 import { addLink, confirmLink, removeLink } from '../catalog/links'
 import { makeMasterFromRaw, makePpvFromCustom } from '../catalog/make-ppv'
 import { changeTags, confirmMarkup, updateField } from '../catalog/markup-writes'
-import { changeType, extractShoot, mergeRaw, removeItem, restoreItem } from '../catalog/structure'
+import {
+  changeType,
+  extractFiles,
+  mergeItems,
+  moveFilesTo,
+  removeItem,
+  restoreItem,
+} from '../catalog/structure'
 import { checkItemVersion, lockItem, logItemAction, touchItem } from '../catalog/writes'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
@@ -174,19 +181,14 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
           const item = await lockItem(tx, model, params.id)
           return makePpvFromCustom(tx, model, item, body, actor)
         }),
+      // Pages of the object's placements are locked before the object (`holds.ts`).
       changeType: ({ params, body, ctx }) =>
-        command({ ctx, body }, async (tx, actor) => {
-          const model = modelOf(ctx.model)
-          const item = await lockItem(tx, model, params.id)
-          await checkItemVersion(tx, ctx, item)
-          return { item_id: await changeType(tx, model, item, body.type, actor) }
-        }),
+        command({ ctx, body }, async (tx, actor) => ({
+          item_id: await changeType(tx, modelOf(ctx.model), params.id, body, ctx, actor),
+        })),
       remove: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
-          const model = modelOf(ctx.model)
-          const item = await lockItem(tx, model, params.id)
-          await checkItemVersion(tx, ctx, item)
-          await removeItem(tx, model, item, actor)
+          await removeItem(tx, modelOf(ctx.model), params.id, ctx, actor)
           return { ok: true as const }
         }),
       restore: ({ params, ctx }) =>
@@ -219,8 +221,14 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
         }),
       merge: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => ({
-          item_id: await mergeRaw(tx, modelOf(ctx.model), params.id, body.into, ctx, actor),
+          item_id: await mergeItems(tx, modelOf(ctx.model), params.id, body.into, ctx, actor),
         })),
+      move: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx.model)
+          await moveFilesTo(tx, model, params.id, body.keys, body.into, ctx, actor)
+          return itemDetail(tx, model, params.id)
+        }),
       // «Сделать мастером PPV» из сырья (DESIGN §4.5).
       makeMaster: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
@@ -232,7 +240,7 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
         command({ ctx, body }, async (tx, actor) => {
           const model = modelOf(ctx.model)
           const item = await lockItem(tx, model, params.id)
-          return { item_id: await extractShoot(tx, model, item, body.keys, actor) }
+          return { item_id: await extractFiles(tx, model, item, body.keys, actor) }
         }),
       setPurpose: ({ params, body, ctx }) =>
         onItem({ ctx, body, id: params.id }, async (tx, model, item) => {

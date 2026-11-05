@@ -5,8 +5,10 @@ import { SelectionBar } from '@contentops/ui/components/selection-bar'
 import { useNavigate } from '@tanstack/react-router'
 import { DownloadIcon } from 'lucide-react'
 import { useCatalogIndex } from '@/data/catalog'
+import { type ObjectDialogRequest, useObjectDialogs } from '@/objects/dialogs/use-object-dialogs'
 import { PromoMenu } from '@/objects/promo-menu'
 import { useMakePpvDialog } from '@/shell/dialogs/make-ppv-dialog-context'
+import { extractLabel } from '../header/object-menu'
 import { useObjectPage } from '../object-context'
 import { frameKey } from './file-keys'
 import { useFileSelection } from './file-selection'
@@ -38,25 +40,30 @@ interface SelectedFiles {
  * Полоса выделения файлов объекта (DESIGN §3.3): «Скачать», «Сделать обложкой» (один),
  * «Сделать фото» (кадры мастера), «В промо ▾»; у лайфа — «В ленту», «В чаты», «Оба», у
  * сырья — «Сделать мастером PPV» и «Выделить в новую съёмку», у подборки — «Подготовить
- * передачу» и «Убрать из подборки». Неприменимого нет.
+ * передачу» и «Убрать из подборки». «Выделить в новый объект» и «Перенести в…» — в «⋯».
+ * Неприменимого нет.
  */
 export function FileSelectionBar() {
   const { detail, canAct } = useObjectPage()
   const selection = useFileSelection()
+  const dialogs = useObjectDialogs()
   const selected: SelectedFiles = {
     keys: [...selection.keys],
     files: detail.files.filter((file) => selection.keys.has(file.key)),
   }
-  const menu = useBarMenu(selected.files)
+  const menu = useBarMenu(selected.files, dialogs.open)
   const Actions = detail.entry.type === 'promo' ? PromoActions : FileActions
   return (
-    <SelectionBar
-      count={selected.keys.length}
-      onClear={selection.clear}
-      menu={canAct ? menu : undefined}
-    >
-      {canAct ? <Actions {...selected} /> : null}
-    </SelectionBar>
+    <>
+      <SelectionBar
+        count={selected.keys.length}
+        onClear={selection.clear}
+        menu={canAct ? menu : undefined}
+      >
+        {canAct ? <Actions {...selected} /> : null}
+      </SelectionBar>
+      {dialogs.element}
+    </>
   )
 }
 
@@ -140,9 +147,9 @@ function FileActions({ keys, files }: SelectedFiles) {
           Сделать мастером PPV
         </Button>
       ) : null}
-      {type === 'raw' ? (
-        <Button variant="bar" onClick={() => extract(keys)}>
-          Выделить в новую съёмку
+      {type === 'raw' && fileKeys.length > 0 ? (
+        <Button variant="bar" onClick={() => extract(fileKeys)}>
+          {extractLabel(type)}
         </Button>
       ) : null}
       {fileKeys.length > 0 && type !== 'raw' ? (
@@ -180,9 +187,17 @@ function CoverButton({ keys, files }: SelectedFiles) {
   )
 }
 
-/** «⋯» полосы: «Убрать из отобранных» у сета, «Снять назначение» у лайфа, «Убрать из объекта…». */
-function useBarMenu(files: ItemFile[]): ItemMenuModel {
+/**
+ * «⋯» полосы: «Убрать из отобранных» у сета, «Снять назначение» у лайфа, «Выделить в новый
+ * объект», «Перенести в…», «Убрать из объекта…».
+ */
+function useBarMenu(
+  files: ItemFile[],
+  openDialog: (request: ObjectDialogRequest) => void,
+): ItemMenuModel {
   const { detail } = useObjectPage()
+  const selection = useFileSelection()
+  const extract = useExtractShoot()
   const pick = usePickFrames()
   const assign = useAssignLife()
   const remove = useRemoveFiles()
@@ -198,6 +213,18 @@ function useBarMenu(files: ItemFile[]): ItemMenuModel {
   }
   if (detail.entry.type === 'life' && keys.length > 0) {
     actions.push({ id: 'unassign', label: 'Снять назначение', onSelect: () => assign(keys, null) })
+  }
+  const type = detail.entry.type
+  if (keys.length > 0 && type !== 'raw' && type !== 'fyp' && type !== 'promo') {
+    actions.push({ id: 'extract', label: extractLabel(type), onSelect: () => extract(keys) })
+  }
+  if (keys.length > 0 && type !== 'promo') {
+    actions.push({
+      id: 'move',
+      label: 'Перенести в…',
+      onSelect: () =>
+        openDialog({ kind: 'move-files', id: detail.entry.id, keys, onMoved: selection.clear }),
+    })
   }
   const removable = files.filter((file) => file.role !== 'master').map((file) => file.key)
   return {

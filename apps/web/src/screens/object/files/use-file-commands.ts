@@ -188,7 +188,7 @@ export function useSetRawPurpose() {
   return start
 }
 
-/** «Выделить в новую съёмку»: выбранные файлы уходят в новый объект сырья. */
+/** «Выделить в новый объект» («в новую съёмку» у сырья): файлы уходят в новый объект того же типа. */
 export function useExtractShoot() {
   const { api, params, model, detail } = useTarget()
   const toast = useActionToast()

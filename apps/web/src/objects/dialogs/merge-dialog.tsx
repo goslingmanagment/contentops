@@ -1,8 +1,10 @@
 import {
+  ITEM_TYPE_INFO,
   type ItemCreated,
   type ItemId,
-  type MergeRawCommand,
-  MergeRawCommandSchema,
+  type MergeItemsCommand,
+  MergeItemsCommandSchema,
+  parseItemId,
 } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import {
@@ -25,30 +27,39 @@ import { itemQueryKeys, useItem } from '@/data/object'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { ItemPicker } from './item-picker'
 
-interface MergeRawDialogProps {
+interface MergeDialogProps {
   id: ItemId
   onClose: () => void
 }
 
+/** Остаётся младший номер (SPEC §4.1): `FYP-0004` и `FYP-0017` — останется `FYP-0004`. */
+function survivorOf(left: ItemId, right: ItemId): { stays: ItemId; goes: ItemId } {
+  const number = (id: ItemId) => parseItemId(id)?.number ?? 0
+  return number(left) < number(right) ? { stays: left, goes: right } : { stays: right, goes: left }
+}
+
 /**
- * «Слить с…» у сырья (DESIGN §4.5): эта съёмка входит в другую, её номер остаётся старым
- * именем. Выбор — из индекса, без запроса.
+ * «Слить с…» (DESIGN §3.6): два объекта одного типа становятся одним. Остаётся младший номер,
+ * второй становится его старым именем; файлы, связи и отметки «выходило» переходят в него.
+ * Выбор — из индекса, без запроса.
  */
-export function MergeRawDialog({ id, onClose }: MergeRawDialogProps) {
+export function MergeDialog({ id, onClose }: MergeDialogProps) {
   const model = useCurrentModel().code
   const api = useApi()
   const toast = useActionToast()
   const navigate = useNavigate()
   const item = useItem(model, id)
   const index = useCatalogIndex(model)
-  const shoots = useMemo(
-    () => (index.data?.items ?? []).filter((entry) => entry.type === 'raw' && entry.id !== id),
-    [id, index.data],
+  const type = item.data?.entry.type
+  const same = useMemo(
+    () => (index.data?.items ?? []).filter((entry) => entry.type === type && entry.id !== id),
+    [id, index.data, type],
   )
-  const form = useForm<MergeRawCommand>({ resolver: zodResolver(MergeRawCommandSchema) })
+  const form = useForm<MergeItemsCommand>({ resolver: zodResolver(MergeItemsCommandSchema) })
   const into = form.watch('into')
+  const plan = into ? survivorOf(id, into) : null
 
-  const merge = useIntentMutation<MergeRawCommand, ItemCreated>({
+  const merge = useIntentMutation<MergeItemsCommand, ItemCreated>({
     failed: 'Не слилось',
     run: (body, idempotencyKey) =>
       api.objectFiles.merge({
@@ -60,19 +71,22 @@ export function MergeRawDialog({ id, onClose }: MergeRawDialogProps) {
     invalidates: () => itemQueryKeys(model, id),
     onSuccess: ({ item_id: target }) => {
       onClose()
-      toast.show({ message: `${id} слит с ${target}` })
+      toast.show({ message: `Слито · остался ${target}` })
       void navigate({ to: '/$model/i/$id', params: { model, id: target } })
     },
   })
 
+  const noun = type ? ITEM_TYPE_INFO[type].noun : 'объект'
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-130">
         <form onSubmit={form.handleSubmit(merge.start)} className="flex min-h-0 flex-col gap-5">
           <DialogHeader>
-            <DialogTitle>Слить {id} с другой съёмкой</DialogTitle>
+            <DialogTitle>Слить {id} с другим объектом</DialogTitle>
             <DialogDescription>
-              Файлы перейдут в выбранную съёмку, {id} останется её старым именем.
+              {plan
+                ? `Останется ${plan.stays}: файлы, связи и отметки «выходило» ${plan.goes} перейдут в него, ${plan.goes} станет старым именем.`
+                : `Сливается ${noun} с объектом того же типа. Останется младший номер, второй станет его старым именем.`}
             </DialogDescription>
           </DialogHeader>
           <Controller
@@ -80,8 +94,8 @@ export function MergeRawDialog({ id, onClose }: MergeRawDialogProps) {
             name="into"
             render={({ field }) => (
               <ItemPicker
-                label="Найти съёмку"
-                entries={shoots}
+                label="Найти объект"
+                entries={same}
                 value={field.value ?? null}
                 onChange={field.onChange}
               />
