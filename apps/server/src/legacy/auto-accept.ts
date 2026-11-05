@@ -133,11 +133,14 @@ export async function autoAcceptGroup(
     blocked_reason: string | null
     ready: boolean
     sha: string | null
+    source_object_id: string | null
   }>(sql`
-    SELECT id, state, blocked_reason, master_verified_at IS NOT NULL AS ready,
-           encode(source_sha256, 'hex') AS sha
-      FROM inbox_drafts
-     WHERE model_id = ${model.id}::uuid AND group_id = ${groupId}::uuid AND state <> 'resolved'`)
+    SELECT d.id, d.state, d.blocked_reason, d.master_verified_at IS NOT NULL AS ready,
+           encode(d.source_sha256, 'hex') AS sha, r.source_object_id
+      FROM inbox_drafts d
+      LEFT JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id
+     WHERE d.model_id = ${model.id}::uuid AND d.group_id = ${groupId}::uuid
+       AND d.state <> 'resolved'`)
   // An SMM folder: a collection of its channel (SPEC §6.3); its duplicates are links.
   let channelId: string | null = null
   if (group.proposed_type === 'PRM') {
@@ -153,13 +156,18 @@ export async function autoAcceptGroup(
   }
   const blocked = drafts.find((d) => d.blocked_reason)
   if (blocked) return { kind: 'queue', reason: blocked.blocked_reason as string }
-  // The same bytes as an accepted file (two copies of one archive): an alias, not an object —
-  // except custom ↔ PPV, two objects over the same bytes (SPEC §6.1 p. 1).
+  // The same bytes as an accepted file (two copies of one archive): an alias, not an object,
+  // its path an alias of the file — except custom ↔ PPV and a ready type over raw material,
+  // two objects over the same bytes (SPEC §6.1 p. 1).
   let aliased = 0
   for (const draft of drafts) {
     if (!draft.sha) continue
-    const dup = await acceptedDuplicate(tx, model.id, draft.sha)
-    const twin = { id: draft.id, type: group.proposed_type, source_object_id: null }
+    const dup = await acceptedDuplicate(tx, model.id, draft.sha, group.proposed_type)
+    const twin = {
+      id: draft.id,
+      type: group.proposed_type,
+      source_object_id: draft.source_object_id,
+    }
     if (dup && (await applyDuplicate(tx, model.id, twin, dup)) === 'alias') aliased += 1
   }
   if (aliased === drafts.length) {

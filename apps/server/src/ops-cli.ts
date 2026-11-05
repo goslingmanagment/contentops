@@ -8,6 +8,7 @@ import { loadConfig } from './config'
 import { enqueueHistoryPass } from './hub/match/auto'
 import { enqueueFreeze, freezeRegister } from './intake/freeze'
 import { importReportMarkdown } from './legacy/export'
+import { claimsCommand } from './legacy/materialize'
 import { releaseMarkdown, releaseReport } from './legacy/release'
 import { BlobStore } from './media/storage'
 import { purgeBlob } from './media/storage-ops'
@@ -40,6 +41,12 @@ import { smokeSetup } from './smoke/setup'
  * holds the real names of the disk:
  *
  *   docker compose exec -T worker node dist/ops.js import-report <model> [plan|reconcile|<work>] > x.md
+ *
+ * The claims of old names that an alias missed (SPEC §6.3: before 05.11.2026 a file resolved as
+ * an alias placed none of its `used*`): the alias paths and the placements again, idempotent;
+ * without `--yes` it prints what it would write and changes nothing:
+ *
+ *   docker compose exec -T worker node dist/ops.js claims <model> [--yes]
  *
  * «Можно освобождать» (PLAN этап 7, 9а; SPEC §12.2): the roots of the old disk whose copy may be
  * unpinned in the Я.Диск client — fully imported, a green reconciliation, masters in place — with
@@ -84,6 +91,7 @@ const USAGE = `usage:
   ops.js freeze <model> <source label> [YYYY-MM-DD] [--wait]
   ops.js freeze-export <model> [YYYY-MM-DD]
   ops.js import-report <model> [plan|reconcile|<work id>]   (Markdown, out of git)
+  ops.js claims <model> [--yes]            (the claims an alias missed become placements)
   ops.js release-report <model> [--list <copy list>]   («Можно освобождать», Markdown, out of git)
   ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
@@ -370,6 +378,12 @@ async function main(argv: string[]): Promise<number> {
       const [model, work] = positionals
       if (!model) throw new Error(USAGE)
       process.stdout.write(await importReportMarkdown(db, model, work ?? null))
+      return 0
+    }
+    if (command === 'claims') {
+      const [model] = positionals
+      if (!model) throw new Error(USAGE)
+      out(await claimsCommand(db, model, values.yes === true))
       return 0
     }
     if (command === 'release-report') {
