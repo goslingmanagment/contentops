@@ -720,8 +720,8 @@ describe('«Можно освобождать» (SPEC §12.2)', () => {
 /**
  * The units of a Telegram-mirrored archive (Ари's shapes, `FIXTURE_PACKS`): a pack and the old
  * folder of its number with their copies are one group, not content is no group, takes are raw
- * material for FYPs, an order folder with one video is one custom, platform copies in a pack
- * wait for a person.
+ * material for FYPs, an order folder is one custom — its clips the parts of one video —,
+ * platform copies in a pack wait for a person.
  */
 describe('units of a mirrored archive', () => {
   const { listing, byPath } = snapshotListing(FIXTURE_PACKS)
@@ -775,19 +775,20 @@ describe('units of a mirrored archive', () => {
     })
   })
 
-  it('an order folder with one video is one custom; with two, a custom per video named by it', () => {
+  it('an order folder is one custom: one video with its photos, or the parts of one video', () => {
     const chair = unitOf('3. Customs/05.10.26 fanfox кресло/IMG_7002.MOV')
     expect(names(chair)?.sort()).toEqual(['1724.jpg', 'IMG_7002.MOV'])
     expect(chair?.evidence).toMatchObject({
       legacy: { order_folder: '3. Customs/05.10.26 fanfox кресло' },
     })
-    const two = ['IMG_7003.MOV', 'IMG_7004.MOV'].map((n) =>
-      unitOf(`3. Customs/10.10.26 owlbear спорт и ванна/${n}`),
-    )
-    expect(two.map((u) => u?.grouping)).toEqual(['single', 'single'])
-    expect(two[0]?.evidence).toMatchObject({
-      legacy: { order_folder: '3. Customs/10.10.26 owlbear спорт и ванна' },
+    // Two clips answer one card (Ари's «спорт и ванна»): one custom, not a custom per clip.
+    const two = unitOf('3. Customs/10.10.26 owlbear спорт и ванна/IMG_7003.MOV')
+    expect(two).toMatchObject({
+      grouping: 'folder',
+      type: 'CUS',
+      evidence: { legacy: { order_folder: '3. Customs/10.10.26 owlbear спорт и ванна' } },
     })
+    expect(names(two)?.sort()).toEqual(['IMG_7003.MOV', 'IMG_7004.MOV'])
     expect(unitOf('3. Customs/17.10.26/IMG_1110.MOV')).toMatchObject({ grouping: 'single' })
     expect(names(unitOf('3. Customs/17.10.26/IMG_1109.JPG'))).toEqual(['IMG_1109.JPG'])
     // A numbered custom answers to its files too; a bare day is a drop, a custom per clip.

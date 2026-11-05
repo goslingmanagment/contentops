@@ -183,7 +183,7 @@ ALTER FUNCTION public.catalog_tsquery(q text) OWNER TO contentops_migrate;
 
 CREATE FUNCTION public.role_fits_type(item_type text, role text) RETURNS boolean
     LANGUAGE sql IMMUTABLE PARALLEL SAFE
-    RETURN COALESCE(CASE item_type WHEN 'PPV'::text THEN (role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'thumb'::text])) WHEN 'SET'::text THEN (role = ANY (ARRAY['raw'::text, 'ed'::text])) WHEN 'SXT'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) WHEN 'CUS'::text THEN (role = ANY (ARRAY['master'::text, 'pic'::text])) WHEN 'FYP'::text THEN (role = 'master'::text) WHEN 'LIFE'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) WHEN 'RAW'::text THEN (role = 'raw'::text) WHEN 'PRM'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) ELSE NULL::boolean END, false);
+    RETURN COALESCE(CASE item_type WHEN 'PPV'::text THEN (role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'thumb'::text])) WHEN 'SET'::text THEN (role = ANY (ARRAY['raw'::text, 'ed'::text])) WHEN 'SXT'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) WHEN 'CUS'::text THEN (role = ANY (ARRAY['master'::text, 'pic'::text, 'clip'::text])) WHEN 'FYP'::text THEN (role = 'master'::text) WHEN 'LIFE'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) WHEN 'RAW'::text THEN (role = 'raw'::text) WHEN 'PRM'::text THEN (role = ANY (ARRAY['pic'::text, 'clip'::text])) ELSE NULL::boolean END, false);
 
 ALTER FUNCTION public.role_fits_type(item_type text, role text) OWNER TO contentops_migrate;
 

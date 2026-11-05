@@ -14,7 +14,7 @@ import { linkDuplicates } from '../legacy/promo'
 import { handleOf } from '../media/downloads'
 import { bindGenerations } from '../media/renditions'
 import { lockBlobForReference } from '../media/storage-ops'
-import { completeRevision, markDeliveredParts } from '../orders/writes'
+import { completeRevision, deliveryMessageAt, markDeliveredParts } from '../orders/writes'
 import { aliasOpenDuplicates, resolveAlias } from './fetch'
 import { type ExportRole, exportRoleOf, type PackNumber } from './grouping'
 import { appendRefusal, newObjectRefusal } from './refusal'
@@ -149,6 +149,8 @@ interface DraftRow extends Record<string, unknown> {
   client_filename: string | null
   media_kind: values.MediaKind | null
   arrived_at: string | null
+  /** The length of a clip by its probe: the longest clip of a custom is its master. */
+  duration_ms: string | null
 }
 
 function blocked(reason: string, message: string, details: Record<string, unknown> = {}) {
@@ -190,7 +192,10 @@ export async function lockOpenDrafts(
            coalesce(b.media_kind, sb.media_kind, CASE
              WHEN d.path ~* '\\.(mp4|mov|m4v|avi|mkv|webm|mts|m2ts|3gp|hevc)$' THEN 'video' ELSE 'image' END
            ) AS media_kind,
-           coalesce(r.remote_created_at, u.completed_at, d.discovered_at) AS arrived_at
+           coalesce(r.remote_created_at, u.completed_at, d.discovered_at) AS arrived_at,
+           (SELECT max(p.duration_ms) FROM blob_probes p
+             WHERE p.kind = 'ffprobe' AND p.sha256 IN (d.source_sha256, d.master_sha256))::text
+             AS duration_ms
       FROM inbox_drafts d
       LEFT JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id
       LEFT JOIN source_objects o ON o.model_id = r.model_id AND o.id = r.source_object_id
@@ -310,10 +315,20 @@ function rolesFor(
       for (const draft of restPhotos) roles.set(draft.id, 'pic')
       break
     }
-    case 'CUS':
-      for (const draft of restVideos) roles.set(draft.id, 'master')
+    case 'CUS': {
+      // One card answered in several clips (SPEC §6.1): the longest is the master — the montage
+      // of the parts when there is one — the others are its parts.
+      const byLength = [...restVideos].sort(
+        (a, b) =>
+          Number(b.duration_ms ?? 0) - Number(a.duration_ms ?? 0) ||
+          Number(b.byte_size ?? 0) - Number(a.byte_size ?? 0),
+      )
+      for (const [index, draft] of byLength.entries()) {
+        roles.set(draft.id, index === 0 && !taken.has('master') ? 'master' : 'clip')
+      }
       for (const draft of restPhotos) roles.set(draft.id, 'pic')
       break
+    }
     case 'FYP':
       if (restVideos[0]) roles.set(restVideos[0].id, 'master')
       break
@@ -609,6 +624,51 @@ async function openOrderOf(tx: Tx, modelId: string, itemId: string): Promise<str
 }
 
 /**
+ * When the files of a group were delivered for its order (SPEC §8.2): the Telegram message of the
+ * delivery — the model's line the rule matched (`evidence_refs` of the group's order candidate)
+ * or that names a file or the folder of the group — else the time the files came to the source.
+ */
+async function deliveredAtOf(
+  tx: Tx,
+  modelId: string,
+  orderId: string,
+  groupId: string,
+  drafts: readonly DraftRow[],
+): Promise<string | null> {
+  const { rows } = await tx.execute<{ ref: string; title: string | null }>(sql`
+    SELECT r.ref, g.proposed_title AS title
+      FROM inbox_groups g
+      LEFT JOIN LATERAL (
+        SELECT jsonb_array_elements_text(c.evidence_refs) AS ref
+          FROM inbox_draft_candidates c
+          JOIN inbox_drafts d ON d.model_id = c.model_id AND d.id = c.draft_id
+         WHERE c.model_id = g.model_id AND d.group_id = g.id AND c.kind = 'order'
+           AND c.order_id = ${orderId}::uuid AND c.dismissed_at IS NULL
+      ) r ON true
+     WHERE g.model_id = ${modelId}::uuid AND g.id = ${groupId}::uuid`)
+  const names = [
+    ...drafts.map((draft) =>
+      fileName(draft)
+        .replace(/\.[\p{L}\p{N}]{2,5}$/u, '')
+        .trim(),
+    ),
+    ...(rows[0]?.title ? [rows[0].title] : []),
+  ]
+  const message = await deliveryMessageAt(tx, modelId, orderId, {
+    refs: rows.map((row) => row.ref),
+    names,
+  })
+  return (
+    message ??
+    drafts
+      .map((draft) => draft.arrived_at)
+      .filter((at): at is string => at !== null)
+      .sort()[0] ??
+    null
+  )
+}
+
+/**
  * Sealed composition of the delivered versions and the delivery rows of the order (§8.2);
  * returns the delivery of the video, if any.
  */
@@ -616,17 +676,14 @@ async function recordDelivery(
   tx: Tx,
   modelId: string,
   orderId: string,
+  groupId: string,
   item: ItemRef,
   files: readonly CreatedFile[],
   drafts: readonly DraftRow[],
   actor: Actor,
 ): Promise<string | null> {
   let video: string | null = null
-  const deliveredAt =
-    drafts
-      .map((draft) => draft.arrived_at)
-      .filter((at): at is string => at !== null)
-      .sort()[0] ?? null
+  const deliveredAt = await deliveredAtOf(tx, modelId, orderId, groupId, drafts)
   for (const part of ['video', 'photos'] as const) {
     const chosen = files.filter((file) => (part === 'video') === (file.media === 'video'))
     if (chosen.length === 0) continue
@@ -905,7 +962,16 @@ export async function acceptGroup(
           ? await openOrderOf(tx, model.id, item.id)
           : null))
   if (orderId) {
-    const delivery = await recordDelivery(tx, model.id, orderId, item, created, drafts, actor)
+    const delivery = await recordDelivery(
+      tx,
+      model.id,
+      orderId,
+      group.id,
+      item,
+      created,
+      drafts,
+      actor,
+    )
     await markDeliveredParts(tx, model, orderId, actor)
     // The revision is done with the basis «проверил(а)»: the person looked at the fix and took
     // it as one (DESIGN §2.5); the new version is its delivery.

@@ -120,7 +120,7 @@ function VideoInSet({ group, pending, decide }: DecisionProps) {
 }
 
 /**
- * ◆ «Несколько роликов» (DESIGN §4.8): у фупа и кастома один ролик — одним нажатием каждый
+ * ◆ «Несколько роликов» (DESIGN §4.8): у фупа один ролик — одним нажатием каждый
  * становится своей группой. В PPV лишний ролик решает человек: отмечает его ниже и выделяет.
  */
 function SplitVideos({ group, pending, decide }: DecisionProps) {

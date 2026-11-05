@@ -205,7 +205,7 @@ describe('the decision', () => {
       kind: 'link',
       candidate: { order: { id: 'a' }, identity: 'line', evidence: ['tg:3/128/1733'] },
     })
-    // A clip of an order folder with several clips is called by the folder too: the buyer.
+    // A clip called by its order folder too: the buyer.
     const clip = custom('IMG_7003', { alsoNamed: ['10.10.26 owlbear спорт и ванна'] })
     expect(decide(clip, [order('c', { buyer: 'owlbear' })], [])).toMatchObject({
       kind: 'link',
@@ -215,6 +215,19 @@ describe('the decision', () => {
     expect(decide(custom('IMG_7003'), [order('c', { buyer: 'owlbear' })], [])).toEqual({
       kind: 'none',
     })
+  })
+
+  it('«папка X» of the model names the folder of the answer', () => {
+    // Лора, 25.10.2026, a reply to the card «видео из 4 этапов».
+    const reply = { text: 'Папка кастом>папка 4 видео', ref: 'tg:3/9993' }
+    const stages = order('a', { brief: 'Видео из 4 этапов', lines: [reply] })
+    expect(decide(custom('4 Видео'), [stages], [])).toMatchObject({
+      kind: 'link',
+      candidate: { identity: 'line', evidence: ['tg:3/9993'] },
+    })
+    expect(sameLine('38 фото', 'Загрузила в папку 38 фото')).toBe(true)
+    // One word after «папка» names nothing of its own.
+    expect(sameLine('бг', 'Загрузила в папку бг')).toBe(false)
   })
 
   it('a reply line does not outweigh a second candidate: two orders of one buyer ask', () => {

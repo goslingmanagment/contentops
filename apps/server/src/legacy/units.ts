@@ -13,9 +13,9 @@ import type { SnapshotEntry } from './snapshot'
  * folder (`[PPV-0NN]…`, `sexting_NNN…`, `[Set-NNN]…`, a pack `PPV-001 Белое бельё`) with
  * everything below it is one object; a folder without a number is one object with its role and
  * tag subfolders (`ed/`, `original/`, `Дубли/`); a FYP or a custom video is an object by itself,
- * except the only video of an order folder of customs (`05.10.26 <покупатель> <что>`), which is
- * that folder's custom; files right in a root are grouped by the shooting day or the upload
- * window, as intake groups them. An archive is one unit until a person splits it by its folders
+ * except in a folder of customs that answers one card (`05.10.26 <покупатель> <что>`, `4 Видео`):
+ * that folder is one custom, its longest clip the master and the others its parts; files right
+ * in a root are grouped by the shooting day or the upload window, as intake groups them. An archive is one unit until a person splits it by its folders
  * (◆ «Разделить архив?»).
  *
  * A pack holds its object (`PackPlan` of the dry run): an old folder of its number sharing its
@@ -94,11 +94,10 @@ export interface UnitsInput {
 /** Copies for the platform a pack keeps beside its originals: not new material. */
 const PLATFORM_COPIES = /сжат|compress|(?<![\p{L}])crf\s?\d|normaliz|для\s+(волта|vault)/iu
 /**
- * A folder of customs named by its order: the date, then who and what (`05.10.26 <покупатель>
- * <что>`). A bare day (`17.10.26`) is a nightly drop that may hold several orders: a custom per
- * clip there, as anywhere.
+ * Folders of customs that hold many orders: a bare day (`17.10.26`), the nightly drop of a mirror,
+ * and a choice for PPV (`отобранное на PPV`) — a custom per clip there.
  */
-const ORDER_FOLDER = /^\d{1,2}\.\d{1,2}\.\d{2}\s+\S/u
+const MANY_ORDERS = /^(?:\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4})|.*отобранное\s+на\s+ppv.*)$/iu
 /** `10.04.26 ванная топлес`: the date first, then what was shot — the day of the shoot. */
 const SHOOT_FOLDER = /^\d{1,2}\.\d{1,2}\.(?:\d{2}|\d{4})\s+\S/u
 
@@ -128,16 +127,16 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
       const entry = byPath.get(path)
       return entry ? [entry.objectId] : []
     })
-  const orderFolderOf = (path: string) =>
-    typeOf(parsed.get(path)) === 'CUS' &&
-    path.split('/').length === 2 &&
-    ORDER_FOLDER.test(nameOf(path))
-  // Videos of each folder of customs: the only one of an order folder is that folder's custom.
-  const videosIn = new Map<string, number>()
-  for (const file of input.files) {
-    if (mediaKindOf(nameOf(file.relative), file.mediaType ?? null) !== 'video') continue
-    const parent = parentOf(file.relative)
-    videosIn.set(parent, (videosIn.get(parent) ?? 0) + 1)
+  // A folder right in the section of customs that answers one card (SPEC §6.1): named by its
+  // order (`05.10.26 <покупатель> <что>`) or by what was shot (`4 Видео`, `10:08 черное платье`).
+  // The section is `3. Customs`, or `Customs` inside `BG` and «Старый формат».
+  const replyFolder = (path: string) => {
+    const own = parsed.get(path)
+    if (!own || typeOf(own) !== 'CUS') return false
+    const depth = own.context.area === own.context.subArea ? 2 : 3
+    return (
+      path.split('/').length === depth && !MANY_ORDERS.test(nameOf(path).normalize('NFC').trim())
+    )
   }
 
   const unit = (key: string, make: () => Omit<LegacyUnit, 'key' | 'files'>): LegacyUnit => {
@@ -204,9 +203,9 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
             anchor: anchor.objectId,
             // Old folders of the pack's number: their claims settle with the object.
             ...(pack && pack.folders.length > 0 ? { folders: objectsOf(pack.folders) } : {}),
-            // The custom of an order folder (or of a numbered one, `[CUS-001]_…`) answers to
-            // the names of its files too: what the model's reply to the card named.
-            ...(orderFolderOf(folder.relative) || number?.payload.type === 'CUS'
+            // The custom of a folder of the answer (or of a numbered one, `[CUS-001]_…`) answers
+            // to the names of its files too: what the model's reply to the card named.
+            ...(replyFolder(folder.relative) || number?.payload.type === 'CUS'
               ? { order_folder: folder.relative }
               : {}),
           },
@@ -338,11 +337,16 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
       continue
     }
     const type = typeOf(own)
-    // The only video of an order folder of customs is that folder's custom, with its photos.
-    const parent = parentOf(file.relative)
-    const orderFolder = type === 'CUS' && orderFolderOf(parent) ? parent : null
-    if (orderFolder && (videosIn.get(orderFolder) ?? 0) === 1) {
-      const folder = byPath.get(orderFolder)
+    // The folder of the answer to one card is one custom: its clips, the parts of one video, and
+    // its photos (SPEC §6.1) — whatever depth below it they lie at.
+    const answer =
+      type === 'CUS'
+        ? [2, 3]
+            .map((depth) => parts.slice(0, depth).join('/'))
+            .find((path, i) => parts.length > i + 2 && replyFolder(path))
+        : undefined
+    if (answer) {
+      const folder = byPath.get(answer)
       if (folder) {
         folderUnit(folder, folder, false).files.push(file)
         continue
@@ -363,14 +367,7 @@ export function legacyUnits(input: UnitsInput): LegacyUnit[] {
         tags: [],
         number: null,
         archiveFolders: [],
-        evidence: {
-          legacy: {
-            unit: file.relative,
-            anchor: file.objectId,
-            // A custom of an order folder with several videos: the folder names the order too.
-            ...(orderFolder ? { order_folder: orderFolder } : {}),
-          },
-        },
+        evidence: { legacy: { unit: file.relative, anchor: file.objectId } },
       })).files.push(file)
       continue
     }

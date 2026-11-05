@@ -33,6 +33,7 @@ import { publicIdOf } from '../catalog/ids'
 import { instant, instantOrNull } from '../commands'
 import type { ModelScope } from '../context'
 import { ApiProblem } from '../errors'
+import { sameLine } from '../legacy/customs-match'
 
 /**
  * Orders as the API gives them (SPEC §8.2, DESIGN §4.16, §5.5): the stored order with its
@@ -393,8 +394,23 @@ function buildOrder(row: OrderRow, related: Related, options: BuildOptions): Ord
     }
   })
 
-  // When each part came, for overdue: the source date of the deliveries of a part marked
-  // whole; a part not marked yet counts from a draft of it waiting in «Приехало».
+  // A draft waiting in «Приехало» came when the model's line under the card named its file or
+  // folder (SPEC §8.2), else when it came to the source.
+  const lines = related.messages.filter(
+    (message) => message.order_id === row.id && message.kind === 'delivery',
+  )
+  const draftAt = (draft: InboxRow): string => {
+    const parts = (draft.path ?? '').split('/')
+    const names = [
+      (parts.at(-1) ?? '').replace(/\.[\p{L}\p{N}]{2,5}$/u, '').trim(),
+      (parts.at(-2) ?? '').trim(),
+    ].filter(Boolean)
+    const line = lines.find((one) => names.some((name) => sameLine(name, one.excerpt)))
+    return line?.message_at ?? draft.arrived_at
+  }
+
+  // When each part came, for overdue: the delivery dates of a part marked whole; a part not
+  // marked yet counts from a draft of it waiting in «Приехало».
   const partAt = (part: OrderPart): string | null => {
     if (part.complete) {
       return maxInstant(
@@ -407,7 +423,7 @@ function buildOrder(row: OrderRow, related: Related, options: BuildOptions): Ord
           const kind = draftPart(draft)
           return kind === null || kind === part.kind
         })
-        .map((draft) => instant(draft.arrived_at)),
+        .map((draft) => instant(draftAt(draft))),
     )
   }
   const came = parts.map(partAt)

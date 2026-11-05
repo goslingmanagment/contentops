@@ -31,7 +31,8 @@ export function newObjectRefusal(
     case 'PPV':
       return videos > 2 ? refusal('Видео больше двух — разделите группу', 'split_videos') : null
     case 'CUS':
-      return videos > 1 ? refusal('В кастоме одно видео — разделите группу', 'split_videos') : null
+      // Several clips answer one card: the longest is the master, the others its parts.
+      return null
     case 'FYP':
       if (videos === 0) return refusal('Фуп — это ролик: выберите тип', 'what_is_it')
       return videos > 1 || photos > 0

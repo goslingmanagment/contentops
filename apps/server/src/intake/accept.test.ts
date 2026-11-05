@@ -908,6 +908,64 @@ describe('which order a new custom is (SPEC §8.2, DESIGN §6.1, §6.6)', () => 
     expect(group.candidates).toHaveLength(2)
   })
 
+  it('a folder that answers one card is one custom of parts, delivered when the model wrote', async () => {
+    const order = await newOrder({ brief: 'Видео из 4 этапов, можно не одним дублем' })
+    // Лора, 25.10.2026: the reply to the card names the folder, not the files.
+    const line = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/orders/${order.id}/messages`,
+      as: owner,
+      key: newKey(),
+      body: {
+        message_url: 'https://t.me/c/2627984998/3/9993',
+        kind: 'delivery',
+        at: '2026-10-29T14:04:00Z',
+        author: 'Модель',
+        excerpt: 'Папка кастом>папка 4 видео',
+      },
+    })
+    expect(line.statusCode).toBe(201)
+    // `.mp4`: the test's master of a `.mov` is registered as a photo (see `makeReady`).
+    const folder = `${LORA_ROOT}/3. Customs/4 Видео`
+    upload(`${folder}/Видео 25.10.2026, 6 17 30 PM.mp4`, 5201)
+    upload(`${folder}/Видео 25.10.2026, 6 19 31 PM.mp4`, 5202)
+    // The montage of the parts (the agent glued them, 04.11): the longest clip.
+    upload(`${folder}/1027_sporty_5-05.mp4`, 5300)
+    await scan()
+    await fetchAll()
+    const { rows: drafts } = await h.db.execute<{ id: string; group_id: string }>(sql`
+      SELECT id, group_id FROM inbox_drafts WHERE path LIKE ${`${folder}/%`} ORDER BY path`)
+    expect(new Set(drafts.map((draft) => draft.group_id)).size).toBe(1)
+    const group = drafts[0]?.group_id as string
+    expect(await orderRow(group)).toBe(await orderId(order.id))
+    for (const draft of drafts) await makeReady(draft.id)
+    const accepted = await accept(group)
+    expect(accepted.json()).toMatchObject({
+      how: 'delivery',
+      item_id: expect.stringMatching(/^CUS-/),
+    })
+    const { rows: files } = await h.db.execute<{ name: string; handle: string }>(sql`
+      SELECT regexp_replace(d.path, '^.*/', '') AS name,
+             m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '') AS handle
+        FROM inbox_drafts d
+        JOIN asset_versions v ON v.id = d.applied_version_id
+        JOIN item_memberships m ON m.asset_id = v.asset_id AND m.kind = 'owned'
+       WHERE d.group_id = ${group}::uuid ORDER BY m.role DESC, m.ordinal`)
+    // The parts keep the order of the files: the stages as they were shot.
+    expect(files).toEqual([
+      { name: '1027_sporty_5-05.mp4', handle: 'master' },
+      { name: 'Видео 25.10.2026, 6 17 30 PM.mp4', handle: 'clip01' },
+      { name: 'Видео 25.10.2026, 6 19 31 PM.mp4', handle: 'clip02' },
+    ])
+    const { rows: delivered } = await h.db.execute<{ at: string; files: number }>(sql`
+      SELECT to_char(d.delivered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI') AS at,
+             (SELECT count(*)::int FROM asset_manifest_entries e WHERE e.manifest_id = d.manifest_id)
+               AS files
+        FROM custom_order_deliveries d WHERE d.order_id = ${await orderId(order.id)}::uuid`)
+    // One delivery of the video with its three files, at the time of the model's line.
+    expect(delivered).toEqual([{ at: '2026-10-29T14:04', files: 3 }])
+  })
+
   it('a fix of a delivered order with an open revision is «похоже на исправление»', async () => {
     const order = await newOrder({ brief: 'Танец живота с музыкой', duration_raw: '3 минуты' })
     // `.mp4`: the test's master of a `.mov` is registered as a photo (see `makeReady`).

@@ -264,10 +264,13 @@ export function briefWords(name: string, brief: string, options: MatchOptions = 
 
 const TIME_ANY = /(?<![\d:])\d{1,2}[:.-]\d{2}(?!\d)/u
 const NAMED = /назвал[аи]?\s*[-—–:]+\s*/iu
+/** «Папка кастом>папка 4 видео», «в папке 38 фото»: the folder the model put the answer in. */
+const FOLDER_WORD = /(?<![\p{L}])папк[аеиуой]\s+/giu
 
 /**
- * What a message of the model calls a file: each of its lines, and the part after «назвала —»
- * («Загрузила на диск, назвала - 6:15 в синем»).
+ * What a message of the model calls a file or a folder: each of its lines, the part after
+ * «назвала —» («Загрузила на диск, назвала - 6:15 в синем») and after the last «папка»
+ * («Папка кастом>папка 4 видео» names the folder `4 Видео`).
  */
 function lineNames(line: string): string[] {
   const out = new Set<string>()
@@ -277,6 +280,8 @@ function lineNames(line: string): string[] {
     out.add(normalName(text))
     const named = NAMED.exec(text)
     if (named) out.add(normalName(text.slice(named.index + named[0].length)))
+    const folder = [...text.matchAll(FOLDER_WORD)].at(-1)
+    if (folder) out.add(normalName(text.slice(folder.index + folder[0].length)))
   }
   return [...out]
 }

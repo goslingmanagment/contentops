@@ -12,13 +12,14 @@ import type { ItemId } from '@contentops/contracts/domain/item-type'
 import type { OrderPartKind } from '@contentops/contracts/domain/orders'
 import { parseDuration } from '@contentops/contracts/order-card'
 import { orderAddress, parseTelegramRef, telegramRefText } from '@contentops/contracts/order-link'
-import { dbErrorCode, logAction, setJournalItem, type Tx } from '@contentops/db'
+import { dbErrorCode, logAction, type Queryable, setJournalItem, type Tx } from '@contentops/db'
 import { type SQL, sql } from 'drizzle-orm'
 import { findItem, publicIdOfRow } from '../catalog/ids'
 import { checkVersion, instant } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import { orderedFields, type Snapshot } from '../journal/describe'
+import { sameLine } from '../legacy/customs-match'
 import {
   deadlineOf,
   dueAtOf,
@@ -504,6 +505,29 @@ async function itemFiles(tx: Tx, model: ModelScope, itemId: string): Promise<Par
 }
 
 /** When the files appeared in the source: `remote_created_at`, else the upload; not acceptance. */
+/**
+ * When the model delivered (SPEC §8.2): the Telegram message of the delivery, not the time its
+ * copy came to the source — a mirror copies a month of messages in one night. The message of the
+ * order the delivery cites (`tg:…`, its line or the link a person gave), else the model's line
+ * under the card that names a file of it («назвала — 6:15 в синем»); `null` — no such message.
+ */
+export async function deliveryMessageAt(
+  q: Queryable,
+  modelId: string,
+  orderId: string,
+  cites: { refs?: readonly (string | null | undefined)[]; names?: readonly string[] },
+): Promise<string | null> {
+  const { rows } = await q.execute<{ ref: string; at: string; excerpt: string }>(sql`
+    SELECT tg_ref AS ref, message_at::text AS at, excerpt FROM custom_order_messages
+     WHERE model_id = ${modelId}::uuid AND order_id = ${orderId}::uuid AND kind = 'delivery'
+     ORDER BY message_at, id`)
+  const refs = new Set((cites.refs ?? []).flatMap((ref) => (ref ? [messageRef(ref)] : [])))
+  const cited = rows.find((row) => refs.has(row.ref))
+  if (cited) return cited.at
+  const names = cites.names ?? []
+  return rows.find((row) => names.some((name) => sameLine(name, row.excerpt)))?.at ?? null
+}
+
 async function sourceTimeOf(
   tx: Tx,
   model: ModelScope,
@@ -610,7 +634,12 @@ export async function linkDelivery(
     const chosen = ofPart(part)
     const versionIds = chosen.map((file) => file.version_id)
     if (await sameLiveDelivery(tx, model, row.id, item.id, part, versionIds)) continue
-    const deliveredAt = body.delivered_at ?? (await sourceTimeOf(tx, model, item.id, versionIds))
+    const deliveredAt =
+      body.delivered_at ??
+      (await deliveryMessageAt(tx, model.id, row.id, {
+        refs: [body.message_url, ...(body.evidence ?? [])],
+      })) ??
+      (await sourceTimeOf(tx, model, item.id, versionIds))
     const { rows } = await tx.execute<{ id: string }>(sql`
       INSERT INTO asset_manifests (model_id, purpose, origin_item_id, entry_count, created_by)
       VALUES (${model.id}::uuid, 'submission', ${item.id}::uuid, ${chosen.length}, ${actor.id}::uuid)

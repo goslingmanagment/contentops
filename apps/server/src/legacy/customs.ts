@@ -79,7 +79,7 @@ interface FileRow extends Record<string, unknown> {
   public_id: string | null
   grouping: string
   unit: string | null
-  /** A custom of an order folder with several videos: the folder names the order. */
+  /** A custom of a folder of the answer (`order_folder`): its files name the order too. */
   order_folder: string | null
   order_id: string | null
   asked: boolean
@@ -113,9 +113,9 @@ function unitName(unit: string, grouping: string): string {
 }
 
 /**
- * The other names of a custom of an order folder (`05.10.26 <покупатель> <что>`): a clip of it
- * is also called by the folder, the folder's custom also by the names of its files — what the
- * model's reply to the card named (SPEC §6.3).
+ * The other names of a custom of a folder of the answer (`05.10.26 <покупатель> <что>`, `4
+ * Видео`): the folder's custom is also called by the names of its files — what the model's reply
+ * to the card named (SPEC §6.3); a clip that still is a custom by itself, by its folder.
  */
 function otherNames(files: readonly FileRow[], grouping: string): string[] {
   const folder = files[0]?.order_folder

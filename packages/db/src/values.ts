@@ -385,7 +385,7 @@ export const rolesByType = {
   PPV: ['master', 'teaser', 'pic', 'thumb'],
   SET: ['raw', 'ed'],
   SXT: ['pic', 'clip'],
-  CUS: ['master', 'pic'],
+  CUS: ['master', 'pic', 'clip'],
   FYP: ['master'],
   LIFE: ['pic', 'clip'],
   RAW: ['raw'],
