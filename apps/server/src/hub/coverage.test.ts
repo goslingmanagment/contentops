@@ -38,7 +38,7 @@ function plan(fields: Record<string, string | null>): DatasetRow<'capture_covera
 }
 
 describe('the coverage of posts from Hub (E7)', () => {
-  it('a gap before the floor of capture does not cancel the proof; any other gap does', () => {
+  it('gaps before the floor of capture or in the files’ metadata do not cancel the proof; others do', () => {
     expect(pageBlockers({ blockers: BLOCKERS, capture: { gaps: [floorGap] } })).toEqual([
       'claim_not_declared',
       'window_before_capture_floor',
@@ -47,6 +47,17 @@ describe('the coverage of posts from Hub (E7)', () => {
     expect(pageBlockers({ blockers: BLOCKERS, capture: { gaps: [floorGap, inside] } })).toEqual(
       BLOCKERS,
     )
+    // `post_attachments` on every Fansly page, 05.11.2026: the files' metadata, not the posts.
+    const files = {
+      kind: 'internal_capture_gap',
+      from: '2020-01-01T00:00:00Z',
+      to: '2026-11-07T00:00:00Z',
+      plane: 'creator_raw_media',
+    }
+    expect(pageBlockers({ blockers: BLOCKERS, capture: { gaps: [floorGap, files] } })).toEqual([
+      'claim_not_declared',
+      'window_before_capture_floor',
+    ])
     expect(pageBlockers({ blockers: BLOCKERS, capture: null })).toEqual(BLOCKERS)
   })
 
