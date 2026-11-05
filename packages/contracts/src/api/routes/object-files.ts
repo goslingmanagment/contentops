@@ -2,13 +2,16 @@ import { BatchSecondPersonCommandSchema, BatchTagsCommandSchema } from '../../co
 import {
   AssignLifeCommandSchema,
   BuildFypVersionsCommandSchema,
+  CopyOfCommandSchema,
   DownloadFilesCommandSchema,
   ExtractShootCommandSchema,
   MakeCoverCommandSchema,
   MakeMasterCommandSchema,
   MakePhotosCommandSchema,
+  MasterVersionCommandSchema,
   MergeItemsCommandSchema,
   MoveFilesCommandSchema,
+  NotContentCommandSchema,
   PickFramesCommandSchema,
   RemoveFilesCommandSchema,
   ReorderFilesCommandSchema,
@@ -114,6 +117,30 @@ export const objectFileRoutes = {
     body: MakeMasterCommandSchema,
     response: AcceptResultSchema,
     success: 201,
+  }),
+  /** «Это копия <файл>» (SPEC §6.2): the answer is this object's page. */
+  copyOf: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/i/{id}/files:copy-of',
+    body: CopyOfCommandSchema,
+    response: ItemDetailSchema,
+    versioned: true,
+  }),
+  /** «Не контент» for files accepted before (SPEC §6.1). */
+  notContent: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/i/{id}/files:not-content',
+    body: NotContentCommandSchema,
+    response: ItemDetailSchema,
+    versioned: true,
+  }),
+  /** «Новая версия мастера из файла» of a FYP or a PPV (DESIGN §4.5). */
+  masterVersion: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/i/{id}:master-version',
+    body: MasterVersionCommandSchema,
+    response: ItemDetailSchema,
+    versioned: true,
   }),
 }
 

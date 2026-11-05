@@ -183,6 +183,17 @@ const WORDING: Record<string, Wording> = {
     noun: 'выделение в новый объект',
   },
   'objectFiles.move': { verb: 'перенёс', rest: 'файлы {subject}', noun: 'перенос файлов' },
+  'objectFiles.copyOf': { verb: 'отметил', rest: 'копии в {subject}', noun: 'отметка копий' },
+  'objectFiles.notContent': {
+    verb: 'отклонил',
+    rest: 'файлы {subject} как не контент',
+    noun: 'не контент',
+  },
+  'objectFiles.masterVersion': {
+    verb: 'сделал',
+    rest: 'новую версию мастера {subject}',
+    noun: 'новая версия мастера',
+  },
   'objectBatch.tags': { verb: 'изменил', rest: 'теги {subject}', noun: 'правка тегов' },
   'objectBatch.secondPerson': {
     verb: 'изменил',
