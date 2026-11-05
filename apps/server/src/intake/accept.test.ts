@@ -5,6 +5,7 @@ import { SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { recordingRetry } from '@contentops/sources/testing'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { handleSql } from '../catalog/ids'
 import type { Actor } from '../context'
 import { createLogger } from '../logger'
 import type { BlobStore } from '../media/storage'
@@ -946,7 +947,7 @@ describe('which order a new custom is (SPEC §8.2, DESIGN §6.1, §6.6)', () => 
     })
     const { rows: files } = await h.db.execute<{ name: string; handle: string }>(sql`
       SELECT regexp_replace(d.path, '^.*/', '') AS name,
-             m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '') AS handle
+             ${handleSql('m')} AS handle
         FROM inbox_drafts d
         JOIN asset_versions v ON v.id = d.applied_version_id
         JOIN item_memberships m ON m.asset_id = v.asset_id AND m.kind = 'owned'
@@ -964,6 +965,58 @@ describe('which order a new custom is (SPEC §8.2, DESIGN §6.1, §6.6)', () => 
         FROM custom_order_deliveries d WHERE d.order_id = ${await orderId(order.id)}::uuid`)
     // One delivery of the video with its three files, at the time of the model's line.
     expect(delivered).toEqual([{ at: '2026-10-29T14:04', files: 3 }])
+  })
+
+  it('a photo that came with the video of an order without photos stays in the custom, no delivery', async () => {
+    // Ари, заказ 1629: the video and a photo of the look before the shoot, in one folder.
+    const order = await newOrder({ brief: 'Душ в белой рубашке', duration_raw: '5 минут' })
+    const line = await call(app, {
+      method: 'POST',
+      url: `/api/v1/lora/orders/${order.id}/messages`,
+      as: owner,
+      key: newKey(),
+      body: {
+        message_url: 'https://t.me/c/2627984998/3/9995',
+        kind: 'delivery',
+        at: '2026-10-30T18:00:00Z',
+        author: 'Модель',
+        excerpt: 'Папка кастом>папка душ рубашка',
+      },
+    })
+    expect(line.statusCode).toBe(201)
+    const folder = `${LORA_ROOT}/3. Customs/Душ рубашка`
+    upload(`${folder}/IMG_1723.jpg`, 5401)
+    upload(`${folder}/IMG_1733.mp4`, 5402)
+    await scan()
+    await fetchAll()
+    const { rows: drafts } = await h.db.execute<{ id: string; group_id: string }>(sql`
+      SELECT id, group_id FROM inbox_drafts WHERE path LIKE ${`${folder}/%`} ORDER BY path`)
+    expect(new Set(drafts.map((draft) => draft.group_id)).size).toBe(1)
+    const group = drafts[0]?.group_id as string
+    expect(await orderRow(group)).toBe(await orderId(order.id))
+    for (const draft of drafts) await makeReady(draft.id)
+    const accepted = await accept(group)
+    expect(accepted.json()).toMatchObject({ how: 'delivery' })
+    // The photo is a file of the custom all the same.
+    const { rows: files } = await h.db.execute<{ handle: string }>(sql`
+      SELECT ${handleSql('m')} AS handle
+        FROM inbox_drafts d
+        JOIN asset_versions v ON v.id = d.applied_version_id
+        JOIN item_memberships m ON m.asset_id = v.asset_id AND m.kind = 'owned'
+       WHERE d.group_id = ${group}::uuid ORDER BY m.role`)
+    expect(files.map((file) => file.handle)).toEqual(['master', 'pic01'])
+    const { rows: delivered } = await h.db.execute<{ part: string; files: number }>(sql`
+      SELECT d.part,
+             (SELECT count(*)::int FROM asset_manifest_entries e WHERE e.manifest_id = d.manifest_id)
+               AS files
+        FROM custom_order_deliveries d WHERE d.order_id = ${await orderId(order.id)}::uuid`)
+    expect(delivered).toEqual([{ part: 'video', files: 1 }])
+    const view = await call(app, {
+      method: 'GET',
+      url: `/api/v1/lora/orders/${order.id}`,
+      as: owner,
+    })
+    expect(view.json()).toMatchObject({ state: 'delivered', deliveries: [{ part: 'video' }] })
   })
 
   it('a fix of a delivered order with an open revision is «похоже на исправление»', async () => {

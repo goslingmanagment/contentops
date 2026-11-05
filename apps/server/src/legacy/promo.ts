@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { logAction, type Queryable, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
+import { handleSql } from '../catalog/ids'
 import { issueNumber } from '../catalog/numbers'
 import type { ModelScope } from '../context'
 
@@ -131,7 +132,7 @@ export async function importPacks(tx: Tx, model: ModelScope): Promise<number> {
       handle: string
     }>(sql`
       SELECT m.id AS membership_id, m.asset_id, a.current_version_id AS version_id,
-             m.role || lpad(coalesce(m.ordinal, 0)::text, 2, '0') AS handle
+             ${handleSql('m')} AS handle
         FROM item_memberships m JOIN assets a ON a.model_id = m.model_id AND a.id = m.asset_id
        WHERE m.model_id = ${model.id}::uuid AND m.item_id = ${pack.item_id}::uuid
          AND m.removed_at IS NULL

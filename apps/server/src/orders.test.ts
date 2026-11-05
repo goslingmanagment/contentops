@@ -287,6 +287,32 @@ describe('parts (SPEC §8.2, schema §9.4)', () => {
     expect(whole.parts[0]).toMatchObject({ complete: true, completed_by: { name: 'Диана' } })
     expect(whole.state).toBe('delivered')
   })
+
+  it('a custom of parts is as long as its clips; their montage counts once', async () => {
+    // A CUS of parts (#116): the longest clip is the master — the montage when there is one.
+    const length = async (masterS: number, clipsS: number[]) => {
+      const [item] = await createCatalogItems(server.db, 'lora', [
+        {
+          type: 'custom',
+          title: 'части',
+          files: [
+            { role: 'master', durationS: masterS },
+            ...clipsS.map((durationS) => ({ role: 'clip' as const, durationS })),
+          ],
+        },
+      ])
+      if (!item) throw new Error('no item')
+      const order = await createOrder({ brief: 'из частей' })
+      return (await ok(await link(order, item.id), 201)).parts[0]?.duration_s
+    }
+    // Лора, заказ 9978: the montage 5:05 of four stages, not 10:11.
+    expect(await length(305, [104, 79, 75, 48])).toBe(305)
+    // Ари, 583 and 1535: the parts without a montage, the longest is the master.
+    expect(await length(300, [196])).toBe(496)
+    expect(await length(301, [124, 242, 218])).toBe(885)
+    // Two equal halves are two parts, not a clip and its montage.
+    expect(await length(300, [296])).toBe(596)
+  })
 })
 
 describe('deliveries, revisions, closing (SPEC §5)', () => {

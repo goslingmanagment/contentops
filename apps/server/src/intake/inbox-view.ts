@@ -14,6 +14,7 @@ import { DEFAULT_PAGE_LIMIT } from '@contentops/contracts/domain/pagination'
 import { orderTitleOf } from '@contentops/contracts/order-card'
 import type { Queryable, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
+import { handleSql } from '../catalog/ids'
 import { instant, instantOrNull } from '../commands'
 import { ApiProblem } from '../errors'
 import { openDisputeCount } from '../legacy/review'
@@ -697,7 +698,7 @@ async function loadDrafts(
       LEFT JOIN content_items ai ON ai.model_id = d.model_id AND ai.id = d.applied_item_id
       ${LAST_FETCH}
       LEFT JOIN LATERAL (
-        SELECT m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '') AS handle
+        SELECT ${handleSql('m')} AS handle
           FROM asset_versions v
           JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id AND m.kind = 'owned'
          WHERE v.model_id = d.model_id AND v.id = d.duplicate_of_version_id LIMIT 1
@@ -799,7 +800,7 @@ async function loadExtras(
     revision_on: string | null
   }>(sql`
     SELECT d.group_id, c.kind, c.order_id, public_item_id(i.type, i.number) AS item_public,
-           m.role || coalesce(lpad(m.ordinal::text, 2, '0'), '') AS handle, m.ordinal,
+           ${handleSql('m')} AS handle, m.ordinal,
            o.buyer_name AS buyer, o.brief, (o.due_at AT TIME ZONE 'Europe/Moscow')::date::text AS due,
            (o.card_at AT TIME ZONE 'Europe/Moscow')::date::text AS card_on,
            c.signals, c.chosen AND c.chosen_by IS NULL AS by_rule,

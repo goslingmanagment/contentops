@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { handleSql } from '../catalog/ids'
 import { createCatalogItems } from '../testing/catalog-factory'
 import {
   addPerson,
@@ -94,7 +95,7 @@ async function blobExists(hex: string) {
 /** Handles of the files of a set: `ed02`, `raw01`. */
 async function handles(number: number) {
   const { rows } = await server.db.execute<{ handle: string }>(sql`
-    SELECT m.role || lpad(m.ordinal::text, 2, '0') AS handle FROM item_memberships m
+    SELECT ${handleSql('m')} AS handle FROM item_memberships m
       JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id
      WHERE i.type = 'SET' AND i.number = ${number} AND m.removed_at IS NULL
      ORDER BY m.role, m.ordinal`)
@@ -418,7 +419,7 @@ describe('POST /{model}/uploads', () => {
     expect(answer.json()).toMatchObject({ placed: 'attached', item_id: 'SET-074', decision: null })
     expect(await handles(74)).toEqual(['ed02', 'raw01', 'raw02'])
     const { rows } = await server.db.execute<{ parent: string }>(sql`
-      SELECT pm.role || lpad(pm.ordinal::text, 2, '0') AS parent
+      SELECT ${handleSql('pm')} AS parent
         FROM provenance p
         JOIN asset_versions pv ON pv.model_id = p.model_id AND pv.id = p.parent_version_id
         JOIN item_memberships pm ON pm.model_id = pv.model_id AND pm.asset_id = pv.asset_id

@@ -97,7 +97,7 @@ async function intakeCustoms(q: Queryable, modelId: string): Promise<IntakeCusto
       first.grouping === 'single' || files.length === 1
         ? stem(baseName(first.path ?? ''))
         : (first.title ?? baseName(first.folder ?? first.path ?? ''))
-    const kinds = files.map((file) => file.media_kind ?? mediaKindOf(first.path ?? '', null))
+    const kinds = files.map((file) => file.media_kind ?? mediaKindOf(file.path ?? '', null))
     const durations = files.flatMap((file) =>
       file.duration_ms === null ? [] : [Number(file.duration_ms) / 1000],
     )
