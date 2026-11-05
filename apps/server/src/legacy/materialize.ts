@@ -1,4 +1,11 @@
-import { logAction, type Queryable, type Tx } from '@contentops/db'
+import {
+  type Db,
+  logAction,
+  type Queryable,
+  SYSTEM_ACTOR,
+  type Tx,
+  withActorTx,
+} from '@contentops/db'
 import type { LegacyDate, UsagePayload } from '@contentops/legacy'
 import { sql } from 'drizzle-orm'
 import { labelTargets } from './labels'
@@ -182,6 +189,62 @@ export async function materializeClaims(
     })
   }
   return result
+}
+
+export interface ClaimsAgainResult extends MaterializeResult {
+  /** Paths of drafts resolved as aliases that were not aliases of their files yet. */
+  paths: number
+}
+
+/**
+ * What an alias missed (`ops.js claims`, SPEC §6.3): before 05.11.2026 a draft resolved as an
+ * alias placed no claims of its old name, and the import's own alias kept no path of it. Its
+ * paths become aliases of the file it repeats, then every open claim of a confirmed label whose
+ * files are accepted becomes a placement. A repeat changes nothing.
+ */
+export async function claimsAgain(tx: Tx, modelId: string): Promise<ClaimsAgainResult> {
+  const { rows } = await tx.execute<{ id: string }>(sql`
+    INSERT INTO aliases (model_id, kind, value_raw, asset_id, source_object_id)
+    SELECT DISTINCT p.model_id, 'legacy_path', p.path_raw, v.asset_id, p.source_object_id
+      FROM inbox_drafts d
+      JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id
+      JOIN source_paths p ON p.model_id = r.model_id AND p.source_object_id = r.source_object_id
+      JOIN asset_versions v ON v.model_id = d.model_id AND v.id = d.duplicate_of_version_id
+     WHERE d.model_id = ${modelId}::uuid AND d.outcome = 'alias'
+    ON CONFLICT DO NOTHING
+    RETURNING id`)
+  return { paths: rows.length, ...(await materializeClaims(tx, modelId, null)) }
+}
+
+/** `ops.js claims <model> [--yes]`: what `claimsAgain` does, written only with `--yes`. */
+export async function claimsCommand(
+  db: Db,
+  model: string,
+  write: boolean,
+): Promise<{ model: string; written: boolean } & ClaimsAgainResult> {
+  const dryRun = new Error('dry run')
+  let result: ClaimsAgainResult = { paths: 0, claims: 0, placements: 0, evidence: 0 }
+  try {
+    await withActorTx(
+      db,
+      {
+        actor: SYSTEM_ACTOR('owner claims'),
+        action: 'legacy.claims',
+        requestId: `claims:${model}:${Date.now()}`,
+      },
+      async (tx) => {
+        const { rows } = await tx.execute<{ id: string }>(sql`
+          SELECT id FROM models WHERE code = ${model}`)
+        const id = rows[0]?.id
+        if (!id) throw new Error(`${model}: no such model`)
+        result = await claimsAgain(tx, id)
+        if (!write) throw dryRun
+      },
+    )
+  } catch (error) {
+    if (error !== dryRun) throw error
+  }
+  return { model, written: write, ...result }
 }
 
 /** Accepted files of the claims: the file itself, or every file under the claimed folder. */

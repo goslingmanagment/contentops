@@ -18,6 +18,7 @@ import {
 } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import { copyFromLocal, type LegacyCopyConfig } from '../legacy/copy'
+import { materializeClaims } from '../legacy/materialize'
 import type { BlobStore } from '../media/storage'
 import { extOfName, shaBytes } from '../media/storage'
 import { belowStop, readHostSpace, type SpaceOptions } from '../space'
@@ -276,9 +277,9 @@ export interface DuplicateRow extends Record<string, unknown> {
 
 /**
  * After the bytes are checked: the hash on the draft; an exact duplicate of an accepted
- * version of the model becomes an alias by itself (except custom ↔ PPV, SPEC §6.1 p. 1);
- * the same bytes at another model block the draft for a person; otherwise the derivatives
- * and, for a video, the master are queued for this draft.
+ * version of the model becomes an alias by itself (except custom ↔ PPV and a ready type over
+ * raw material, SPEC §6.1 p. 1); the same bytes at another model block the draft for a person;
+ * otherwise the derivatives and, for a video, the master are queued for this draft.
  */
 export async function afterFetch(
   tx: Tx,
@@ -308,7 +309,7 @@ export async function afterFetch(
            error = NULL, updated_at = now(), row_version = row_version + 1
      WHERE model_id = ${modelId}::uuid AND id = ${draftId}::uuid`)
 
-  const dup = await acceptedHolder(tx, modelId, bytes)
+  const dup = await acceptedHolder(tx, modelId, bytes, draft.type)
   if (dup && (await applyDuplicate(tx, modelId, { id: draftId, ...draft }, dup)) === 'alias') return
   const { rows: others } = await tx.execute<{ model_id: string }>(sql`
     SELECT DISTINCT v.model_id FROM asset_versions v
@@ -326,20 +327,30 @@ export async function afterFetch(
   await queueMedia(tx, modelId, draftId, sha, mediaKindOf(draft.path ?? '', null), workId)
 }
 
-/** An accepted version of the model with these bytes, by hex SHA-256 (the import asks it). */
+/**
+ * An accepted version of the model with these bytes, by hex SHA-256, as a draft of `type` sees
+ * it (the import asks it).
+ */
 export async function acceptedDuplicate(
   tx: Tx,
   modelId: string,
   sha: string,
+  type: string | null,
 ): Promise<DuplicateRow | null> {
-  return (await acceptedHolder(tx, modelId, shaBytes(sha))) ?? null
+  return (await acceptedHolder(tx, modelId, shaBytes(sha), type)) ?? null
 }
 
-/** The oldest accepted version of the model holding these bytes (SPEC §6.2), if any. */
+/**
+ * The accepted version of the model that holds these bytes for a draft of `type` (SPEC §6.2):
+ * a file of the same type first, then of a ready type, raw material and promo last — the oldest
+ * among equals. A third copy of a FYP is an alias of the FYP even when raw material got the
+ * bytes before it.
+ */
 async function acceptedHolder(
   tx: Tx,
   modelId: string,
   bytes: Buffer,
+  type: string | null,
 ): Promise<DuplicateRow | undefined> {
   const { rows } = await tx.execute<DuplicateRow>(sql`
     SELECT v.id AS version_id, v.asset_id, i.id AS item_id, i.type
@@ -348,14 +359,35 @@ async function acceptedHolder(
                              AND m.kind = 'owned' AND m.removed_at IS NULL
       JOIN content_items i ON i.model_id = m.model_id AND i.id = m.item_id AND i.deleted_at IS NULL
      WHERE v.model_id = ${modelId}::uuid AND (v.source_sha256 = ${bytes} OR v.master_sha256 = ${bytes})
-     ORDER BY v.created_at LIMIT 1`)
+     ORDER BY coalesce(i.type = ${type}, false) DESC,
+              i.type = ANY (${sql.param([...MATERIAL])}::text[]), v.created_at
+     LIMIT 1`)
   return rows[0]
 }
 
+/** Raw material and promo collections: what the catalog's objects are made of or sent as. */
+const MATERIAL: ReadonlySet<string> = new Set(['RAW', 'PRM'])
+
 /**
- * The bytes of an open draft are those of an accepted version: «дубль-алиас» by itself,
- * except custom ↔ PPV, where the draft goes on to a new object over the same bytes and the
- * link stays a candidate (SPEC §6.1 p. 1).
+ * What the same bytes are for a draft of `draftType` when an object of `holderType` has them
+ * (SPEC §6.1 p. 1, §6.2) — by the types, not by which group was accepted first: an alias of
+ * the holder; or a new object over the same bytes, for custom ↔ PPV and for a file of a ready
+ * type (FYP, set, life, …) whose bytes raw material or promo keeps — «фуп важнее сырья».
+ */
+export function duplicateOutcome(
+  draftType: string | null,
+  holderType: string,
+): 'alias' | 'own_object' {
+  if (!draftType || draftType === holderType || MATERIAL.has(draftType)) return 'alias'
+  const pair = new Set([draftType, holderType])
+  if (pair.has('CUS') && pair.has('PPV')) return 'own_object'
+  return MATERIAL.has(holderType) ? 'own_object' : 'alias'
+}
+
+/**
+ * The bytes of an open draft are those of an accepted version: «дубль-алиас» by itself, or —
+ * by `duplicateOutcome` — the draft goes on to a new object over the same bytes and the link
+ * stays a candidate (SPEC §6.1 p. 1).
  */
 export async function applyDuplicate(
   tx: Tx,
@@ -363,12 +395,14 @@ export async function applyDuplicate(
   draft: { id: string; type: string | null; source_object_id: string | null },
   dup: DuplicateRow,
 ): Promise<'alias' | 'candidate'> {
-  const pair = new Set([draft.type, dup.type])
-  if (draft.type !== dup.type && pair.has('CUS') && pair.has('PPV')) {
+  if (duplicateOutcome(draft.type, dup.type) === 'own_object') {
+    const signals = MATERIAL.has(dup.type)
+      ? { sha256: true, over_material: true }
+      : { sha256: true, custom_ppv: true }
     await tx.execute(sql`
       INSERT INTO inbox_draft_candidates (model_id, draft_id, kind, item_id, version_id, signals)
       VALUES (${modelId}::uuid, ${draft.id}::uuid, 'exact_duplicate', ${dup.item_id}::uuid,
-              ${dup.version_id}::uuid, '{"sha256": true, "custom_ppv": true}'::jsonb)
+              ${dup.version_id}::uuid, ${JSON.stringify(signals)}::jsonb)
       ON CONFLICT DO NOTHING`)
     return 'candidate'
   }
@@ -407,7 +441,7 @@ export async function aliasOpenDuplicates(
      FOR UPDATE OF d SKIP LOCKED`)
   let aliased = 0
   for (const row of rows) {
-    const dup = await acceptedHolder(tx, modelId, shaBytes(row.sha))
+    const dup = await acceptedHolder(tx, modelId, shaBytes(row.sha), row.type)
     if (dup && (await applyDuplicate(tx, modelId, row, dup)) === 'alias') aliased += 1
   }
   return aliased
@@ -446,7 +480,11 @@ export async function queueMedia(
   }
 }
 
-/** «Дубль-алиас» (schema §5, SPEC §6.1 p. 1): resolved by itself, the paths become aliases. */
+/**
+ * «Дубль-алиас» (schema §5, SPEC §6.1 p. 1): resolved by itself, the paths become aliases, and
+ * the claims of the old name of the file (`used2_…`, SPEC §6.3) go to the object it is an alias
+ * of — a repeat of a FYP in another month of `Posted` is a placement of that FYP.
+ */
 export async function resolveAlias(
   tx: Tx,
   modelId: string,
@@ -476,6 +514,7 @@ export async function resolveAlias(
        WHERE p.model_id = ${modelId}::uuid AND p.source_object_id = ${sourceObjectId}::uuid
       ON CONFLICT DO NOTHING`)
   }
+  // A twin is placed with its group: «Принять» materializes the claims of every draft of it.
   if (twin) return
   const { rows } = await tx.execute<{ label: string }>(sql`
     SELECT public_item_id(type, number) AS label FROM content_items
@@ -489,4 +528,7 @@ export async function resolveAlias(
     itemId: dup.item_id,
     after: { outcome: 'alias', item: rows[0]?.label },
   })
+  if (sourceObjectId) {
+    await materializeClaims(tx, modelId, null, { objectIds: [sourceObjectId] })
+  }
 }
