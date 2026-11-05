@@ -392,6 +392,52 @@ describe('WorkRunner', () => {
     ])
   })
 
+  it('a work that settles while the role stops goes back too, not held by the lease', async () => {
+    const { modelId } = await newModel()
+    const { work: row } = await enqueueWork(db, { modelId, kind: 'fetch', workKey: 'fetch:late' })
+    const handler = deferred()
+    const claim = deferred()
+    const held = deferred()
+    let holding = false
+    const first = runner(
+      'worker',
+      {
+        fetch: async () => {
+          await handler.promise
+          return {}
+        },
+      },
+      {
+        leaseMs: 60_000,
+        // A claim under way when the stop comes: `stop()` waits for it first.
+        dynamicLimits: async () => {
+          if (holding) {
+            held.resolve()
+            await claim.promise
+          }
+          return {}
+        },
+      },
+    )
+    await until(async () => (await work(row.id))?.state === 'running')
+    holding = true
+    await held.promise
+    // The handler is done right as the role stops (sync.test.ts «Hub down holds no other work»).
+    handler.resolve()
+    const stopped = first.stop()
+    await until(() => first.active === 0)
+    claim.resolve()
+    await stopped
+    // Not `running` under a lease of a stopped runner for a minute: the stream stays free.
+    expect(await work(row.id)).toMatchObject({
+      state: 'retry_wait',
+      attempt_no: 0,
+      lease_owner: null,
+      due: true,
+    })
+    expect((await events(row.id)).map((e) => e.action)).toEqual(['work.returned'])
+  })
+
   it('retries with backoff, fails a permanent error at once and stops after max attempts', async () => {
     const { modelId } = await newModel()
     const flaky = await enqueueWork(db, { modelId, kind: 'hash', workKey: 'hash:flaky' })

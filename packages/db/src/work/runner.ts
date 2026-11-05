@@ -328,11 +328,19 @@ export class WorkRunner {
           db: this.db,
           checkpoint: (update) => this.checkpoint(job, update),
         })
-        if (job.lost || this.stopping) return
+        if (job.lost) return
+        if (this.stopping) {
+          await this.returnOnStop(job)
+          return
+        }
         // A failing `commit` rolls back with the finish and counts as a failed attempt.
         await this.finishSuccess(job, result ?? {})
       } catch (error) {
-        if (job.lost || this.stopping) return
+        if (job.lost) return
+        if (this.stopping) {
+          await this.returnOnStop(job)
+          return
+        }
         if (error instanceof WorkDeferred) {
           await this.release(job, 'deferred', undefined, error)
           return
@@ -438,6 +446,17 @@ export class WorkRunner {
          WHERE ${this.fence(job)}`)
       return (result.rowCount ?? 0) > 0
     })
+  }
+
+  /**
+   * A handler settled while the role stops: its row goes back to the queue here. `stop()` gives
+   * back only the works it still holds once the claim under way is done, so a work that ended in
+   * between stayed `running` under the lease of a stopped runner — a minute by default — and held
+   * its stream (a new work of the stream is that row). The write is fenced: after `stop()` gave
+   * the row back, it changes nothing.
+   */
+  private returnOnStop(job: Running): Promise<void> {
+    return this.release(job, 'returned')
   }
 
   /**
