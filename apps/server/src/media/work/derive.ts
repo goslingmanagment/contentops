@@ -1,5 +1,5 @@
 import { rm } from 'node:fs/promises'
-import type { WorkContext, WorkHandler, WorkSuccess } from '@contentops/db'
+import type { Tx, WorkContext, WorkHandler, WorkSuccess } from '@contentops/db'
 import {
   type Artifact,
   buildVideoDerivatives,
@@ -8,6 +8,7 @@ import {
   processPhoto,
   VIDEO_DERIVATIVE_KINDS,
   type VideoDerivativeKind,
+  type VideoPrint,
 } from '@contentops/media'
 import { sql } from 'drizzle-orm'
 import { locateInput, probePhotoCached, probeVideoCached, savePhotoProbe } from '../inputs'
@@ -23,12 +24,14 @@ import {
   readyGeneration,
 } from '../renditions'
 import { asWorkError, inputSha, masterOfSource, progressReporter } from './common'
+import { printOfBytes, printPreview, savePrint, storedPrint } from './print'
 
 /**
  * `derive_video` and `derive_image` (schema §3.4, SPEC §9.3, §12.0): one decoding pass per
  * input gives what is missing of preview, poster, thumbnails and annotation frames (photo:
  * EXIF and orientation, preview-2048, thumbnails, frame, pHash). What is already built for
- * the same bytes and recipe is not built again; a retry starts from a clean build dir.
+ * the same bytes and recipe is not built again; a retry starts from a clean build dir. A video
+ * also gets its print (SPEC §6.2, `print.ts`) from the preview of the pass.
  */
 
 type Kind = VideoDerivativeKind | PhotoDerivativeKind
@@ -107,12 +110,39 @@ function finish<K extends Kind>(
   })()
 }
 
+/**
+ * The print of the picture (SPEC §6.2) from `preview` — the file this pass just built — or from
+ * the ready preview of the bytes. A print that fails never fails the previews: the video goes
+ * on without the hint and `video_print` prints it on the next start of the role.
+ */
+async function printFor(
+  env: MediaEnv,
+  sha: Buffer,
+  preview: string | null,
+  signal: AbortSignal,
+): Promise<VideoPrint | null> {
+  if (await storedPrint(env.db, sha, env.versions.phash)) return null
+  try {
+    return preview ? await printPreview(env, preview, signal) : await printOfBytes(env, sha, signal)
+  } catch (error) {
+    if (signal.aborted) throw error
+    env.log(`video print of ${sha.toString('hex').slice(0, 12)} failed`, error)
+    return null
+  }
+}
+
 export function deriveVideoHandler(env: MediaEnv): WorkHandler {
   return async (ctx) => {
     const sha = inputSha(ctx)
     const digestOf = (kind: VideoDerivativeKind) => env.recipes.video[kind].digest
     const plan = await planKinds(env, sha, VIDEO_DERIVATIVE_KINDS, digestOf)
-    if (plan.todo.length === 0) return { report: { built: [], cached: true } }
+    if (plan.todo.length === 0) {
+      const print = await printFor(env, sha, null, ctx.signal)
+      return {
+        report: { built: [], cached: true, ...(print ? { printed: true } : {}) },
+        ...(print ? { commit: (tx: Tx) => savePrint(tx, sha, print) } : {}),
+      }
+    }
     const input = await locateInput(env, sha)
     let dir: string | null = null
     try {
@@ -130,7 +160,15 @@ export function deriveVideoHandler(env: MediaEnv): WorkHandler {
         versions: env.versions,
         onProgress: (p) => progress(p.fraction),
       })
-      const commit = await finish(env, sha, ids, result.artifacts)
+      const preview = result.artifacts.find((artifact) => artifact.kind === 'preview')
+      const print = await printFor(env, sha, preview?.path ?? null, ctx.signal)
+      const commit = await finish(
+        env,
+        sha,
+        ids,
+        result.artifacts,
+        print ? (tx) => savePrint(tx, sha, print) : undefined,
+      )
       return {
         report: {
           built: plan.todo,
@@ -138,6 +176,7 @@ export function deriveVideoHandler(env: MediaEnv): WorkHandler {
           decode_errors: result.decodeErrors.count,
           ffmpeg_ms: result.ffmpegMs,
           total_ms: result.totalMs,
+          ...(print ? { printed: true } : {}),
         },
         commit,
       }

@@ -72,7 +72,7 @@
 |---|---|
 | Модель и доступ | `models`, `accounts`, `surfaces`, `promo_channels`, `principals`, `principal_grants`, `sessions`, `api_tokens`, `id_counters`, `policy_settings`, `pipeline_versions` |
 | Каталог | `content_items`, `assets`, `asset_versions`, `item_memberships`, `asset_manifests`, `asset_manifest_entries`, `aliases`, `provenance`, `tags`, `item_tags`, `annotation_fields`, `annotation_runs`, `annotation_suggestions`, `chronology_entries`, `platform_texts` |
-| Байты и производные | `blobs`, `blob_probes`, `blob_phashes`, `master_checks`, `storage_operations`, `rendition_generations`, `rendition_artifacts` |
+| Байты и производные | `blobs`, `blob_probes`, `blob_phashes`, `video_prints`, `master_checks`, `storage_operations`, `rendition_generations`, `rendition_artifacts` |
 | Источники, приёмка, фон | `sources`, `source_objects`, `source_paths`, `source_revisions`, `inbox_groups`, `inbox_drafts`, `inbox_draft_candidates`, `web_uploads`, `work_operations`, `legacy_claims`, `legacy_number_claims`, `review_cases` |
 | План и выдача | `ppv_releases`, `posting_plan_rows`, `download_receipts`, `download_receipt_entries` |
 | Размещения и Hub | `placements`, `placement_assets`, `placement_evidence`, `hub_sync_state`, `hub_observations`, `hub_posts`, `hub_post_attachments`, `hub_raw_media`, `hub_vault_albums`, `hub_vault_media` |
@@ -179,7 +179,7 @@ item_type, key)`; CHECK: строка без модели не несёт `accou
 ядро, поэтому без строки очередь работает, держит её только явное `false` владельца
 («Пауза»), исполнитель проверяет его перед каждой попыткой (с 1а, решение по принципу MVP
 30.10.2026). Пороги и настройки: `too_early_days`,
-`phash_suggest_threshold`, `intake_auto_accept`,
+`phash_suggest_threshold`, `video_suggest_threshold`, `intake_auto_accept`,
 `hub_candidate_tolerance`, `hub_exact_duration_ms`, `hub_wait_window`,
 `hub_not_out_window`, `hub_vault_recheck` (SPEC §7), `hub_ad_markers` (признаки рекламы
 чужой страницы) и `vault_bins` (корзины vault: `FYP YYYY-MM`, `Lifestyle`, PPV) — у
@@ -414,6 +414,16 @@ algo_version, normalization)`, `phash bit(64)`, `computed_at`. Подсказк�
 `bit_count(phash # :probe)`; порог — `policy_settings` `phash_suggest_threshold` в процентах
 похожести, как на экране «Пороги»: 90 — различаются не больше 6 из 64 бит. Ничего не объединяет.
 
+**`video_prints`** — отпечаток ролика (§6.2, миграция 0015): `sha256` байтов, из которых
+собрано превью (исходник черновика или версии, как `rendition_generations.input_sha256`),
+`algorithm`, `algo_version` (PK вместе), `duration_ms` — длительность картинки (видеодорожки
+превью, не контейнера), `frames bit(64)[]` — pHash десяти кадров в серединах десяти равных
+частей ролика, `computed_at`. Индекс `(algorithm, algo_version, duration_ms)`: сравниваются
+отпечатки с длительностью в пределах `max(500 мс, 2 %)`. Расстояние двух отпечатков — медиана
+расстояний кадров (нижняя из десяти); порог — `video_suggest_threshold` в процентах похожести,
+как у фото. Ничего не объединяет: близкий отпечаток даёт кандидата `similar_video` и ◆
+`video_copy` черновика.
+
 **`master_checks`** — как и чем получен мастер (§9.2): что сделано (`decision`), исход
 проверки (`verdict`), кадры, звук, метаданные, размеры, время, отчёт; индекс
 `(master_sha256)`. Колонки, списки, ключ и правило приёмки — схема §9.2.
@@ -565,7 +575,7 @@ single | manual`; правило группировки — одно, SPEC §6.1
 | `proposed_role`, `proposed_ordinal`, `proposed_life_use?` | предложение шага 4 для файла, у лайфа — и назначение кадра; поля будущего объекта — на группе |
 | `target_item_id?`, `target_asset_id?` | для «дополнение»: объект и, если это новая версия, файл |
 | `duplicate_of_version_id?` | для «дубль-алиас» |
-| `blocked_reason?` | `ambiguous_order \| video_in_set \| id_collision \| cross_model_dup \| master_failed \| needs_type \| source_unavailable \| deferred \| which_frame \| row_changed \| archive_split` (◆ «Разделить архив?»: в архиве старого Я.Диска несколько частей, этап 3; ◆ «Подставить монтаж в строку?»: монтаж загружен для строки плана, которая уже не ждёт — отменена или занята; ◆ «К какому кадру?»: обработанный кадр, чьё имя не найдено в квитанциях выдачи, SPEC §6.1; найденный — `ed` с номером исходного кадра и происхождением `processed_from`) |
+| `blocked_reason?` | `ambiguous_order \| video_in_set \| id_collision \| cross_model_dup \| master_failed \| needs_type \| source_unavailable \| deferred \| which_frame \| row_changed \| archive_split \| video_copy` (◆ «Похоже на ролик»: отпечаток ролика близок к принятому ролику модели, ответ — «Это копия» или «Отдельный объект», SPEC §6.2; ◆ «Разделить архив?»: в архиве старого Я.Диска несколько частей, этап 3; ◆ «Подставить монтаж в строку?»: монтаж загружен для строки плана, которая уже не ждёт — отменена или занята; ◆ «К какому кадру?»: обработанный кадр, чьё имя не найдено в квитанциях выдачи, SPEC §6.1; найденный — `ed` с номером исходного кадра и происхождением `processed_from`) |
 | `applied_item_id?`, `applied_version_id?` | результат принятия |
 | `reject_reason`, `error`, `row_version`, `search_tsv STORED` | |
 
@@ -597,7 +607,7 @@ CHECK `outcome NOT IN ('new_item','append') OR master_verified_at IS NOT NULL` �
 
 **`inbox_draft_candidates`** — кандидаты-связи с уликами (§6.1, §6.2, §8.2). `id`,
 `model_id`, `draft_id`, `kind` (`order | existing_item | exact_duplicate |
-similar_photo | legacy_id | source_parent | content_type`), `order_id?`, `item_id?`,
+similar_photo | similar_video | legacy_id | source_parent | content_type`), `order_id?`, `item_id?`,
 `version_id?`, `score`, `signals jsonb` (reply, имя, раздел, `resource_id`,
 длительность, окно), `evidence_refs jsonb` (`tg:…`, путь), `conflicts_with uuid[]`,
 `chosen`, `chosen_at/by`, `dismissed_at`.
@@ -629,7 +639,7 @@ registered | failed | abandoned`), `tmp_key`, `error`, `created_at`,
 | Колонка | Смысл |
 |---|---|
 | `id`, `model_id?` | модель пуста у общесистемных (`verify_blobs`, `backup`) |
-| `kind` | каждый вид ровно одной роли (SPEC §12.0). `worker`: `scan \| fetch \| hash \| unpack_archive \| import_parse \| register \| propose \| export \| hub_sync \| hub_history \| hub_publish \| annotate \| verify_blobs \| backup`; `worker-video`: `derive_video \| encode_master \| verify_master \| render \| uniq_render \| render_compat \| extract_frame`; `worker-image`: `derive_image`. `derive_*` — один проход: ffprobe или EXIF, превью, миниатюры, кадры, у фото и pHash (SPEC §12.0); `hub_history` — проход по истории страницы Fansly (на OnlyFans прохода нет); `hub_publish` — загрузка файлов, черновик, утверждение и отмена своей публикации Hub (5б); под `COPY_JOBS=1` рядом с кодерами — то, чего ждёт КМ: `render` (копия для платформы), `render_compat` (совместимая H.264), `extract_frame` (кадр в полном размере) |
+| `kind` | каждый вид ровно одной роли (SPEC §12.0). `worker`: `scan \| fetch \| hash \| unpack_archive \| import_parse \| register \| propose \| export \| hub_sync \| hub_history \| hub_publish \| annotate \| verify_blobs \| backup`; `worker-video`: `derive_video \| encode_master \| verify_master \| render \| uniq_render \| render_compat \| extract_frame \| video_print`; `worker-image`: `derive_image`. `derive_*` — один проход: ffprobe или EXIF, превью, миниатюры, кадры, у фото и pHash, у видео отпечаток из превью прохода (SPEC §12.0, §6.2); `video_print` — отпечаток ролика, принятого раньше отпечатков, из готового превью: `worker-video` ставит их при старте с приоритетом −10, ниже всего, кроме проверки хранилища; `hub_history` — проход по истории страницы Fansly (на OnlyFans прохода нет); `hub_publish` — загрузка файлов, черновик, утверждение и отмена своей публикации Hub (5б); под `COPY_JOBS=1` рядом с кодерами — то, чего ждёт КМ: `render` (копия для платформы), `render_compat` (совместимая H.264), `extract_frame` (кадр в полном размере) |
 | `work_key` | естественный ключ: `fetch:<revision>`, `master:<source_sha>:<recipe>`, `uniq:<parent_version>:<level>:<n>`, `export:<receipt>` |
 | `draft_id?`, `source_revision_id?`, `asset_version_id?`, `manifest_id?`, `receipt_id?`, `generation_id?`, `account_id?` | типизированные цели |
 | `dataset?`, `scope?`, `window_from?`, `window_to?` | входы опроса Hub и бэкапа; неизменны, окно входит в `work_key` — новый прогон или интервал даёт новую строку |
@@ -1375,7 +1385,7 @@ LLM.
   этот список исключений и это правило.
   Исполнитель (`packages/db/src/work`, 30.10.2026): места внутри роли — `fetch`
   (`FETCH_JOBS`), `encode` (`ENCODE_JOBS`: `derive_video`, `encode_master`, `verify_master`,
-  `uniq_render`), `copy` (`COPY_JOBS`: `render`, `render_compat`, `extract_frame`), `image`
+  `uniq_render`), `copy` (`COPY_JOBS`: `render`, `render_compat`, `extract_frame`, `video_print`), `image`
   (`IMAGE_JOBS`) и `general` — остальные виды `worker`; больший `priority` идёт раньше;
   попытка считается при захвате, возврат при остановке и пауза выключателем её снимают,
   падение процесса — нет; итог и доменная запись результата (`commit`) — одна транзакция под
@@ -1687,11 +1697,12 @@ LLM.
 | 5 | `0010_hub_matching` | таблиц нет: `placements.surface_source` дополнен `hub_hint` (схема §9.6) |
 | после 3 (03.11.2026) | `0012_inbox_reads` | таблиц нет: индекс последней работы забора ревизии для «Приехало» (SPEC §12.0); номера поздних файлов ниже сдвигаются |
 | после 3 (03.11.2026) | `0013_inbox_promo` | таблиц нет: канал и подборка промо-группы «Приехало» (`inbox_groups.proposed_channel_id`, `proposed_collection_id`) |
+| после 3 (05.11.2026) | `0015_video_prints` | `video_prints` (1): отпечатки роликов; кандидат `similar_video`, ◆ `video_copy`, работа `video_print` (SPEC §6.2) |
 | 8 (8а) | `0010_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
 Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего
-68 таблиц: 13 + 36 + 5 + 2 + 2 + 7 + 2 + 1. На этапе 2 `annotation_fields`,
+69 таблиц: 13 + 36 + 5 + 2 + 2 + 7 + 1 + 2 + 1. На этапе 2 `annotation_fields`,
 `chronology_entries` и `platform_texts` обслуживают импорт и ручной ввод; сведения
 об источнике и авторе, версии и подтверждения сохраняются сразу.
 `annotation_fields.suggested_by_run_id`, `chronology_entries.run_id` и

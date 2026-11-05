@@ -36,6 +36,8 @@ const THRESHOLDS: Record<
   },
   // A percent of the 64 pHash bits that match; the hints turn it into a distance (intake/phash).
   frame_similarity: { key: 'phash_suggest_threshold', label: 'Похожесть кадров', unit: '%' },
+  // The same percent for the median frame of two video prints (intake/video-copies).
+  video_similarity: { key: 'video_suggest_threshold', label: 'Похожесть роликов', unit: '%' },
   auto_accept: { key: 'intake_auto_accept', label: 'Автопринятие', unit: '' },
 }
 

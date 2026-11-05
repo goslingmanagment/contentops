@@ -16,6 +16,7 @@ import { ITEM_TO_DB_TYPE } from './inbox-view'
 import { suggestOrders } from './order-suggest'
 import { planRow } from './row-upload'
 import { acceptRowMontage } from './upload'
+import { answerVideoCopy } from './video-copies'
 
 /**
  * The other decisions of «Приехало» (DESIGN §4.8, schema §3.4): merge and split of groups
@@ -491,6 +492,18 @@ export async function decide(
       await clear('row_changed')
       const row = await planRow(tx, model, rowId, true)
       await acceptRowMontage(tx, model, actor, groupId, row, body.substitute)
+      break
+    }
+    case 'video_copy': {
+      // ◆ «Похоже на ролик» (SPEC §6.2): a copy is an alias of the video it is close to; a
+      // file of its own goes on with its group.
+      const draft = drafts.find((candidate) => candidate.id === body.file_key)
+      if (!draft) {
+        throw new ApiProblem('invalid_request', 'Такого файла в группе нет', {
+          file_key: body.file_key,
+        })
+      }
+      await answerVideoCopy(tx, model, actor, groupId, draft, body.copy)
       break
     }
     case 'split_archive': {

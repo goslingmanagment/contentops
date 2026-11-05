@@ -1,4 +1,4 @@
-import type { DraftHint, InboxGroup, Instant } from '@contentops/contracts'
+import type { InboxGroup, Instant } from '@contentops/contracts'
 import { ItemMenuButton, type ItemMenuModel } from '@contentops/ui/components/item-menu'
 import { cn } from '@contentops/ui/lib/utils'
 import { type RefObject, useImperativeHandle, useRef, useState } from 'react'
@@ -9,7 +9,7 @@ import { groupSource } from '../shared/group-source'
 import { GroupStateLine } from '../shared/group-state-line'
 import { groupStateView, metaLine } from '../shared/group-texts'
 import type { IntakeActions } from '../shared/use-intake-actions'
-import { DecisionBlock } from './decision-block'
+import { type CompareHint, DecisionBlock } from './decision-block'
 import { type ActionBarHandle, DraftActionBar } from './draft-action-bar'
 import { DraftFields } from './draft-fields'
 import { DraftFiles } from './draft-files'
@@ -17,7 +17,7 @@ import { DraftHints } from './draft-hints'
 import { TargetCard, targetNoteOf } from './target-card'
 import { useDraftSave } from './use-draft-save'
 
-export type SimilarHint = Extract<DraftHint, { kind: 'similar' }>
+export type SimilarHint = CompareHint
 
 /** Команды панели извне: клавиши списка и меню группы по правому клику (§3.6, §3.12). */
 export interface DraftPanelHandle extends ActionBarHandle {
@@ -127,9 +127,14 @@ export function DraftPanel({
           now={now}
           pending={pending}
           decide={(command) => actions.decide(group, command)}
+          onCompare={(hint) => onCompare(group, hint)}
         />
         {target ? <TargetCard group={group} note={target} /> : null}
-        <DraftHints hints={group.hints} onCompare={(hint) => onCompare(group, hint)} />
+        <DraftHints
+          hints={group.hints}
+          state={group.state}
+          onCompare={(hint) => onCompare(group, hint)}
+        />
         {montageOnly || target ? null : <DraftFields key={group.id} group={group} saver={saver} />}
         <div ref={filesRef}>
           <DraftFiles group={group} actions={actions} scrollRef={scrollRef} />

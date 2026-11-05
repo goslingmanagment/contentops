@@ -215,6 +215,13 @@ describe('derive_video — one pass, then the cache', () => {
     }
     const frames = await artifacts(gens.find((g) => g.kind === 'frames')?.id as string)
     expect(frames.length).toBeGreaterThan(1)
+    // The print of the picture from the preview of the pass (SPEC §6.2).
+    const { rows: prints } = await db.execute<{ duration_ms: number; frames: number }>(sql`
+      SELECT duration_ms, cardinality(frames) AS frames FROM video_prints
+       WHERE sha256 = ${shaBytes(sha)}`)
+    expect(prints).toHaveLength(1)
+    expect(prints[0]?.frames).toBe(10)
+    expect(Math.abs(Number(prints[0]?.duration_ms) - 9000)).toBeLessThan(100)
 
     const again = await finished(
       await enqueue({

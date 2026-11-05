@@ -19,6 +19,7 @@ import { aliasOpenDuplicates, resolveAlias } from './fetch'
 import { type ExportRole, exportRoleOf, type PackNumber } from './grouping'
 import { appendRefusal, newObjectRefusal } from './refusal'
 import { fillShotOn, shotOnOfDrafts } from './shot-date'
+import { flagOpenCopies, openCandidates } from './video-copies'
 
 /**
  * «Принять» (SPEC §4.1, §6.1, schema §5 «Принятие группы», §9.3): one transaction after the
@@ -797,6 +798,15 @@ export async function acceptGroup(
   if (stuck) {
     throw blocked(stuck.blocked_reason as string, 'Сначала примите решение по группе')
   }
+  // ◆ «Похоже на ролик» another question hid until now (SPEC §6.2): asked before the accept.
+  const [asked] = await openCandidates(
+    tx,
+    model.id,
+    drafts.map((draft) => draft.id),
+  )
+  if (asked) {
+    throw blocked('video_copy', 'Сначала ответьте: копия или отдельный объект', { file_key: asked })
+  }
   const { files, twins } = splitTwins(drafts)
   const notReady = files.filter((draft) => !draft.master_verified || !draft.master_hex)
   if (notReady.length > 0) {
@@ -1078,9 +1088,10 @@ export async function acceptGroup(
 
   // The same bytes waiting in other groups are aliases of these files from now on (§6.2).
   const accepted = files.flatMap((draft) => [draft.source_hex, draft.master_hex])
-  const elsewhere = await aliasOpenDuplicates(tx, model.id, group.id, [
-    ...new Set(accepted.filter((hex): hex is string => Boolean(hex))),
-  ])
+  const hexes = [...new Set(accepted.filter((hex): hex is string => Boolean(hex)))]
+  const elsewhere = await aliasOpenDuplicates(tx, model.id, group.id, hexes)
+  // Other bytes of the same picture waiting there ask ◆ «Похоже на ролик» from now on.
+  await flagOpenCopies(tx, model.id, group.id, hexes)
   // Files of the pack the catalog already had are links of the collection, not copies (SPEC
   // §7.1); the import of the old disk links its own after the accept.
   if (item.type === 'PRM' && channelId && !options.legacy) {

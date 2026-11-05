@@ -2453,6 +2453,26 @@
             "properties": {
               "decision": {
                 "type": "string",
+                "const": "video_copy"
+              },
+              "file_key": {
+                "type": "string"
+              },
+              "copy": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "decision",
+              "file_key",
+              "copy"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "decision": {
+                "type": "string",
                 "const": "split_folders"
               }
             },
@@ -2473,7 +2493,8 @@
           "substitute_montage",
           "split_archive",
           "which_frame",
-          "split_videos"
+          "split_videos",
+          "video_copy"
         ]
       },
       "DeleteItemCommandInput": {
@@ -3111,6 +3132,70 @@
               "text",
               "item_id",
               "file_key"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "similar_video"
+              },
+              "text": {
+                "type": "string"
+              },
+              "item_id": {
+                "$ref": "#/components/schemas/ItemId"
+              },
+              "file_key": {
+                "type": "string"
+              },
+              "draft_key": {
+                "type": "string"
+              },
+              "similarity": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "frames_close": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "frames": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "duration_s": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                ],
+                "items": false,
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "required": [
+              "kind",
+              "text",
+              "item_id",
+              "file_key",
+              "draft_key",
+              "similarity",
+              "frames_close",
+              "frames",
+              "duration_s"
             ],
             "additionalProperties": false
           },
@@ -9932,6 +10017,7 @@
               "not_published_hours",
               "album_walk_reminder_days",
               "frame_similarity",
+              "video_similarity",
               "auto_accept"
             ]
           },
@@ -11159,6 +11245,7 @@
               "not_published_hours",
               "album_walk_reminder_days",
               "frame_similarity",
+              "video_similarity",
               "auto_accept"
             ]
           },
@@ -11878,6 +11965,7 @@
               "not_published_hours",
               "album_walk_reminder_days",
               "frame_similarity",
+              "video_similarity",
               "auto_accept"
             ]
           },

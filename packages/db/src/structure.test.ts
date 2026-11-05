@@ -25,6 +25,7 @@ const GLOBAL_TABLES = [
   'schema_migrations',
   'sessions',
   'storage_operations',
+  'video_prints',
 ]
 /** Tables where `model_id` may be empty (system-wide rows, shared tags); their key is `id`. */
 const OPTIONAL_MODEL_TABLES = [
@@ -58,6 +59,7 @@ const NO_JOURNAL = [
   'schema_migrations',
   'sessions',
   'storage_operations',
+  'video_prints',
   'work_operations',
 ]
 /** Append-only tables (schema §9.4): `forbid_update_delete()` and no UPDATE/DELETE for the app. */

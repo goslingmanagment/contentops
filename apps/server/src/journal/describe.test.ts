@@ -12,6 +12,7 @@ const PROCESS_ACTIONS = [
   'draft.accept',
   'draft.accept_on_upload',
   'draft.alias',
+  'draft.copy',
   'legacy.accept',
   'legacy.bytes',
   'legacy.pack',

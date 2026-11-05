@@ -1,6 +1,8 @@
 import {
   type DecideCommand,
   type DecisionKind,
+  type DraftHint,
+  formatDuration,
   formatWhen,
   type InboxGroup,
   type Instant,
@@ -21,11 +23,15 @@ import { FileThumb } from './file-thumb'
 import { OrderCandidates } from './order-candidates'
 import { TypeButtons } from './type-buttons'
 
+/** «Сравнить» у «Похоже на фото» и «Похоже на ролик»: новый файл слева, принятый справа. */
+export type CompareHint = Extract<DraftHint, { kind: 'similar' | 'similar_video' }>
+
 export interface DecisionProps {
   group: InboxGroup
   now: Instant
   pending: boolean
   decide: (command: DecideCommand) => void
+  onCompare: (hint: CompareHint) => void
 }
 
 /**
@@ -42,6 +48,7 @@ const DECISIONS: Record<DecisionKind, ComponentType<DecisionProps>> = {
   split_archive: SplitArchive,
   which_frame: WhichFrame,
   split_videos: SplitVideos,
+  video_copy: VideoCopy,
 }
 
 export function DecisionBlock(props: DecisionProps) {
@@ -282,6 +289,61 @@ function WhichFrame({ group, pending, decide }: DecisionProps) {
             </span>
           </button>
         ))}
+      </div>
+    </InfoSection>
+  )
+}
+
+/**
+ * ◆ «Похоже на ролик» (§4.8, SPEC §6.2): отпечаток ролика близок к принятому ролику модели —
+ * та же картинка в других байтах (второй экспорт, копия с выровненной громкостью). Решает
+ * человек: «Это копия» — файл становится алиасом того ролика, как точный дубль; «Отдельный
+ * объект» — файл идёт дальше со своей группой.
+ */
+function VideoCopy({ group, pending, decide, onCompare }: DecisionProps) {
+  const hint = findHint(group.hints, 'similar_video')
+  if (!hint) {
+    return null
+  }
+  const file = group.files.find((candidate) => candidate.key === hint.draft_key)
+  const [mine, theirs] = hint.duration_s
+  const facts = [
+    `похожесть ${hint.similarity} %`,
+    `совпало кадров ${hint.frames_close} из ${hint.frames}`,
+    `${formatDuration(mine)} и ${formatDuration(theirs)}`,
+  ].join(' · ')
+  return (
+    <InfoSection title={hint.text}>
+      {file ? (
+        <div className="flex items-center gap-3">
+          <FileThumb file={file} kind={groupKind(group)} />
+          <p className="min-w-0 break-words text-sm">{file.file_name}</p>
+        </div>
+      ) : null}
+      <p className="text-muted-foreground text-sm">
+        {facts}
+        {' · '}
+        <Button variant="link" size="inline" className="text-sm" onClick={() => onCompare(hint)}>
+          Сравнить
+        </Button>
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          onClick={() => decide({ decision: 'video_copy', file_key: hint.draft_key, copy: true })}
+        >
+          Это копия
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          onClick={() => decide({ decision: 'video_copy', file_key: hint.draft_key, copy: false })}
+        >
+          Отдельный объект
+        </Button>
       </div>
     </InfoSection>
   )

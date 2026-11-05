@@ -98,6 +98,7 @@ export function buildThresholds(): Threshold[] {
     row('not_published_hours', '«Не вышло»', null, 'ч'),
     row('album_walk_reminder_days', 'Напоминание обхода альбома', 7, 'дней'),
     row('frame_similarity', 'Похожесть кадров', 92, '%'),
+    row('video_similarity', 'Похожесть роликов', 80, '%'),
     row('auto_accept', 'Автопринятие', null, ''),
   ]
 }

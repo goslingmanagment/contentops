@@ -107,7 +107,13 @@ export function useIntakePreview(model: ModelCode) {
   }, [])
 
   const openCompare = useCallback((group: InboxGroup, hint: SimilarHint) => {
-    const mine = group.files.find((file) => file.media === 'photo') ?? group.files[0]
+    // «Похоже на ролик» говорит о своём файле группы; «Похоже на фото» — о первом фото.
+    const mine =
+      (hint.kind === 'similar_video'
+        ? group.files.find((file) => file.key === hint.draft_key)
+        : undefined) ??
+      group.files.find((file) => file.media === 'photo') ??
+      group.files[0]
     if (!mine) {
       return
     }

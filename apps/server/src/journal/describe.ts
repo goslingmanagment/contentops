@@ -330,6 +330,11 @@ const WORDING: Record<string, Wording> = {
     rest: 'дубль: такой файл уже есть в {subject}',
     noun: 'дубль',
   },
+  'draft.copy': {
+    verb: 'записал',
+    rest: 'копию: такой ролик уже есть в {subject}',
+    noun: 'копия ролика',
+  },
   'inbox.update': { verb: 'изменил', rest: 'черновик «{subject}»', noun: 'правка черновика' },
   'inbox.files': {
     verb: 'изменил',

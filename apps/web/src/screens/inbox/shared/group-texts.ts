@@ -177,8 +177,11 @@ export function groupStateView(
       const words = [...head, changed ? 'изменён после снимка' : null]
       return { sign: null, text: words.filter(Boolean).join(' · '), progress: null }
     }
-    case 'decision':
-      return { sign: 'turn', text: DECISION_LABEL[state.decision], progress: null }
+    case 'decision': {
+      // ◆ «Похоже на ролик FYP-0019/master»: на плитке сразу видно, на что похоже.
+      const like = state.decision === 'video_copy' ? findHint(group.hints, 'similar_video') : null
+      return { sign: 'turn', text: like?.text ?? DECISION_LABEL[state.decision], progress: null }
+    }
     case 'error':
       return {
         sign: 'trouble',

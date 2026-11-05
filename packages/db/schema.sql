@@ -66,7 +66,7 @@ CREATE TABLE public.inbox_drafts (
     CONSTRAINT inbox_drafts_accept_applied CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (applied_item_id IS NOT NULL))),
     CONSTRAINT inbox_drafts_accept_verified CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (master_verified_at IS NOT NULL))),
     CONSTRAINT inbox_drafts_alias_target CHECK (((outcome <> 'alias'::text) OR (duplicate_of_version_id IS NOT NULL))),
-    CONSTRAINT inbox_drafts_blocked_reason_check CHECK ((blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text, 'row_changed'::text, 'archive_split'::text]))),
+    CONSTRAINT inbox_drafts_blocked_reason_check CHECK ((blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text, 'row_changed'::text, 'archive_split'::text, 'video_copy'::text]))),
     CONSTRAINT inbox_drafts_byte_size_check CHECK ((byte_size >= 0)),
     CONSTRAINT inbox_drafts_md5_check CHECK ((octet_length(md5) = 16)),
     CONSTRAINT inbox_drafts_one_input CHECK ((num_nonnulls(source_revision_id, web_upload_id, from_version_id) = 1)),
@@ -159,7 +159,7 @@ CREATE TABLE public.work_operations (
     CONSTRAINT work_operations_finished_at CHECK (((state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL))),
     CONSTRAINT work_operations_global_kinds CHECK (((model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text])))),
     CONSTRAINT work_operations_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
-    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text]))),
+    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text]))),
     CONSTRAINT work_operations_model_targets CHECK (((model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0))),
     CONSTRAINT work_operations_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
     CONSTRAINT work_operations_paused_reason_format CHECK ((paused_reason ~ '^switch_off:.+$'::text)),
@@ -1739,7 +1739,7 @@ CREATE TABLE public.inbox_draft_candidates (
     chosen_by uuid,
     dismissed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT inbox_draft_candidates_kind_check CHECK ((kind = ANY (ARRAY['order'::text, 'existing_item'::text, 'exact_duplicate'::text, 'similar_photo'::text, 'legacy_id'::text, 'source_parent'::text, 'content_type'::text])))
+    CONSTRAINT inbox_draft_candidates_kind_check CHECK ((kind = ANY (ARRAY['order'::text, 'existing_item'::text, 'exact_duplicate'::text, 'similar_photo'::text, 'similar_video'::text, 'legacy_id'::text, 'source_parent'::text, 'content_type'::text])))
 );
 
 ALTER TABLE public.inbox_draft_candidates OWNER TO contentops_migrate;
@@ -2383,6 +2383,20 @@ CREATE TABLE public.surfaces (
 
 ALTER TABLE public.surfaces OWNER TO contentops_migrate;
 
+CREATE TABLE public.video_prints (
+    sha256 bytea NOT NULL,
+    algorithm text NOT NULL,
+    algo_version text NOT NULL,
+    duration_ms integer NOT NULL,
+    frames bit(64)[] NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT video_prints_duration_check CHECK ((duration_ms > 0)),
+    CONSTRAINT video_prints_frames_check CHECK ((((cardinality(frames) >= 1) AND (cardinality(frames) <= 32)) AND (array_position(frames, NULL::"bit") IS NULL))),
+    CONSTRAINT video_prints_sha256_check CHECK ((octet_length(sha256) = 32))
+);
+
+ALTER TABLE public.video_prints OWNER TO contentops_migrate;
+
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_code_key UNIQUE (code);
 
@@ -2794,6 +2808,9 @@ ALTER TABLE ONLY public.tags
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_slug UNIQUE NULLS NOT DISTINCT (model_id, slug);
 
+ALTER TABLE ONLY public.video_prints
+    ADD CONSTRAINT video_prints_pkey PRIMARY KEY (sha256, algorithm, algo_version);
+
 ALTER TABLE ONLY public.web_uploads
     ADD CONSTRAINT web_uploads_model_id_upload_id_key UNIQUE (model_id, upload_id);
 
@@ -2830,6 +2847,8 @@ CREATE INDEX annotation_fields_version ON public.annotation_fields USING btree (
 CREATE INDEX asset_manifest_entries_version ON public.asset_manifest_entries USING btree (model_id, asset_version_id);
 
 CREATE INDEX asset_versions_master ON public.asset_versions USING btree (master_sha256);
+
+CREATE INDEX asset_versions_source ON public.asset_versions USING btree (source_sha256);
 
 CREATE UNIQUE INDEX assets_uniq_variant ON public.assets USING btree (model_id, created_in_item_id, variant_no) WHERE (variant_kind = 'uniq'::text);
 
@@ -2994,6 +3013,8 @@ CREATE INDEX source_revisions_remote_sha256 ON public.source_revisions USING btr
 CREATE INDEX source_revisions_source_sha256 ON public.source_revisions USING btree (model_id, source_sha256);
 
 CREATE UNIQUE INDEX storage_operations_active ON public.storage_operations USING btree (blob_sha256) WHERE (state = ANY (ARRAY['intent'::text, 'started'::text, 'fs_done'::text]));
+
+CREATE INDEX video_prints_duration ON public.video_prints USING btree (algorithm, algo_version, duration_ms);
 
 CREATE INDEX web_uploads_sha256 ON public.web_uploads USING btree (sha256) WHERE (sha256 IS NOT NULL);
 
@@ -4075,6 +4096,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sources TO contentops_app;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.storage_operations TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.surfaces TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_prints TO contentops_app;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE contentops_migrate IN SCHEMA public GRANT SELECT,USAGE ON SEQUENCES TO contentops_app;
 

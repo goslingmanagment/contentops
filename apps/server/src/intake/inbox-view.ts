@@ -125,6 +125,8 @@ interface DraftRow extends Record<string, unknown> {
   target_item_id: string | null
   /** Only of a draft waiting for ◆ «К какому кадру?»: its bytes find similar frames. */
   source_hex: string | null
+  /** «Похоже на ролик» nobody answered yet (SPEC §6.2). */
+  video_copy: boolean
 }
 
 /** A file of a group as its tile shows it. */
@@ -237,7 +239,10 @@ const DECISION: Partial<Record<values.DraftBlockedReason, InboxGroup['state']>> 
   which_frame: { kind: 'decision', decision: 'which_frame' },
   row_changed: { kind: 'decision', decision: 'substitute_montage' },
   archive_split: { kind: 'decision', decision: 'split_archive' },
+  video_copy: { kind: 'decision', decision: 'video_copy' },
 }
+
+const VIDEO_COPY_BLOCK = 'Сначала ответьте: копия или отдельный объект'
 
 /** The stage of a draft that is still being prepared (DESIGN §5.3). */
 function stageOf(
@@ -341,7 +346,17 @@ export function activeState(
     const decision = draft.blocked_reason ? DECISION[draft.blocked_reason] : undefined
     // The import's question on the folder is the line: «Только фото — это сет?».
     const asked = draft.blocked_reason === 'needs_type' ? group.evidence?.doubt?.text : undefined
-    if (decision) return { state: decision, block: asked ?? 'Сначала примите решение' }
+    if (decision) {
+      const block = decision.kind === 'decision' && decision.decision === 'video_copy'
+      return {
+        state: decision,
+        block: asked ?? (block ? VIDEO_COPY_BLOCK : 'Сначала примите решение'),
+      }
+    }
+  }
+  // «Похоже на ролик» another question hid when the print was compared: asked now (SPEC §6.2).
+  if (drafts.some((draft) => draft.video_copy)) {
+    return { state: { kind: 'decision', decision: 'video_copy' }, block: VIDEO_COPY_BLOCK }
   }
   if (refused) {
     return { state: { kind: 'decision', decision: refused.decision }, block: refused.message }
@@ -689,7 +704,11 @@ async function loadDrafts(
            CASE WHEN d.source_sha256 IS NULL AND fw.state = 'failed'
                 THEN coalesce(fw.error_text, fw.error_code, 'ошибка') END AS fetch_failed,
            dup.handle AS duplicate_handle, d.target_item_id,
-           CASE WHEN d.blocked_reason = 'which_frame' THEN encode(d.source_sha256, 'hex') END AS source_hex
+           CASE WHEN d.blocked_reason = 'which_frame' THEN encode(d.source_sha256, 'hex') END AS source_hex,
+           d.state <> 'resolved' AND EXISTS (
+             SELECT 1 FROM inbox_draft_candidates vc
+              WHERE vc.model_id = d.model_id AND vc.draft_id = d.id AND vc.kind = 'similar_video'
+                AND vc.dismissed_at IS NULL AND NOT vc.chosen) AS video_copy
       FROM inbox_drafts d
       LEFT JOIN source_revisions r ON r.model_id = d.model_id AND r.id = d.source_revision_id
       LEFT JOIN blobs b ON b.sha256 = d.source_blob_sha256
@@ -785,7 +804,9 @@ async function loadExtras(
   }
   const { rows } = await q.execute<{
     group_id: string
-    kind: 'order' | 'similar_photo' | 'existing_item'
+    draft_id: string
+    kind: 'order' | 'similar_photo' | 'similar_video' | 'existing_item'
+    score: number | null
     order_id: string | null
     item_public: string | null
     handle: string | null
@@ -799,8 +820,8 @@ async function loadExtras(
     revision: string | null
     revision_on: string | null
   }>(sql`
-    SELECT d.group_id, c.kind, c.order_id, public_item_id(i.type, i.number) AS item_public,
-           ${handleSql('m')} AS handle, m.ordinal,
+    SELECT d.group_id, d.id AS draft_id, c.kind, c.score, c.order_id,
+           public_item_id(i.type, i.number) AS item_public, ${handleSql('m')} AS handle, m.ordinal,
            o.buyer_name AS buyer, o.brief, (o.due_at AT TIME ZONE 'Europe/Moscow')::date::text AS due,
            (o.card_at AT TIME ZONE 'Europe/Moscow')::date::text AS card_on,
            c.signals, c.chosen AND c.chosen_by IS NULL AS by_rule,
@@ -817,7 +838,8 @@ async function loadExtras(
                                   AND m.kind = 'owned'
       LEFT JOIN custom_orders o ON o.model_id = c.model_id AND o.id = c.order_id
      WHERE c.model_id = ${modelId}::uuid AND c.dismissed_at IS NULL
-       AND c.kind IN ('order', 'similar_photo', 'existing_item')
+       AND c.kind IN ('order', 'similar_photo', 'similar_video', 'existing_item')
+       AND NOT (c.kind = 'similar_video' AND c.chosen)
        AND d.group_id = ANY (${sql.param([...groupIds])}::uuid[]) AND ${OPEN_DRAFT}
      ORDER BY c.score DESC NULLS LAST, c.created_at`)
   const said = new Set<string>()
@@ -850,6 +872,15 @@ async function loadExtras(
         item_id: row.item_public,
         file_key: row.handle ?? row.item_public,
       })
+    } else if (row.kind === 'similar_video' && row.item_public) {
+      // One hint per file: the closest video comes first (ORDER BY score).
+      if (
+        entry.hints.some((hint) => hint.kind === 'similar_video' && hint.draft_key === row.draft_id)
+      )
+        continue
+      entry.hints.push(
+        similarVideoHint(row.item_public, row.handle, row.draft_id, row.score, row.signals),
+      )
     } else if (
       row.kind === 'order' &&
       row.order_id &&
@@ -865,6 +896,30 @@ async function loadExtras(
     }
   }
   return extras
+}
+
+/** «Похоже на ролик FYP-0019/master» with what the prints said (SPEC §6.2). */
+function similarVideoHint(
+  item: string,
+  handle: string | null,
+  draftId: string,
+  score: number | null,
+  signals: Record<string, unknown> | null,
+): Extract<DraftHint, { kind: 'similar_video' }> {
+  const file = handle ?? 'master'
+  const [mine, theirs] = Array.isArray(signals?.duration_ms) ? signals.duration_ms : []
+  const seconds = (ms: unknown) => (typeof ms === 'number' ? Math.round(ms / 100) / 10 : 0)
+  return {
+    kind: 'similar_video',
+    text: `Похоже на ролик ${item}/${file}`,
+    item_id: item,
+    file_key: file,
+    draft_key: draftId,
+    similarity: Math.max(0, Math.min(100, Math.round((score ?? 0) * 100))),
+    frames_close: typeof signals?.frames_close === 'number' ? signals.frames_close : 0,
+    frames: typeof signals?.frames === 'number' && signals.frames > 0 ? signals.frames : 10,
+    duration_s: [seconds(mine), seconds(theirs)],
+  }
 }
 
 /** Files of a group in the list: the mosaic of a tile and the stack of a row show three. */
