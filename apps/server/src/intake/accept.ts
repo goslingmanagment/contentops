@@ -740,6 +740,37 @@ async function fixOfGroup(
   return row ? { publicId: row.public_id, revisionId: row.revision_id } : null
 }
 
+/**
+ * The live object an earlier decision named: the object that now holds the file (a file moves
+ * with «Перенести в…», «Слить»), else the object a merged or retyped one lives on in.
+ */
+async function liveObjectOf(
+  tx: Tx,
+  modelId: string,
+  itemId: string,
+  assetId: string | null,
+): Promise<string | null> {
+  const { rows } = await tx.execute<{ public_id: string }>(sql`
+    WITH RECURSIVE chain (id, merged_into_item_id, deleted_at, type, number, depth) AS (
+      SELECT i.id, i.merged_into_item_id, i.deleted_at, i.type, i.number, 0
+        FROM content_items i
+       WHERE i.model_id = ${modelId}::uuid
+         AND i.id = coalesce(
+           (SELECT m.item_id FROM item_memberships m
+             WHERE m.model_id = ${modelId}::uuid AND m.asset_id = ${assetId}::uuid
+               AND m.kind = 'owned' AND m.removed_at IS NULL),
+           ${itemId}::uuid)
+      UNION ALL
+      SELECT c.id, c.merged_into_item_id, c.deleted_at, c.type, c.number, chain.depth + 1
+        FROM content_items c JOIN chain ON c.id = chain.merged_into_item_id
+       WHERE c.model_id = ${modelId}::uuid AND chain.depth < 20
+    )
+    SELECT public_item_id(type, number) AS public_id FROM chain
+     ORDER BY deleted_at IS NULL DESC, depth DESC
+     LIMIT 1`)
+  return rows[0]?.public_id ?? null
+}
+
 export async function acceptGroup(
   tx: Tx,
   model: ModelScope,
@@ -778,10 +809,14 @@ export async function acceptGroup(
   if (extend) {
     target = await findItem(tx, model, extend.item_id, { lock: true })
   } else if (options.as !== 'separate' && (draftTarget || group.created_item_id)) {
-    const { rows } = await tx.execute<{ public_id: string }>(sql`
-      SELECT public_item_id(type, number) AS public_id FROM content_items
-       WHERE model_id = ${model.id}::uuid AND id = ${(draftTarget ?? group.created_item_id) as string}::uuid`)
-    if (rows[0]) target = await findItem(tx, model, rows[0].public_id, { lock: true })
+    const asset = drafts.find((draft) => draft.target_item_id)?.target_asset_id ?? null
+    const live = await liveObjectOf(
+      tx,
+      model.id,
+      (draftTarget ?? group.created_item_id) as string,
+      draftTarget ? asset : null,
+    )
+    if (live) target = await findItem(tx, model, live, { lock: true })
   } else if (group.proposed_type === 'PRM' && group.proposed_collection_id) {
     // «Подборка: PRM-015»: the pack fills the chosen collection («+ в PRM-015», DESIGN §4.8).
     const { rows } = await tx.execute<{ public_id: string }>(sql`

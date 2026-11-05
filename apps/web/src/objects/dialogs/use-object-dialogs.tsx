@@ -2,7 +2,8 @@ import type { CatalogEntry, ItemId } from '@contentops/contracts'
 import { type ReactNode, useCallback, useMemo, useState } from 'react'
 import { ChangeTypeDialog } from './change-type-dialog'
 import { DeleteItemDialog } from './delete-item-dialog'
-import { MergeRawDialog } from './merge-raw-dialog'
+import { MergeDialog } from './merge-dialog'
+import { MoveFilesDialog } from './move-files-dialog'
 import { SecondPersonDialog } from './second-person-dialog'
 import { TagsDialog } from './tags-dialog'
 
@@ -11,6 +12,7 @@ export type ObjectDialogRequest =
   | { kind: 'change-type'; id: ItemId }
   | { kind: 'delete'; id: ItemId }
   | { kind: 'merge'; id: ItemId }
+  | { kind: 'move-files'; id: ItemId; keys: readonly string[]; onMoved?: () => void }
   | { kind: 'second-person'; items: readonly ItemId[]; value?: boolean; rows?: number }
   | { kind: 'tags'; entries: readonly CatalogEntry[] }
 
@@ -22,7 +24,17 @@ function DialogHost({ request, onClose }: { request: ObjectDialogRequest; onClos
     return <DeleteItemDialog id={request.id} onClose={onClose} />
   }
   if (request.kind === 'merge') {
-    return <MergeRawDialog id={request.id} onClose={onClose} />
+    return <MergeDialog id={request.id} onClose={onClose} />
+  }
+  if (request.kind === 'move-files') {
+    return (
+      <MoveFilesDialog
+        id={request.id}
+        keys={request.keys}
+        onClose={onClose}
+        onMoved={request.onMoved}
+      />
+    )
   }
   if (request.kind === 'second-person') {
     return (

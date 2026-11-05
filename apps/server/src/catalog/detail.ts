@@ -269,10 +269,27 @@ export async function provenanceLinks(
     rows.map((row) => (row.child_item_id === item.id ? row.parent_item_id : row.child_item_id)),
   )
   const channels = await promoChannelTitles(q, model)
+  const otherOf = (row: LinkRow) =>
+    others.get(row.child_item_id === item.id ? row.parent_item_id : row.child_item_id)
+  // A link a merge or a type change once copied and left on the old object (before 06.11.2026)
+  // is the same link as the one with the object it lives on in: shown once.
+  const live = new Set(
+    rows.flatMap((row) => {
+      const other = otherOf(row)
+      return other && !other.deleted_at
+        ? [`${row.relation}:${row.child_item_id === item.id}:${other.id}`]
+        : []
+    }),
+  )
+  const copied = (row: LinkRow, other: ItemRow) =>
+    row.relation !== 'merged_from' &&
+    other.merged_into_item_id !== null &&
+    (other.merged_into_item_id === item.id ||
+      live.has(`${row.relation}:${row.child_item_id === item.id}:${other.merged_into_item_id}`))
   return rows.flatMap((row) => {
     const out = row.child_item_id === item.id
-    const other = others.get(out ? row.parent_item_id : row.child_item_id)
-    if (!other) return []
+    const other = otherOf(row)
+    if (!other || (!item.deleted_at && copied(row, other))) return []
     const relation = RELATION_OUT[row.relation] ?? 'made_from'
     return [
       {

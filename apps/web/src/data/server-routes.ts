@@ -91,6 +91,7 @@ export const SERVER_ROUTES: ServerRoutes = {
     'setPurpose',
     'extractShoot',
     'merge',
+    'move',
     'makeMaster',
     'download',
     'makePhotos',

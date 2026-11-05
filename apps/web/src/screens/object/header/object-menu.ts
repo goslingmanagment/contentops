@@ -1,4 +1,4 @@
-import type { ItemId } from '@contentops/contracts'
+import type { CatalogEntry, ItemId } from '@contentops/contracts'
 import type { DownloadOption } from '@contentops/ui/components/download-button'
 import type { ItemMenuModel, MenuAction } from '@contentops/ui/components/item-menu'
 import { useNavigate } from '@tanstack/react-router'
@@ -15,6 +15,11 @@ import { useExtractShoot } from '../files/use-file-commands'
 import { useObjectPage } from '../object-context'
 
 const COLLECTIONS_IN_MENU = 6
+
+/** «Выделить в новую съёмку» у сырья, «в новый объект» у остальных. */
+export function extractLabel(type: CatalogEntry['type']): string {
+  return type === 'raw' ? 'Выделить в новую съёмку' : 'Выделить в новый объект'
+}
 
 /** «В промо ▾ → канал → подборка» подменю «⋯» (DESIGN §2.5): ссылками, без копий. */
 function usePromoItems(onAdd: (channel: string, collection: ItemId | 'new') => void): MenuAction[] {
@@ -118,26 +123,39 @@ export function useObjectMenu(
       : []),
     ...(entry.type === 'promo' ? [] : [{ id: 'promo', label: 'В промо', items: promoItems }]),
   ]
-  const raw: MenuAction[] =
-    entry.type === 'raw'
-      ? [
-          {
-            id: 'merge',
-            label: 'Слить с…',
-            onSelect: () => openDialog({ kind: 'merge', id: entry.id }),
-          },
+  // «Слить с…» — у любого типа; «Выделить» и «Перенести» — выделенные файлы (у фупа один
+  // ролик, у подборки свои «Убрать из подборки» и «В подборку»).
+  const keys = [...selection.keys]
+  const noSelection = keys.length === 0 ? 'сначала выделите файлы' : undefined
+  const structure: MenuAction[] = [
+    {
+      id: 'merge',
+      label: 'Слить с…',
+      onSelect: () => openDialog({ kind: 'merge', id: entry.id }),
+    },
+    ...(entry.type === 'fyp' || entry.type === 'promo'
+      ? []
+      : [
           {
             id: 'extract',
-            label: 'Выделить в новую съёмку',
-            hint: selection.keys.size === 0 ? 'сначала выделите файлы' : undefined,
-            disabled: selection.keys.size === 0,
-            onSelect: () => extract([...selection.keys]),
+            label: extractLabel(entry.type),
+            hint: noSelection,
+            disabled: keys.length === 0,
+            onSelect: () => extract(keys),
           },
-        ]
-      : []
+          {
+            id: 'move',
+            label: 'Перенести в…',
+            hint: noSelection,
+            disabled: keys.length === 0,
+            onSelect: () =>
+              openDialog({ kind: 'move-files', id: entry.id, keys, onMoved: selection.clear }),
+          },
+        ]),
+  ]
 
   return {
-    actions: [...work, ...links, ...raw],
+    actions: [...work, ...links, ...structure],
     dangerActions: [
       {
         id: 'change-type',

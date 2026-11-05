@@ -177,7 +177,12 @@ const WORDING: Record<string, Wording> = {
   },
   'objectFiles.remove': { verb: 'убрал', rest: 'файлы из {subject}', noun: 'удаление файлов' },
   'objectFiles.merge': { verb: 'слил', rest: '{subject}', noun: 'слияние' },
-  'objectFiles.extractShoot': { verb: 'выделил', rest: '{subject}', noun: 'выделение съёмки' },
+  'objectFiles.extractShoot': {
+    verb: 'выделил',
+    rest: '{subject}',
+    noun: 'выделение в новый объект',
+  },
+  'objectFiles.move': { verb: 'перенёс', rest: 'файлы {subject}', noun: 'перенос файлов' },
   'objectBatch.tags': { verb: 'изменил', rest: 'теги {subject}', noun: 'правка тегов' },
   'objectBatch.secondPerson': {
     verb: 'изменил',

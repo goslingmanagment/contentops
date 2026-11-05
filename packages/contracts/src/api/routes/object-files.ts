@@ -7,7 +7,8 @@ import {
   MakeCoverCommandSchema,
   MakeMasterCommandSchema,
   MakePhotosCommandSchema,
-  MergeRawCommandSchema,
+  MergeItemsCommandSchema,
+  MoveFilesCommandSchema,
   PickFramesCommandSchema,
   RemoveFilesCommandSchema,
   ReorderFilesCommandSchema,
@@ -95,8 +96,16 @@ export const objectFileRoutes = {
   merge: defineRoute({
     method: 'POST',
     path: '/api/v1/{model}/i/{id}:merge',
-    body: MergeRawCommandSchema,
+    body: MergeItemsCommandSchema,
     response: ItemCreatedSchema,
+    versioned: true,
+  }),
+  /** «Перенести в…»: the answer is this object's page; the other one is in the journal. */
+  move: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/i/{id}/files:move',
+    body: MoveFilesCommandSchema,
+    response: ItemDetailSchema,
     versioned: true,
   }),
   makeMaster: defineRoute({

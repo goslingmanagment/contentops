@@ -64,13 +64,23 @@ export type BuildFypVersionsCommand = z.infer<typeof BuildFypVersionsCommandSche
 export const SetRawPurposeCommandSchema = z.object({ purpose: RawPurposeSchema })
 export type SetRawPurposeCommand = z.infer<typeof SetRawPurposeCommandSchema>
 
-/** «Выделить в новую съёмку»: the files leave this raw object for a new one. */
+/**
+ * «Выделить в новый объект» («в новую съёмку» у сырья): the files leave this object for a new
+ * one of the same type.
+ */
 export const ExtractShootCommandSchema = z.object({ keys: FileKeysSchema })
 export type ExtractShootCommand = z.infer<typeof ExtractShootCommandSchema>
 
-/** «Слить с…»: this raw object joins another one and keeps its ID as an old name. */
-export const MergeRawCommandSchema = z.object({ into: ItemIdSchema })
-export type MergeRawCommand = z.infer<typeof MergeRawCommandSchema>
+/**
+ * «Слить с…»: two objects of one type become one; the lower number stays, the other one is its
+ * old name (SPEC §4.1).
+ */
+export const MergeItemsCommandSchema = z.object({ into: ItemIdSchema })
+export type MergeItemsCommand = z.infer<typeof MergeItemsCommandSchema>
+
+/** «Перенести в…»: the files go to another object of the model, of any type. */
+export const MoveFilesCommandSchema = z.object({ keys: FileKeysSchema, into: ItemIdSchema })
+export type MoveFilesCommand = z.infer<typeof MoveFilesCommandSchema>
 
 /** «Сделать мастером PPV»: a video of raw footage becomes the master of a new PPV. */
 export const MakeMasterCommandSchema = z.object({

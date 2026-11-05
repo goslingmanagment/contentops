@@ -22,6 +22,7 @@ import { useActionToast } from '@/actions/action-toast-context'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
 import { useApi } from '@/data/api-session'
 import { itemQueryKeys, useItem } from '@/data/object'
+import { usePromoChannels } from '@/data/promo'
 import { useCurrentModel } from '@/shell/model/model-context'
 
 interface ChangeTypeDialogProps {
@@ -31,7 +32,8 @@ interface ChangeTypeDialogProps {
 
 /**
  * «Сменить тип (будет новый номер)…» (DESIGN §3.6): номер выдаётся заново, прежний
- * остаётся в старых именах и находится поиском. После смены открывается новый объект.
+ * остаётся в старых именах и находится поиском. Промо-подборке нужен канал. После смены
+ * открывается новый объект.
  */
 export function ChangeTypeDialog({ id, onClose }: ChangeTypeDialogProps) {
   const model = useCurrentModel().code
@@ -42,6 +44,9 @@ export function ChangeTypeDialog({ id, onClose }: ChangeTypeDialogProps) {
   const current = item.data?.entry.type
   const form = useForm<ChangeTypeCommand>({ resolver: zodResolver(ChangeTypeCommandSchema) })
   const chosen = form.watch('type')
+  const channel = form.watch('channel')
+  const channels = usePromoChannels(model).data ?? []
+  const needsChannel = chosen === 'promo' && !channel
 
   const change = useIntentMutation<ChangeTypeCommand, { item_id: ItemId }>({
     failed: 'Тип не сменился',
@@ -87,11 +92,29 @@ export function ChangeTypeDialog({ id, onClose }: ChangeTypeDialogProps) {
               />
             )}
           />
+          {chosen === 'promo' ? (
+            <Controller
+              control={form.control}
+              name="channel"
+              render={({ field }) => (
+                <ChoiceChips
+                  label="Канал"
+                  choices={channels.map((one) => ({ value: one.id, label: one.name }))}
+                  value={field.value ?? null}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+          ) : null}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>
               Отмена
             </Button>
-            <Button type="submit" disabled={!chosen || !item.data} pending={change.isPending}>
+            <Button
+              type="submit"
+              disabled={!chosen || needsChannel || !item.data}
+              pending={change.isPending}
+            >
               Сменить тип
             </Button>
           </DialogFooter>
