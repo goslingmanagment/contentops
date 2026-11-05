@@ -189,7 +189,7 @@ function CoverButton({ keys, files }: SelectedFiles) {
 
 /**
  * «⋯» полосы: «Убрать из отобранных» у сета, «Снять назначение» у лайфа, «Выделить в новый
- * объект», «Перенести в…», «Убрать из объекта…».
+ * объект», «Перенести в…», «Это копия…» (один файл), «Убрать из объекта…», «Не контент…».
  */
 function useBarMenu(
   files: ItemFile[],
@@ -226,12 +226,35 @@ function useBarMenu(
         openDialog({ kind: 'move-files', id: detail.entry.id, keys, onMoved: selection.clear }),
     })
   }
-  const removable = files.filter((file) => file.role !== 'master').map((file) => file.key)
-  return {
-    actions,
-    dangerActions:
-      removable.length > 0
-        ? [{ id: 'remove', label: 'Убрать из объекта…', onSelect: () => remove(removable) }]
-        : undefined,
+  const [single] = files
+  if (files.length === 1 && single && type !== 'promo') {
+    actions.push({
+      id: 'copy-of',
+      label: 'Это копия…',
+      onSelect: () =>
+        openDialog({ kind: 'copy-of', id: detail.entry.id, file: single, onDone: selection.clear }),
+    })
   }
+  const removable = files.filter((file) => file.role !== 'master').map((file) => file.key)
+  const danger = [
+    ...(removable.length > 0
+      ? [{ id: 'remove', label: 'Убрать из объекта…', onSelect: () => remove(removable) }]
+      : []),
+    ...(keys.length > 0 && type !== 'promo'
+      ? [
+          {
+            id: 'not-content',
+            label: 'Не контент…',
+            onSelect: () =>
+              openDialog({
+                kind: 'not-content',
+                id: detail.entry.id,
+                keys,
+                onDone: selection.clear,
+              }),
+          },
+        ]
+      : []),
+  ]
+  return { actions, dangerActions: danger.length > 0 ? danger : undefined }
 }

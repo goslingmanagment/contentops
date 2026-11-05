@@ -21,6 +21,8 @@ import { type ItemRow, publicIdOfRow } from './ids'
 interface SourceVersion {
   versionId: string
   sha: Buffer
+  /** The bytes the master was made from: their probe gives the length and the frame size. */
+  sourceSha: Buffer
   byteSize: number
 }
 
@@ -31,13 +33,22 @@ interface NewPpv {
 }
 
 async function versionBytes(tx: Tx, modelId: string, versionId: string): Promise<SourceVersion> {
-  const { rows } = await tx.execute<{ sha: Buffer; byte_size: string }>(sql`
-    SELECT v.master_sha256 AS sha, b.byte_size
+  const { rows } = await tx.execute<{
+    sha: Buffer
+    source_sha: Buffer | null
+    byte_size: string
+  }>(sql`
+    SELECT v.master_sha256 AS sha, v.source_sha256 AS source_sha, b.byte_size
       FROM asset_versions v JOIN blobs b ON b.sha256 = v.master_sha256
      WHERE v.model_id = ${modelId}::uuid AND v.id = ${versionId}::uuid`)
   const row = rows[0]
   if (!row) throw new ApiProblem('not_found', 'Такой версии файла нет')
-  return { versionId, sha: row.sha, byteSize: Number(row.byte_size) }
+  return {
+    versionId,
+    sha: row.sha,
+    sourceSha: row.source_sha ?? row.sha,
+    byteSize: Number(row.byte_size),
+  }
 }
 
 async function acceptDerivedPpv(
@@ -68,7 +79,8 @@ async function acceptDerivedPpv(
       proposed_role
     ) VALUES (
       ${model.id}::uuid, ${groupId}::uuid, ${source.versionId}::uuid, 'derived', 'ready',
-      ${source.byteSize}, ${link.path}, ${source.sha}, ${source.sha}, ${source.sha}, true, now(),
+      ${source.byteSize}, ${link.path}, ${source.sourceSha}, ${source.sha}, ${source.sha},
+      ${source.sourceSha.equals(source.sha)}, now(),
       now(), 'master'
     )`)
   const result = await acceptGroup(tx, model, actor, groupId, { as: 'default', how: 'new' })

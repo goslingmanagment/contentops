@@ -639,6 +639,16 @@ CREATE FUNCTION public.inbox_draft_transition() RETURNS trigger
 BEGIN
   IF OLD.state = 'resolved'
      AND (NEW.state, NEW.outcome) IS DISTINCT FROM (OLD.state, OLD.outcome) THEN
+    IF OLD.outcome IN ('new_item', 'append') AND NEW.state = 'resolved'
+       AND NEW.outcome IN ('alias', 'rejected')
+       AND current_setting('app.action', true) IN ('objectFiles.copyOf', 'objectFiles.notContent')
+       AND NOT EXISTS (
+         SELECT 1 FROM asset_versions v
+           JOIN item_memberships m ON m.model_id = v.model_id AND m.asset_id = v.asset_id
+          WHERE v.model_id = OLD.model_id AND v.id = OLD.applied_version_id
+            AND m.kind = 'owned' AND m.removed_at IS NULL) THEN
+      RETURN NEW;
+    END IF;
     IF OLD.outcome <> 'rejected' OR NEW.state <> 'ready' THEN
       RAISE EXCEPTION 'draft %: % (%) → % is not allowed', OLD.id, OLD.state, OLD.outcome, NEW.state
         USING ERRCODE = 'CO005';

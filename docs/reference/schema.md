@@ -1452,7 +1452,9 @@ LLM.
     — с `applied_item_id`; `alias` — с `duplicate_of_version_id`; `rejected` — с
     `rejected_at`. Возврат из `resolved` — триггер `inbox_draft_transition`: только из
     `rejected`, только в `ready`, только пока байты черновика `present` (замок `FOR SHARE`
-    на строках `blobs`, код `CO005`).
+    на строках `blobs`, код `CO005`). Принятый черновик (`new_item | append`) становится
+    `alias` или `rejected` только командами «Это копия» и «Не контент» объекта
+    (`app.action`) и только когда его файл уже вышел из объекта (0015, 05.11.2026).
   - Тег чужой модели отклоняет триггер `item_tags_tag_scope` (код `CO006`); у `item_tags`
     есть `id` — субъект журнала, ключ по-прежнему `(model_id, item_id, tag_id)`.
   - Ссылки, где норма не задала форму: `asset_manifest_entries.membership_id`,

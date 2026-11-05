@@ -2014,6 +2014,34 @@
           "compat"
         ]
       },
+      "CopyOfCommandInput": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "original": {
+                  "$ref": "#/components/schemas/FileAddressInput"
+                }
+              },
+              "required": [
+                "key",
+                "original"
+              ]
+            }
+          }
+        },
+        "required": [
+          "files"
+        ]
+      },
       "CopyState": {
         "oneOf": [
           {
@@ -3462,6 +3490,10 @@
           "confirmed_previous_version",
           "ai_failed"
         ]
+      },
+      "FileAddressInput": {
+        "type": "string",
+        "pattern": "^(PPV|FYP|CUS|SET|SXT|LIFE|RAW|PRM)-\\d{3,6}\\/[a-z]+\\d*$"
       },
       "FileMatch": {
         "type": "object",
@@ -6357,6 +6389,17 @@
         ],
         "additionalProperties": false
       },
+      "MasterVersionCommandInput": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/FileAddressInput"
+          }
+        },
+        "required": [
+          "from"
+        ]
+      },
       "MediaKind": {
         "type": "string",
         "enum": [
@@ -6779,6 +6822,27 @@
           "wall",
           "life_vault",
           "story"
+        ]
+      },
+      "NotContentCommandInput": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "keys",
+          "reason"
         ]
       },
       "NotUploadedPage": {
@@ -15258,6 +15322,186 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AcceptResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/i/{id}/files:copy-of": {
+      "post": {
+        "operationId": "objectFiles.copyOf",
+        "tags": [
+          "objectFiles"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyOfCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/i/{id}/files:not-content": {
+      "post": {
+        "operationId": "objectFiles.notContent",
+        "tags": [
+          "objectFiles"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotContentCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/i/{id}:master-version": {
+      "post": {
+        "operationId": "objectFiles.masterVersion",
+        "tags": [
+          "objectFiles"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MasterVersionCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemDetail"
                 }
               }
             }

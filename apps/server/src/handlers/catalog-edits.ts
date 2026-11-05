@@ -5,6 +5,7 @@ import type { Tx } from '@contentops/db'
 import { setJournalItem } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { itemDetail } from '../catalog/detail'
+import { markCopies, markNotContent, masterVersionFrom } from '../catalog/file-decisions'
 import {
   assignFiles,
   pickFiles,
@@ -241,6 +242,23 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
           const model = modelOf(ctx.model)
           const item = await lockItem(tx, model, params.id)
           return { item_id: await extractFiles(tx, model, item, body.keys, actor) }
+        }),
+      // «Это копия <файл>», «Не контент», «Новая версия мастера из файла» (SPEC §6.1–6.2).
+      copyOf: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx.model)
+          await markCopies(tx, model, params.id, body, ctx, actor)
+          return itemDetail(tx, model, params.id)
+        }),
+      notContent: ({ params, body, ctx }) =>
+        onItem({ ctx, body, id: params.id }, (tx, model, item, actor) =>
+          markNotContent(tx, model, item, body.keys, body.reason, ctx, actor),
+        ),
+      masterVersion: ({ params, body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const model = modelOf(ctx.model)
+          await masterVersionFrom(tx, model, params.id, body.from, ctx, actor)
+          return itemDetail(tx, model, params.id)
         }),
       setPurpose: ({ params, body, ctx }) =>
         onItem({ ctx, body, id: params.id }, async (tx, model, item) => {

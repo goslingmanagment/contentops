@@ -133,6 +133,15 @@ export function useObjectMenu(
       label: 'Слить с…',
       onSelect: () => openDialog({ kind: 'merge', id: entry.id }),
     },
+    ...(entry.type === 'fyp' || entry.type === 'ppv'
+      ? [
+          {
+            id: 'master-version',
+            label: 'Новая версия мастера из файла…',
+            onSelect: () => openDialog({ kind: 'master-version', id: entry.id }),
+          },
+        ]
+      : []),
     ...(entry.type === 'fyp' || entry.type === 'promo'
       ? []
       : [
