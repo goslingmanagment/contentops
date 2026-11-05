@@ -55,6 +55,10 @@ export interface FixtureFile {
    * version gets a source revision of the model's fixture disk. No source when omitted.
    */
   arrivedAt?: string
+  /** The old name of the file (`legacy_name` of the asset): `IMG_5001.JPG`. */
+  name?: string
+  /** When it was shot: EXIF (a photo) or `creation_time` (a video) of the current version. */
+  shotAt?: string
 }
 
 export type FixtureField =
@@ -202,8 +206,10 @@ async function insertFile(
             ${shape.video ? 'video' : 'image'}, ${versionIds.at(-1)}::uuid,
             ${variant > 0 ? 'uniq' : 'none'}, ${variant},
             ${variant > 0 ? (file.uniqLevel ?? 'soft') : null})`)
+  let current: Buffer | null = null
   for (const [index, versionId] of versionIds.entries()) {
     const sha256 = file.sha256?.[index] ?? randomBytes(32)
+    current = sha256
     await insertBlob(tx, file, sha256, shape.bytes)
     const revision = file.arrivedAt
       ? await sourceRevision(tx, modelId, file.arrivedAt, shape.bytes)
@@ -214,6 +220,17 @@ async function insertFile(
       VALUES (${modelId}::uuid, ${versionId}::uuid, ${assetId}::uuid, ${index + 1}, ${sha256},
               ${shape.durationS === null ? null : shape.durationS * 1000},
               ${shape.width}, ${shape.height}, ${revision}::uuid)`)
+  }
+  if (file.shotAt && current) {
+    await tx.execute(sql`
+      INSERT INTO blob_probes (sha256, kind, recipe_digest, shot_at)
+      VALUES (${current}, ${shape.video ? 'ffprobe' : 'exif'}, 'fixtures', ${file.shotAt}::timestamptz)
+      ON CONFLICT DO NOTHING`)
+  }
+  if (file.name) {
+    await tx.execute(sql`
+      INSERT INTO aliases (model_id, kind, value_raw, asset_id)
+      VALUES (${modelId}::uuid, 'legacy_name', ${file.name}, ${assetId}::uuid)`)
   }
   const membershipId = randomUUID()
   await tx.execute(sql`

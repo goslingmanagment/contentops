@@ -94,7 +94,7 @@ function outcomeOf(facts: PlacementFacts, evidence: readonly Evidence[]): Outcom
       level: 'history_candidate',
       word: 'похоже, выходило',
       detail: formatDate(dateOf(history.post_at), factsToday(facts)),
-      reason: `Hub: похожий пост ${formatDate(dateOf(history.post_at), factsToday(facts))} по имени или длительности и размерам, не подтверждение`,
+      reason: `Hub: похожий пост ${formatDate(dateOf(history.post_at), factsToday(facts))} по имени файла, не подтверждение`,
       date: dateOf(history.post_at),
     }
   }

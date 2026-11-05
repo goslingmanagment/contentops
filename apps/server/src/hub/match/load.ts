@@ -111,7 +111,10 @@ export interface VaultMember {
   memberRef: string
   mediaRef: string | null
   mediaOfferRef: string | null
+  /** The card's caption, else the name of the uploaded file. */
   filename: string | null
+  /** The name of the uploaded file itself: a caption hides it (`SXT-002_pic12` over `IMG_5001`). */
+  uploadName: string | null
   isVideo: boolean
   durationMs: number | null
   width: number | null
@@ -551,6 +554,7 @@ export async function loadVault(
     media_ref: string | null
     media_offer_ref: string | null
     filename: string | null
+    upload_name: string | null
     mime: string | null
     duration_ms: number | null
     width: number | null
@@ -561,7 +565,8 @@ export async function loadVault(
   }>(sql`
     SELECT m.id, m.current_observation_id, a.album_ref, a.title AS album_title,
            a.last_full_walk_at::text AS walk_at, m.member_ref, m.media_ref, m.media_offer_ref,
-           coalesce(m.custom_filename, m.filename) AS filename, m.mime, m.duration_ms,
+           coalesce(m.custom_filename, m.filename) AS filename, m.filename AS upload_name,
+           m.mime, m.duration_ms,
            coalesce(m.orig_width, r.orig_width, r.out_width) AS width,
            coalesce(m.orig_height, r.orig_height, r.out_height) AS height,
            coalesce(m.created_at_platform, r.created_at_platform)::text AS created_at_platform,
@@ -589,6 +594,7 @@ export async function loadVault(
       mediaRef: row.media_ref,
       mediaOfferRef: row.media_offer_ref,
       filename: row.filename,
+      uploadName: row.upload_name,
       isVideo: isVideo(row.mime, row.duration_ms),
       durationMs: row.duration_ms,
       width: row.width,
