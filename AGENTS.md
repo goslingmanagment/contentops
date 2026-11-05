@@ -67,6 +67,13 @@ Agency Hub (`README.md`, `PRD.md`).
   `pnpm --filter @contentops/server openapi`, иначе CI красный.
   Клиенты Я.Диска и Dropbox — `packages/sources` (только чтение); живая проверка Я.Диска —
   `node packages/sources/scripts/live-smoke.ts` (токен из Keychain `ydisk-audit`, печатает только счёт).
+- **База задачи** — своя: `DEV_PG_CONTAINER=contentops-<тема>-pg DEV_PG_PORT=<порт>
+  PORT=<порт> pnpm dev:server` или свой `docker run postgres:18.6` (например, под
+  восстановленный бэкап) с `--tmpfs /var/lib/postgresql -e PGDATA=/var/lib/pgdata` — тогда
+  база лежит в самом контейнере, а не в безымянном томе образа. Задача закончена — база
+  удаляется вместе с томом: `docker rm -fv <контейнер>`; без `-v` том базы, созданной до
+  05.11.2026 или своим `docker run` без этих флагов, остаётся висеть — сотни МБ, с бэкапом
+  гигабайты. Чужие базы не трогать.
 - **Живой экземпляр:** `http://10.66.66.1:8088` при включённом VPN агентства или
   `http://contentops.tail1d911a.ts.net` в tailnet (`ops/README.md`, «Вход через VPN агентства»).
 - **Выкатка:** в ВМ из тега — `ops/README.md`, «Стек и выкатка» (`ops/up.sh`); до этапа 3
@@ -79,11 +86,6 @@ Agency Hub (`README.md`, `PRD.md`).
 - **Грабли:** маршрут вида `{id}:verb` (таблица маршрутов в `packages/contracts`)
   Fastify 5 не разбирает — `/:id::verb` даёт один параметр `id::verb`; преобразователь
   маршрутов пишет `:id(^[^:/]+)::verb`.
-  Образ `postgres:18` хранит базу в безымянном томе: контейнер, удалённый `docker rm -f` без
-  `-v`, оставляет висящий том — сотни МБ, с восстановленным бэкапом гигабайты. Стенды
-  `pnpm dev:server` и `perf:stack` держат базу в самом контейнере; свой `docker run
-  postgres:18.6` — с `--tmpfs /var/lib/postgresql -e PGDATA=/var/lib/pgdata`, удалять —
-  `docker rm -fv`.
   Образцы настроек — сами конфиги: Vite и Tailwind 4 — `apps/web/vite.config.ts`, Drizzle —
   `packages/db/drizzle.config.ts`.
 - Код следует PRD/SPEC/PLAN и `design/DESIGN.md`. При расхождении или пробеле — самый
