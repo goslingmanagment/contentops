@@ -146,4 +146,44 @@ describe('Лора: the shapes of her disk', () => {
       doubtOf({ type: 'LIFE', grouping: 'exif_day', unit: '6. Life', files: files(0, 3) }),
     ).toBeNull()
   })
+
+  it('collections of Life wait: by the words of their names, by photos of many months', () => {
+    // 03.11.2026 both went by themselves as LIFE-050 and LIFE-051.
+    expect(folder('LIFE', '6. Life/Life_chats', files(0, 3, '2026-09-26'))).toEqual({
+      kind: 'copy_or_collection',
+      text: '«chats» в имени — копия или сборник?',
+    })
+    expect(folder('LIFE', '6. Life/Life chats', files(0, 3))?.kind).toBe('copy_or_collection')
+    expect(folder('LIFE', '6. Life/Life_others', files(0, 3))?.kind).toBe('copy_or_collection')
+    expect(folder('LIFE', '6. Life/Фото для чатов', files(0, 3))?.kind).toBe('copy_or_collection')
+    expect(folder('LIFE', '6. Life/misc', files(0, 3))?.kind).toBe('copy_or_collection')
+    // `Life_кот`: 16 days over three years — a collection, whatever its name says.
+    const months = (...days: string[]) =>
+      days.map((day, i) => ({ name: `${i}.jpg`, video: false, shotDay: day }))
+    expect(
+      folder(
+        'LIFE',
+        '6. Life/Life_кот',
+        months('2022-04-23', '2023-01-10', '2024-06-02', '2025-02-13'),
+      ),
+    ).toEqual({
+      kind: 'many_months',
+      text: 'Фото разных месяцев: 04.2022–02.2025 — один лайф или сборник?',
+    })
+    // A trip and a holiday season are one life: three months at most (`Life_новогоднее`).
+    expect(
+      folder('LIFE', '6. Life/posted/Life_новогоднее_30.11.26', [
+        ...months('2025-11-24', '2025-12-20', '2026-01-01'),
+        // A clip's day says nothing: its edit may come later.
+        { name: 'v.mov', video: true, shotDay: '2026-05-01' },
+      ]),
+    ).toBeNull()
+    expect(
+      folder(
+        'LIFE',
+        '6. Life/posted/Life_Dubai_06.08.25/hotel',
+        months('2025-07-21', '2025-07-25'),
+      ),
+    ).toBeNull()
+  })
 })

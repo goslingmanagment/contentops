@@ -21,6 +21,7 @@ export type DoubtKind =
   | 'photos_only'
   | 'no_video'
   | 'several_shoots'
+  | 'many_months'
 
 export interface Doubt {
   kind: DoubtKind
@@ -48,24 +49,45 @@ export interface DoubtInput {
 /**
  * Types the import makes of a folder by its section. A FYP and a custom clip are an object by
  * themselves, raw material and promo are no catalog object of a shoot: not asked. Life is many
- * days by nature (a trip, a cat over a year): asked only by the words of a copy.
+ * days by nature (a trip, a holiday season): asked by the words of a copy or a collection and
+ * when its photos are spread over many months.
  */
 const ASKED = new Set(['SET', 'SXT', 'PPV', 'CUS', 'LIFE'])
 /** A folder named by a date alone (`19.10.26`, `9.10.26`, `05-07.06.26`): what came that day. */
 const DAY_FOLDER = /^\d{1,2}(?:-\d{1,2})?\.\d{1,2}\.(?:\d{2}|\d{4})$/u
-/** Words of a copy or a collection in a folder name: not one shoot. */
+/**
+ * Words of a copy or a collection in a folder name: not one shoot. `Life_others`, `Life_chats`
+ * (photos kept for the chats) — collections of Лора's `6. Life`, accepted as one life 03.11.2026.
+ */
 const COPY_WORDS =
-  /(?<![\p{L}\p{N}])(архив\p{L}*|archive|с\s+(?:мака|макбука|компа|компьютера|ноута|ноутбука|телефона|айфона)|копи[яи]|бэкап\p{L}*|backup|старые|старое|разное|сборник\p{L}*|не\s*разобран\p{L}*|неразобран\p{L}*)(?![\p{L}\p{N}])/iu
+  /(?<![\p{L}\p{N}])(архив\p{L}*|archive|с\s+(?:мака|макбука|компа|компьютера|ноута|ноутбука|телефона|айфона)|копи[яи]|бэкап\p{L}*|backup|старые|старое|разное|прочее|другое|сборник\p{L}*|не\s*разобран\p{L}*|неразобран\p{L}*|others?|misc\p{L}*|chats?|чаты|чатов)(?![\p{L}\p{N}])/iu
 /** A sexting pack is clips with photos: fewer clips than a tenth of its files is a photo set. */
 const SEXTING_VIDEO_SHARE = 0.1
 /** Photos of one shoot: the first and the last day no more than two days apart. */
 const SHOOT_DAYS = 2
+/**
+ * A life is one post: a day, a trip, a season (`Life_новогоднее`: November to January). Photos
+ * of more months than this are a collection, not one life (`Life_chats`: 99 days, 2022–2026).
+ */
+const LIFE_MONTHS = 3
 
 const DAY_MS = 86_400_000
 
 function dayWords(iso: string): string {
   const [year, month, day] = iso.split('-')
   return `${day}.${month}.${year}`
+}
+
+function monthWords(iso: string): string {
+  const [year, month] = iso.split('-')
+  return `${month}.${year}`
+}
+
+/** Distinct local days of the photos (a clip's day is often the day of its edit), sorted. */
+function photoDays(files: readonly DoubtFile[]): string[] {
+  return [
+    ...new Set(files.flatMap((file) => (!file.video && file.shotDay ? [file.shotDay] : []))),
+  ].sort()
 }
 
 /** Why the import does not accept the group by itself, or `null`: nothing against its type. */
@@ -94,6 +116,18 @@ export function doubtOf(input: DoubtInput): Doubt | null {
       }
     }
   }
+  if (input.type === 'LIFE') {
+    const months = [...new Set(photoDays(input.files).map((day) => day.slice(0, 7)))]
+    const first = months[0]
+    const last = months.at(-1)
+    if (first && last && months.length > LIFE_MONTHS) {
+      return {
+        kind: 'many_months',
+        text: `Фото разных месяцев: ${monthWords(first)}–${monthWords(last)} — один лайф или сборник?`,
+      }
+    }
+    return null
+  }
   const videos = input.files.filter((file) => file.video).length
   if (input.type === 'SXT' && videos < input.files.length * SEXTING_VIDEO_SHARE) {
     return {
@@ -109,11 +143,7 @@ export function doubtOf(input: DoubtInput): Doubt | null {
   }
   // The day of a clip is often the day of its edit (a teaser cut later): photos only.
   if (input.type === 'SET' || input.type === 'SXT') {
-    const days = [
-      ...new Set(
-        input.files.flatMap((file) => (!file.video && file.shotDay ? [file.shotDay] : [])),
-      ),
-    ].sort()
+    const days = photoDays(input.files)
     const first = days[0]
     const last = days.at(-1)
     if (first && last && Date.parse(last) - Date.parse(first) > SHOOT_DAYS * DAY_MS) {

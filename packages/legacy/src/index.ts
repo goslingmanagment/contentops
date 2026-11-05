@@ -8,7 +8,13 @@ export {
 export { findIdMentions, type IdMention } from './ids.ts'
 export { apiToLocalPath, LocalPathIndex, localCopyPath } from './local-path.ts'
 export { parseLegacyName } from './name.ts'
-export { areaOfSection, contextOf, parseLegacyPath } from './path.ts'
+export {
+  areaOfSection,
+  contextOf,
+  fypRawOfName,
+  isFypVendorFolder,
+  parseLegacyPath,
+} from './path.ts'
 export {
   type ArchivePlan,
   bytesKey,
