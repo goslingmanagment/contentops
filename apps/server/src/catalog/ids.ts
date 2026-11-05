@@ -7,7 +7,7 @@ import {
   parseItemId,
 } from '@contentops/contracts/domain/item-type'
 import type { Queryable } from '@contentops/db'
-import { sql } from 'drizzle-orm'
+import { type SQL, sql } from 'drizzle-orm'
 import type { ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 
@@ -58,6 +58,19 @@ export interface ItemRow extends Record<string, unknown> {
 
 export function publicIdOfRow(row: Pick<ItemRow, 'type' | 'number'>): ItemId {
   return publicIdOf(row.type, row.number)
+}
+
+/**
+ * The sub-handle of a membership `alias` in SQL, as `handleOf` spells it (naming §3): `master`,
+ * `pic07`, `pic111`, `u2`. Two digits is the least, not the most: `lpad` alone cuts `111` to
+ * `11`, the handle of another file.
+ */
+export function handleSql(alias: string): SQL {
+  const m = sql.raw(alias)
+  return sql`CASE WHEN ${m}.variant_no > 0 THEN 'u' || ${m}.variant_no
+                  WHEN ${m}.ordinal IS NULL THEN ${m}.role
+                  ELSE ${m}.role || lpad(${m}.ordinal::text, greatest(2, length(${m}.ordinal::text)), '0')
+             END`
 }
 
 const ITEM_COLUMNS = sql`

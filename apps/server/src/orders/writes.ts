@@ -14,7 +14,7 @@ import { parseDuration } from '@contentops/contracts/order-card'
 import { orderAddress, parseTelegramRef, telegramRefText } from '@contentops/contracts/order-link'
 import { dbErrorCode, logAction, type Queryable, setJournalItem, type Tx } from '@contentops/db'
 import { type SQL, sql } from 'drizzle-orm'
-import { findItem, publicIdOfRow } from '../catalog/ids'
+import { findItem, handleSql, publicIdOfRow } from '../catalog/ids'
 import { checkVersion, instant } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
@@ -492,8 +492,7 @@ async function itemFiles(tx: Tx, model: ModelScope, itemId: string): Promise<Par
   const { rows } = await tx.execute<PartFile>(sql`
     SELECT im.id AS membership_id, a.id AS asset_id,
            coalesce(im.pinned_version_id, a.current_version_id) AS version_id,
-           concat_ws('', im.role, lpad(im.ordinal::text, 2, '0'),
-                     CASE WHEN im.variant_no > 0 THEN '_u' || im.variant_no END) AS handle,
+           ${handleSql('im')} AS handle,
            a.media_kind
       FROM item_memberships im
       JOIN assets a ON a.model_id = im.model_id AND a.id = im.asset_id

@@ -106,7 +106,8 @@ interface DeliveryRow extends Record<string, unknown> {
   retracted_by: string | null
   retract_reason: string | null
   files: number
-  duration_ms: string | null
+  /** Lengths of the delivered clips, in the order of the composition. */
+  clip_ms: number[] | null
 }
 
 interface RevisionRow extends Record<string, unknown> {
@@ -175,6 +176,21 @@ export function deadlineOf(dueAt: string | null): LocalDate | null {
   return dueAt ? mskDate(instantFromMs(Date.parse(instant(dueAt)) - 1)) : null
 }
 
+/** How close the longest clip of a delivery is to the others together to be their montage. */
+const MONTAGE_SHARE = 0.05
+
+/**
+ * How long a delivered video is («Видео 15:37»): its clips together. A custom of parts with the
+ * montage of them (#116: the montage is the master, the stages are its clips) counts the montage
+ * once — the longest clip, when it lasts as long as two or more others together (±5 %).
+ */
+export function deliveredMs(clips: readonly number[]): number {
+  const longest = Math.max(0, ...clips)
+  const rest = clips.reduce((sum, ms) => sum + ms, 0) - longest
+  const montage = clips.length >= 3 && Math.abs(longest - rest) <= rest * MONTAGE_SHARE
+  return montage ? longest : longest + rest
+}
+
 /** «8-10 минут» as entered; the parsed range is stored next to it. */
 function durationOf(row: OrderRow): Order['duration'] {
   return {
@@ -237,12 +253,12 @@ async function relatedOf(q: Queryable, model: ModelScope, rows: readonly OrderRo
               JOIN assets s ON s.model_id = e.model_id AND s.id = e.asset_id
              WHERE e.model_id = d.model_id AND e.manifest_id = d.manifest_id
                AND s.media_kind = CASE d.part WHEN 'video' THEN 'video' ELSE 'image' END) AS files,
-           (SELECT sum(v.duration_ms)::text
+           (SELECT array_agg(v.duration_ms::float8 ORDER BY e.position)
               FROM asset_manifest_entries e
               JOIN asset_versions v ON v.model_id = e.model_id AND v.id = e.asset_version_id
               JOIN assets s ON s.model_id = e.model_id AND s.id = e.asset_id
              WHERE e.model_id = d.model_id AND e.manifest_id = d.manifest_id
-               AND s.media_kind = 'video') AS duration_ms
+               AND s.media_kind = 'video' AND v.duration_ms IS NOT NULL) AS clip_ms
       FROM custom_order_deliveries d
       JOIN content_items i ON i.model_id = d.model_id AND i.id = d.item_id
       LEFT JOIN custom_order_deliveries r ON r.model_id = d.model_id AND r.retracts_id = d.id
@@ -386,8 +402,8 @@ function buildOrder(row: OrderRow, related: Related, options: BuildOptions): Ord
       item_id: last?.item_id ?? null,
       delivered_on: latest ? mskDate(latest) : null,
       duration_s:
-        kind === 'video' && lastRow?.duration_ms
-          ? Math.round(Number(lastRow.duration_ms) / 1000)
+        kind === 'video' && lastRow?.clip_ms?.length
+          ? Math.round(deliveredMs(lastRow.clip_ms) / 1000)
           : null,
       complete: completedAt !== null,
       completed_by: whoOrNull(completedBy),

@@ -669,8 +669,10 @@ async function deliveredAtOf(
 }
 
 /**
- * Sealed composition of the delivered versions and the delivery rows of the order (§8.2);
- * returns the delivery of the video, if any.
+ * Sealed composition of the delivered versions and the delivery rows of the order (§8.2), for
+ * the parts the order has: photos that came with the video of an order without photos stay in
+ * the CUS as a bonus, no delivery — as «Привязать сдачу…» does. Returns the delivery of the
+ * video, if any.
  */
 async function recordDelivery(
   tx: Tx,
@@ -682,11 +684,20 @@ async function recordDelivery(
   drafts: readonly DraftRow[],
   actor: Actor,
 ): Promise<string | null> {
+  const { rows: orders } = await tx.execute<{ expects_video: boolean; expects_photos: boolean }>(
+    sql`SELECT expects_video, expects_photos FROM custom_orders
+         WHERE model_id = ${modelId}::uuid AND id = ${orderId}::uuid`,
+  )
+  const order = orders[0]
+  const parts = (['video', 'photos'] as const).flatMap((part) => {
+    const ordered = part === 'video' ? order?.expects_video : order?.expects_photos
+    const chosen = files.filter((file) => (part === 'video') === (file.media === 'video'))
+    return ordered && chosen.length > 0 ? [{ part, chosen }] : []
+  })
+  if (parts.length === 0) return null
   let video: string | null = null
   const deliveredAt = await deliveredAtOf(tx, modelId, orderId, groupId, drafts)
-  for (const part of ['video', 'photos'] as const) {
-    const chosen = files.filter((file) => (part === 'video') === (file.media === 'video'))
-    if (chosen.length === 0) continue
+  for (const { part, chosen } of parts) {
     const { rows } = await tx.execute<{ id: string }>(sql`
       INSERT INTO asset_manifests (model_id, purpose, origin_item_id, entry_count, created_by)
       VALUES (${modelId}::uuid, 'submission', ${item.id}::uuid, ${chosen.length}, ${actor.id}::uuid)
