@@ -254,7 +254,7 @@ class Run {
         const next = await pages.next()
         if (next.done) return
         this.requests += 1
-        for (const blocker of next.value.blockers) this.blockers.add(blocker)
+        for (const blocker of pageBlockers(next.value)) this.blockers.add(blocker)
         yield next.value
       }
     } finally {
@@ -389,7 +389,7 @@ async function syncPosts(run: Run): Promise<StreamResult> {
       consecutiveFailures: hubPosts?.fields.consecutiveFailures ?? 0,
       hubUnavailable:
         hubPosts?.fields.syncStatus === 'paused' ? 'Hub приостановил свой поток постов' : null,
-      coverage: postsCoverage(coverage),
+      coverage: postsCoverage(coverage, run.startedAt),
     },
     counts: { ...counts, sync_streams: streams.length, coverage_rows: coverage.length },
   }
@@ -403,16 +403,40 @@ async function latestPostSighting(run: Run): Promise<string | null> {
 }
 
 /**
- * The posts plan of `capture_coverage` with proof (entry E7, schema §9.6). Hub has none on
- * 30.10.2026: the columns stay NULL and «не вышло» by posts stays off.
+ * Hub's `gaps_present` names any gap, the window's start before Hub's record of the page too:
+ * every read starts at `HUB_WINDOW_FLOOR` (2020), so that one comes with every page and says
+ * only where the record begins — for posts the proven floor of E7 answers it. Other gaps stay.
  */
-function postsCoverage(rows: readonly DatasetRow<'capture_coverage'>[]): PostsCoverage | null {
+export function pageBlockers(
+  page: Pick<DatasetPage<HubDataset>, 'blockers' | 'capture'>,
+): string[] {
+  const capture = page.capture as { gaps?: unknown } | null
+  const gaps = Array.isArray(capture?.gaps) ? (capture.gaps as unknown[]) : null
+  const floorOnly =
+    gaps !== null &&
+    gaps.length > 0 &&
+    gaps.every((gap) => (gap as { kind?: unknown } | null)?.kind === 'before_capture_floor')
+  return page.blockers.filter((blocker) => !(floorOnly && blocker === 'gaps_present'))
+}
+
+/**
+ * The posts plan of `capture_coverage` with proof (entry E7, schema §9.6; Hub #1021 on
+ * 05.11.2026, Fansly): `provider_exhausted` with a proof, still current — Hub re-proves the head
+ * by `nextProbeAt` (the head plus 18 h); a stale claim proves nothing. Without it the columns
+ * stay NULL and «не вышло» by posts stays off.
+ */
+export function postsCoverage(
+  rows: readonly DatasetRow<'capture_coverage'>[],
+  now: Date,
+): PostsCoverage | null {
   const plan = rows.find(
     (row) =>
       row.fields.plane === 'posts' &&
       row.fields.status === 'provider_exhausted' &&
       row.fields.proof !== null &&
-      row.fields.proof !== 'none',
+      row.fields.proof !== 'none' &&
+      row.fields.nextProbeAt !== null &&
+      Date.parse(row.fields.nextProbeAt) > now.getTime(),
   )
   if (!plan) return null
   const f = plan.fields
