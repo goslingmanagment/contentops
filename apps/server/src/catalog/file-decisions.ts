@@ -322,10 +322,12 @@ async function fileAt(tx: Tx, model: ModelScope, address: string) {
     version_id: string
     media_kind: 'video' | 'image'
     sha: Buffer
+    source_sha: Buffer
     byte_size: string
   }>(sql`
     SELECT m.asset_id, a.current_version_id AS version_id, a.media_kind,
-           v.master_sha256 AS sha, b.byte_size
+           v.master_sha256 AS sha, coalesce(v.source_sha256, v.master_sha256) AS source_sha,
+           b.byte_size
       FROM item_memberships m
       JOIN assets a ON a.model_id = m.model_id AND a.id = m.asset_id
       JOIN asset_versions v ON v.model_id = a.model_id AND v.id = a.current_version_id
@@ -383,7 +385,9 @@ export async function masterVersionFrom(
       proposed_role
     ) VALUES (
       ${model.id}::uuid, ${groupId}::uuid, ${file.version_id}::uuid, 'derived', 'ready',
-      ${Number(file.byte_size)}, ${from}, ${file.sha}, ${file.sha}, ${file.sha}, true, now(), now(),
+      ${Number(file.byte_size)}, ${from}, ${file.source_sha}, ${file.sha}, ${file.sha},
+      ${file.source_sha.equals(file.sha)}, now(),
+      now(),
       'master'
     )`)
   await acceptGroup(tx, model, actor, groupId, {

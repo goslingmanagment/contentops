@@ -1,4 +1,9 @@
-import { FileAddressSchema, type ItemDetail, type ItemId } from '@contentops/contracts'
+import {
+  FileAddressSchema,
+  type ItemDetail,
+  type ItemFile,
+  type ItemId,
+} from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import {
   Dialog,
@@ -16,6 +21,9 @@ import { useCatalogIndex } from '@/data/catalog'
 import { useItem, useItemWriter } from '@/data/object'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { FilePicker } from './file-picker'
+
+/** Мастер объекта: у фупа он «монтаж» (ключ тот же — `master`). */
+const isMaster = (file: ItemFile) => file.key === 'master'
 
 interface MasterVersionDialogProps {
   id: ItemId
@@ -36,7 +44,7 @@ export function MasterVersionDialog({ id, onClose }: MasterVersionDialogProps) {
   const entries = useCatalogIndex(model).data?.items ?? []
   const [from, setFrom] = useState('')
   const valid = FileAddressSchema.safeParse(from).success
-  const master = item.data?.files.find((file) => file.role === 'master')
+  const master = item.data?.files.find(isMaster)
 
   const make = useIntentMutation<string, ItemDetail>({
     failed: 'Версия не сделана',
@@ -50,7 +58,7 @@ export function MasterVersionDialog({ id, onClose }: MasterVersionDialogProps) {
     onSuccess: (detail, address) => {
       write(detail)
       onClose()
-      const version = detail.files.find((file) => file.role === 'master')?.current_version
+      const version = detail.files.find(isMaster)?.current_version
       toast.show({ message: `Мастер ${id} · v${version ?? '?'} из ${address}` })
     },
   })
