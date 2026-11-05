@@ -403,20 +403,30 @@ async function latestPostSighting(run: Run): Promise<string | null> {
 }
 
 /**
- * Hub's `gaps_present` names any gap, the window's start before Hub's record of the page too:
- * every read starts at `HUB_WINDOW_FLOOR` (2020), so that one comes with every page and says
- * only where the record begins — for posts the proven floor of E7 answers it. Other gaps stay.
+ * Hub's `gaps_present` names any gap. The only reader of these blockers is the proof of posts
+ * (E7, `loadHubFacts`), and two kinds of gap say nothing about whether a post exists:
+ * - the window's start before Hub's record of the page (`before_capture_floor`): every read
+ *   starts at `HUB_WINDOW_FLOOR` (2020), so it comes with every page; the proven floor of E7
+ *   answers it;
+ * - the files' metadata (`creator_raw_media`: names, lengths, sizes), which `post_attachments`
+ *   reports over the whole window on every Fansly page (05.11.2026). A post whose files Hub has
+ *   not described still pairs with its row as a candidate (`judgePair`: lengths unknown → no
+ *   mismatch), so «не вышло» stays honest.
+ * Any other gap stays.
  */
 export function pageBlockers(
   page: Pick<DatasetPage<HubDataset>, 'blockers' | 'capture'>,
 ): string[] {
   const capture = page.capture as { gaps?: unknown } | null
   const gaps = Array.isArray(capture?.gaps) ? (capture.gaps as unknown[]) : null
-  const floorOnly =
+  const harmless =
     gaps !== null &&
     gaps.length > 0 &&
-    gaps.every((gap) => (gap as { kind?: unknown } | null)?.kind === 'before_capture_floor')
-  return page.blockers.filter((blocker) => !(floorOnly && blocker === 'gaps_present'))
+    gaps.every((gap) => {
+      const one = gap as { kind?: unknown; plane?: unknown } | null
+      return one?.kind === 'before_capture_floor' || one?.plane === 'creator_raw_media'
+    })
+  return page.blockers.filter((blocker) => !(harmless && blocker === 'gaps_present'))
 }
 
 /**

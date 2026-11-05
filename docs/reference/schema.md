@@ -1770,8 +1770,8 @@ Testcontainers одноразовые, стенд — `docker compose down -v`; 
   `stop_reason`, `proven_complete_at` — из плана `posts` в `capture_coverage` Hub (E7, для
   Fansly с 05.11.2026) и только при `status = provider_exhausted` с `proof` и
   `nextProbeAt` впереди, иначе NULL; крайние даты без доказательства интервал не задают;
-  в `blockers` пробел `before_capture_floor` (окно чтения раньше начала записи Hub) не даёт
-  `gaps_present`, остальные пробелы дают;
+  в `blockers` пробелы `before_capture_floor` (окно чтения раньше начала записи Hub) и
+  плана `creator_raw_media` (сведения о файлах) не дают `gaps_present`, остальные дают;
   привязка к попытке работы `hub_sync`. Отрицательный вывод по постам требует
   последнего успешного планового опроса не старше двух интервалов.
 - **`posting_plan_rows.requires_new_upload`**: `false` выполнено точным членством с
