@@ -71,8 +71,9 @@
 - Разметка воспроизводится скриптом `ops/vm/setup-disks.sh`:
   `ssh contentops-vm 'sudo bash -s' < ops/vm/setup-disks.sh` (на пустых дисках ≈ 5 мин).
   Повтор безопасен: размеченный диск не трогается, пустой размечается, только если он
-  целиком из нулей; иначе — стоп. Он же ставит swap (ниже, «Память»); только swap, ничего
-  больше не трогая, — `ssh contentops-vm 'sudo bash -s -- swap' < ops/vm/setup-disks.sh`.
+  целиком из нулей; иначе — стоп. Он же ставит swap (ниже, «Память») и ежедневный `fstrim`
+  («Место»); только swap, ничего больше не трогая, — `ssh contentops-vm 'sudo bash -s -- swap'
+  < ops/vm/setup-disks.sh`, только `fstrim` — `… -- fstrim`.
 
 ## Место
 
@@ -80,11 +81,30 @@
   свободное на C: и E: в Windows (SPEC §12.2), не `df` в ВМ.
 - VHDX растёт блоками по 32 MB. С настройками ext4 по умолчанию пустой data.vhdx занимал
   17 GB на C:, поэтому метаданные собраны в одну область (`-G 4096`), а inode меньше:
-  data — 4M, derived — 4.9M (`df -i`). Сжать файл после большой чистки: в ВМ `sudo fstrim
-  -av`, затем на Windows `Stop-VM contentops`, `Optimize-VHD <файл> -Mode Full`,
-  `Start-VM contentops`.
+  data — 4M, derived — 4.9M (`df -i`).
+- Пока идёт импорт, `derived.vhdx` растёт примерно на 50 GB в сутки (предзабор в `/srv/tmp`
+  и производные): 06.11.2026 — 233.6 GiB при 75 GB занятого в ВМ. Поэтому сжатие — каждую
+  ночь, само:
+  - 04:00 МСК — `fstrim` в ВМ: `fstrim.timer` ежедневно, без случайной задержки (у Ubuntu —
+    раз в неделю); ставит `ssh contentops-vm 'sudo bash -s -- fstrim' < ops/vm/setup-disks.sh`.
+  - 04:30 МСК и через 10 мин после загрузки Windows — задача `ContentOps-Compact` (SYSTEM,
+    `ops/winpc/ContentOps-Compact.ps1`, ставит `register-tasks.ps1`). На E: свободно 160 GB и
+    больше (предупреждение `SPACE_WARN_GB`) — запись `not needed`. Меньше — выключает
+    сторожа, гасит гостя, `Optimize-VHD -Mode Full`, затем `Start-VM` каждые 30 с до 30 мин
+    и включает сторожа обратно. Сразу после сжатия у Windows может не быть свободных 22 GB для
+    ВМ (06.11 так прошло 25 мин), поэтому каждая неудача старта — в журнале с причиной; не
+    включилась за 30 мин — дальше её включает сторож.
+  - Днём (вне 00–06) и при выключенном руками стороже задача ВМ не трогает. Оборвалась на
+    середине (перезагрузка) — сторожа включит следующий запуск. Журнал —
+    `C:\vm\contentops\logs\compact.log`.
+  - Сжать сразу, в том числе днём (ВМ встанет на несколько минут), — `-Force` в отдельном
+    процессе, чтобы обрыв ssh не оставил ВМ выключенной: `ssh winpc 'Invoke-CimMethod
+    -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = "powershell.exe
+    -NoProfile -ExecutionPolicy Bypass -File C:\vm\contentops\ops\ContentOps-Compact.ps1 -Force" }'`.
 - Замер 30.10.2026 после разметки и сжатия: data.vhdx 772 MB, derived.vhdx 612 MB; свободно
   C: 522.9 GB, E: 340.1 GB; в ВМ доступно data 1022 GiB, derived 298 GiB.
+- Сжатие руками 06.11.2026: `derived.vhdx` 233.6 → 146.9 GiB, гость выключался 97 с,
+  `Optimize-VHD` — 103 с; на E: стало свободно 197.7 GB.
 
 ## Вход для людей — `tailscale serve`
 
@@ -309,18 +329,25 @@
 ## Сторож `ContentOps-Watchdog`
 
 - Задача Windows (SYSTEM, при загрузке и каждые 5 мин) запускает
-  `C:\vm\contentops\ops\ContentOps-Watchdog.ps1`; ставит её вместе с `ContentOps-Space`
-  `ops/winpc/register-tasks.ps1` (копирует скрипты туда же и печатает проверку настроек
-  хоста): `scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/`, затем
+  `C:\vm\contentops\ops\ContentOps-Watchdog.ps1`; ставит её вместе с `ContentOps-Space` и
+  `ContentOps-Compact` `ops/winpc/register-tasks.ps1` (копирует скрипты туда же и печатает
+  проверку настроек хоста): `scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/`, затем
   `ssh winpc 'pwsh -NoProfile -File C:\vm\contentops\ops\register-tasks.ps1 -Enable'`.
-- Проверяет `http://contentops.tail1d911a.ts.net/healthz` (после включения HTTPS — адрес
-  `-HealthUrl` при регистрации). После трёх неудач подряд —
-  штатное выключение гостя (через 3 мин — принудительное) и старт, не чаще раза в час;
-  выключенную ВМ включает. Пауза, сохранённое или «критическое» состояние (например,
-  кончилось место на C:) — только запись в журнал. Пока на самом ПК не работает Tailscale,
-  неудачи не считаются: перезапуск ВМ не помог бы, а долгое кодирование оборвал бы.
+- Выключенную ВМ (`Off`) включает на каждой проверке, пока не включится, без счётчика
+  неудач и без «раз в час». Неудачный старт — одна строка журнала с причиной и памятью хоста:
+  `start failed: … Not enough memory in the system to start the virtual machine …; VM Off;
+  host memory 1.1 GB available, 0.0 GB modified`. Не включает, пока Windows сама
+  выключается (событие 1074 после загрузки, за последние 30 мин).
+- Работающую проверяет по `http://contentops.tail1d911a.ts.net/healthz` (после включения
+  HTTPS — адрес `-HealthUrl` при регистрации). После трёх неудач подряд — штатное выключение
+  гостя (через 3 мин — принудительное) и старт; не чаще раза в час и не раньше часа после
+  того, как сторож включил выключенную ВМ: свежую загрузку не обрывает. Пауза, сохранённое
+  или «критическое» состояние (например, кончилось место на C:) — только запись в журнал.
+  Пока на самом ПК не работает Tailscale, неудачи не считаются: перезапуск ВМ не помог бы, а
+  долгое кодирование оборвал бы.
 - Полный диск: пока на C: или E: свободно меньше 50 GB (или диска нет), сторож ВМ не
-  включает и не перезапускает, в журнале — `restart skipped: C: 42.1 GB free (below 50 GB)`.
+  включает и не перезапускает, в журнале — `start skipped: C: 42.1 GB free (below 50 GB)`
+  (у работающей — `restart skipped: …`).
   Hyper-V при полном C: или E: ставит ВМ на «критическую» паузу; по умолчанию через 30 мин
   выключает её, а сторож включил бы снова — круг жёстких выключений базы без бэкапа. Поэтому
   пауза держится сутки (`AutomaticCriticalErrorActionTimeout` 1440 мин — предел Hyper-V: 1441
@@ -328,11 +355,17 @@
   `register-tasks.ps1`, проверка — `Get-VM contentops | fl AutomaticCriticalError*`). Не
   освободили место за сутки — ВМ выключится один раз, и сторож её не включит.
   Освободив место, ВМ продолжают `Resume-VM contentops`.
-- Журнал — `C:\vm\contentops\logs\watchdog.log`, счётчик — `watchdog-state.json` рядом.
+- Журнал — `C:\vm\contentops\logs\watchdog.log`, счётчик и время последнего старта —
+  `watchdog-state.json` рядом.
 - Включает выкатка (`register-tasks.ps1 -Enable`; без `-Enable` задача регистрируется
   выключенной). На время работ с ВМ руками — `Disable-ScheduledTask ContentOps-Watchdog`,
-  иначе он включит выключенную ВМ. Без диска E: `/healthz` красный, и перезапуск ВМ не
-  поможет: на это время сторожа выключить.
+  иначе он включит выключенную ВМ на ближайшей проверке (до 5 мин); сжатие выключает и
+  включает его само. Без диска E: `/healthz` красный, и перезапуск ВМ не поможет: на это
+  время сторожа выключить.
+- Решение проверки — функция `Get-WatchdogDecision` без побочных действий. Подключённый через
+  `. .\ContentOps-Watchdog.ps1 -LogDir <временная папка>` скрипт только объявляет функции:
+  так решение прогоняется на подставных состояниях, не трогая ВМ (06.11.2026: выключенная ВМ
+  включается на каждой проверке, «раз в час» — только для перезапуска работающей).
 - Проверено 30.10: запуск от SYSTEM (имя в tailnet находится, неудача засчитана), штатный
   перезапуск — гость выключился за 6 с, диски смонтировались сами. Порог места: сторож под
   Windows PowerShell 5.1 с `-MinFreeGB 100000` записал `restart skipped: C: 532.5 GB free, E:
@@ -383,8 +416,9 @@
 
 - Windows: `ssh winpc 'pwsh -NoProfile -Command -' < ops/winpc/after-reboot-check.ps1` — время
   и причина загрузки (события 1074 / 6008 / 41, ночное окно 00–06), установки Windows Update
-  и ждущая перезагрузка, ВМ Running и её heartbeat, задачи `ContentOps-Watchdog` и
-  `ContentOps-Space` (включены, отработали после загрузки, код 0, хвост журнала сторожа),
+  и ждущая перезагрузка, ВМ Running и её heartbeat, задачи `ContentOps-Watchdog`,
+  `ContentOps-Space` и `ContentOps-Compact` (включены, отработали после загрузки, код 0, хвост
+  журнала сторожа),
   Tailscale на ПК, `/healthz` по tailnet, клиент Я.Диска не запущен, автозапуска в `Run` нет,
   `YandexDiskUpdateService` — Manual, свободно на C: и E:.
 - ВМ: `ssh contentops-vm 'cd /opt/contentops && ops/vm/after-reboot-check.sh'` — загрузка и

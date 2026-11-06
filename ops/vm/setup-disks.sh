@@ -10,6 +10,11 @@
 #   /swapfile    (system disk, os.vhdx)    -> 8 GiB swap: a memory spike slows an encoder
 #     instead of killing it. fallocate leaves the blocks unwritten, so os.vhdx grows only as
 #     pages are swapped out. An existing swap file of another size stops the script.
+#   fstrim.timer -> every night at 04:00 Moscow time, no random delay (Ubuntu: weekly, up to
+#     100 min late, 1 h accuracy): what the VM frees reaches the VHDX before the host compacts
+#     derived.vhdx at 04:30 (ops/winpc/ContentOps-Compact.ps1). Drop-in
+#     /etc/systemd/system/fstrim.timer.d/contentops.conf. Persistent as shipped: the first
+#     start after the change, or a boot after a missed night, trims at once (a second or two).
 #
 # A disk whose label already exists is never touched. A blank disk is partitioned and
 # formatted only if it has the expected size, no partition table, no signature and reads as
@@ -25,6 +30,7 @@
 #
 # Run from the Mac: ssh contentops-vm 'sudo bash -s' < ops/vm/setup-disks.sh
 # Swap only, nothing else touched (a running VM): ... 'sudo bash -s -- swap' < ...
+# Nightly fstrim only (a running VM):             ... 'sudo bash -s -- fstrim' < ...
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "setup-disks: run as root (sudo)" >&2; exit 1; }
@@ -35,6 +41,7 @@ MOUNT_OPTS=noatime,errors=remount-ro,nofail,x-systemd.device-timeout=10s
 BIND_OPTS=bind,nofail,x-systemd.before=docker.service
 SWAP_FILE=/swapfile
 SWAP_BYTES=8589934592
+FSTRIM_DROPIN=/etc/systemd/system/fstrim.timer.d/contentops.conf
 
 # lun label size_bytes bytes_per_inode mountpoint
 DISKS=(
@@ -128,11 +135,43 @@ setup_swap() {
   swapon --show
 }
 
-if [[ ${1:-} == swap ]]; then
-  setup_swap
-  echo "setup-disks: swap ok"
-  exit 0
-fi
+setup_fstrim() {
+  local want
+  want=$(cat <<'EOF'
+# ops/vm/setup-disks.sh: trim every night at 04:00 Moscow time, before the host compacts
+# derived.vhdx at 04:30 (ops/winpc/ContentOps-Compact.ps1).
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* 04:00:00 Europe/Moscow
+RandomizedDelaySec=0
+AccuracySec=1min
+EOF
+)
+  if [[ ! -f $FSTRIM_DROPIN || $(<"$FSTRIM_DROPIN") != "$want" ]]; then
+    mkdir -p "${FSTRIM_DROPIN%/*}"
+    printf '%s\n' "$want" >"$FSTRIM_DROPIN"
+    systemctl daemon-reload
+    systemctl restart fstrim.timer
+    echo "fstrim: $FSTRIM_DROPIN written"
+  fi
+  systemctl enable --now --quiet fstrim.timer
+  systemctl list-timers fstrim.timer --no-pager
+}
+
+case ${1:-} in
+  swap)
+    setup_swap
+    echo "setup-disks: swap ok"
+    exit 0
+    ;;
+  fstrim)
+    setup_fstrim
+    echo "setup-disks: fstrim ok"
+    exit 0
+    ;;
+  '') ;;
+  *) die "unknown subcommand: $1 (swap, fstrim or nothing)" ;;
+esac
 
 for d in "${DISKS[@]}"; do
   read -r lun label size ratio mnt <<<"$d"
@@ -163,4 +202,5 @@ for p in /srv/vol/data /srv/vol/derived /srv/content /srv/db /srv/derived /srv/t
 done
 df -h --output=target,size,used,avail /srv/vol/data /srv/vol/derived
 setup_swap
+setup_fstrim
 echo "setup-disks: ok"
