@@ -6,7 +6,8 @@ ops/vm/after-reboot-check.sh. Read-only: nothing is started, stopped or changed.
 
 Checks: last boot and why (System log 1074 / 6008 / 41), inside the night window; Windows
 Update installs and a pending reboot; the VM Running with its heartbeat; the scheduled tasks
-ContentOps-Watchdog and ContentOps-Space and their last results; Tailscale on the PC; the
+ContentOps-Watchdog, ContentOps-Space and ContentOps-Compact (it runs 10 min after the boot)
+and their last results; Tailscale on the PC; the
 Yandex.Disk client NOT running and NOT set to start by itself (Run keys, the update service
 Manual); free space of C: and E:; /healthz through the tailnet as a person reaches it.
 Exit 1 when something FAILs. PowerShell 7 or Windows PowerShell 5.1, ASCII only.
@@ -112,7 +113,7 @@ if ($null -eq $vm) {
 }
 
 # --- Scheduled tasks ------------------------------------------------------------------
-foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space') {
+foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space', 'ContentOps-Compact') {
   $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
   if ($null -eq $task) { Row 'FAIL' 'tasks' $name 'not registered (register-tasks.ps1)'; continue }
   $info = Get-ScheduledTaskInfo -TaskName $name
