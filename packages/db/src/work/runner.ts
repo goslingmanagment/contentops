@@ -58,6 +58,21 @@ export class WorkDeferred extends Error {
   }
 }
 
+/**
+ * The handler found its area off on the way — a budget spent, a consent taken back, a provider
+ * stopped (SPEC §8.3): the work waits with `paused_reason = 'switch_off:<key>'` as after the
+ * gate, its attempt not counted; `resumeSwitch(key)` releases it.
+ */
+export class WorkPaused extends Error {
+  readonly key: string
+
+  constructor(key: string, message = `paused: ${key}`) {
+    super(message)
+    this.name = 'WorkPaused'
+    this.key = key
+  }
+}
+
 /** The runner is stopping; the work goes back to the queue without counting an attempt. */
 export class RunnerStoppedError extends Error {
   constructor() {
@@ -107,7 +122,8 @@ export interface WorkRunnerOptions {
   handlers: Partial<Record<WorkKind, WorkHandler>>
   /**
    * Concurrency per slot of the role (`FETCH_JOBS`, `ENCODE_JOBS`, `COPY_JOBS`,
-   * `IMAGE_JOBS`; `general` for the light kinds of `worker`, `hub` for Hub); default 1 per slot.
+   * `IMAGE_JOBS`; `general` for the light kinds of `worker`, `hub` for Hub, `ai` for the markup
+   * providers); default 1 per slot.
    */
   limits?: Partial<Record<WorkSlot, number>>
   /**
@@ -197,7 +213,16 @@ export class WorkRunner {
       const slot = workKindSlot[kind]
       this.kindsBySlot.set(slot, [...(this.kindsBySlot.get(slot) ?? []), kind])
     }
-    this.limits = { general: 1, fetch: 1, encode: 1, copy: 1, image: 1, hub: 1, ...options.limits }
+    this.limits = {
+      general: 1,
+      fetch: 1,
+      encode: 1,
+      copy: 1,
+      image: 1,
+      hub: 1,
+      ai: 1,
+      ...options.limits,
+    }
     this.dynamicLimits = options.dynamicLimits
   }
 
@@ -343,6 +368,10 @@ export class WorkRunner {
         }
         if (error instanceof WorkDeferred) {
           await this.release(job, 'deferred', undefined, error)
+          return
+        }
+        if (error instanceof WorkPaused) {
+          await this.release(job, 'paused', error.key)
           return
         }
         const failure =

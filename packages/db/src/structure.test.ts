@@ -40,6 +40,9 @@ const OPTIONAL_MODEL_TABLES = [
  * work, people and tokens, and the global technical tables that workers write.
  */
 const NO_JOURNAL = [
+  // Runs and suggestions of the markup: their journal is the receipts of the requests.
+  'annotation_runs',
+  'annotation_suggestions',
   'api_tokens',
   'blob_phashes',
   'blob_probes',
@@ -81,6 +84,25 @@ const FIXED_COLUMNS: Record<string, string[]> = {
   accounts: ['model_id', 'id'],
   aliases: ['model_id', 'id', 'kind', 'value_raw'],
   annotation_fields: ['model_id', 'id', 'field'],
+  annotation_runs: [
+    'model_id',
+    'id',
+    'item_id',
+    'version_id',
+    'stage',
+    'parent_run_id',
+    'attempt',
+    'route_position',
+    'probe',
+    'route',
+    'provider',
+    'model_name',
+    'prompt_version',
+    'input_sha256',
+    'config_digest',
+    'billing_scope',
+  ],
+  annotation_suggestions: ['model_id', 'id', 'run_id', 'field', 'value', 'refusal_reason'],
   assets: [
     'model_id',
     'id',

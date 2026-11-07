@@ -218,6 +218,7 @@ CREATE TABLE public.chronology_entries (
     tsv tsvector GENERATED ALWAYS AS (to_tsvector('russian'::regconfig, text)) STORED,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by uuid,
+    run_id uuid,
     CONSTRAINT chronology_entries_at_ms_check CHECK ((at_ms >= 0)),
     CONSTRAINT chronology_entries_source_check CHECK ((source = ANY (ARRAY['ai'::text, 'human'::text, 'import'::text]))),
     CONSTRAINT chronology_entries_span CHECK (((end_ms IS NULL) OR (end_ms > at_ms)))
@@ -988,6 +989,7 @@ CREATE TABLE public.annotation_fields (
     confirmed_by uuid,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_by uuid,
+    suggested_by_run_id uuid,
     CONSTRAINT annotation_fields_confirmed CHECK ((((confirmed_at IS NULL) = (confirmed_value_version IS NULL)) AND ((confirmed_value_version IS NULL) OR (confirmed_value_version <= value_version)))),
     CONSTRAINT annotation_fields_field_check CHECK ((field = ANY (ARRAY['title'::text, 'title_en'::text, 'description'::text, 'tags'::text, 'chronology'::text, 'purpose'::text, 'second_person'::text]))),
     CONSTRAINT annotation_fields_one_target CHECK ((num_nonnulls(item_id, version_id, group_id, draft_id) = 1)),
@@ -995,6 +997,83 @@ CREATE TABLE public.annotation_fields (
 );
 
 ALTER TABLE public.annotation_fields OWNER TO contentops_migrate;
+
+CREATE TABLE public.annotation_runs (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    item_id uuid NOT NULL,
+    version_id uuid,
+    stage text NOT NULL,
+    parent_run_id uuid,
+    attempt smallint DEFAULT 1 NOT NULL,
+    route_position smallint DEFAULT 0 NOT NULL,
+    probe boolean DEFAULT false NOT NULL,
+    route text NOT NULL,
+    provider text NOT NULL,
+    model_name text NOT NULL,
+    prompt_version text NOT NULL,
+    input_sha256 bytea NOT NULL,
+    config_digest text NOT NULL,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    frames_count integer DEFAULT 0 NOT NULL,
+    withheld_count integer DEFAULT 0 NOT NULL,
+    billing_scope text NOT NULL,
+    state text DEFAULT 'running'::text NOT NULL,
+    reserved_usd numeric(12,6),
+    cost_usd numeric(12,6),
+    tokens jsonb,
+    request_sha256 bytea,
+    request_bytes integer,
+    provider_request_id text,
+    sent_at timestamp with time zone,
+    outcome_unknown boolean DEFAULT false NOT NULL,
+    error_code text,
+    refusal_reason text,
+    error text,
+    raw_response jsonb,
+    work_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT annotation_runs_attempt_check CHECK ((attempt >= 1)),
+    CONSTRAINT annotation_runs_cost_usd_check CHECK ((cost_usd >= (0)::numeric)),
+    CONSTRAINT annotation_runs_finished CHECK (((state = ANY (ARRAY['succeeded'::text, 'partial'::text, 'refused'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text])) = (finished_at IS NOT NULL))),
+    CONSTRAINT annotation_runs_frames_count_check CHECK ((frames_count >= 0)),
+    CONSTRAINT annotation_runs_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
+    CONSTRAINT annotation_runs_params_object CHECK ((jsonb_typeof(params) = 'object'::text)),
+    CONSTRAINT annotation_runs_provider_check CHECK ((provider = ANY (ARRAY['openai'::text, 'anthropic'::text]))),
+    CONSTRAINT annotation_runs_refused CHECK (((state = 'refused'::text) = (refusal_reason IS NOT NULL))),
+    CONSTRAINT annotation_runs_request CHECK (((request_sha256 IS NULL) = (request_bytes IS NULL))),
+    CONSTRAINT annotation_runs_request_bytes_check CHECK ((request_bytes >= 0)),
+    CONSTRAINT annotation_runs_request_sha256_check CHECK ((octet_length(request_sha256) = 32)),
+    CONSTRAINT annotation_runs_reserved CHECK (((state <> 'running'::text) OR (reserved_usd IS NOT NULL))),
+    CONSTRAINT annotation_runs_reserved_usd_check CHECK ((reserved_usd >= (0)::numeric)),
+    CONSTRAINT annotation_runs_route_position_check CHECK (((route_position >= 0) AND (route_position <= 1))),
+    CONSTRAINT annotation_runs_sent CHECK (((sent_at IS NOT NULL) OR ((cost_usd IS NULL) AND (provider_request_id IS NULL) AND (request_sha256 IS NULL) AND (NOT outcome_unknown)))),
+    CONSTRAINT annotation_runs_stage_check CHECK ((stage = ANY (ARRAY['observe'::text, 'aggregate'::text, 'texts'::text]))),
+    CONSTRAINT annotation_runs_state_check CHECK ((state = ANY (ARRAY['queued'::text, 'running'::text, 'succeeded'::text, 'partial'::text, 'refused'::text, 'failed'::text, 'cancelled'::text, 'blocked'::text]))),
+    CONSTRAINT annotation_runs_unknown CHECK (((NOT outcome_unknown) OR (state = 'failed'::text))),
+    CONSTRAINT annotation_runs_withheld_count_check CHECK ((withheld_count >= 0))
+);
+
+ALTER TABLE public.annotation_runs OWNER TO contentops_migrate;
+
+CREATE TABLE public.annotation_suggestions (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    run_id uuid NOT NULL,
+    field text NOT NULL,
+    value jsonb,
+    refusal_reason text,
+    applied_at timestamp with time zone,
+    applied_value_version bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT annotation_suggestions_applied CHECK ((((applied_at IS NULL) = (applied_value_version IS NULL)) AND ((applied_at IS NULL) OR (value IS NOT NULL)))),
+    CONSTRAINT annotation_suggestions_field_check CHECK ((field = ANY (ARRAY['observations'::text, 'facts'::text, 'title'::text, 'title_en'::text, 'description'::text, 'tags'::text, 'chronology'::text, 'purpose'::text, 'second_person'::text, 'platform_texts'::text]))),
+    CONSTRAINT annotation_suggestions_outcome CHECK (((value IS NULL) <> (refusal_reason IS NULL))),
+    CONSTRAINT annotation_suggestions_value_not_json_null CHECK (((value IS NULL) OR (jsonb_typeof(value) <> 'null'::text)))
+);
+
+ALTER TABLE public.annotation_suggestions OWNER TO contentops_migrate;
 
 CREATE TABLE public.api_tokens (
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -2011,6 +2090,7 @@ CREATE TABLE public.platform_texts (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_by uuid,
+    run_id uuid,
     CONSTRAINT platform_texts_account CHECK (((account_id IS NULL) OR (platform <> 'generic'::text))),
     CONSTRAINT platform_texts_confirmed CHECK ((((confirmed_at IS NULL) = (confirmed_value_version IS NULL)) AND ((confirmed_value_version IS NULL) OR (confirmed_value_version <= value_version)))),
     CONSTRAINT platform_texts_locale_format CHECK ((locale ~ '^[a-z]{2}$'::text)),
@@ -2423,6 +2503,18 @@ ALTER TABLE ONLY public.annotation_fields
 
 ALTER TABLE ONLY public.annotation_fields
     ADD CONSTRAINT annotation_fields_target UNIQUE NULLS NOT DISTINCT (model_id, item_id, version_id, group_id, draft_id, field);
+
+ALTER TABLE ONLY public.annotation_runs
+    ADD CONSTRAINT annotation_runs_input UNIQUE (model_id, item_id, input_sha256, config_digest, attempt);
+
+ALTER TABLE ONLY public.annotation_runs
+    ADD CONSTRAINT annotation_runs_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.annotation_suggestions
+    ADD CONSTRAINT annotation_suggestions_field UNIQUE (model_id, run_id, field);
+
+ALTER TABLE ONLY public.annotation_suggestions
+    ADD CONSTRAINT annotation_suggestions_pkey PRIMARY KEY (model_id, id);
 
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (id);
@@ -2844,6 +2936,12 @@ CREATE INDEX aliases_value_trgm ON public.aliases USING gin (value_norm public.g
 
 CREATE INDEX annotation_fields_version ON public.annotation_fields USING btree (model_id, version_id) WHERE (version_id IS NOT NULL);
 
+CREATE INDEX annotation_runs_created ON public.annotation_runs USING btree (created_at);
+
+CREATE INDEX annotation_runs_item ON public.annotation_runs USING btree (model_id, item_id, stage, created_at DESC);
+
+CREATE INDEX annotation_runs_provider ON public.annotation_runs USING btree (provider, finished_at);
+
 CREATE INDEX asset_manifest_entries_version ON public.asset_manifest_entries USING btree (model_id, asset_version_id);
 
 CREATE INDEX asset_versions_master ON public.asset_versions USING btree (master_sha256);
@@ -3047,6 +3145,10 @@ CREATE TRIGGER aliases_journal AFTER INSERT OR DELETE OR UPDATE ON public.aliase
 CREATE TRIGGER annotation_fields_fixed BEFORE UPDATE ON public.annotation_fields FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'field');
 
 CREATE TRIGGER annotation_fields_journal AFTER INSERT OR DELETE OR UPDATE ON public.annotation_fields FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
+CREATE TRIGGER annotation_runs_fixed BEFORE UPDATE ON public.annotation_runs FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'item_id', 'version_id', 'stage', 'parent_run_id', 'attempt', 'route_position', 'probe', 'route', 'provider', 'model_name', 'prompt_version', 'input_sha256', 'config_digest', 'billing_scope');
+
+CREATE TRIGGER annotation_suggestions_fixed BEFORE UPDATE ON public.annotation_suggestions FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'run_id', 'field', 'value', 'refusal_reason');
 
 CREATE TRIGGER asset_manifest_entries_append_only BEFORE DELETE OR UPDATE ON public.asset_manifest_entries FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
@@ -3305,7 +3407,25 @@ ALTER TABLE ONLY public.annotation_fields
     ADD CONSTRAINT annotation_fields_model_id_version_id_fkey FOREIGN KEY (model_id, version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.annotation_fields
+    ADD CONSTRAINT annotation_fields_suggested_by_run_id_fkey FOREIGN KEY (model_id, suggested_by_run_id) REFERENCES public.annotation_runs(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_fields
     ADD CONSTRAINT annotation_fields_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_runs
+    ADD CONSTRAINT annotation_runs_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_runs
+    ADD CONSTRAINT annotation_runs_model_id_parent_run_id_fkey FOREIGN KEY (model_id, parent_run_id) REFERENCES public.annotation_runs(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_runs
+    ADD CONSTRAINT annotation_runs_model_id_version_id_fkey FOREIGN KEY (model_id, version_id) REFERENCES public.asset_versions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_runs
+    ADD CONSTRAINT annotation_runs_model_id_work_id_fkey FOREIGN KEY (model_id, work_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.annotation_suggestions
+    ADD CONSTRAINT annotation_suggestions_model_id_run_id_fkey FOREIGN KEY (model_id, run_id) REFERENCES public.annotation_runs(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.api_tokens
     ADD CONSTRAINT api_tokens_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
@@ -3363,6 +3483,9 @@ ALTER TABLE ONLY public.chronology_entries
 
 ALTER TABLE ONLY public.chronology_entries
     ADD CONSTRAINT chronology_entries_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.chronology_entries
+    ADD CONSTRAINT chronology_entries_run_id_fkey FOREIGN KEY (model_id, run_id) REFERENCES public.annotation_runs(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.content_items
     ADD CONSTRAINT content_items_cover_fkey FOREIGN KEY (model_id, id, cover_membership_id) REFERENCES public.item_memberships(model_id, item_id, id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
@@ -3731,6 +3854,9 @@ ALTER TABLE ONLY public.platform_texts
     ADD CONSTRAINT platform_texts_model_id_item_id_fkey FOREIGN KEY (model_id, item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.platform_texts
+    ADD CONSTRAINT platform_texts_run_id_fkey FOREIGN KEY (model_id, run_id) REFERENCES public.annotation_runs(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.platform_texts
     ADD CONSTRAINT platform_texts_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.policy_settings
@@ -3990,6 +4116,10 @@ GRANT SELECT,INSERT ON TABLE public.action_log TO contentops_app;
 GRANT SELECT,USAGE ON SEQUENCE public.action_log_id_seq TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.annotation_fields TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.annotation_runs TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.annotation_suggestions TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.api_tokens TO contentops_app;
 

@@ -8,6 +8,7 @@ export {
   WorkError,
   type WorkGate,
   type WorkHandler,
+  WorkPaused,
   WorkRunner,
   type WorkRunnerOptions,
   type WorkSuccess,

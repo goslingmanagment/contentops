@@ -387,6 +387,35 @@ export const FACTORIES: Record<string, Factory> = {
       [column]: await idOf(client, targets[column] ?? '', modelId),
     }
   },
+  annotation_runs: async (client, modelId, testing = []) => ({
+    model_id: modelId,
+    item_id: await idOf(client, 'content_items', modelId),
+    ...(testing.includes('version_id')
+      ? { version_id: await idOf(client, 'asset_versions', modelId) }
+      : {}),
+    ...(testing.includes('parent_run_id')
+      ? { parent_run_id: await idOf(client, 'annotation_runs', modelId) }
+      : {}),
+    ...(testing.includes('work_id')
+      ? { work_id: await idOf(client, 'work_operations', modelId) }
+      : {}),
+    stage: 'observe',
+    route: 'probe',
+    provider: 'openai',
+    model_name: 'test-model',
+    prompt_version: 'observe-test',
+    input_sha256: randomBytes(32),
+    config_digest: tag(),
+    billing_scope: 'openai',
+    state: 'blocked',
+    finished_at: new Date(),
+  }),
+  annotation_suggestions: async (client, modelId) => ({
+    model_id: modelId,
+    run_id: await idOf(client, 'annotation_runs', modelId),
+    field: 'tags',
+    value: ['lace'],
+  }),
   inbox_draft_candidates: async (client, modelId, testing = []) => {
     const row: Row = {
       model_id: modelId,

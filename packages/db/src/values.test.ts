@@ -128,6 +128,12 @@ const LISTS: Record<string, readonly string[]> = {
   hub_sync_state_dataset_check: v.hubStateDatasets,
   // 0009_publications
   posting_plan_rows_hub_kind_check: v.publicationKinds,
+  // 0017_annotation
+  annotation_runs_stage_check: v.annotationStages,
+  annotation_runs_provider_check: v.annotationProviders,
+  annotation_runs_state_check: v.annotationRunStates,
+  annotation_runs_finished: v.finishedAnnotationRunStates,
+  annotation_suggestions_field_check: v.suggestionFields,
 }
 
 let pool: pg.Pool

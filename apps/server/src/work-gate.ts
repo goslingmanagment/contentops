@@ -31,7 +31,7 @@ async function sourceKindOf(work: WorkRow, db: Db): Promise<values.CloudSourceKi
 
 /**
  * Checked by the executor before every attempt (SPEC §8): the kill switch of the kind's
- * area (Hub, the scan of a source) and the owner's «Пауза» of its queue. A work held here
+ * area (Hub, the scan of a source, the cloud markup) and the owner's «Пауза» of its queue. A work held here
  * waits with `paused_reason = 'switch_off:<key>'` and its attempt is not counted; turning
  * the switch back on releases it (`resumeSwitch`).
  */
@@ -46,6 +46,13 @@ export function createWorkGate(): WorkGate {
       if (!kind) return null
       const key = values.sourceScanSwitch[kind]
       return (await isSwitchOn(db, key, scope)) ? null : key
+    }
+    // The markup by routes waits for its model's switch; the owner's measurement does not
+    // (SPEC §8.3: its consent and budget are checked by the run).
+    if (work.kind === 'annotate' && work.dataset !== 'probe') {
+      return (await isSwitchOn(db, 'annotation.enabled', { modelId: work.modelId }))
+        ? null
+        : 'annotation.enabled'
     }
     const key = values.workKindSwitch[work.kind]
     if (key && !(await isSwitchOn(db, key, scope))) return key
