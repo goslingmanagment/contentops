@@ -67,6 +67,8 @@ export interface RequestContext {
   setHeader(name: string, value: string | string[]): void
   /** Remote address as Fastify sees it behind the trusted proxy. */
   ip: string
+  /** The browser came over HTTPS: TLS of its own or `X-Forwarded-Proto` of a trusted proxy. */
+  https: boolean
   userAgent: string | null
   log: FastifyBaseLogger
 }
@@ -151,6 +153,7 @@ export async function createRequestContext(
       reply.header(name, value)
     },
     ip: request.ip,
+    https: request.protocol === 'https',
     userAgent: single(headers['user-agent']) ?? null,
     log: request.log,
   }

@@ -43,6 +43,29 @@ describe('sign-in and sessions', () => {
     expect(rows.slice(before)).toEqual([{ result: 'denied', actor_type: 'system' }])
   })
 
+  it('five wrong passwords close the login: 429 with Retry-After, the right one waits too', async () => {
+    const seva = await addPerson(server.app, owner, {
+      name: 'Сева',
+      login: 'seva',
+      role: 'manager',
+      models: ['lora'],
+    })
+    const attempt = (password: string) =>
+      call(server.app, {
+        method: 'POST',
+        url: '/api/v1/auth/sign-in',
+        body: { login: 'seva', password },
+      })
+    for (let i = 0; i < 4; i++) expect((await attempt('wrong-password')).statusCode).toBe(401)
+    const closing = await attempt('wrong-password')
+    expect(closing.statusCode).toBe(429)
+    expect(closing.json().message).toBe('Много неверных попыток: вход закрыт на 1 мин')
+    expect(closing.headers['retry-after']).toBe('60')
+    const right = await attempt(seva.password)
+    expect(right.statusCode).toBe(429)
+    expect(right.headers['set-cookie']).toBeUndefined()
+  })
+
   it('gives an HttpOnly SameSite cookie, stores only its hash for 30 days', async () => {
     const response = await call(server.app, {
       method: 'POST',

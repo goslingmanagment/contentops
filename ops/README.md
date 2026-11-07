@@ -140,6 +140,33 @@
   <адрес> to 10.66.66.1 port 8088 proto tcp comment contentops`.
 - Скорость скачивания упирается в исходящий канал домашнего интернета, около 4 МиБ/с.
 
+## Вход из интернета — `https://contentops.gosling-agency.ru`
+
+Без VPN и Tailscale (слово владельца 07.11.2026 «без впн надо»). Caddy на сервере VPN
+(`194.58.37.39`, порты 80 и 443 у него уже свои) принимает HTTPS и ведёт в тот же обратный
+туннель, что и VPN (`10.66.66.1:8088`); сертификат Let's Encrypt Caddy получает и продлевает
+сам.
+
+- DNS: запись A `contentops` → `194.58.37.39` в зоне `gosling-agency.ru` (reg.ru, ставит
+  владелец). Блок в Caddy ставится, когда имя уже указывает на сервер: иначе Let's Encrypt
+  копит неудачные проверки.
+- Адрес открывается только с защитой входа (SPEC §11.1, `v0.3.23` и новее). Блок в
+  `/etc/caddy/Caddyfile` сервера VPN, затем `systemctl reload caddy`:
+
+  ```
+  contentops.gosling-agency.ru {
+  	reverse_proxy 10.66.66.1:8088
+  	header Strict-Transport-Security "max-age=31536000"
+  }
+  ```
+
+  Caddy сам ставит `X-Forwarded-For` (адрес браузера) и `X-Forwarded-Proto: https`; nginx
+  стека передаёт их `web` (`TRUSTED_PROXY` — подсеть стека): защита входа считает адрес
+  браузера, cookie сессии получает `Secure`. На адресах tailnet и VPN — обычный HTTP, cookie
+  там без `Secure`, и оба входа работают как раньше.
+- Проверка: `curl -fsS https://contentops.gosling-agency.ru/healthz`. Закрыть адрес — убрать
+  блок и `systemctl reload caddy`.
+
 ## Стек и выкатка
 
 - Стек — один Compose (SPEC §12.1): `db` (PostgreSQL 18.6), одноразовый `migrate`, `web`,
