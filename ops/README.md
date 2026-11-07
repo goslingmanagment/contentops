@@ -385,9 +385,12 @@
 - Fast Startup выключен: гибернации нет (`powercfg /a`), `HiberbootEnabled` = 0 (было 1,
   исправлено 30.10). BIOS `Restore on AC power loss = Power On` удалённо не проверить —
   смотрит владелец на самом ПК.
-- Память ВМ статическая: 12 GB сейчас (`ENCODE_JOBS=1`); перед первым настоящим
-  кодированием — 22 GB и `ENCODE_JOBS=2`: `Stop-VM contentops; Set-VMMemory contentops
-  -StartupBytes 22GB; Start-VM contentops` (у Windows останется ≈ 1.6 GB). Динамическая
+- Память ВМ статическая. С 08.11.2026 — 8 GB и `ENCODE_JOBS=1` (слово владельца: импорт
+  Лоры стоит, Ари хватает одного кодера, ≈ 7 GB); перед импортом Лоры — 22 GB и
+  `ENCODE_JOBS=2` (у Windows останется ≈ 1.6 GB). Смена: `ENCODE_JOBS` в `.env`; на winpc —
+  скриптом-файлом (`powershell -File`; через stdin блок `try` не исполняется): выключить
+  сторожа, `Stop-VM contentops; Set-VMMemory contentops -StartupBytes 22GB; Start-VM
+  contentops`, включить сторожа; после загрузки — `ops/up.sh`. Динамическая
   память не годится: добавляет ≈ 1 GB за 10+ с, рывок кодера убивает OOM (проверено 29.10).
 - Swap в ВМ — `/swapfile` 8 GiB на системном диске (SPEC §12.2): рывок памяти замедляет
   кодер, а не убивает его. Ставит `ops/vm/setup-disks.sh` (строка в `/etc/fstab`, переживает
