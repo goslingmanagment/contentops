@@ -138,6 +138,12 @@ const EnvSchema = z.object({
   HUB_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  /**
+   * Addresses of the markup providers when not their own (`https://api.openai.com/v1`, the
+   * Anthropic SDK's default): the fake providers of `DEV_FAKE_AI=1 pnpm dev:server`.
+   */
+  OPENAI_BASE_URL: z.url().optional(),
+  ANTHROPIC_BASE_URL: z.url().optional(),
 })
 
 export type Config = z.output<typeof EnvSchema>
