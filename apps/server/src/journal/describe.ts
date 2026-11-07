@@ -583,6 +583,7 @@ const SYSTEM_NAME: Record<string, { name: string; gender: Gender }> = {
   импорт: { name: 'Импорт', gender: 'm' },
   hub: { name: 'Hub', gender: 'm' },
   ops: { name: 'Консоль ВМ', gender: 'f' },
+  annotation: { name: 'Разметка ИИ', gender: 'f' },
   'smoke-setup': { name: 'Консоль ВМ', gender: 'f' },
   bootstrap: { name: 'Начальная настройка', gender: 'f' },
   seed: { name: 'Фикстуры', gender: 'm' },
@@ -648,8 +649,37 @@ function workPhrase(row: LogRow, after: Map<string, string>): string {
     .join(' · ')
 }
 
+/** Outcomes of a request to a markup provider, as its receipt says them (DESIGN §4.20). */
+const REQUEST_OUTCOME: Record<string, string> = {
+  answered: 'ответ получен',
+  partial: 'ответ получен не по всем полям',
+  refused: 'отказано',
+  auth_rejected: 'ключ не принят',
+  rate_limited: 'лимит запросов, повтор позже',
+  transient: 'сервис недоступен, повтор позже',
+  bad_request: 'запрос не принят',
+  bad_response: 'ответ не разобран',
+  unknown: 'исход неизвестен',
+}
+
+/** «Запрос к ИИ: PPV-073 · кадры · openai gpt-x · отказано · $0.0412». */
+function receiptPhrase(row: LogRow, after: Map<string, string>): string {
+  const cost = after.has('cost_usd') ? Number(after.get('cost_usd')) : Number.NaN
+  const outcome = after.get('outcome') ?? ''
+  return [
+    `Запрос к ИИ: ${row.subject_label}`,
+    REQUEST_OUTCOME[outcome] ?? outcome,
+    Number.isFinite(cost) ? `$${cost.toFixed(4)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
 /** System events that speak for themselves, without an actor in front (DESIGN §4.18). */
 const SYSTEM_PHRASE: Record<string, (row: LogRow, after: Map<string, string>) => string> = {
+  'annotation.request': receiptPhrase,
+  'annotation.held': (row, after) =>
+    `Разметка не отправлена: ${row.subject_label} · ${after.get('reason') ?? 'по настройкам'}`,
   'hub.ads_hidden': (row, after) =>
     `Скрыто как реклама: ${after.get('скрыто как реклама') ?? '?'} ${plural(Number(after.get('скрыто как реклама') ?? 0), ['пост', 'поста', 'постов'])} · ${row.subject_label}${after.get('день') ? ` за ${after.get('день')}` : ''}`,
   'source.loss': (row) => `Пропал с источника: ${row.subject_label}`,

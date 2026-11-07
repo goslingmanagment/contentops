@@ -110,9 +110,10 @@ export const globalWorkKinds = ['verify_blobs', 'backup'] as const satisfies rea
  * `fetch` — `FETCH_JOBS`, `encode` — `ENCODE_JOBS`, `copy` — `COPY_JOBS` (what the
  * manager waits for, next to the encoders), `image` — `IMAGE_JOBS`; `general` — the
  * light kinds of `worker`; `hub` — the calls to Agency Hub, one at a time: a slow or absent
- * Hub never holds intake and exports (SPEC §8, PLAN 5 «недоступность одной внешней системы»).
+ * Hub never holds intake and exports (SPEC §8, PLAN 5 «недоступность одной внешней системы»);
+ * `ai` — the requests to the markup providers, one at a time, for the same reason.
  */
-export const workSlots = ['general', 'fetch', 'encode', 'copy', 'image', 'hub'] as const
+export const workSlots = ['general', 'fetch', 'encode', 'copy', 'image', 'hub', 'ai'] as const
 export type WorkSlot = (typeof workSlots)[number]
 
 export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
@@ -127,7 +128,7 @@ export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
   hub_sync: 'hub',
   hub_history: 'hub',
   hub_publish: 'hub',
-  annotate: 'general',
+  annotate: 'ai',
   verify_blobs: 'general',
   backup: 'general',
   derive_video: 'encode',
@@ -495,6 +496,54 @@ export type MarkupState = (typeof markupStates)[number]
 /** `generic` — a text for any page; a page variant names its platform and account. */
 export const textPlatforms = ['generic', 'fansly', 'onlyfans'] as const
 export type TextPlatform = (typeof textPlatforms)[number]
+
+// ---------------------------------------------------------------------------
+// Cloud markup (SPEC §8.3, §12.0; schema §9.5, §9.8; `0017_annotation`)
+// ---------------------------------------------------------------------------
+
+/** Closed: the adapters there are. A candidate of the measurement comes with its adapter. */
+export const annotationProviders = ['openai', 'anthropic'] as const
+export type AnnotationProvider = (typeof annotationProviders)[number]
+
+/** Facts by frames → the fields from the facts → the selling texts from the cleaned summary. */
+export const annotationStages = ['observe', 'aggregate', 'texts'] as const
+export type AnnotationStage = (typeof annotationStages)[number]
+
+export const annotationRunStates = [
+  'queued',
+  'running',
+  'succeeded',
+  'partial',
+  'refused',
+  'failed',
+  'cancelled',
+  'blocked',
+] as const
+export type AnnotationRunState = (typeof annotationRunStates)[number]
+
+export const finishedAnnotationRunStates = [
+  'succeeded',
+  'partial',
+  'refused',
+  'failed',
+  'cancelled',
+  'blocked',
+] as const
+
+/** What a run suggests: the fields, and the inputs of the next stages (`observations`, `facts`). */
+export const suggestionFields = [
+  'observations',
+  'facts',
+  'title',
+  'title_en',
+  'description',
+  'tags',
+  'chronology',
+  'purpose',
+  'second_person',
+  'platform_texts',
+] as const
+export type SuggestionField = (typeof suggestionFields)[number]
 
 // ---------------------------------------------------------------------------
 // Intake (schema §3.4, §9.2, §9.7; SPEC §5, §6.1)

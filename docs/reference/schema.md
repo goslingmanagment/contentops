@@ -355,20 +355,28 @@ chronology | purpose | second_person`; `value_version bigint`
 Статусы группы и черновика при принятии переносятся на объект и версию (UPDATE цели),
 чтобы название сета, набранное до сжатия сорока фото, не потеряло подтверждения.
 
-**`annotation_runs`** — прогон разметки (§8.3, §12.0). `id`, `model_id`,
-`target_kind`, `target_id`, `input_kind` (`source | version`), `input_sha256`,
-`provider`, `model_name`, `prompt_version`, `params jsonb`, `config_digest`,
-`frames_count`, `work_id`, `state`, `cost_usd`, `tokens jsonb`, `raw_response jsonb`,
-`refusal_reason`, `error`, `started_at`, `finished_at`.
-UNIQUE `(model_id, target_kind, target_id, input_sha256, config_digest)`.
-До готовности мастера вход — проверенный source; после принятия результат
-привязывается к версии, а прогон не переписывается так, будто ИИ видел мастер.
+**`annotation_runs`** — запрос разметки (§8.3, §12.0): один запрос к одному поставщику об
+одном объекте на одной стадии. `id`, `model_id`, `item_id`, `version_id?` (версия мастера,
+чьи кадры видел запрос; пусто у фото нескольких файлов), `stage`, `parent_run_id?` (чей ответ
+был входом), `attempt`, `route_position` (0 — поставщик маршрута, 1 — запасной), `probe`
+(замер: предложения только сравниваются), `route` (`PPV.observe` или `probe`), `provider`,
+`model_name`, `prompt_version`, `input_sha256`, `config_digest`, `params jsonb` (ссылки на
+отправленные кадры, спрошенные поля и их увиденные версии), `frames_count`, `withheld_count`,
+`billing_scope`, `state`, `reserved_usd`, `cost_usd`, `tokens jsonb`, `request_sha256`,
+`request_bytes`, `provider_request_id`, `sent_at`, `outcome_unknown`, `error_code`,
+`refusal_reason`, `error`, `raw_response jsonb`, `work_id?`, `created_at`, `finished_at`.
+UNIQUE `(model_id, item_id, input_sha256, config_digest, attempt)`: новая попытка — новая строка
+и только после сбоя без ответа поставщика (429, 5xx, сеть); после отказа и неизвестного исхода
+того же входа тому же поставщику больше нет. Вход — версия объекта; разметка черновиков приёмки
+до мастера (вход — проверенный source) добавляется в 8б.
 
-**`annotation_suggestions`** — предложение по полю: `id`, `model_id`, `run_id`,
-`field`, `value jsonb`, `applied_at?`, `applied_value_version?`, `rejected_at?`.
-UNIQUE `(model_id, run_id, field)`. Применение — `UPDATE annotation_fields … WHERE
-confirmed_value_version IS DISTINCT FROM value_version` (поле ещё черновик):
-запоздалый ответ ИИ физически не может затереть подтверждённое.
+**`annotation_suggestions`** — предложение запуска по полю или причина, по которой его нет:
+`id`, `model_id`, `run_id`, `field` (поля разметки, `platform_texts`, а также `observations` и
+`facts` — входы следующих стадий, в поля не попадают), `value jsonb?`, `refusal_reason?`
+(ровно одно из двух), `applied_at?`, `applied_value_version?`. UNIQUE `(model_id, run_id,
+field)`. Применение — `UPDATE annotation_fields … WHERE value_version = <увиденная> AND
+confirmed_value_version IS DISTINCT FROM value_version` (поле ещё черновик той версии, что
+видел запуск): запоздалый ответ ИИ физически не может затереть подтверждённое.
 
 **`chronology_entries`** — хронология по минутам (§8.3, PRD §5). `id`, `model_id`,
 `item_id`, `asset_version_id`, `at_ms`, `end_ms?`, `text`, `source`, `run_id?`,
@@ -1698,7 +1706,7 @@ LLM.
 | после 3 (03.11.2026) | `0012_inbox_reads` | таблиц нет: индекс последней работы забора ревизии для «Приехало» (SPEC §12.0); номера поздних файлов ниже сдвигаются |
 | после 3 (03.11.2026) | `0013_inbox_promo` | таблиц нет: канал и подборка промо-группы «Приехало» (`inbox_groups.proposed_channel_id`, `proposed_collection_id`) |
 | после 3 (05.11.2026) | `0016_video_prints` | `video_prints` (1): отпечатки роликов; кандидат `similar_video`, ◆ `video_copy`, работа `video_print` (SPEC §6.2) |
-| 8 (8а) | `0010_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
+| 8 (8а, 07.11.2026) | `0017_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
 Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего
@@ -1706,7 +1714,7 @@ LLM.
 `chronology_entries` и `platform_texts` обслуживают импорт и ручной ввод; сведения
 об источнике и авторе, версии и подтверждения сохраняются сразу.
 `annotation_fields.suggested_by_run_id`, `chronology_entries.run_id` и
-`platform_texts.run_id` вместе с FK добавляет только `0010_annotation`; ранние
+`platform_texts.run_id` вместе с FK добавляет только `0017_annotation`; ранние
 миграции и прикладной код не ссылаются на отсутствующие таблицы ИИ. Поздняя миграция
 оставляет эти ссылки пустыми у прежних записей, не меняет значения, версии,
 подтверждения и происхождение и проверяется на заполненном каталоге этапа 7.
@@ -1871,25 +1879,40 @@ Testcontainers одноразовые, стенд — `docker compose down -v`; 
 Подключение, замеры и таблицы запусков и предложений перенесены на этап 8 PLAN
 решением владельца 12.09.2026; ранние поля и миграции — схема §9.5.
 
-- **`annotation_runs`**: `stage` (`observe | aggregate | texts`), `state` (`queued |
-  running | succeeded | partial | refused | failed | cancelled | blocked`),
-  `parent_run_id?`, `route_position`, `consent_setting_id?`, `billing_scope`,
-  `frame_manifest_digest`, `withheld_count`, `probe`, резерв и фактическая стоимость,
+- **`annotation_runs`** (как сделано в `0017_annotation`, 07.11.2026): `stage` (`observe |
+  aggregate | texts`), `state` (`queued | running | succeeded | partial | refused | failed |
+  cancelled | blocked`), `parent_run_id?`, `attempt`, `route_position`, `probe`, `route`,
+  `billing_scope`, `withheld_count`, резерв и фактическая стоимость, хэш и размер отправленного,
   ID запроса поставщика, отметка отправки, флаг «исход неизвестен». UNIQUE по цели,
-  `input_sha256` (байты медиа — происхождение) и `config_digest`, куда входят стадия,
-  очищенные входы стадии и версии зависимых запусков (наблюдения, описание КМ),
-  поставщик и модель, промпт и схема, манифест кадров и окна: изменённое описание или
-  окно — новый запуск, старые предложения и отказы не переиспользуются. `raw_response`
-  — очищенный диагностический конверт, не эхо входа.
-- **`annotation_suggestions`, `annotation_fields`, `chronology_entries`,
-  `platform_texts`** — без изменений: применение только к неподтверждённому полю с
-  проверкой версии; два ряда текстов `en/1`, `en/2` со своими версиями; хронология
-  только с реальными минутами.
-- **`work_operations`** вид `annotate`: чекпойнты по окнам, отказ завершает работу,
-  а не крутится в `retry_wait`.
-- **`policy_settings`** ключи: `annotation.enabled`, `annotation.route.<тип>.<стадия>`,
-  `annotation.external.<поставщик>` (согласие: кто, когда, типы, стадии, кадры, режим
-  приватности), бюджеты, лимиты, параллельность, размыкатель; новые маршруты выключены.
+  `input_sha256` (байты медиа — происхождение), `config_digest` и попытке. В `config_digest`
+  входят стадия, поставщик и модель, усилие, промпт и схема ответа, маршрут, замер или нет,
+  очищенные входы стадии, отправленные кадры по ID артефактов и зависимый запуск
+  (наблюдения, описание КМ): изменённое описание или кадры — новый запуск, старые предложения и
+  отказы не переиспользуются. Отдельных `consent_setting_id` и `frame_manifest_digest` нет:
+  манифест кадров входит в `config_digest`, ссылки на кадры лежат в `params`, согласие
+  проверяется перед каждым запросом.
+  `raw_response` — очищенный диагностический конверт (статус, причина остановки, модель), не
+  эхо входа.
+- **`annotation_suggestions`** — значение или причина отказа (ровно одно), `applied_at` и
+  `applied_value_version`; отклонения предложения отдельной отметкой нет: КМ правит или
+  очищает поле, правка подтверждает его. **`annotation_fields`**, **`chronology_entries`**,
+  **`platform_texts`** — плюс ссылка на запуск: применение только к неподтверждённому полю с
+  проверкой версии; два ряда текстов `en/1`, `en/2` со своими версиями; хронология только с
+  реальными минутами — отрезок начинается на отправленном кадре, его время берётся из кадра.
+- **`work_operations`** вид `annotate` (роль `worker`, свой слот `ai`, по одной работе): стадии
+  объекта по порядку, каждая — один запрос; до 48 кадров объекта поровну по длительности (у
+  маршрута — `frames`), окон нет. Отказ завершает стадию, а не крутится в `retry_wait`; то, что
+  выключено (маршрут, согласие, бюджет, лимит, ключ, остановка поставщика), ставит работу на
+  паузу `switch_off:<ключ>` до включения.
+- **`policy_settings`** ключи (только глобальные, кроме выключателя и маршрутов; значения
+  проверяются схемой, неверное значение — «не задано»): `annotation.enabled` и
+  `annotation.texts` — выключатели (модель или всё); `annotation.route.<ТИП>.<стадия>` —
+  поставщик и не больше одного запасного, спрошенные поля, кадры, потолок маршрута;
+  `annotation.external.<поставщик>` — согласие (кто, когда, типы, стадии, кадры, режим
+  хранения, цены моделей); `annotation.budget` — сумма и начало окна; `annotation.limit.<поставщик>`
+  — доля поставщика в окне; `annotation.resumed.<поставщик>` — «Включить» после остановки.
+  Размыкатель (доля отказов ≥ 20 % на 30 объектах типа) и остановка по непринятому ключу
+  считаются по запускам после последнего «Включить»; новые маршруты выключены.
 - Кадры — из прохода декодирования приёмки под `derived/gen/<generation_id>/frames/`,
   не вытесняются; до этапа 8 создаются без вызовов моделей и работ `annotate`;
   новых таблиц нет.

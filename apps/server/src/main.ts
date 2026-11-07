@@ -2,6 +2,7 @@ import { hostname } from 'node:os'
 import {
   createDb,
   createPool,
+  resumeSwitch,
   runMigrations,
   type values,
   type WorkHandler,
@@ -10,6 +11,8 @@ import {
 } from '@contentops/db'
 import type { ToolVersions } from '@contentops/media'
 import type { Logger } from 'pino'
+import { configuredProviders, envProviders } from './annotation/providers'
+import { annotateHandler } from './annotation/work'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
 import { hubHistoryHandler } from './hub/match/auto'
@@ -267,6 +270,13 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     const rows = await enqueueOpenRowCopies(db)
     logger.info({ rows }, 'plan copies checked')
   }
+  // The providers whose key is in the environment; works that waited for a key go on.
+  const providers = envProviders(config)
+  if (role === 'worker') {
+    for (const provider of configuredProviders(providers)) {
+      await resumeSwitch(db, `annotation.key.${provider}`)
+    }
+  }
   if (role === 'worker-video') {
     // Videos accepted before their prints get them, below every other work (SPEC §6.2).
     const prints = await enqueueVideoPrints(db, env.versions.phash)
@@ -280,6 +290,8 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     // The legacy pass of stage 3 and its dry run (SPEC §6.3).
     ...(role === 'worker' ? { import_parse: importParseHandler() } : {}),
     ...(role === 'worker' ? hubHandlers(config, store, env.versions) : {}),
+    // The cloud markup (SPEC §8.3): only with the owner's routes, consent and budget.
+    ...(role === 'worker' ? { annotate: annotateHandler({ store, providers }) } : {}),
   }
   const runner = new WorkRunner({
     db,
