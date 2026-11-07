@@ -46,6 +46,21 @@ export interface FieldState extends Record<string, unknown> {
   confirmed_value_version: number | null
   confirmed_at: string | null
   confirmed_by: string | null
+  /** The cloud markup's run whose value the field holds (SPEC §8.3), until a person edits it. */
+  suggested_by_run_id?: string | null
+  updated_at?: string | null
+}
+
+/**
+ * The latest word of the cloud markup on a field of an object: a value, or a refusal with its
+ * reason (`annotation_suggestions`, runs by routes only, never the measurement's).
+ */
+interface MarkupWord extends Record<string, unknown> {
+  item_id: string
+  version_id: string | null
+  field: string
+  refusal_reason: string | null
+  finished_at: string
 }
 
 export interface MasterVersion extends Record<string, unknown> {
@@ -71,8 +86,17 @@ export async function masterVersions(
   return new Map(rows.map((row) => [row.item_id, row]))
 }
 
-function statusOf(state: FieldState | undefined, filled: boolean): FieldStatus {
+/**
+ * DESIGN §5.4: confirmed; «не удалось · разметить вручную» when the markup's latest word on the
+ * field is a refusal newer than the field's value (the value stays); «черновик · ИИ» while the
+ * field holds a run's value; else a draft of the import or empty.
+ */
+function statusOf(state: FieldState | undefined, filled: boolean, word?: MarkupWord): FieldStatus {
   if (state && state.confirmed_value_version === state.value_version) return 'confirmed'
+  if (word?.refusal_reason && (!state?.updated_at || state.updated_at <= word.finished_at)) {
+    return 'ai_failed'
+  }
+  if (state?.suggested_by_run_id) return 'draft_ai'
   return filled ? 'draft_import' : 'empty'
 }
 
@@ -82,6 +106,7 @@ function fieldOf(
   filled: boolean,
   names: ReadonlyMap<string, string>,
   status: FieldStatus = statusOf(state, filled),
+  word?: MarkupWord,
 ): MarkupField {
   const confirmed = status === 'confirmed' || status === 'confirmed_previous_version'
   return {
@@ -91,7 +116,8 @@ function fieldOf(
     confirmed_by:
       confirmed && state?.confirmed_by ? (names.get(state.confirmed_by) ?? 'Система') : null,
     confirmed_at: confirmed && state?.confirmed_at ? instant(state.confirmed_at) : null,
-    source_hint: null,
+    // The reason of the service's refusal, on hover of «не удалось».
+    source_hint: status === 'ai_failed' ? (word?.refusal_reason ?? null) : null,
   }
 }
 
@@ -103,6 +129,8 @@ interface PlatformTextRow extends Record<string, unknown> {
   confirmed_value_version: number | null
   confirmed_at: string | null
   confirmed_by: string | null
+  run_id: string | null
+  updated_at: string
 }
 
 interface ChronologyRow extends Record<string, unknown> {
@@ -123,11 +151,12 @@ export async function markupFields(
   const masters = await masterVersions(q, model, uids)
   const masterIds = [...masters.values()].map((master) => master.version_id)
   const assetIds = [...masters.values()].map((master) => master.asset_id)
-  const [states, tags, chronology, texts] = await Promise.all([
+  const [states, tags, chronology, texts, words] = await Promise.all([
     q.execute<FieldState & { asset_id: string | null }>(sql`
       SELECT f.id, f.item_id, f.version_id, v.asset_id, f.field, f.value_version::int AS value_version,
              f.confirmed_value_version::int AS confirmed_value_version,
-             f.confirmed_at::text AS confirmed_at, f.confirmed_by
+             f.confirmed_at::text AS confirmed_at, f.confirmed_by, f.suggested_by_run_id,
+             f.updated_at::text AS updated_at
         FROM annotation_fields f
         LEFT JOIN asset_versions v ON v.model_id = f.model_id AND v.id = f.version_id
        WHERE f.model_id = ${model.id}::uuid
@@ -148,11 +177,20 @@ export async function markupFields(
     q.execute<PlatformTextRow>(sql`
       SELECT item_id, variant_no, body, value_version::int AS value_version,
              confirmed_value_version::int AS confirmed_value_version,
-             confirmed_at::text AS confirmed_at, confirmed_by
+             confirmed_at::text AS confirmed_at, confirmed_by, run_id, updated_at::text AS updated_at
         FROM platform_texts
        WHERE model_id = ${model.id}::uuid AND item_id = ANY(${sql.param(uids)}::uuid[])
          AND platform = 'generic' AND account_id IS NULL AND locale = 'en'
          AND variant_no IN (1, 2)`),
+    q.execute<MarkupWord>(sql`
+      SELECT DISTINCT ON (r.item_id, s.field) r.item_id, r.version_id, s.field, s.refusal_reason,
+             r.finished_at::text AS finished_at
+        FROM annotation_suggestions s
+        JOIN annotation_runs r ON r.model_id = s.model_id AND r.id = s.run_id
+       WHERE r.model_id = ${model.id}::uuid AND r.item_id = ANY(${sql.param(uids)}::uuid[])
+         AND NOT r.probe AND r.finished_at IS NOT NULL
+         AND s.field IN ('title', 'title_en', 'description', 'tags', 'chronology', 'platform_texts')
+       ORDER BY r.item_id, s.field, r.finished_at DESC`),
   ])
   const people = new Set<string>()
   for (const row of [...states.rows, ...texts.rows]) {
@@ -164,20 +202,23 @@ export async function markupFields(
   for (const target of targets) {
     const own = (field: string) =>
       states.rows.find((row) => row.item_id === target.uid && row.field === field)
+    const wordOf = (field: string) =>
+      words.rows.find((row) => row.item_id === target.uid && row.field === field)
+    const plain = (
+      key: 'title' | 'title_en' | 'description' | 'tags',
+      value: MarkupValue,
+      filled: boolean,
+    ) =>
+      fieldOf(value, own(key), filled, names, statusOf(own(key), filled, wordOf(key)), wordOf(key))
     const title = target.title ?? ''
     const titleEn = target.title_en ?? ''
     const description = target.description ?? ''
     const slugs = tagsOf.get(target.uid) ?? []
     const fields: MarkupField[] = [
-      fieldOf({ key: 'title', value: title }, own('title'), title !== '', names),
-      fieldOf({ key: 'title_en', value: titleEn }, own('title_en'), titleEn !== '', names),
-      fieldOf({ key: 'tags', value: slugs }, own('tags'), slugs.length > 0, names),
-      fieldOf(
-        { key: 'description', value: description },
-        own('description'),
-        description !== '',
-        names,
-      ),
+      plain('title', { key: 'title', value: title }, title !== ''),
+      plain('title_en', { key: 'title_en', value: titleEn }, titleEn !== ''),
+      plain('tags', { key: 'tags', value: slugs }, slugs.length > 0),
+      plain('description', { key: 'description', value: description }, description !== ''),
     ]
     const master = masters.get(target.uid)
     if (master) {
@@ -188,7 +229,10 @@ export async function markupFields(
         (row) => row.field === 'chronology' && row.asset_id === master.asset_id,
       )
       const current = ofMaster.find((row) => row.version_id === master.version_id)
-      let status = statusOf(current, segments.length > 0)
+      // A refusal about an earlier version of the master says nothing of this one.
+      const word = wordOf('chronology')
+      const ofThis = word?.version_id === master.version_id ? word : undefined
+      let status = statusOf(current, segments.length > 0, ofThis)
       const earlier = ofMaster.find(
         (row) =>
           row.version_id !== master.version_id && row.confirmed_value_version === row.value_version,
@@ -201,10 +245,13 @@ export async function markupFields(
           segments.length > 0,
           names,
           status,
+          ofThis,
         ),
       )
     }
-    if (target.type === 'PPV') fields.push(platformTextsField(target.uid, texts.rows, names))
+    if (target.type === 'PPV') {
+      fields.push(platformTextsField(target.uid, texts.rows, names, wordOf('platform_texts')))
+    }
     result.set(target.uid, fields)
   }
   return result
@@ -215,6 +262,7 @@ function platformTextsField(
   uid: string,
   rows: readonly PlatformTextRow[],
   names: ReadonlyMap<string, string>,
+  word: MarkupWord | undefined,
 ): MarkupField {
   const wall = rows.find((row) => row.item_id === uid && row.variant_no === 1)
   const message = rows.find((row) => row.item_id === uid && row.variant_no === 2)
@@ -234,9 +282,18 @@ function platformTextsField(
             : null,
         confirmed_at: wall.confirmed_at,
         confirmed_by: wall.confirmed_by,
+        suggested_by_run_id: wall.run_id ?? message?.run_id ?? null,
+        updated_at: [wall.updated_at, message?.updated_at ?? ''].sort().at(-1) ?? null,
       }
     : undefined
-  return fieldOf({ key: 'platform_texts', value }, state, filled, names)
+  return fieldOf(
+    { key: 'platform_texts', value },
+    state,
+    filled,
+    names,
+    statusOf(state, filled, word),
+    word,
+  )
 }
 
 export async function principalNames(

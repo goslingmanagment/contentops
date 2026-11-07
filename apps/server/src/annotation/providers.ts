@@ -15,10 +15,20 @@ export type ProviderRegistry = (name: ProviderName) => VisionProvider | null
 export function envProviders(env: {
   OPENAI_API_KEY?: string | undefined
   ANTHROPIC_API_KEY?: string | undefined
+  OPENAI_BASE_URL?: string | undefined
+  ANTHROPIC_BASE_URL?: string | undefined
 }): ProviderRegistry {
-  const openai = env.OPENAI_API_KEY ? createOpenAiProvider({ apiKey: env.OPENAI_API_KEY }) : null
+  const openai = env.OPENAI_API_KEY
+    ? createOpenAiProvider({
+        apiKey: env.OPENAI_API_KEY,
+        ...(env.OPENAI_BASE_URL ? { baseUrl: env.OPENAI_BASE_URL } : {}),
+      })
+    : null
   const anthropic = env.ANTHROPIC_API_KEY
-    ? createAnthropicProvider({ apiKey: env.ANTHROPIC_API_KEY })
+    ? createAnthropicProvider({
+        apiKey: env.ANTHROPIC_API_KEY,
+        ...(env.ANTHROPIC_BASE_URL ? { baseUrl: env.ANTHROPIC_BASE_URL } : {}),
+      })
     : null
   return (name) => (name === 'openai' ? openai : anthropic)
 }

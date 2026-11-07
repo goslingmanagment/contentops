@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util'
 import { createDb, createPool, type Db, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { detectToolVersions } from '@contentops/media'
 import { sql } from 'drizzle-orm'
+import { ANNOTATION_USAGE, annotationCli } from './annotation/ops'
 import { loadConfig } from './config'
 import { enqueueHistoryPass } from './hub/match/auto'
 import { enqueueFreeze, freezeRegister } from './intake/freeze'
@@ -87,6 +88,14 @@ import { smokeSetup } from './smoke/setup'
  *
  *   docker compose exec -T worker node dist/ops.js contractor "<имя>" --model lora --channel twitter
  *
+ * The cloud markup (SPEC §8.3, PLAN 8а; `annotation/ops.ts`, ops/README.md «Разметка ИИ»):
+ * consent, budget, limits, routes, switches; the markup by routes and the measurement as works
+ * of `worker`; the measurement's report as Markdown, out of git:
+ *
+ *   docker compose exec -T worker node dist/ops.js annotation status --model ari
+ *   docker compose exec -T worker node dist/ops.js annotation probe ari PPV-012 --with openai:<model>
+ *   docker compose exec -T worker node dist/ops.js annotation report ari --probe > probe.md
+ *
  * A value of «Пороги» by its key, and the settings without a screen (`hub_ad_markers` of a page,
  * `import_batch_scope` of a model); `off` — not set:
  *
@@ -112,7 +121,8 @@ const USAGE = `usage:
   ops.js grant <login> --models <a,b>      (the models a person already there lacks)
   ops.js contractor <name> --model <m> [--channel <code>] [--contact <text>] [--format upload|master|compat]
   ops.js switch <integration> <switch>=on|off ...   (ydisk.lora scan=on, agents enabled=on)
-  ops.js policy <key> <json|off> [--model <m>] [--page <p>] [--type PPV]   (thresholds, hub_ad_markers…)`
+  ops.js policy <key> <json|off> [--model <m>] [--page <p>] [--type PPV]   (thresholds, hub_ad_markers…)
+${ANNOTATION_USAGE}`
 
 function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
@@ -167,6 +177,21 @@ async function main(argv: string[]): Promise<number> {
       contact: { type: 'string' },
       format: { type: 'string' },
       min: { type: 'string' },
+      // ops.js annotation …
+      types: { type: 'string' },
+      stages: { type: 'string' },
+      privacy: { type: 'string' },
+      price: { type: 'string', multiple: true },
+      'no-frames': { type: 'boolean' },
+      by: { type: 'string' },
+      fields: { type: 'string' },
+      frames: { type: 'string' },
+      'max-usd': { type: 'string' },
+      with: { type: 'string' },
+      pass: { type: 'string' },
+      limit: { type: 'string' },
+      probe: { type: 'boolean' },
+      since: { type: 'string' },
     },
     allowPositionals: true,
   })
@@ -368,6 +393,12 @@ async function main(argv: string[]): Promise<number> {
           type: values.type,
         }),
       )
+      return 0
+    }
+    if (command === 'annotation') {
+      const result = await annotationCli(db, positionals, values, process.env)
+      if (result.text !== undefined) process.stdout.write(result.text)
+      if (result.json !== undefined) out(result.json)
       return 0
     }
     if (command === 'hub-history') {

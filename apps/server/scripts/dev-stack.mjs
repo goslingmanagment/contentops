@@ -12,6 +12,10 @@
 // (never to a real Hub); `POST <hub>/__dev/publications/<id>/publish` makes one «вышло». The
 // fake also serves posts made from the dev plan and turns receiving and matching on, so the
 // first poll fills «План › Сверить» and the Hub states of the rows (`scripts/dev-hub-posts.ts`).
+// `DEV_FAKE_AI=1` starts fake OpenAI and Anthropic (`scripts/dev-ai.ts`), gives `worker` their
+// keys and addresses, sets the consent, a $5 budget and the routes of PPV, CUS and FYP, and puts
+// the markup of the objects whose frames are ready: PPV and FYP get «черновик · ИИ», CUS a
+// refusal («не удалось · разметить вручную»). Never a real provider.
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -211,11 +215,75 @@ if (process.env.DEV_FAKE_HUB === '1') {
   console.log(`fake Agency Hub at ${base}`)
 }
 
+let aiEnv = {}
+if (process.env.DEV_FAKE_AI === '1') {
+  const fake = spawn(process.execPath, [join(ROOT, 'apps/server/scripts/dev-ai.ts')], {
+    cwd: join(ROOT, 'apps/server'),
+    stdio: ['ignore', 'pipe', 'inherit'],
+    env: { ...process.env, DATABASE_URL: url('contentops_app', 'dev-app') },
+  })
+  children.push(fake)
+  const base = await new Promise((resolve, reject) => {
+    fake.stdout.on('data', (chunk) => {
+      const ready = /ready (\S+)/.exec(String(chunk))
+      if (ready) resolve(ready[1])
+    })
+    fake.on('exit', () => reject(new Error('dev-ai stopped')))
+  })
+  aiEnv = {
+    OPENAI_API_KEY: 'dev-ai-key',
+    OPENAI_BASE_URL: `${base}/v1`,
+    ANTHROPIC_API_KEY: 'dev-ai-key',
+    ANTHROPIC_BASE_URL: base,
+  }
+  // The owner's consent, budget, routes and switches of the markup, journaled like `ops.js`; a
+  // developer's own values stay.
+  const now = new Date().toISOString()
+  const consent = JSON.stringify({
+    by: 'dev-stack',
+    at: now,
+    types: ['PPV', 'SET', 'SXT', 'CUS', 'FYP', 'LIFE', 'RAW'],
+    stages: ['observe', 'aggregate', 'texts'],
+    frames: true,
+    privacy: 'поддельный поставщик стенда',
+    prices: { 'fake-model': { input: 2, output: 10 } },
+  })
+  const route = JSON.stringify({
+    providers: [
+      { provider: 'openai', model: 'fake-model' },
+      { provider: 'anthropic', model: 'fake-model' },
+    ],
+  })
+  const rows = [
+    ['annotation.external.openai', consent],
+    ['annotation.external.anthropic', consent],
+    ['annotation.budget', JSON.stringify({ usd: 5, since: now })],
+    ['annotation.enabled', 'true'],
+    ['annotation.texts', 'true'],
+    ...['PPV', 'CUS', 'FYP'].flatMap((type) =>
+      ['observe', 'aggregate', 'texts'].map((stage) => [`annotation.route.${type}.${stage}`, route]),
+    ),
+  ]
+  psql(
+    `SELECT set_config('app.actor_type', 'system', false), set_config('app.actor_id', '', false),
+            set_config('app.actor_label', 'dev-stack', false),
+            set_config('app.action', 'policy.ops', false),
+            set_config('app.request_id', gen_random_uuid()::text, false),
+            set_config('app.item_id', '', false), set_config('app.work_id', '', false);
+     INSERT INTO policy_settings (key, value)
+     VALUES ${rows.map(([key, value]) => `('${key}', $json$${value}$json$::jsonb)`).join(', ')}
+     ON CONFLICT ON CONSTRAINT policy_settings_scope DO NOTHING`,
+    'contentops',
+  )
+  console.log(`fake markup providers at ${base}`)
+}
+
 const roleEnv = (role) => ({
   ...process.env,
   ...storageEnv,
   ...sourceEnv,
   ...hubEnv,
+  ...aiEnv,
   ROLE: role,
   DATABASE_URL: url('contentops_app', 'dev-app'),
   PUBLIC_URL: 'http://localhost:5173',
@@ -228,7 +296,9 @@ console.log(`\nContentOps dev: http://localhost:5173 after \`pnpm dev\` · dmitr
 // The scan of the fake source needs `worker` even without FFmpeg.
 const roles = media
   ? ['worker', 'worker-video', 'worker-image']
-  : process.env.DEV_FAKE_SOURCE === '1' || process.env.DEV_FAKE_HUB === '1'
+  : process.env.DEV_FAKE_SOURCE === '1' ||
+      process.env.DEV_FAKE_HUB === '1' ||
+      process.env.DEV_FAKE_AI === '1'
     ? ['worker']
     : []
 children.unshift(

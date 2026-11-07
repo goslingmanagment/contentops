@@ -96,11 +96,23 @@ export function defaultAnswer(stage: Stage, context: Record<string, unknown> | n
   }
 }
 
+export interface FakeProviderOptions {
+  /** A fixed port (the dev stand); a free one when omitted. */
+  port?: number
+  /** The outcome of a request the script does not name: the dev stand refuses some types. */
+  decide?: (request: FakeRequest) => Scripted | undefined
+}
+
 export class FakeProvider {
   readonly requests: FakeRequest[] = []
   #server: Server | null = null
   #url = ''
   #script: Scripted[] = []
+  readonly #options: FakeProviderOptions
+
+  constructor(options: FakeProviderOptions = {}) {
+    this.#options = options
+  }
 
   get url(): string {
     return this.#url
@@ -140,8 +152,17 @@ export class FakeProvider {
         }
         const context = contextOf(provider, json)
         const stage = (context?.stage as Stage | undefined) ?? null
-        this.requests.push({ provider, path, headers: req.headers, raw, json, context, stage })
-        const scripted = this.#script.shift()
+        const logged: FakeRequest = {
+          provider,
+          path,
+          headers: req.headers,
+          raw,
+          json,
+          context,
+          stage,
+        }
+        this.requests.push(logged)
+        const scripted = this.#script.shift() ?? this.#options.decide?.(logged)
         if (scripted === 'lost_answer') {
           res.socket?.destroy()
           return
@@ -156,7 +177,9 @@ export class FakeProvider {
         res.end(typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body))
       })
     })
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    await new Promise<void>((resolve) =>
+      server.listen(this.#options.port ?? 0, '127.0.0.1', resolve),
+    )
     this.#server = server
     this.#url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     return this

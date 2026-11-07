@@ -61,7 +61,10 @@ Agency Hub (`README.md`, `PRD.md`).
   кадрами, скан включён, роль `worker` рядом (`DEV_PG_CONTAINER`/`DEV_PG_PORT`/`PORT` —
   свой стенд рядом с чужим). «Сверить» и состояния Hub в плане — `DEV_FAKE_HUB=1 pnpm
   dev:server`: поддельный Hub с выдуманными постами по плану разработки, получение и
-  автосверка включены (`DEV_HUB_PORT` — свой порт). Забыт пароль в ВМ —
+  автосверка включены (`DEV_HUB_PORT` — свой порт). Разметка ИИ в карточке — `DEV_FAKE_AI=1
+  pnpm dev:server`: поддельные OpenAI и Anthropic, согласие, бюджет и маршруты PPV/CUS/FYP
+  заданы, объекты с кадрами размечаются сами (PPV и FYP — «черновик · ИИ», CUS — отказ;
+  `DEV_AI_PORT` — свой порт). Забыт пароль в ВМ —
   `contentops-db reset-password <login>` (пароль из `CONTENTOPS_NEW_PASSWORD` или stdin).
   После правки таблицы маршрутов —
   `pnpm --filter @contentops/server openapi`, иначе CI красный.

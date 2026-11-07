@@ -11,6 +11,7 @@ import { FAKE_KEY } from '@contentops/vision/testing'
 import { sql } from 'drizzle-orm'
 import sharp from 'sharp'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { markupFields } from '../catalog/markup'
 import { createWorkGate } from '../work-gate'
 import { applySuggestions, fieldVersions } from './apply'
 import { reserve, spentSince } from './money'
@@ -82,6 +83,31 @@ async function runsOf(item: FramedItem) {
 
 function pausedKey(error: unknown): string | null {
   return error instanceof WorkPaused ? error.key : null
+}
+
+/** The fields as the card shows them to the manager (DESIGN §5.4). */
+async function statusesOf(item: FramedItem) {
+  const { rows } = await stand.db.execute<{
+    title: string | null
+    title_en: string | null
+    description: string | null
+  }>(sql`SELECT title, title_en, description FROM content_items WHERE id = ${item.itemId}::uuid`)
+  const row = rows[0]
+  const fields = await markupFields(stand.db, { id: stand.lora, code: 'lora', name: 'Лора' }, [
+    {
+      uid: item.itemId,
+      type: 'PPV',
+      title: row?.title ?? null,
+      title_en: row?.title_en ?? null,
+      description: row?.description ?? null,
+    },
+  ])
+  return Object.fromEntries(
+    (fields.get(item.itemId) ?? []).map((field) => [
+      field.field.key,
+      { status: field.status, hint: field.source_hint },
+    ]),
+  )
 }
 
 describe('what goes out (SPEC §8.3, PLAN 8а)', () => {
@@ -224,6 +250,15 @@ describe('what goes out (SPEC §8.3, PLAN 8а)', () => {
       { source: 'ai', confirmed: false },
       { source: 'ai', confirmed: false },
     ])
+    // The card: «черновик · ИИ» where the run wrote, the manager's notes stay confirmed.
+    expect(await statusesOf(ppv)).toMatchObject({
+      title: { status: 'draft_ai' },
+      title_en: { status: 'draft_ai' },
+      tags: { status: 'draft_ai' },
+      description: { status: 'confirmed' },
+      timeline: { status: 'draft_ai' },
+      platform_texts: { status: 'draft_ai' },
+    })
   })
 
   it('sends nothing a consent leaves out', async () => {
@@ -376,6 +411,11 @@ describe('money and outcomes (SPEC §8.3)', () => {
     const { rows: kept } = await stand.db.execute<{ title: string; title_en: string }>(sql`
       SELECT title, title_en FROM content_items WHERE id = ${item.itemId}::uuid`)
     expect(kept[0]).toEqual({ title: 'Старое название', title_en: 'Kept title' })
+    // The card: «не удалось · разметить вручную» with the reason; the value is not wiped.
+    const statuses = await statusesOf(item)
+    expect(statuses.title).toMatchObject({ status: 'ai_failed' })
+    expect(statuses.title?.hint).toMatch(/flagged|policy/i)
+    expect(statuses.title_en).toMatchObject({ status: 'confirmed' })
     // No repeat to the same provider with the same input.
     expect((await annotateOnce(stand, item, ROUTINE_PPV)).report).toMatchObject({
       stages: [{ kind: 'refused' }],
