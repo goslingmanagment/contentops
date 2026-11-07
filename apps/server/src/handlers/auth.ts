@@ -11,6 +11,7 @@ import {
   sessionCookie,
   sha256,
 } from '../auth/secrets'
+import { ADDRESS_RULE, LOGIN_RULE, Throttle } from '../auth/throttle'
 import { instant, requireActor } from '../commands'
 import type { RequestContext } from '../context'
 import { ApiProblem } from '../errors'
@@ -27,6 +28,18 @@ let dummyHash: Promise<string> | null = null
 function dummyVerify(password: string): Promise<boolean> {
   dummyHash ??= hash('contentops-no-such-person')
   return dummyHash.then((value) => verify(value, password))
+}
+
+const minutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000))
+
+/** 429 while sign-in is closed: the form shows the message, `Retry-After` carries the seconds. */
+function closed(waitMs: number): ApiProblem {
+  return new ApiProblem(
+    'rate_limited',
+    `Много неверных попыток: вход закрыт на ${minutes(waitMs)} мин`,
+    undefined,
+    Math.ceil(waitMs / 1000),
+  )
 }
 
 interface SignInRow extends Record<string, unknown> {
@@ -61,13 +74,20 @@ async function liveSessions(services: Services, ctx: RequestContext): Promise<Se
 
 export function authHandlers(services: Services): HandlerRegistry {
   const { db, command } = services
-  const cookieOptions = { secure: services.secureCookies }
+  // `Secure` over HTTPS: the public address; the tailnet and the VPN of the pilot are plain HTTP.
+  const cookieOptions = (ctx: RequestContext) => ({ secure: services.secureCookies || ctx.https })
+  const byLogin = new Throttle(LOGIN_RULE)
+  const byAddress = new Throttle(ADDRESS_RULE)
 
   return {
     auth: {
       /** No `Idempotency-Key` (SPEC §11.2): a double click must not answer 409. */
       signIn: async ({ body, ctx }) => {
         const login = body.login.trim().toLowerCase()
+        const keys = { login: `login:${login}`, address: `address:${ctx.ip}` }
+        // A closed key does not check the password: the pause costs the server nothing.
+        const wait = Math.max(byLogin.waitMs(keys.login), byAddress.waitMs(keys.address))
+        if (wait > 0) throw closed(wait)
         const { rows } = await db.execute<SignInRow>(sql`
           SELECT id, display_name, password_hash, disabled_at FROM principals
            WHERE login = ${login} AND kind = 'human'`)
@@ -76,7 +96,9 @@ export function authHandlers(services: Services): HandlerRegistry {
           ? await verify(row.password_hash, body.password)
           : await dummyVerify(body.password)
         if (!row || !passwordOk || row.disabled_at !== null) {
-          // Every attempt is journaled (SPEC §11.1); an unknown login is not repeated there.
+          const pause = Math.max(byLogin.fail(keys.login), byAddress.fail(keys.address))
+          // Every checked attempt is journaled (SPEC §11.1), the one that closes sign-in with
+          // its pause; an unknown login is not repeated there.
           await withActorTx(
             db,
             { actor: SYSTEM_ACTOR('вход'), action: ctx.route, requestId: ctx.requestId },
@@ -86,11 +108,14 @@ export function authHandlers(services: Services): HandlerRegistry {
                 subjectKind: 'principals',
                 subjectId: row?.id ?? null,
                 subjectLabel: row ? login : 'неизвестный логин',
+                ...(pause > 0 ? { after: { 'Вход закрыт': `на ${minutes(pause)} мин` } } : {}),
                 result: 'denied',
               }),
           )
+          if (pause > 0) throw closed(pause)
           throw new ApiProblem('unauthenticated', 'Логин или пароль не подходят')
         }
+        byLogin.clear(keys.login)
         const token = newSecret()
         const previous = ctx.cookies[SESSION_COOKIE]
         const actor = { type: 'human' as const, id: row.id, label: row.display_name }
@@ -121,7 +146,7 @@ export function authHandlers(services: Services): HandlerRegistry {
             })
           },
         )
-        ctx.setHeader('Set-Cookie', sessionCookie(token, cookieOptions))
+        ctx.setHeader('Set-Cookie', sessionCookie(token, cookieOptions(ctx)))
         return { person: await personById(db, row.id) }
       },
 
@@ -138,7 +163,7 @@ export function authHandlers(services: Services): HandlerRegistry {
             before: { Сессии: String(result.rowCount ?? 0) },
             after: { Сессии: '0' },
           })
-          ctx.setHeader('Set-Cookie', clearedSessionCookie(cookieOptions))
+          ctx.setHeader('Set-Cookie', clearedSessionCookie(cookieOptions(ctx)))
           return { ok: true as const }
         }),
     },
