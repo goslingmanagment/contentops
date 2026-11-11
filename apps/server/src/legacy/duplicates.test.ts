@@ -228,6 +228,9 @@ describe('what the same bytes are, by the types (SPEC §6.1 p. 1)', () => {
     expect(duplicateOutcome('LIFE', 'PRM')).toBe('own_object')
     expect(duplicateOutcome('PPV', 'CUS')).toBe('own_object')
     expect(duplicateOutcome('CUS', 'PPV')).toBe('own_object')
+    // A custom that came after its copy is a custom, not an alias of the copy (11.11.2026).
+    expect(duplicateOutcome('CUS', 'FYP')).toBe('own_object')
+    expect(duplicateOutcome('CUS', 'SET')).toBe('own_object')
   })
 
   it('the same type, raw material, promo and a group without a type are aliases', () => {

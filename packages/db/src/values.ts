@@ -634,6 +634,8 @@ export const reviewCaseKinds = [
   'unreadable_input',
   'smm_folder',
   'number_hole',
+  // A copy of a custom outside the customs section (0018, SPEC §6.2).
+  'custom_copy',
 ] as const
 export type ReviewCaseKind = (typeof reviewCaseKinds)[number]
 

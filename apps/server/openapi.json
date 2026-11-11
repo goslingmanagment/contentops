@@ -4269,6 +4269,126 @@
         ],
         "additionalProperties": false
       },
+      "InboxAlert": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "const": "custom_copy"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "dismissed"
+            ]
+          },
+          "custom": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/ItemId"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "path": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "yandex_disk",
+              "dropbox"
+            ]
+          },
+          "also_in": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemId"
+            }
+          },
+          "seen_at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "dismissed": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "$ref": "#/components/schemas/Instant"
+                  },
+                  "by": {
+                    "$ref": "#/components/schemas/ActorRef"
+                  }
+                },
+                "required": [
+                  "at",
+                  "by"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state",
+          "custom",
+          "path",
+          "source",
+          "also_in",
+          "seen_at",
+          "dismissed"
+        ],
+        "additionalProperties": false
+      },
+      "InboxAlertList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InboxAlert"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "open": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "open"
+        ],
+        "additionalProperties": false
+      },
       "InboxGroup": {
         "type": "object",
         "properties": {
@@ -6853,6 +6973,18 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/MarkKindInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_mills": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16658,6 +16790,135 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UploadResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/inbox/alerts": {
+      "get": {
+        "operationId": "inbox.alerts",
+        "tags": [
+          "inbox"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "all"
+              ]
+            },
+            "in": "query",
+            "name": "state",
+            "required": false
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/InstantInput"
+            },
+            "in": "query",
+            "name": "since",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxAlertList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/inbox/alerts/{alert}:dismiss": {
+      "post": {
+        "operationId": "inbox.dismissAlert",
+        "tags": [
+          "inbox"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "alert",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxAlert"
                 }
               }
             }

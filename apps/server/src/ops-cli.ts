@@ -18,7 +18,15 @@ import { purgeBlob } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVideoPrints } from './media/work/print'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
-import { opsAgent, opsContractor, opsGrant, opsPerson, opsPolicy, opsSwitch } from './ops-owner'
+import {
+  opsAgent,
+  opsContractor,
+  opsCustomCopies,
+  opsGrant,
+  opsPerson,
+  opsPolicy,
+  opsSwitch,
+} from './ops-owner'
 import { smokeSetup } from './smoke/setup'
 
 /**
@@ -65,6 +73,11 @@ import { smokeSetup } from './smoke/setup'
  * puts them by itself on start, this is for a print that failed:
  *
  *   docker compose exec -T worker node dist/ops.js video-copies <model> [--min 85] [--yes]
+ *
+ * «Копии кастомов» (SPEC §6.2): the signals for copies of a custom outside its section that the
+ * catalog held before the signal existed; idempotent, a repeat raises nothing new:
+ *
+ *   docker compose exec -T worker node dist/ops.js custom-copies --model ari
  *
  * The history pass of the Fansly pages with «Автосверка» on, again after a batch of the library
  * (SPEC §7; stages 7, 9a and «Старый формат» 9b) — one `hub_history` work per page:
@@ -115,6 +128,7 @@ const USAGE = `usage:
   ops.js release-report <model> [--list <copy list>]   («Можно освобождать», Markdown, out of git)
   ops.js hub-history <model> [page]        (the Hub history pass again after a library batch)
   ops.js video-copies <model> [--min 85] [--yes]   (pairs «похоже на ролик»; --yes queues missing prints)
+  ops.js custom-copies --model <m>          (signals «Копии кастомов» for copies already in the catalog)
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
   ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
   ops.js person <login> --name <имя> --role manager|reader --models <a,b>   (a temporary password once)
@@ -406,6 +420,10 @@ async function main(argv: string[]): Promise<number> {
       if (!model) throw new Error(USAGE)
       const queued = await enqueueHistoryPass(db, { model, account: account ?? null })
       out(queued)
+      return 0
+    }
+    if (command === 'custom-copies') {
+      out(await opsCustomCopies(db, { model: values.model ?? positionals[0] }))
       return 0
     }
     if (command === 'video-copies') {

@@ -9,6 +9,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { readNotContent } from '../legacy/inputs'
 import { channelOf } from '../legacy/promo'
+import { raiseCustomCopies } from './custom-copies'
 import {
   clusterStart,
   fitsCluster,
@@ -318,6 +319,8 @@ async function upsertObject(tx: Tx, source: SourceRow, entry: SourceEntry): Prom
         JOIN asset_versions v ON v.model_id = r.model_id AND v.source_revision_id = r.id
        WHERE r.model_id = ${source.modelId}::uuid AND r.source_object_id = ${id}::uuid
       ON CONFLICT DO NOTHING`)
+    // A custom moved out of its section is a copy outside it too (SPEC §6.2).
+    await raiseCustomCopies(tx, source.modelId, { objects: [id] })
   }
   return { id, moved }
 }

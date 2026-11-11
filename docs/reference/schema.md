@@ -712,7 +712,11 @@ renumber | typo | unclear`), `assigned_number?`, `target_item_id?`, `decided_at/
 
 **`review_cases`** — спорное, чьё решение надо записать (§6.3, §4,
 `resolve_review_case` §12.0). `id`, `model_id`, `kind` (`cross_model_duplicate |
-legacy_unparsed | merge_split | unreadable_input | smm_folder | number_hole`;
+legacy_unparsed | merge_split | unreadable_input | smm_folder | number_hole | custom_copy`;
+`custom_copy` — «Копия кастома» (SPEC §6.2, `0018_custom_copies`, 11.11.2026): байты живого
+кастома в файле диска вне раздела кастомов; `item_id` — кастом, `source_object_id` — файл
+копии, `blob_sha256` — совпавшие байты, `details` — путь и источник, `dedup_key` —
+`<кастом>:<путь>`; `dismissed` — «Понятно» владельца, повторный скан его не открывает;
 `unreadable_input` — нечитаемый архив или каталог снимка:
 неполный вход, ворота не держит, §6.3; `smm_folder` — папка SMM, которую человек или агент
 отмечает паком подрядчику или съёмкой вендора; `number_hole` — номер без источника,
@@ -1707,6 +1711,7 @@ LLM.
 | после 3 (03.11.2026) | `0013_inbox_promo` | таблиц нет: канал и подборка промо-группы «Приехало» (`inbox_groups.proposed_channel_id`, `proposed_collection_id`) |
 | после 3 (05.11.2026) | `0016_video_prints` | `video_prints` (1): отпечатки роликов; кандидат `similar_video`, ◆ `video_copy`, работа `video_print` (SPEC §6.2) |
 | 8 (8а, 07.11.2026) | `0017_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
+| после 8а (11.11.2026) | `0018_custom_copies` | таблиц нет: вид `custom_copy` в `review_cases` — «Копии кастомов» (SPEC §6.2) |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
 Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего

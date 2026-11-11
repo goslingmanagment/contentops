@@ -182,6 +182,14 @@ export async function prepareSeedMedia(
 export function withSeedMedia(items: readonly FixtureItem[], media: SeedMedia): FixtureItem[] {
   let v = 0
   let p = 0
+  // Customs keep bytes of their own (the last video and photo): an object over the bytes of a
+  // custom is «из кастома» and stays off the free surfaces of the plan (SPEC §6.2, §7).
+  const split = <T>(pool: readonly T[]) =>
+    pool.length > 1
+      ? { custom: pool.slice(-1), rest: pool.slice(0, -1) }
+      : { custom: pool, rest: pool }
+  const videos = split(media.videos)
+  const photos = split(media.photos)
   return items.map((item) => ({
     ...item,
     files: item.files?.map((file): FixtureFile => {
@@ -190,8 +198,10 @@ export function withSeedMedia(items: readonly FixtureItem[], media: SeedMedia): 
         'video'
       const versions = file.versions ?? 1
       const random = (file.sha256 ?? []).slice(0, versions - 1)
+      const own = item.type === 'custom' ? 'custom' : 'rest'
       if (video) {
-        const pick = media.videos[v++ % media.videos.length] as SeedVideo
+        const pool = videos[own]
+        const pick = pool[v++ % pool.length] as SeedVideo
         return {
           ...file,
           sha256: [
@@ -207,7 +217,8 @@ export function withSeedMedia(items: readonly FixtureItem[], media: SeedMedia): 
           mime: 'video/mp4',
         }
       }
-      const pick = media.photos[p++ % media.photos.length] as SeedPhoto
+      const pool = photos[own]
+      const pick = pool[p++ % pool.length] as SeedPhoto
       return {
         ...file,
         sha256: [

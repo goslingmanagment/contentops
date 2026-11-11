@@ -3,6 +3,7 @@ import { setJournalItem, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
+import { raiseCustomCopies } from '../intake/custom-copies'
 import { findChannel } from '../promo/views'
 import { handleOf, type MembershipRow, memberships } from './detail'
 import { holdsOf, lockPagesOf, movePlacements, refuseHeld, releaseCandidates } from './holds'
@@ -562,6 +563,8 @@ export async function changeType(
   await setJournalItem(tx, item.id)
   await tombstone(tx, model, item, actor, created.id)
   await logItemAction(tx, model, item, { subject: words, after })
+  // A file that turned out to be a custom: its copies elsewhere show at once (SPEC §6.2).
+  if (target === 'CUS') await raiseCustomCopies(tx, model.id, { items: [created.id] })
   return created.publicId
 }
 

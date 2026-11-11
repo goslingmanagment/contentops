@@ -27,6 +27,7 @@ import {
 import { applySwitches, switchesOf } from './handlers/integrations'
 import { genderOfName } from './handlers/people'
 import { modelNames, modelsByCodes } from './handlers/shared'
+import { raiseCustomCopies } from './intake/custom-copies'
 
 /**
  * The owner's commands from the VM shell (`ops.js agent`, `ops.js switch`, ops/README.md): what
@@ -504,5 +505,39 @@ export async function opsPolicy(
       before,
       value,
     }
+  })
+}
+
+export interface OpsCustomCopiesResult {
+  model: string
+  /** Copies of customs outside their section the catalog holds now. */
+  found: number
+  /** New signals of this run; a repeat raises none. */
+  raised: number
+  /** Open signals of the model after the run. */
+  open: number
+}
+
+/**
+ * `ops.js custom-copies --model <m>` (SPEC §6.2 «Копии кастомов»): the signals for copies the
+ * catalog already holds — files taken before the signal existed. Idempotent: an open or
+ * dismissed signal of the same custom and path stays as it is.
+ */
+export async function opsCustomCopies(
+  db: Db,
+  input: { model: string | undefined },
+): Promise<OpsCustomCopiesResult> {
+  if (!input.model) throw new Error('custom-copies needs --model')
+  const code = input.model
+  return withActorTx(db, context('draft.custom_copy'), async (tx) => {
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      SELECT id FROM models WHERE code = ${code} AND archived_at IS NULL`)
+    const model = rows[0]
+    if (!model) throw new Error(`${code}: no such model`)
+    const { found, raised } = await raiseCustomCopies(tx, model.id, 'all')
+    const { rows: open } = await tx.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM review_cases
+       WHERE model_id = ${model.id}::uuid AND kind = 'custom_copy' AND state = 'open'`)
+    return { model: code, found, raised, open: open[0]?.n ?? 0 }
   })
 }

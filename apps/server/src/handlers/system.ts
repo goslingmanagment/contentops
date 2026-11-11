@@ -11,6 +11,7 @@ import { evaluateRow, loadState } from '../plan/state'
 import { missedBefore, todayRows } from '../plan/views'
 import type { Services } from '../services'
 import { diskViews, readHostSpace, type SpaceOptions, spaceCard } from '../space'
+import { openCustomCopies } from './inbox-alerts'
 
 /**
  * «Настройки › Состояние» and the counters of the left column (DESIGN §2.2, §4.19; SPEC
@@ -99,7 +100,7 @@ const NEEDS_STEP: ReadonlySet<string> = new Set(['planned', 'missed', 'blocked_s
  * Counters of the left column (DESIGN §2.2): «Приехало» — groups where a person is needed, the
  * number of the tab «Новое»; today's rows the person posts that still need a step (the owner
  * sees every page) and ▲ «пропущено» of the previous 7 days, red when one of them is missed. A
- * ◆ or ▲ in either puts the dot on the avatar of the model.
+ * ◆ or ▲ in either, or an open «Копия кастома», puts the dot on the avatar of the model.
  */
 async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelCounters> {
   const scope = await modelScopeOf(db, code)
@@ -115,6 +116,8 @@ async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelC
   )
   const earlier = missedBefore(state, actor.role === 'owner' ? null : actor.id)
   const inbox = await inboxCount(db, scope.id)
+  // «Копии кастомов» (SPEC §6.2): a custom outside its section is a ▲ of the model too.
+  const copies = await openCustomCopies(db, scope.id)
   return {
     model: code,
     inbox: inbox.count,
@@ -122,6 +125,7 @@ async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelC
     plan_missed: earlier.length > 0 || steps.some((verdict) => verdict.level === 'missed'),
     attention:
       inbox.attention ||
+      copies > 0 ||
       verdicts.some((verdict) => verdict.sign === 'turn' || verdict.sign === 'trouble'),
   }
 }

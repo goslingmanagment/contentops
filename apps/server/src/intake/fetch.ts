@@ -22,6 +22,7 @@ import { materializeClaims } from '../legacy/materialize'
 import type { BlobStore } from '../media/storage'
 import { extOfName, shaBytes } from '../media/storage'
 import { belowStop, readHostSpace, type SpaceOptions } from '../space'
+import { raiseCustomCopies } from './custom-copies'
 import { recordChangedRevision } from './discover'
 import { mediaKindOf } from './grouping'
 import { scanFailure } from './scan'
@@ -309,6 +310,10 @@ export async function afterFetch(
            error = NULL, updated_at = now(), row_version = row_version + 1
      WHERE model_id = ${modelId}::uuid AND id = ${draftId}::uuid`)
 
+  // The bytes of a custom outside its section: seen today, whatever the draft becomes (§6.2).
+  if (draft.source_object_id) {
+    await raiseCustomCopies(tx, modelId, { objects: [draft.source_object_id] })
+  }
   const dup = await acceptedHolder(tx, modelId, bytes, draft.type)
   if (dup && (await applyDuplicate(tx, modelId, { id: draftId, ...draft }, dup)) === 'alias') return
   const { rows: others } = await tx.execute<{ model_id: string }>(sql`
@@ -371,14 +376,18 @@ const MATERIAL: ReadonlySet<string> = new Set(['RAW', 'PRM'])
 /**
  * What the same bytes are for a draft of `draftType` when an object of `holderType` has them
  * (SPEC §6.1 p. 1, §6.2) — by the types, not by which group was accepted first: an alias of
- * the holder; or a new object over the same bytes, for custom ↔ PPV and for a file of a ready
- * type (FYP, set, life, …) whose bytes raw material or promo keeps — «фуп важнее сырья».
+ * the holder; or a new object over the same bytes, for custom ↔ PPV, for a custom over a file
+ * of any other type, and for a file of a ready type (FYP, set, life, …) whose bytes raw
+ * material or promo keeps — «фуп важнее сырья».
  */
 export function duplicateOutcome(
   draftType: string | null,
   holderType: string,
 ): 'alias' | 'own_object' {
   if (!draftType || draftType === holderType || MATERIAL.has(draftType)) return 'alias'
+  // A custom is never an alias of a file of another type (11.11.2026): a copy that came first
+  // would swallow it, and the copy would never show as one (§6.2 «Копии кастомов»).
+  if (draftType === 'CUS') return 'own_object'
   const pair = new Set([draftType, holderType])
   if (pair.has('CUS') && pair.has('PPV')) return 'own_object'
   return MATERIAL.has(holderType) ? 'own_object' : 'alias'
@@ -398,7 +407,9 @@ export async function applyDuplicate(
   if (duplicateOutcome(draft.type, dup.type) === 'own_object') {
     const signals = MATERIAL.has(dup.type)
       ? { sha256: true, over_material: true }
-      : { sha256: true, custom_ppv: true }
+      : draft.type === 'CUS' && dup.type !== 'PPV'
+        ? { sha256: true, custom_copy: true }
+        : { sha256: true, custom_ppv: true }
     await tx.execute(sql`
       INSERT INTO inbox_draft_candidates (model_id, draft_id, kind, item_id, version_id, signals)
       VALUES (${modelId}::uuid, ${draft.id}::uuid, 'exact_duplicate', ${dup.item_id}::uuid,

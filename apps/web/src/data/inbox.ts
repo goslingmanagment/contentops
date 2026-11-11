@@ -345,3 +345,27 @@ export function useInboxCommands(model: ModelCode) {
 }
 
 export type InboxCommands = ReturnType<typeof useInboxCommands>
+
+/**
+ * «Копии кастомов» (DESIGN §4.8, SPEC §6.2): открытые сигналы модели — копия кастома вне его
+ * папки. Число открытых — на вкладке; опрос — вместе со счётчиками колонки.
+ */
+export function useInboxAlerts(model: ModelCode) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.inboxAlerts(model),
+    queryFn: ({ signal }) =>
+      api.inbox.alerts({ params: { model }, query: { state: 'open', limit: 500 }, signal }),
+    refetchInterval: 30_000,
+  })
+}
+
+/** «Понятно» владельца: сигнал уходит из вкладки, точка модели гаснет с последним. */
+export function useDismissAlertCommand(model: ModelCode) {
+  const api = useApi()
+  return useCallback(
+    (alert: string, key: string) =>
+      api.inbox.dismissAlert({ params: { model, alert }, idempotencyKey: key }),
+    [api, model],
+  )
+}

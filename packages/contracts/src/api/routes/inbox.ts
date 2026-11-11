@@ -16,9 +16,12 @@ import {
   UpdateLegacyInputsCommandSchema,
 } from '../../commands/settings'
 import { CreateUploadCommandSchema } from '../../commands/uploads'
+import { InstantSchema } from '../../domain/common'
 import {
   AcceptManyResultSchema,
   AcceptResultSchema,
+  InboxAlertListSchema,
+  InboxAlertSchema,
   InboxGroupSchema,
   InboxListSchema,
   UploadResultSchema,
@@ -32,6 +35,13 @@ import { FileBodySchema } from './media'
 export const InboxQuerySchema = PageQuerySchema.extend({
   /** `active` — «Новое»; `accepted`, `rejected` — «Решённое». */
   state: z.enum(['active', 'accepted', 'rejected']).optional(),
+})
+
+export const InboxAlertQuerySchema = PageQuerySchema.extend({
+  /** `open` (default) — not dismissed yet; `all` — dismissed too. */
+  state: z.enum(['open', 'all']).optional(),
+  /** Seen at or after this instant: what came since the last look. */
+  since: InstantSchema.optional(),
 })
 
 /** «Приехало»: groups, decisions, accepting, and «Разбор старого». */
@@ -143,6 +153,22 @@ export const inboxRoutes = {
     body: CreateUploadCommandSchema,
     response: UploadResultSchema,
     success: 201,
+  }),
+  /**
+   * «Копии кастомов» (SPEC §6.2): the bytes of a custom outside the customs section. Read by
+   * everyone with the model, agents included (`contentops inbox alerts --model ari --json`).
+   */
+  alerts: defineRoute({
+    method: 'GET',
+    path: '/api/v1/{model}/inbox/alerts',
+    query: InboxAlertQuerySchema,
+    response: InboxAlertListSchema,
+  }),
+  /** «Понятно»: the owner has seen it; a person only — an agent never silences it (§11.1). */
+  dismissAlert: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/inbox/alerts/{alert}:dismiss',
+    response: InboxAlertSchema,
   }),
 }
 

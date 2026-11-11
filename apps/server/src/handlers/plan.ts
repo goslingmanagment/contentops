@@ -6,7 +6,7 @@ import { markButtonKind } from '@contentops/contracts/placement'
 import { enqueueWork, logAction, type Queryable, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { modelOf, publicIdOf } from '../catalog/ids'
-import { checkVersion, isUuid, requireActor } from '../commands'
+import { checkVersion, isUuid, requireActor, requirePerson } from '../commands'
 import type { Actor, ModelScope, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
@@ -35,6 +35,7 @@ import {
   refuse,
   removeMark,
   resolveRow,
+  rowCustomRefusal,
   ruleRefusal,
   setMark,
   standingConfirmations,
@@ -52,6 +53,9 @@ import { assertNotSent, cancelWithRow } from './plan-publish'
 
 /** A just-created row may be deleted by its author within 6 s (SPEC §5, DESIGN §3.8). */
 export const UNDO_WINDOW_MS = 6_000
+
+/** Prices stay with people (SPEC §11.1): an agent plans the row, a person prices it. */
+const PRICE_TEXT = 'Цену задаёт только человек: агент ставит строку без цены'
 
 export function planHandlers(services: Services): HandlerRegistry {
   const { db, command } = services
@@ -119,6 +123,7 @@ export function planHandlers(services: Services): HandlerRegistry {
     dryRun: boolean,
     options: { unknownTime?: boolean } = {},
   ) {
+    if (inputs.some((input) => input.price_mills != null)) requirePerson(actor, PRICE_TEXT)
     const state = await loadState(tx, model)
     const rejected: CreatePlanRowsResult['rejected'] = []
     const resolved = []
@@ -309,6 +314,19 @@ export function planHandlers(services: Services): HandlerRegistry {
             () => null,
           )
           const after: Record<string, unknown> = {}
+          const price = row.price_mills === null ? null : Number(row.price_mills)
+          const priced = body.price_mills !== undefined && body.price_mills !== price
+          if (priced) requirePerson(actor, PRICE_TEXT)
+          // A custom stays off the open wall when its price goes or its composition changes.
+          if (priced || body.replace_manifest) {
+            const refusal = await rowCustomRefusal(
+              tx,
+              model,
+              row,
+              body.price_mills === undefined ? price : body.price_mills,
+            )
+            if (refusal) refuse(refusal)
+          }
           // A sent publication holds what it was made of (5б).
           if (
             body.replace_manifest ||
@@ -444,6 +462,8 @@ export function planHandlers(services: Services): HandlerRegistry {
           const target = await accountId(tx, model, body.account)
           const state = await loadState(tx, model)
           if (body.account !== row.account) {
+            const custom = await rowCustomRefusal(tx, model, row)
+            if (custom) refuse(custom)
             const refusal = ruleRefusal(state, {
               input: {} as NewPlanRow,
               item: null,

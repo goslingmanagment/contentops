@@ -15,7 +15,7 @@ import { hubView, isConfirmedLevel } from '../plan/publication-view'
 import { type RowRecord, rowById } from '../plan/records'
 import { evaluateRow, loadState, type PlanState } from '../plan/state'
 import { rowView, viewContext } from '../plan/views'
-import { logRow } from '../plan/writes'
+import { assertNotCustom, logRow } from '../plan/writes'
 import type { Services } from '../services'
 import { integrationViews } from './integrations'
 
@@ -133,6 +133,7 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
     if (!row.manifest_id) {
       throw new ApiProblem('invalid_request', 'Строка ждёт файл — публиковать нечего')
     }
+    await assertNotCustom(tx, model, row)
     const price = row.price_mills === null ? null : Number(row.price_mills)
     const rule = kindRule(row.platform, row.surface, price)
     if (rule.manual) throw new ApiProblem('publication_refused', rule.manual)
@@ -181,6 +182,7 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
     assertPerson(actor)
     const row = await rowById(tx, model, id, true)
     if (row.cancelled_at) throw new ApiProblem('row_cancelled', 'Не выполнено: строка отменена')
+    await assertNotCustom(tx, model, row)
     await assertPublishing(tx, model, row)
     if (row.hub_publication_id === null || row.hub_status !== 'draft') {
       throw new ApiProblem('publication_refused', 'Черновика в Hub нет — сначала «Подготовить»')
