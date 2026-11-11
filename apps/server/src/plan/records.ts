@@ -106,6 +106,11 @@ export type PublicationKind = 'fyp_post' | 'subscriber_post' | 'paid_post' | 'st
 export interface HubChecks {
   blocked: boolean
   findings: { code: string; severity: string; media_key: string | null }[]
+  /**
+   * The draft's content version moved in Hub after ContentOps prepared it (an edit in Hub, read
+   * by the status poll): no longer the draft ContentOps made — an agent does not send it.
+   */
+  edited?: boolean
 }
 
 /** One file of the draft (`hub_files`): uploaded to Hub or the same file in the page's vault. */

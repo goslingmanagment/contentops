@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type AgentSendRow, agentSendRefusal } from './publish-rules'
+import { type AgentSendRow, agentDraftRefusal, agentSendRefusal } from './publish-rules'
 
 /**
  * What an agent may send (decision of the owner 11.11.2026; SPEC §7, §11.1): free posts of a
@@ -68,6 +68,10 @@ describe('agentSendRefusal', () => {
 
   it('wants the draft prepared from that version and nothing found by Hub', () => {
     expect(agentSendRefusal({ ...ready, hub_prepared_version: 3 })).toBe('changed')
+    // Edited in Hub after «Подготовить» (the status poll marks it).
+    expect(
+      agentSendRefusal({ ...ready, hub_checks: { blocked: false, findings: [], edited: true } }),
+    ).toBe('changed')
     expect(
       agentSendRefusal({
         ...ready,
@@ -82,5 +86,25 @@ describe('agentSendRefusal', () => {
     )
     // Nothing to send yet: the ordinary rules of «Отправить» answer.
     expect(agentSendRefusal({ ...ready, hub_status: null, hub_prepared_version: null })).toBeNull()
+  })
+})
+
+describe('agentDraftRefusal', () => {
+  const draft = (kind: string, raw: Record<string, unknown> = {}) => ({ kind, raw })
+
+  it('passes the free post ContentOps prepared', () => {
+    expect(
+      agentDraftRefusal('subscriber_post', draft('subscriber_post', { priceMills: null })),
+    ).toBeNull()
+    expect(agentDraftRefusal('fyp_post', draft('fyp_post'))).toBeNull()
+  })
+
+  it('refuses a draft Hub made paid or of another kind', () => {
+    expect(agentDraftRefusal('subscriber_post', draft('paid_post'))).toBe('paid')
+    expect(
+      agentDraftRefusal('subscriber_post', draft('subscriber_post', { priceMills: 9000 })),
+    ).toBe('paid')
+    expect(agentDraftRefusal('subscriber_post', draft('story'))).toBe('kind')
+    expect(agentDraftRefusal('subscriber_post', draft('fyp_post'))).toBe('changed')
   })
 })

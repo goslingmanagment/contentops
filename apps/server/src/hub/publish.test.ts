@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { addDays, isoWeekOf, weekDates } from '@contentops/contracts/clock'
 import type { NewPlanRow } from '@contentops/contracts/commands/plan'
 import { IssuedTokenSchema } from '@contentops/contracts/domain/agents'
@@ -1183,5 +1183,203 @@ describe('«Утвердить неделю» (decision of the owner 11.11.2026)
     }
     expect(hub.calls('publications.approve').length).toBe(approves)
     expect(publicationOf(switched).status).toBe('draft')
+  })
+})
+
+describe('the last check before Hub approves', () => {
+  /** A set whose first photo will turn out to hold a custom's bytes. */
+  const COPY = randomBytes(32)
+  const clean = { secondPerson: false }
+
+  beforeAll(async () => {
+    await createCatalogItems(db, 'lora', [
+      { type: 'custom', number: 90, title: 'Заказ', ...clean, files: [{ role: 'master' }] },
+      {
+        type: 'set',
+        number: 90,
+        title: 'Пляж',
+        ...clean,
+        files: [
+          { role: 'ed', selected: true, sha256: [COPY] },
+          { role: 'ed', selected: true },
+        ],
+      },
+      {
+        type: 'set',
+        number: 91,
+        title: 'Сад',
+        ...clean,
+        files: [
+          { role: 'ed', selected: true },
+          { role: 'ed', selected: true },
+        ],
+      },
+      {
+        type: 'set',
+        number: 92,
+        title: 'Парк',
+        ...clean,
+        files: [
+          { role: 'ed', selected: true },
+          { role: 'ed', selected: true },
+        ],
+      },
+    ])
+  })
+
+  async function queuedSend(row: PlanRow, as = diana.session) {
+    const queued = await command(row.id, 'send', as, { version: versionOf(row) })
+    expect(queued.statusCode, queued.body).toBe(202)
+  }
+
+  it('a provenance link added after queueing: the work refuses, Hub approves nothing', async () => {
+    const row = await prepared((await put({ item_id: 'SET-091', date: day(50), time: '19:00' })).id)
+    await queuedSend(row)
+    // The link changes no row version: only the work's own check sees it.
+    const linked = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/i/SET-091/links',
+      as: owner,
+      key: newKey(),
+      body: { relation: 'made_from', direction: 'out', item_id: 'CUS-090' },
+    })
+    expect(linked.statusCode, linked.body).toBe(201)
+    const approves = hub.calls('publications.approve').length
+    const outcome = await runRow(row.id)
+    expect(outcome).toMatchObject({ state: 'failed', error_code: 'from_custom' })
+    expect(outcome.error_text).toContain('Из кастома CUS-090')
+    expect(hub.calls('publications.approve').length).toBe(approves)
+    expect(publicationOf(row).status).toBe('draft')
+  })
+
+  it('a custom’s file removed from the live set still goes with the sealed row: refused', async () => {
+    const row = await prepared((await put({ item_id: 'SET-090', date: day(51), time: '19:00' })).id)
+    await queuedSend(row)
+    // The photo turns out to be a custom's (its bytes arrive as CUS-091) and leaves the live set.
+    await createCatalogItems(db, 'lora', [
+      {
+        type: 'custom',
+        number: 91,
+        title: 'Ещё заказ',
+        ...clean,
+        files: [{ role: 'master', sha256: [COPY] }],
+      },
+    ])
+    const item = await call(server.app, { method: 'GET', url: '/api/v1/lora/i/SET-090', as: owner })
+    const removed = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/i/SET-090/files:remove',
+      as: owner,
+      key: newKey(),
+      ifMatch: item.json().version,
+      body: { keys: ['ed01'] },
+    })
+    expect(removed.statusCode, removed.body).toBe(200)
+    // The live object is clean again: a new free wall row of it is taken.
+    expect(
+      (await put({ item_id: 'SET-090', date: day(51), time: '21:00' })).manifest,
+    ).not.toBeNull()
+    const approves = hub.calls('publications.approve').length
+    const outcome = await runRow(row.id)
+    expect(outcome).toMatchObject({ state: 'failed', error_code: 'from_custom' })
+    expect(outcome.error_text).toContain('Из кастома CUS-091')
+    // The route says the same to a person who tries again.
+    const again = await command(row.id, 'send', diana.session, { version: versionOf(row) })
+    expect(again.statusCode).toBe(422)
+    expect(again.json().message).toContain('Из кастома CUS-091 — на стену только платным постом')
+    expect(hub.calls('publications.approve').length).toBe(approves)
+  })
+
+  it('a Hub draft edited to a paid post: the agent is refused, a person sends as before', async () => {
+    const row = await prepared(
+      (await put({ item_id: 'SET-092', date: day(52), time: '19:00' })).id,
+      agent,
+    )
+    await approveWeek([row])
+    const approves = hub.calls('publications.approve').length
+    await queuedSend(row, agent)
+    // Someone makes the draft a paid post in Hub, under the same content version.
+    const draft = publicationOf(row)
+    draft.kind = 'paid_post'
+    draft.priceMills = 9_000
+    expect(await runRow(row.id)).toMatchObject({ state: 'failed', error_code: 'agent_paid' })
+    expect(hub.calls('publications.approve').length).toBe(approves)
+
+    // Hub's version moves with the edit: the status read takes it and marks the draft.
+    draft.version += 1
+    draft.updatedAt = new Date().toISOString()
+    await statuses(lora1)
+    const edited = await rowOf(row.id, agent)
+    expect(edited.hub?.agent_send).toEqual({ allowed: false, reason: 'changed' })
+    const refused = await command(row.id, 'send', agent, { version: versionOf(edited) })
+    expect(refused.statusCode).toBe(403)
+    expect(refused.json().details).toEqual({ reason: 'changed' })
+    // Preparing it again does not make Hub's edit the row's content for the agent.
+    expect((await prepared(row.id, agent)).hub?.agent_send?.reason).toBe('changed')
+
+    // A person sees Hub's draft and sends it, as before (the page's price range is set).
+    hub.setPriceRange('page-a', { min: 1_000, max: 100_000 })
+    try {
+      const person = await rowOf(row.id)
+      expect(person.hub?.can_send).toBe(true)
+      await queuedSend(person)
+      const outcome = await runRow(row.id)
+      expect(outcome.state, outcome.error_text ?? '').toBe('succeeded')
+      expect(hub.calls('publications.approve').length).toBe(approves + 1)
+    } finally {
+      hub.setPriceRange('page-a', null)
+    }
+  })
+
+  it('the agent’s grant taken away or its role lowered after queueing: refused', async () => {
+    const added = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/admin/agents',
+      as: owner,
+      key: newKey(),
+      body: { name: 'Неделя', role: 'manager', models: ['lora'] },
+    })
+    const id = added.json().id as string
+    const token = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/admin/agents/${id}/tokens`,
+      as: owner,
+      key: newKey(),
+      body: { agent_id: id, expires_in_days: null },
+    })
+    const weekAgent = `Bearer ${IssuedTokenSchema.parse(token.json()).secret}`
+    let version = added.json().version as number
+    const update = async (change: Record<string, unknown>) => {
+      const response = await call(server.app, {
+        method: 'PATCH',
+        url: `/api/v1/admin/agents/${id}`,
+        as: owner,
+        key: newKey(),
+        ifMatch: version,
+        body: change,
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      version = response.json().version
+    }
+    const queue = async (time: string) => {
+      const row = await prepared(
+        (await put({ item_id: 'SET-092', date: day(53), time })).id,
+        weekAgent,
+      )
+      await approveWeek([row])
+      await queuedSend(row, weekAgent)
+      return row
+    }
+    const approves = hub.calls('publications.approve').length
+
+    const ungranted = await queue('18:00')
+    await update({ models: ['ari'] })
+    expect(await runRow(ungranted.id)).toMatchObject({ state: 'failed', error_code: 'agent_off' })
+
+    await update({ models: ['lora'] })
+    const lowered = await queue('20:00')
+    await update({ role: 'reader' })
+    expect(await runRow(lowered.id)).toMatchObject({ state: 'failed', error_code: 'agent_off' })
+    expect(hub.calls('publications.approve').length).toBe(approves)
   })
 })

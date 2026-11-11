@@ -12,7 +12,7 @@ import {
   values,
 } from '@contentops/db'
 import { sql } from 'drizzle-orm'
-import { fromCustom } from '../catalog/from-custom'
+import { fromCustom, manifestFromCustom } from '../catalog/from-custom'
 import { findItem, type ItemRow, publicIdOfRow } from '../catalog/ids'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
@@ -203,9 +203,12 @@ export function isRefusal(value: ResolvedRow | Refusal): value is Refusal {
 
 /**
  * The custom rule of a row already in the plan (SPEC §7): its object or the source of its
- * montage, at its surface and with its price — `price` when the command changes it. A change
- * of price or composition, «Подготовить» and «Отправить» ask it again: a row put before the
- * rule, or one whose price went away, does not slip a custom onto the open wall.
+ * montage, and what its sealed composition will publish (`manifestFromCustom`: those very
+ * versions, a file since removed from the object included), at its surface and with its price
+ * — `price` when the command changes it. A change of price or composition, «Подготовить» and
+ * «Отправить» ask it again, and so does the work right before Hub approves: a row put before
+ * the rule, a link added later or one whose price went away does not slip a custom onto the
+ * open wall.
  */
 export async function rowCustomRefusal(
   q: Queryable,
@@ -214,7 +217,9 @@ export async function rowCustomRefusal(
   price: number | null = row.price_mills === null ? null : Number(row.price_mills),
 ): Promise<Refusal | null> {
   const id = row.item_id ?? row.input_item_id
-  const custom = (await fromCustom(q, model.id, [id])).get(id ?? '')
+  const custom =
+    (await fromCustom(q, model.id, [id])).get(id ?? '') ??
+    (row.manifest_id ? await manifestFromCustom(q, model.id, row.manifest_id) : null)
   if (!custom) return null
   const expects = row.item_id
     ? null

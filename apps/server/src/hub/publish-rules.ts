@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { AgentSendReason } from '@contentops/contracts/domain/plan'
 import { EXPORT_NAME_PATTERN } from '@contentops/contracts/download-name'
-import type { DraftInput, MediaKey } from '@contentops/hub'
+import type { DraftInput, HubPublication, MediaKey } from '@contentops/hub'
 import type { DbSurface, PublicationKind, RowRecord } from '../plan/records'
 
 /**
@@ -87,15 +87,35 @@ export function agentSendRefusal(row: AgentSendRow): AgentSendReason | null {
   if (row.approved_version !== row.row_version) return 'changed'
   if (row.hub_status !== 'draft') return null
   if (row.hub_prepared_version !== row.row_version) return 'changed'
+  // Edited in Hub after «Подготовить»: not the draft ContentOps prepared from this version.
+  if (row.hub_checks?.edited === true) return 'changed'
   const checks = row.hub_checks
   if (!checks || checks.blocked || checks.findings.length > 0) return 'hub_findings'
+  return null
+}
+
+/**
+ * The Hub draft an agent is about to approve, as Hub gives it right before the approve call:
+ * still a free post of the agent kinds and the kind ContentOps prepared. A draft edited in Hub
+ * after «Подготовить» — a price added, the kind changed — stays for a person; the status poll
+ * also marks a draft whose Hub version moved under ContentOps (`hub_checks.edited`,
+ * `applyPublication`), which `agentSendRefusal` then answers `changed`.
+ */
+export function agentDraftRefusal(
+  prepared: PublicationKind | null,
+  draft: Pick<HubPublication, 'kind' | 'raw'>,
+): AgentSendReason | null {
+  const price = draft.raw.priceMills
+  if (draft.kind === 'paid_post' || (typeof price === 'number' && price > 0)) return 'paid'
+  if (!AGENT_KINDS.some((kind) => kind === draft.kind)) return 'kind'
+  if (draft.kind !== prepared) return 'changed'
   return null
 }
 
 /** The refusal in words: the 403 of the route and the error of the work. */
 export const AGENT_SEND_TEXT: Record<AgentSendReason, string> = {
   not_approved: 'Строку не утверждал владелец — агент её не отправляет',
-  changed: 'Строку изменили после утверждения владельца или после «Подготовить»',
+  changed: 'Строку или черновик в Hub изменили после утверждения владельца или после «Подготовить»',
   spent: 'Утверждение уже ушло на отправку — строку утверждают заново',
   paid: 'Платный пост — отправляет только человек',
   kind: 'Такую строку отправляет только человек',
