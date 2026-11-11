@@ -1,3 +1,4 @@
+import { capitalize } from '@contentops/contracts/format'
 import { vaultAlbumName } from '@contentops/contracts/vault-album'
 import {
   type Db,
@@ -34,9 +35,11 @@ import type { ModelScope } from '../context'
 import { type Choice, type FileRow, issuedName, pickFiles } from '../media/downloads'
 import { manifestFiles } from '../plan/composition'
 import { type HubFile, type RowRecord, rowById } from '../plan/records'
+import { rowCustomRefusal } from '../plan/writes'
 import type { PublishMedia } from './publish-media'
 import {
   AGENT_SEND_TEXT,
+  agentDraftRefusal,
   agentSendRefusal,
   draftFingerprint,
   draftKey,
@@ -303,13 +306,21 @@ class Run {
 
   /**
    * An agent's send, read again right before Hub approves (11.11.2026, SPEC §8): agents and its
-   * token still on, the token alive, and the row still what the owner approved — a revoked
-   * approval, an edited row or a switched-off agent stops the queued work for good.
+   * token still on, the token alive, its role still one that changes the plan and its grant on
+   * the page's model still standing, and the row still what the owner approved — a revoked
+   * approval, an edited row, a switched-off agent or rights taken away stop the queued work for
+   * good.
    */
   async agentGuard(): Promise<void> {
     const { principalId, tokenId } = this.job
-    if (!principalId || !(await agentMaySend(this.db, principalId, tokenId ?? null))) {
-      throw refused('agent_off', 'Агент выключен владельцем — отправка остановлена')
+    if (
+      !principalId ||
+      !(await agentMaySend(this.db, principalId, tokenId ?? null, this.page.modelId))
+    ) {
+      throw refused(
+        'agent_off',
+        'Агент выключен владельцем или у него нет прав — отправка остановлена',
+      )
     }
     const reason = agentSendRefusal(await this.row())
     if (reason) throw refused(`agent_${reason}`, AGENT_SEND_TEXT[reason])
@@ -495,11 +506,11 @@ class Run {
 
     let publication: HubPublication
     await this.guard()
-    if (
+    const same =
       row.hub_publication_id !== null &&
       row.hub_status === 'draft' &&
       row.hub_content_hash === fingerprint
-    ) {
+    if (same && row.hub_publication_id !== null) {
       // The same draft: Hub's checks are read again, nothing is made twice.
       publication = await this.client.getPublication(row.hub_publication_id, this.context.signal)
     } else {
@@ -522,6 +533,9 @@ class Run {
     }
     const preparedBy = this.job.principalId
     const rowVersion = row.row_version
+    // The same draft edited in Hub since (`applyPublication` marked it) stays marked: reading
+    // its checks again does not make Hub's edit the row's content.
+    const edited = same && row.hub_checks?.edited === true
     return {
       report: {
         row_id: row.id,
@@ -540,7 +554,8 @@ class Run {
             hub_status = ${publication.status}, hub_status_reason = ${publication.statusReason},
             hub_status_at = ${publication.statusChangedAt ?? publication.updatedAt}::timestamptz,
             hub_updated_at = ${publication.updatedAt}::timestamptz,
-            hub_version = ${publication.version}, hub_checks = ${checksJson(publication)}::jsonb,
+            hub_version = ${publication.version},
+            hub_checks = ${checksJson(publication, edited)}::jsonb,
             hub_files = ${JSON.stringify(held)}::jsonb, hub_content_hash = ${fingerprint},
             hub_prepared_at = now(), hub_prepared_by = ${preparedBy}::uuid,
             hub_prepared_version = ${rowVersion}, hub_sent_at = NULL, hub_sent_by = NULL,
@@ -592,8 +607,15 @@ class Run {
       await this.save(checks)
       throw failure
     }
+    // An agent approves what Hub holds now only while it is the free post ContentOps prepared.
+    const drift = agent ? agentDraftRefusal(row.hub_kind, checks) : null
+    if (drift) throw refused(`agent_${drift}`, AGENT_SEND_TEXT[drift])
     await this.guard()
     if (agent) await this.agentGuard()
+    // What the row will publish is from no custom — for people and agents alike: a link added
+    // or a file removed since the route's check is seen here.
+    const custom = await rowCustomRefusal(this.db, this.page.model, await this.row())
+    if (custom) throw refused('from_custom', capitalize(custom.text))
     const [result] = await this.client.approve(
       [{ id, version: row.hub_version }],
       this.context.signal,
@@ -743,14 +765,28 @@ async function principalKind(
   return rows[0]?.kind ?? null
 }
 
-/** The agent's token is alive and its, and the owner keeps agents and this token on. */
-async function agentMaySend(db: Db, principalId: string, tokenId: string | null): Promise<boolean> {
+/**
+ * The agent's token is alive and its, the owner keeps agents and this token on, and its rights
+ * now still let it send on this model (SPEC §11.1): a role that changes the plan (not «Только
+ * чтение») and a standing grant on the model — the owner's role sees every model.
+ */
+async function agentMaySend(
+  db: Db,
+  principalId: string,
+  tokenId: string | null,
+  modelId: string,
+): Promise<boolean> {
   if (!tokenId) return false
   const { rows } = await db.execute<{ ok: boolean }>(sql`
     SELECT true AS ok FROM api_tokens t JOIN principals p ON p.id = t.principal_id
      WHERE t.id = ${tokenId}::uuid AND p.id = ${principalId}::uuid
        AND p.kind = 'agent' AND p.disabled_at IS NULL
-       AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())`)
+       AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())
+       AND p.role IN ('owner', 'manager')
+       AND (p.role = 'owner' OR EXISTS (
+             SELECT 1 FROM principal_grants g
+              WHERE g.principal_id = p.id AND g.model_id = ${modelId}::uuid
+                AND g.revoked_at IS NULL))`)
   return rows[0]?.ok === true && (await agentSwitchedOn(db, tokenId))
 }
 
@@ -799,7 +835,8 @@ async function vaultMembers(db: Queryable, page: Page, publicId: string): Promis
   return rows
 }
 
-function checksJson(publication: HubPublication): string {
+/** `edited` — the draft's Hub version moved after ContentOps prepared it (`HubChecks`). */
+function checksJson(publication: HubPublication, edited = false): string {
   return JSON.stringify({
     blocked: publication.blocked,
     findings: publication.findings.map((finding) => ({
@@ -807,6 +844,7 @@ function checksJson(publication: HubPublication): string {
       severity: finding.severity,
       media_key: finding.mediaKey,
     })),
+    ...(edited ? { edited: true } : {}),
   })
 }
 
@@ -859,8 +897,14 @@ export async function applyPublication(
       hub_status = ${publication.status}, hub_status_reason = ${publication.statusReason},
       hub_status_at = ${publication.statusChangedAt ?? publication.updatedAt}::timestamptz,
       hub_updated_at = ${publication.updatedAt}::timestamptz, hub_version = ${publication.version},
-      hub_checks = CASE WHEN ${publication.status} = 'draft' THEN ${checksJson(publication)}::jsonb
-                        ELSE hub_checks END,
+      -- A draft whose content version moved in Hub, not by ContentOps, is marked edited: it is
+      -- no longer the draft ContentOps prepared, so an agent does not send it (a person sees
+      -- Hub's checks and decides, as before).
+      hub_checks = CASE WHEN ${publication.status} = 'draft'
+        THEN ${checksJson(publication)}::jsonb || jsonb_build_object('edited',
+               hub_version IS DISTINCT FROM ${publication.version}
+               OR coalesce((hub_checks->>'edited')::boolean, false))
+        ELSE hub_checks END,
       platform_post_ref = ${album ? null : publication.platformPostRef},
       vault_album_ref = ${album ? (publication.vaultAlbumRef ?? publication.platformPostRef) : null},
       ${spendApproval(publication.status)}

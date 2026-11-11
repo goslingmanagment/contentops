@@ -72,3 +72,61 @@ export async function fromCustom(
      ORDER BY up.root, up.depth, custom`)
   return new Map(rows.map((row) => [row.id, row.custom]))
 }
+
+/**
+ * What a sealed composition will publish, from a custom (SPEC §7): the very versions it holds —
+ * whatever the live object holds now. A version with the bytes of a live custom; a file a custom
+ * owns or owned; a file any of whose objects (its memberships, removed ones too) or whose
+ * version's sources by provenance come from a custom. A file removed from the object after the
+ * row was sealed still goes out with the row, so it still counts. Gives the custom (`CUS-012`).
+ */
+export async function manifestFromCustom(
+  q: Queryable,
+  modelId: string,
+  manifestId: string,
+): Promise<string | null> {
+  const { rows: bytes } = await q.execute<{ custom: string }>(sql`
+    WITH entries AS (
+      SELECT v.master_sha256, v.source_sha256
+        FROM asset_manifest_entries e
+        JOIN asset_versions v ON v.model_id = e.model_id AND v.id = e.asset_version_id
+       WHERE e.model_id = ${modelId}::uuid AND e.manifest_id = ${manifestId}::uuid
+    )
+    SELECT public_item_id(c.type, c.number) AS custom
+      FROM content_items c
+      JOIN item_memberships m ON m.model_id = c.model_id AND m.item_id = c.id
+                             AND m.kind = 'owned' AND m.removed_at IS NULL
+      JOIN asset_versions v ON v.model_id = m.model_id AND v.asset_id = m.asset_id
+      JOIN entries en ON en.master_sha256 IN (v.master_sha256, v.source_sha256)
+                      OR en.source_sha256 IN (v.master_sha256, v.source_sha256)
+     WHERE c.model_id = ${modelId}::uuid AND c.type = 'CUS' AND c.deleted_at IS NULL
+     ORDER BY 1
+     LIMIT 1`)
+  if (bytes[0]) return bytes[0].custom
+  // The objects of these files, removed memberships included, and their versions' sources.
+  const { rows: owners } = await q.execute<{ id: string }>(sql`
+    WITH entries AS (
+      SELECT e.item_id, e.asset_id, e.asset_version_id
+        FROM asset_manifest_entries e
+       WHERE e.model_id = ${modelId}::uuid AND e.manifest_id = ${manifestId}::uuid
+    )
+    SELECT en.item_id AS id FROM entries en WHERE en.item_id IS NOT NULL
+    UNION
+    SELECT m.item_id FROM entries en
+      JOIN item_memberships m ON m.model_id = ${modelId}::uuid AND m.asset_id = en.asset_id
+                             AND m.kind = 'owned'
+    UNION
+    SELECT coalesce(p.parent_item_id, pm.item_id) FROM entries en
+      JOIN provenance p ON p.model_id = ${modelId}::uuid AND p.child_version_id = en.asset_version_id
+                       AND p.voided_by_id IS NULL
+      LEFT JOIN asset_versions pv ON pv.model_id = p.model_id AND pv.id = p.parent_version_id
+      LEFT JOIN item_memberships pm ON pm.model_id = pv.model_id AND pm.asset_id = pv.asset_id
+                                   AND pm.kind = 'owned'
+     WHERE coalesce(p.parent_item_id, pm.item_id) IS NOT NULL`)
+  const customs = await fromCustom(
+    q,
+    modelId,
+    owners.map((owner) => owner.id),
+  )
+  return [...customs.values()].sort()[0] ?? null
+}
