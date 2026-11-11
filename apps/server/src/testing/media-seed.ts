@@ -37,6 +37,11 @@ interface SeedPhoto {
 export interface SeedMedia {
   videos: SeedVideo[]
   photos: SeedPhoto[]
+  /**
+   * Drawn for the customs alone: an object over the bytes of a custom is «из кастома» and
+   * stays off the free surfaces of the plan (SPEC §6.2, §7), so no other file may share them.
+   */
+  custom?: { video: SeedVideo; photo: SeedPhoto }
 }
 
 /** Sources of the videos: FFmpeg's own generators, each in a vertical 1080×1920 frame. */
@@ -137,7 +142,9 @@ export async function prepareSeedMedia(
   const seconds = options.seconds ?? 12
   try {
     const videos: SeedVideo[] = []
-    for (let i = 0; i < (options.videos ?? VIDEO_SOURCES.length); i++) {
+    const videoCount = options.videos ?? VIDEO_SOURCES.length
+    // One more than the pool: the customs' own (another tone, so other bytes).
+    for (let i = 0; i <= videoCount; i++) {
       const path = await makeVideo(dir, i, seconds)
       const sha256 = await sha256File(path)
       await registerBlob(db, store, {
@@ -156,7 +163,8 @@ export async function prepareSeedMedia(
       })
     }
     const photos: SeedPhoto[] = []
-    for (let i = 0; i < (options.photos ?? 16); i++) {
+    const photoCount = options.photos ?? 16
+    for (let i = 0; i <= photoCount; i++) {
       const path = await makePhoto(dir, i)
       const sha256 = await sha256File(path)
       await registerBlob(db, store, {
@@ -168,7 +176,9 @@ export async function prepareSeedMedia(
       })
       photos.push({ sha256, width: 1500, height: 2000, bytes: (await stat(path)).size })
     }
-    return { videos, photos }
+    const video = videos.pop() as SeedVideo
+    const photo = photos.pop() as SeedPhoto
+    return { videos, photos, custom: { video, photo } }
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -182,14 +192,6 @@ export async function prepareSeedMedia(
 export function withSeedMedia(items: readonly FixtureItem[], media: SeedMedia): FixtureItem[] {
   let v = 0
   let p = 0
-  // Customs keep bytes of their own (the last video and photo): an object over the bytes of a
-  // custom is «из кастома» and stays off the free surfaces of the plan (SPEC §6.2, §7).
-  const split = <T>(pool: readonly T[]) =>
-    pool.length > 1
-      ? { custom: pool.slice(-1), rest: pool.slice(0, -1) }
-      : { custom: pool, rest: pool }
-  const videos = split(media.videos)
-  const photos = split(media.photos)
   return items.map((item) => ({
     ...item,
     files: item.files?.map((file): FixtureFile => {
@@ -198,10 +200,12 @@ export function withSeedMedia(items: readonly FixtureItem[], media: SeedMedia): 
         'video'
       const versions = file.versions ?? 1
       const random = (file.sha256 ?? []).slice(0, versions - 1)
-      const own = item.type === 'custom' ? 'custom' : 'rest'
+      // A custom takes its own bytes; the counters move as before, so every other file keeps
+      // the bytes it had.
+      const own = item.type === 'custom' ? media.custom : undefined
       if (video) {
-        const pool = videos[own]
-        const pick = pool[v++ % pool.length] as SeedVideo
+        const next = media.videos[v++ % media.videos.length] as SeedVideo
+        const pick = own?.video ?? next
         return {
           ...file,
           sha256: [
@@ -217,8 +221,8 @@ export function withSeedMedia(items: readonly FixtureItem[], media: SeedMedia): 
           mime: 'video/mp4',
         }
       }
-      const pool = photos[own]
-      const pick = pool[p++ % pool.length] as SeedPhoto
+      const next = media.photos[p++ % media.photos.length] as SeedPhoto
+      const pick = own?.photo ?? next
       return {
         ...file,
         sha256: [
@@ -256,9 +260,11 @@ export async function enqueueSeedRenditions(
       const modelId = rows[0]?.id
       if (!modelId) throw new Error(`no model ${model}`)
       let count = 0
+      // The customs' own bytes last: the pool's renditions come first, as before.
+      const custom = media.custom
       for (const [kind, list] of [
-        ['derive_video', media.videos],
-        ['derive_image', media.photos],
+        ['derive_video', [...media.videos, ...(custom ? [custom.video] : [])]],
+        ['derive_image', [...media.photos, ...(custom ? [custom.photo] : [])]],
       ] as const) {
         for (const blob of list) {
           await enqueueWork(tx, {
