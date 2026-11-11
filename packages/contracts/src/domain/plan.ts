@@ -132,6 +132,23 @@ export const RowPublicationSchema = z.object({
 export type RowPublication = z.infer<typeof RowPublicationSchema>
 
 /**
+ * Why an agent may not send a row (decision of the owner 11.11.2026; SPEC §7, §11.1): the owner
+ * has not approved it, it changed after the approval or after «Подготовить», its approval went
+ * on a send already; it is paid (a price, or a PPV on the wall), of a kind only a person sends
+ * (a story, a mass message), a row of a PPV release; Hub found something in the draft.
+ */
+export const AgentSendReasonSchema = z.enum([
+  'not_approved',
+  'changed',
+  'spent',
+  'paid',
+  'kind',
+  'release',
+  'hub_findings',
+])
+export type AgentSendReason = z.infer<typeof AgentSendReasonSchema>
+
+/**
  * Publication of the row through Hub (5б): `null` where the page does not publish through Hub
  * and the row has no publication — the row is published by hand.
  */
@@ -147,12 +164,32 @@ export const PlanHubSchema = z.object({
   error: z.string().nullable(),
   /** «Hub · статусы на 18:32»: the last successful read of the statuses of the page. */
   statuses_at: InstantSchema.nullable(),
-  /** What may be done now (a person; an agent never sends). */
+  /** What a person may do now. */
   can_prepare: z.boolean(),
   can_send: z.boolean(),
   can_cancel: z.boolean(),
+  /**
+   * Whether an agent may send it now (11.11.2026): a free row of the week the owner approved,
+   * its draft the approved content, without Hub's findings. `reason` — why not, by the rule;
+   * `null` with `allowed: false` — there is nothing to send yet (see `can_send`).
+   */
+  agent_send: z
+    .object({ allowed: z.boolean(), reason: AgentSendReasonSchema.nullable() })
+    .optional(),
 })
 export type PlanHub = z.infer<typeof PlanHubSchema>
+
+/**
+ * The owner's approval of the row («Утвердить неделю», 11.11.2026): who, when and the row
+ * version he saw; `current` — the row is still that version (an edit since leaves it unapproved).
+ */
+export const RowApprovalSchema = z.object({
+  at: InstantSchema,
+  by: ActorRefSchema,
+  version: RecordVersionSchema,
+  current: z.boolean(),
+})
+export type RowApproval = z.infer<typeof RowApprovalSchema>
 
 export const PlanRowSchema = z.object({
   id: z.string(),
@@ -192,6 +229,8 @@ export const PlanRowSchema = z.object({
   publication: PlanPublicationSchema,
   /** Publication through Hub (5б). */
   hub: PlanHubSchema.nullable(),
+  /** The owner's approval of the row; `null` — none (or spent on a send). */
+  approval: RowApprovalSchema.nullable().optional(),
   copy: CopyStateSchema.nullable(),
   downloaded: z
     .object({ at: InstantSchema, by: z.string(), meta_stripped: z.boolean() })
@@ -310,6 +349,19 @@ export const WeekColumnSchema = z.object({
   norm_hint: z.string(),
   /** Hub of the page when it is not working, phrased without the page: the column names it. */
   integration: IntegrationLineSchema.nullable(),
+  /**
+   * «Утвердить неделю» of the page (11.11.2026), over the rows that may still be sent: approved
+   * as they are, changed after the approval, never approved; the latest approval.
+   */
+  approval: z
+    .object({
+      approved: z.int().nonnegative(),
+      changed: z.int().nonnegative(),
+      unapproved: z.int().nonnegative(),
+      at: InstantSchema.nullable(),
+      by: ActorRefSchema.nullable(),
+    })
+    .optional(),
 })
 export type WeekColumn = z.infer<typeof WeekColumnSchema>
 

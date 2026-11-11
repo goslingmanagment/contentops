@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import {
+  ApproveWeekCommandSchema,
   CancelRowCommandSchema,
   CreatePlanRowsCommandSchema,
   CreatePlanRowsResultSchema,
@@ -12,6 +13,7 @@ import {
   NewPlanRowSchema,
   PlanDownloadCommandSchema,
   PrepareRowsCommandSchema,
+  RevokeWeekApprovalCommandSchema,
   RowCheckResultSchema,
   SendPublicationCommandSchema,
   SendRowsCommandSchema,
@@ -118,7 +120,8 @@ export const planRoutes = {
   }),
   /**
    * «Отправить»: a person who saw Hub's checks confirms, ContentOps approves the draft of that
-   * version. An agent never sends (SPEC §11.1): 403.
+   * version. An agent sends only a free row of a week the owner approved (11.11.2026, SPEC
+   * §11.1): otherwise 403 with `details.reason` (`hub.agent_send.reason`).
    */
   send: defineRoute({
     method: 'POST',
@@ -150,7 +153,8 @@ export const planRoutes = {
   }),
   /**
    * «Отправить 12» after one window with the summary of Hub's checks: rows with a blocking
-   * check stay (`publication_blocked`), the rest go. A person only: an agent gets 403.
+   * check stay (`publication_blocked`), the rest go. An agent's rows go by the rule of `send`,
+   * each on its own (`forbidden` — not this one).
    */
   sendMany: defineRoute({
     method: 'POST',
@@ -158,6 +162,24 @@ export const planRoutes = {
     body: SendRowsCommandSchema,
     response: BatchResultSchema,
     success: 202,
+  }),
+  /**
+   * «Утвердить неделю» of a page (11.11.2026): the owner, a person, stamps the rows of the ISO
+   * week as he saw them — each row whose version is still the one sent; per row `{id, ok,
+   * code}`. Repeatable: picks up new and changed rows. An agent then sends the free ones.
+   */
+  approveWeek: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/plan/weeks/{week}:approve',
+    body: ApproveWeekCommandSchema,
+    response: BatchResultSchema,
+  }),
+  /** «Отозвать»: the owner takes the approval of the page's week back; per row cleared. */
+  revokeWeekApproval: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/plan/weeks/{week}:revoke-approval',
+    body: RevokeWeekApprovalCommandSchema,
+    response: BatchResultSchema,
   }),
   /** The publication of the row as the row shows it: status, Hub's checks, what may be done. */
   publication: defineRoute({

@@ -8,6 +8,13 @@ import { cellItems } from './week-layout'
 export interface GridHandlers extends CellHandlers {
   selectRows: (rowIds: readonly string[]) => void
   openEmpty: (account: AccountCode) => void
+  /** «Утвердить неделю» в шапке столбца (11.11.2026): кнопки — только у владельца. */
+  approval: {
+    owner: boolean
+    pending: boolean
+    approve: (account: AccountCode) => void
+    revoke: (account: AccountCode) => void
+  }
 }
 
 interface WeekGridProps {
@@ -77,6 +84,13 @@ export function WeekGrid({ week, accounts, today, selectedKeys, canAct, handlers
                 rowsOf((row) => row.account === account.code && row.verdict.level === 'missed'),
               )
             }
+            approval={{
+              owner: handlers.approval.owner,
+              pending: handlers.approval.pending,
+              today,
+              onApprove: () => handlers.approval.approve(account.code),
+              onRevoke: () => handlers.approval.revoke(account.code),
+            }}
           />
         </div>
       ))}

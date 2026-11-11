@@ -3093,6 +3093,10 @@ export const postingPlanRows = pgTable("posting_plan_rows", {
 	hubSentBy: uuid("hub_sent_by"),
 	platformPostRef: text("platform_post_ref"),
 	vaultAlbumRef: text("vault_album_ref"),
+	approvedAt: timestamp("approved_at", { withTimezone: true, mode: 'string' }),
+	approvedBy: uuid("approved_by"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	approvedVersion: bigint("approved_version", { mode: "number" }),
 }, (table): PgTableExtraConfigValue[] => [
 	uniqueIndex("posting_plan_rows_hub_publication").using("btree", table.hubPublicationId.asc().nullsLast().op("int8_ops")).where(sql`(hub_publication_id IS NOT NULL)`),
 	index("posting_plan_rows_item").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.itemId.asc().nullsLast().op("uuid_ops"), table.slotAt.desc().nullsFirst().op("uuid_ops")),
@@ -3163,6 +3167,11 @@ export const postingPlanRows = pgTable("posting_plan_rows", {
 			foreignColumns: [principals.id],
 			name: "posting_plan_rows_hub_sent_by_fkey"
 		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.approvedBy],
+			foreignColumns: [principals.id],
+			name: "posting_plan_rows_approved_by_fkey"
+		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "posting_plan_rows_pkey"}),
 	check("posting_plan_rows_release_surface_kind_check", sql`release_surface_kind = ANY (ARRAY['wall'::text, 'story'::text, 'vault'::text, 'mass_dm'::text])`),
 	check("posting_plan_rows_expected_type_check", sql`expected_type = ANY (ARRAY['FYP'::text, 'PPV'::text])`),
@@ -3195,6 +3204,8 @@ CASE
 END)`),
 	check("posting_plan_rows_hub_sent", sql`(hub_sent_at IS NULL) = (hub_sent_by IS NULL)`),
 	check("posting_plan_rows_hub_ref", sql`(num_nonnulls(platform_post_ref, vault_album_ref) <= 1) AND ((vault_album_ref IS NULL) OR (hub_kind = 'vault_album'::text))`),
+	check("posting_plan_rows_approved_version_positive", sql`approved_version > 0`),
+	check("posting_plan_rows_approval", sql`num_nonnulls(approved_at, approved_by, approved_version) = ANY (ARRAY[0, 3])`),
 ]);
 export const catalogIndex = pgView("catalog_index", {	modelId: uuid("model_id"),
 	itemId: uuid("item_id"),

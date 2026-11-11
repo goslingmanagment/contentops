@@ -1,16 +1,21 @@
 import {
   type Account,
   capitalize,
+  formatDate,
   formatNumber,
   formatWeekdayShort,
   type IntegrationLine as IntegrationLineData,
   type LocalDate,
+  mskDate,
+  mskTime,
   type WeekColumn,
 } from '@contentops/contracts'
+import { Button } from '@contentops/ui/components/button'
 import {
   IntegrationLine,
   type IntegrationState as IntegrationLineState,
 } from '@contentops/ui/components/integration-line'
+import { ItemMenuButton } from '@contentops/ui/components/item-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@contentops/ui/components/tooltip'
 import { cn } from '@contentops/ui/lib/utils'
 import { useDroppable } from '@dnd-kit/core'
@@ -28,12 +33,22 @@ interface ColumnHeadProps {
   onOpenEmpty: () => void
   /** «пропущено 1» → выделить пропущенные строки. */
   onSelectMissed: () => void
+  /** «Утвердить неделю» (11.11.2026): кнопки — только у владельца, состояние видят все. */
+  approval: WeekApprovalControl
+}
+
+export interface WeekApprovalControl {
+  owner: boolean
+  pending: boolean
+  today: LocalDate
+  onApprove: () => void
+  onRevoke: () => void
 }
 
 /**
  * Шапка столбца 56 (DESIGN §4.12): «Fansly 2 · LoraViex», под ней «пусто 7» серой
  * ссылкой и «пропущено 1» красным. Норма — в подсказке при наведении. Если Hub страницы
- * не работает, ниже его строка (§3.11).
+ * не работает, ниже его строка (§3.11). Ниже — утверждение недели владельцем.
  */
 export function ColumnHead({
   account,
@@ -42,6 +57,7 @@ export function ColumnHead({
   onSelectColumn,
   onOpenEmpty,
   onSelectMissed,
+  approval,
 }: ColumnHeadProps) {
   return (
     <div className="flex min-h-14 min-w-0 flex-col justify-center gap-0.5 px-2.5 py-1.5">
@@ -85,7 +101,88 @@ export function ColumnHead({
           </button>
         ) : null}
       </div>
+      {column?.approval && !past ? (
+        <ApprovalLine state={column.approval} control={approval} />
+      ) : null}
       {column?.integration ? <ColumnHub line={column.integration} /> : null}
+    </div>
+  )
+}
+
+/**
+ * Утверждение недели страницы (§4.12): у владельца «Утвердить неделю · 14», потом «утверждено
+ * 11.11 · 14» с «Отозвать» в «⋯», после правок «изменено после · 2 · Утвердить». Остальные
+ * видят то же словами, без кнопок. Строки, которые уже ушли, не считаются.
+ */
+function ApprovalLine({
+  state,
+  control,
+}: {
+  state: NonNullable<WeekColumn['approval']>
+  control: WeekApprovalControl
+}) {
+  const left = state.unapproved + state.changed
+  if (state.at === null && left === 0) {
+    return null
+  }
+  const day = state.at ? formatDate(mskDate(state.at), control.today) : null
+  const who = state.at && state.by ? `Утвердил ${state.by.name} ${day}, ${mskTime(state.at)}` : null
+  const approveButton = (label: string) => (
+    <Button
+      variant="link"
+      size="inline"
+      className="text-sm tabular-nums"
+      pending={control.pending}
+      onClick={control.onApprove}
+    >
+      {label}
+    </Button>
+  )
+  const revoke =
+    control.owner && state.approved + state.changed > 0 ? (
+      <ItemMenuButton
+        menu={{
+          actions: [{ id: 'revoke', label: 'Отозвать утверждение', onSelect: control.onRevoke }],
+        }}
+        size="icon-sm"
+        className="-my-1 size-6"
+        label="Ещё об утверждении"
+      />
+    ) : null
+  const said = (text: string, className: string) =>
+    who ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={cn('tabular-nums', className)}>{text}</span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{who}</TooltipContent>
+      </Tooltip>
+    ) : (
+      <span className={cn('tabular-nums', className)}>{text}</span>
+    )
+  return (
+    // В узком столбце (открыта панель) части переносятся целиком, а не обрезаются.
+    <div className="flex min-h-5 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm [&>*]:whitespace-nowrap">
+      {state.at === null ? (
+        control.owner ? (
+          approveButton(`Утвердить неделю · ${formatNumber(left)}`)
+        ) : (
+          <span className="text-ink-3 tabular-nums">не утверждено · {formatNumber(left)}</span>
+        )
+      ) : left === 0 ? (
+        said(`утверждено ${day} · ${formatNumber(state.approved)}`, 'text-ink-3')
+      ) : (
+        <>
+          {said(`изменено после · ${formatNumber(left)}`, 'text-attention-ink')}
+          {control.owner ? (
+            <>
+              <span className="text-ink-3">·</span>
+              {approveButton('Утвердить')}
+            </>
+          ) : null}
+        </>
+      )}
+      {revoke}
     </div>
   )
 }

@@ -28,6 +28,7 @@ import {
   publicationChangesSince,
 } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
+import { agentSwitchedOn } from '../access'
 import { itemTypeOfDb, publicIdOf } from '../catalog/ids'
 import type { ModelScope } from '../context'
 import { type Choice, type FileRow, issuedName, pickFiles } from '../media/downloads'
@@ -35,6 +36,8 @@ import { manifestFiles } from '../plan/composition'
 import { type HubFile, type RowRecord, rowById } from '../plan/records'
 import type { PublishMedia } from './publish-media'
 import {
+  AGENT_SEND_TEXT,
+  agentSendRefusal,
   draftFingerprint,
   draftKey,
   FINAL_STATUSES,
@@ -58,8 +61,11 @@ import type { HubClientFactory } from './sync'
  *   file already in the page's vault goes by reference; Hub makes the draft from the row's
  *   fields and returns its checks, kept on the row. A copy still being built is waited for.
  *   OnlyFans publishes only files already in its vault; a mass message only by hand.
- * - `send` — a person who saw the checks approves the draft of that version (an agent never
- *   sends: the route refuses it and the work checks the principal again).
+ * - `send` — a person who saw the checks approves the draft of that version; an agent only a
+ *   free row of a week the owner approved (11.11.2026): the route asks `agentSendRefusal`, and
+ *   the work asks it again right before Hub's approve together with the agent's switches and
+ *   token, and wants Hub's fresh checks empty. Once the publication leaves the draft, the
+ *   owner's stamp on the row is spent.
  * - `cancel` — ContentOps' own publication, while Hub has not handed it to the platform; later
  *   only the owner in Hub.
  * - `status` — every 10 min per page with publications: Hub's feed of changes from the greatest
@@ -117,12 +123,14 @@ async function pageOf(db: Queryable, accountId: string | null): Promise<Page | n
 // Queueing (the routes, the row cancel)
 // ---------------------------------------------------------------------------
 
-/** What a row work carries: the row and who asked (the person who sends). */
+/** What a row work carries: the row and who asked (the person or the agent who sends). */
 export interface RowJob {
   rowId: string
   principalId: string | null
   /** `send`: the draft version whose checks the person saw. */
   version?: number
+  /** `send` of an agent: its token, whose switch the work checks again before Hub approves. */
+  tokenId?: string | null
 }
 
 export const rowStreamKey = (rowId: string) => `hubpub-row:${rowId}`
@@ -291,6 +299,20 @@ class Run {
       accountId: this.page.accountId,
     })
     if (!on) throw new WorkDeferred(0, 'публикация через Hub выключена для страницы')
+  }
+
+  /**
+   * An agent's send, read again right before Hub approves (11.11.2026, SPEC §8): agents and its
+   * token still on, the token alive, and the row still what the owner approved — a revoked
+   * approval, an edited row or a switched-off agent stops the queued work for good.
+   */
+  async agentGuard(): Promise<void> {
+    const { principalId, tokenId } = this.job
+    if (!principalId || !(await agentMaySend(this.db, principalId, tokenId ?? null))) {
+      throw refused('agent_off', 'Агент выключен владельцем — отправка остановлена')
+    }
+    const reason = agentSendRefusal(await this.row())
+    if (reason) throw refused(`agent_${reason}`, AGENT_SEND_TEXT[reason])
   }
 
   async row(): Promise<RowRecord> {
@@ -522,7 +544,7 @@ class Run {
             hub_files = ${JSON.stringify(held)}::jsonb, hub_content_hash = ${fingerprint},
             hub_prepared_at = now(), hub_prepared_by = ${preparedBy}::uuid,
             hub_prepared_version = ${rowVersion}, hub_sent_at = NULL, hub_sent_by = NULL,
-            platform_post_ref = NULL, vault_album_ref = NULL
+            platform_post_ref = NULL, vault_album_ref = NULL, ${spendApproval(publication.status)}
            WHERE model_id = ${page.modelId}::uuid AND id = ${row.id}::uuid`)
       },
     }
@@ -533,9 +555,9 @@ class Run {
   async send(): Promise<WorkSuccess> {
     const job = this.job
     const row = await this.row()
-    if (!job.principalId || !(await isPerson(this.db, job.principalId))) {
-      throw refused('agent_cannot_send', 'Отправить может только человек')
-    }
+    const sender = job.principalId ? await principalKind(this.db, job.principalId) : null
+    if (sender === null) throw refused('sender_unknown', 'Неизвестно, кто отправляет')
+    const agent = sender === 'agent'
     if (row.cancelled_at) throw refused('row_cancelled', 'Строка отменена')
     if (row.hub_publication_id === null || row.hub_version === null) {
       throw refused('not_prepared', 'Сначала «Подготовить»')
@@ -552,20 +574,26 @@ class Run {
       throw refused('version_changed', 'Черновик изменился — посмотрите проверки и отправьте снова')
     }
     await this.guard()
+    if (agent) await this.agentGuard()
     // The person saw these checks: Hub's are read again, a change is shown before anything goes.
     const checks = await this.client.getPublication(id, this.context.signal)
     const changed = checks.version !== row.hub_version || checks.blocked
-    if (changed || checks.status !== 'draft') {
+    // An agent sends a draft Hub found nothing in, by Hub's word of now.
+    const findings = agent && checks.findings.length > 0
+    if (changed || findings || checks.status !== 'draft') {
       const failure =
         checks.status !== 'draft'
           ? refused('not_draft', `Черновика в Hub больше нет (${checks.status})`)
           : checks.blocked
             ? refused('publication_blocked', 'Hub не пропускает черновик: смотрите проверки')
-            : refused('version_changed', 'Черновик в Hub изменился — посмотрите проверки снова')
+            : changed
+              ? refused('version_changed', 'Черновик в Hub изменился — посмотрите проверки снова')
+              : refused('agent_hub_findings', AGENT_SEND_TEXT.hub_findings)
       await this.save(checks)
       throw failure
     }
     await this.guard()
+    if (agent) await this.agentGuard()
     const [result] = await this.client.approve(
       [{ id, version: row.hub_version }],
       this.context.signal,
@@ -705,10 +733,36 @@ async function dbNow(db: Queryable): Promise<Date> {
   return new Date((rows[0] as { now: string }).now)
 }
 
-async function isPerson(db: Queryable, principalId: string): Promise<boolean> {
-  const { rows } = await db.execute<{ kind: string }>(sql`
+/** Who sends: a person or an agent; `null` — no such principal, or disabled. */
+async function principalKind(
+  db: Queryable,
+  principalId: string,
+): Promise<'human' | 'agent' | null> {
+  const { rows } = await db.execute<{ kind: 'human' | 'agent' }>(sql`
     SELECT kind FROM principals WHERE id = ${principalId}::uuid AND disabled_at IS NULL`)
-  return rows[0]?.kind === 'human'
+  return rows[0]?.kind ?? null
+}
+
+/** The agent's token is alive and its, and the owner keeps agents and this token on. */
+async function agentMaySend(db: Db, principalId: string, tokenId: string | null): Promise<boolean> {
+  if (!tokenId) return false
+  const { rows } = await db.execute<{ ok: boolean }>(sql`
+    SELECT true AS ok FROM api_tokens t JOIN principals p ON p.id = t.principal_id
+     WHERE t.id = ${tokenId}::uuid AND p.id = ${principalId}::uuid
+       AND p.kind = 'agent' AND p.disabled_at IS NULL
+       AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())`)
+  return rows[0]?.ok === true && (await agentSwitchedOn(db, tokenId))
+}
+
+/**
+ * A stamp of the owner is good for one send (11.11.2026): once the row's publication is no
+ * longer a draft — sent, cancelled, withdrawn — the row needs the owner again.
+ */
+function spendApproval(status: string) {
+  return sql`
+    approved_at = CASE WHEN ${status} = 'draft' THEN approved_at END,
+    approved_by = CASE WHEN ${status} = 'draft' THEN approved_by END,
+    approved_version = CASE WHEN ${status} = 'draft' THEN approved_version END`
 }
 
 /** Frames the platform may see of a file: the master's, and the built copy's when smaller. */
@@ -808,7 +862,8 @@ export async function applyPublication(
       hub_checks = CASE WHEN ${publication.status} = 'draft' THEN ${checksJson(publication)}::jsonb
                         ELSE hub_checks END,
       platform_post_ref = ${album ? null : publication.platformPostRef},
-      vault_album_ref = ${album ? (publication.vaultAlbumRef ?? publication.platformPostRef) : null}
+      vault_album_ref = ${album ? (publication.vaultAlbumRef ?? publication.platformPostRef) : null},
+      ${spendApproval(publication.status)}
      WHERE model_id = ${page.modelId}::uuid AND id = ${rowId}::uuid`)
   if (publication.status === 'published') await linkPublished(tx, page, rowId)
   return true

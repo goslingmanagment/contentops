@@ -105,9 +105,39 @@ them into the route's flags and body; it may read other routes first through `co
 |---|---|---|
 | `objects open` | `objects.get` | `--link` — object page link from the interface |
 | `orders find` | `orders.get` | `--model`, `--tg` — link to the order card in Telegram, any spelling |
+| `plan prepare-week` | `plan.prepareMany` | `--model`, `--week` (ISO, `2026-W46`), `--account` |
+| `plan send-week` | `plan.sendMany` | `--model`, `--week`, `--account` |
 
 The order's address in other `orders` commands is its `id` from `orders find`
 (`--order tg-2627984998-12-9844`).
+
+An alias may print its own report instead of the route's answer, and may call nothing when
+it finds nothing to do (stderr says so, exit 0).
+
+### An agent runs a week
+
+The owner approves a page's week in the interface («Утвердить неделю», decision of 11.11.2026);
+the agent then places the free posts itself. Both commands read the week first
+(`plan week`), act only on the rows the server would take, and print every row of the page's
+week with its outcome — `{rows: [{id, row, ok, code}]}`:
+
+```sh
+pnpm contentops plan prepare-week --model ari --week 2026-W46 --account ari-1 --json
+# Hub prepares the drafts in the background; read the week again a minute later, then:
+pnpm contentops plan send-week --model ari --week 2026-W46 --account ari-1 --json
+```
+
+- `prepare-week` prepares the rows that can be prepared and have no current draft; the others
+  get `hub_off` (the page publishes by hand), `manual` (a mass message, a surface Hub does not
+  publish), `pending` (Hub is busy with the row), `prepared` (the draft is current) or
+  `not_ready` (marked, out, waiting for a file).
+- `send-week` sends only the rows with `hub.agent_send.allowed`: free posts (FYP, a set or a
+  life on the wall, a vault album) the owner approved, the draft prepared from that version,
+  nothing found by Hub. The others keep the rule's reason — `not_approved`, `changed` (edited
+  after the approval or after «Подготовить»: ask the owner or prepare again), `spent` (sent
+  once: the owner approves again), `paid` (a price or a PPV on the wall), `kind` (a story, a
+  mass message), `release`, `hub_findings` — or `hub_off`, `pending`, `not_prepared`,
+  `not_ready`. These rows stay for a person.
 
 ## Uploading files
 

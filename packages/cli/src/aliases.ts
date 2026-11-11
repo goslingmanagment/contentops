@@ -1,3 +1,5 @@
+import { BatchResultSchema } from '@contentops/contracts/domain/pagination'
+import { type PlanRow, PlanWeekSchema } from '@contentops/contracts/domain/plan'
 import { orderAddress, parseTelegramRef } from '@contentops/contracts/order-link'
 import { UsageError } from './args'
 import type { RouteKey } from './table'
@@ -17,6 +19,10 @@ export interface RouteCall {
   flags: Record<string, string | readonly string[]>
   /** JSON body of the call; leave it out to take `--body` from the command line. */
   body?: unknown
+  /** The alias found nothing to act on: the route is not called, `report` answers alone. */
+  nothing?: boolean
+  /** What the alias's `report` needs besides the route's answer (rows it left out, labels). */
+  note?: unknown
 }
 
 export interface AliasContext {
@@ -33,6 +39,8 @@ export interface Alias {
   flags: Record<string, string>
   /** Throw `UsageError` for input it cannot use. */
   toRoute(flags: AliasFlags, context: AliasContext): RouteCall | Promise<RouteCall>
+  /** What stdout gets instead of the route's answer (`null` when nothing was called). */
+  report?(answer: unknown, call: RouteCall): unknown
 }
 
 /** The single value of a required flag. */
@@ -50,6 +58,73 @@ export function optional(flags: AliasFlags, name: string): string | undefined {
 }
 
 export { UsageError }
+
+/** One row of a week alias's report: the row, in short, and what happened to it. */
+interface WeekOutcome {
+  id: string
+  row: string
+  ok: boolean
+  code: string | null
+}
+
+/** The rows of one page's week, in the plan's order; `--week` and `--account` are required. */
+async function pageWeek(flags: AliasFlags, context: AliasContext) {
+  const model = one(flags, 'model')
+  const week = one(flags, 'week')
+  const account = one(flags, 'account')
+  const plan = PlanWeekSchema.parse(await context.read('plan.week', { model, week }))
+  return { model, rows: plan.rows.filter((row) => row.account === account) }
+}
+
+/** «SET-074 · 2026-11-12 19:00 · wall» */
+function rowLabel(row: PlanRow): string {
+  const what = row.manifest?.item_id ?? row.awaiting_montage?.from_item ?? 'row'
+  return `${what} · ${row.date}${row.time ? ` ${row.time}` : ''} · ${row.surface}`
+}
+
+/**
+ * The call of a week alias: the rows it takes go to the batch route, the rest are reported with
+ * the reason the plan gives; no row to take — no call.
+ */
+function weekCall(
+  model: string,
+  rows: readonly PlanRow[],
+  take: (row: PlanRow) => boolean,
+  skip: (row: PlanRow) => string,
+  body: (rows: PlanRow[]) => unknown,
+): RouteCall {
+  const taken = rows.filter(take)
+  const outcomes: WeekOutcome[] = rows.map((row) => ({
+    id: row.id,
+    row: rowLabel(row),
+    ok: false,
+    code: taken.includes(row) ? null : skip(row),
+  }))
+  return {
+    flags: { model },
+    body: body(taken),
+    nothing: taken.length === 0,
+    note: outcomes,
+  }
+}
+
+/** Per row: the batch answer for the rows sent, the reason for the rows left out. */
+function weekReport(answer: unknown, call: RouteCall): { rows: WeekOutcome[] } {
+  const results = BatchResultSchema.safeParse(answer)
+  const byId = new Map((results.success ? results.data.results : []).map((one) => [one.id, one]))
+  return {
+    rows: (call.note as WeekOutcome[]).map((outcome) => {
+      const result = outcome.code === null ? byId.get(outcome.id) : undefined
+      return result ? { ...outcome, ok: result.ok, code: result.code } : outcome
+    }),
+  }
+}
+
+const WEEK_FLAGS = {
+  model: 'model code',
+  week: 'ISO week, e.g. 2026-W46 (Monday to Sunday, Moscow)',
+  account: 'page code, e.g. ari-1',
+}
 
 export const aliases: Record<string, Alias> = {
   /** A link someone pasted from the interface → the object: `…/#/lora/i/PPV-073`. */
@@ -151,5 +226,69 @@ export const aliases: Record<string, Alias> = {
       const snapshot = optional(flags, 'snapshot')
       return { flags: { model: one(flags, 'model'), ...(snapshot ? { snapshot } : {}) } }
     },
+  },
+  /**
+   * An agent runs a page's week (decision of the owner 11.11.2026, SPEC §7): «Подготовить» every
+   * row the server takes (`hub.can_prepare`) that has no current draft yet. Per row: `ok`, or
+   * why not (`hub_off`, `manual`, `pending`, `prepared`, `not_ready`, or the batch's code).
+   */
+  'plan.prepare-week': {
+    summary: 'prepare in Hub the rows of a page’s week the server takes (per-row outcome)',
+    route: 'plan.prepareMany',
+    flags: WEEK_FLAGS,
+    toRoute: async (flags, context) => {
+      const { model, rows } = await pageWeek(flags, context)
+      const current = (row: PlanRow) =>
+        row.hub?.publication?.state === 'draft' && !row.hub.publication.stale
+      return weekCall(
+        model,
+        rows,
+        (row) => row.hub?.can_prepare === true && !current(row),
+        (row) =>
+          !row.hub
+            ? 'hub_off'
+            : row.hub.pending
+              ? 'pending'
+              : row.hub.manual
+                ? 'manual'
+                : current(row)
+                  ? 'prepared'
+                  : 'not_ready',
+        (taken) => ({ row_ids: taken.map((row) => row.id) }),
+      )
+    },
+    report: weekReport,
+  },
+  /**
+   * The send of the same week: only the rows an agent may send now (`hub.agent_send.allowed` —
+   * free posts the owner approved, the draft as approved, nothing found by Hub). Per row: `ok`,
+   * or the reason of the rule (`not_approved`, `changed`, `spent`, `paid`, `kind`, `release`,
+   * `hub_findings`), or `hub_off`, `pending`, `not_prepared`, `not_ready`.
+   */
+  'plan.send-week': {
+    summary: 'send through Hub the rows of a page’s week an agent may send (per-row outcome)',
+    route: 'plan.sendMany',
+    flags: WEEK_FLAGS,
+    toRoute: async (flags, context) => {
+      const { model, rows } = await pageWeek(flags, context)
+      return weekCall(
+        model,
+        rows,
+        (row) => row.hub?.agent_send?.allowed === true && row.hub.publication !== null,
+        (row) =>
+          row.hub?.agent_send?.reason ??
+          (!row.hub
+            ? 'hub_off'
+            : row.hub.pending
+              ? 'pending'
+              : row.hub.publication?.state === 'draft'
+                ? 'not_ready'
+                : 'not_prepared'),
+        (taken) => ({
+          rows: taken.map((row) => ({ id: row.id, version: row.hub?.publication?.version ?? 1 })),
+        }),
+      )
+    },
+    report: weekReport,
   },
 }

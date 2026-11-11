@@ -10,7 +10,7 @@ import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { enqueueRowWork } from '../hub/publish'
-import { kindRule, replaceable } from '../hub/publish-rules'
+import { AGENT_SEND_TEXT, agentSendRefusal, kindRule, replaceable } from '../hub/publish-rules'
 import { hubView, isConfirmedLevel } from '../plan/publication-view'
 import { type RowRecord, rowById } from '../plan/records'
 import { evaluateRow, loadState, type PlanState } from '../plan/state'
@@ -21,9 +21,10 @@ import { integrationViews } from './integrations'
 
 /**
  * Publication of a plan row through Hub (SPEC §7, §8, §11.1; DESIGN §4.11; PLAN 5б): «Подготовить»
- * (a person or an agent), «Отправить» (a person only — agents prepare, people send), the cancel
- * of ContentOps' own publication before Hub hands it to the platform, and the row's publication
- * as it stands. The work goes to `hub_publish`; the row answers at once with `hub.pending`.
+ * (a person or an agent), «Отправить» (a person; an agent — only a free row of a week the owner
+ * approved, decision 11.11.2026), the cancel of ContentOps' own publication before Hub hands it
+ * to the platform, and the row's publication as it stands. The work goes to `hub_publish`; the
+ * row answers at once with `hub.pending`.
  */
 
 const handed = (status: string | null) =>
@@ -100,7 +101,7 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
     model: ModelScope,
     row: RowRecord,
     op: 'prepare' | 'send' | 'cancel',
-    job: { principalId: string; version?: number },
+    job: { principalId: string; version?: number; tokenId?: string | null },
     requestId: string,
   ) {
     const { work, created } = await enqueueRowWork(tx, {
@@ -163,11 +164,14 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
     }
   }
 
-  /** Agents prepare, people send (SPEC §11.1): the server refuses a token here. */
-  function assertPerson(actor: Actor) {
-    if (actor.type !== 'person') {
-      throw new ApiProblem('forbidden', 'Отправить может только человек: агент только готовит')
-    }
+  /**
+   * An agent sends only free rows of a week the owner approved (SPEC §11.1, decision 11.11.2026):
+   * otherwise 403 with the reason; people send as before.
+   */
+  function assertAgentMay(actor: Actor, row: RowRecord) {
+    if (actor.type === 'person') return
+    const reason = agentSendRefusal(row)
+    if (reason) throw new ApiProblem('forbidden', AGENT_SEND_TEXT[reason], { reason })
   }
 
   /** «Отправить» of one row: the draft the person saw, its checks still passing. */
@@ -179,10 +183,11 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
     version: number,
     requestId: string,
   ): Promise<RowRecord> {
-    assertPerson(actor)
     const row = await rowById(tx, model, id, true)
     if (row.cancelled_at) throw new ApiProblem('row_cancelled', 'Не выполнено: строка отменена')
+    // The customs refusal goes first, for people and agents alike; then the agent's own rule.
     await assertNotCustom(tx, model, row)
+    assertAgentMay(actor, row)
     await assertPublishing(tx, model, row)
     if (row.hub_publication_id === null || row.hub_status !== 'draft') {
       throw new ApiProblem('publication_refused', 'Черновика в Hub нет — сначала «Подготовить»')
@@ -213,7 +218,14 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
         },
       )
     }
-    await queue(tx, model, row, 'send', { principalId: actor.id, version }, requestId)
+    await queue(
+      tx,
+      model,
+      row,
+      'send',
+      { principalId: actor.id, version, ...(actor.tokenId ? { tokenId: actor.tokenId } : {}) },
+      requestId,
+    )
     await logRow(tx, state, row, { Публикация: WORD.send })
     return row
   }
@@ -271,11 +283,10 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
 
       /**
        * «Отправить 12» one window with the summary of Hub's checks: rows with a blocking check
-       * stay, the rest go. A person only, for the whole batch.
+       * stay, the rest go. An agent's rows each by the agent's rule (`forbidden` — not this one).
        */
       sendMany: ({ body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
-          assertPerson(actor)
           const model = modelOf(ctx.model)
           const results: BatchResult['results'] = []
           const seen = new Set<string>()

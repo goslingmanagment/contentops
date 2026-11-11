@@ -14,6 +14,7 @@ import { usePlanAccess } from '../shared/use-plan-access'
 import { usePlanWorkspace } from '../shared/use-plan-workspace'
 import { drawerTypeFor } from './drawer-candidates'
 import { useWeekActions } from './use-week-actions'
+import { useWeekApproval } from './use-week-approval'
 import { useWeekSelection } from './use-week-selection'
 import { WeekBody } from './week-body'
 import { WeekDnd } from './week-dnd'
@@ -43,6 +44,7 @@ export function PlanWeekView({ week }: { week: IsoWeek }) {
   )
   const { openPlanDialog } = usePlanDialog()
   const actions = useWeekActions(week, data, today, access)
+  const approval = useWeekApproval(week, data)
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
   const order = useMemo(
     () => (data ? orderedRows(data, model.accounts) : []),
@@ -84,6 +86,13 @@ export function PlanWeekView({ week }: { week: IsoWeek }) {
       selection.selectRows(ids)
     },
     openEmpty,
+    // Утверждает неделю владелец (11.11.2026); остальные видят состояние без кнопок.
+    approval: {
+      owner: access.role === 'owner',
+      pending: approval.pending,
+      approve: approval.approve,
+      revoke: approval.revoke,
+    },
   }
 
   useKeyboardShortcut(

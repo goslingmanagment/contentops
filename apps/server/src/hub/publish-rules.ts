@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto'
+import type { AgentSendReason } from '@contentops/contracts/domain/plan'
 import { EXPORT_NAME_PATTERN } from '@contentops/contracts/download-name'
 import type { DraftInput, MediaKey } from '@contentops/hub'
-import type { DbSurface, PublicationKind } from '../plan/records'
+import type { DbSurface, PublicationKind, RowRecord } from '../plan/records'
 
 /**
  * The rules of publishing a plan row through Hub (SPEC §7 «Публикация через Hub», table of
  * surfaces; PLAN 5б), without the database: which kind a row becomes, what Hub does not publish,
- * when a file in the page's vault is the very same file, and the fingerprint of a draft.
+ * what an agent may send, when a file in the page's vault is the very same file, and the
+ * fingerprint of a draft.
  */
 
 export type KindRule = { kind: PublicationKind; manual: null } | { kind: null; manual: string }
@@ -41,6 +43,64 @@ export function kindRule(
     case 'story':
       return { kind: 'story', manual: null }
   }
+}
+
+/** Free posts an agent may send by itself (decision of the owner 11.11.2026). */
+const AGENT_KINDS: readonly PublicationKind[] = ['fyp_post', 'subscriber_post', 'vault_album']
+
+export type AgentSendRow = Pick<
+  RowRecord,
+  | 'platform'
+  | 'surface'
+  | 'item_type'
+  | 'price_mills'
+  | 'release_id'
+  | 'row_version'
+  | 'approved_version'
+  | 'hub_status'
+  | 'hub_sent_at'
+  | 'hub_prepared_version'
+  | 'hub_checks'
+>
+
+/**
+ * Why an agent may not send this row now (SPEC §7 «Публикация через Hub», §11.1; decision of
+ * the owner 11.11.2026), `null` — it may. An agent sends free posts of a week the owner approved:
+ * a FYP, a set or a life on the wall without a price, a vault album; never a priced post or a
+ * PPV on the wall (an empty price must not let it out free), a story, a mass message or a row of
+ * a PPV release. The row is the version the owner approved, the approval was not spent on a send
+ * yet (a send clears it), the draft in Hub was prepared from that version and Hub found nothing
+ * in it — neither blocking nor a warning. Without a draft there is nothing to send yet: the
+ * ordinary rules of «Отправить» say why. The route, the work right before Hub's approve and the
+ * views all ask this one function.
+ */
+export function agentSendRefusal(row: AgentSendRow): AgentSendReason | null {
+  if (row.release_id !== null) return 'release'
+  const price = row.price_mills === null ? null : Number(row.price_mills)
+  if ((price ?? 0) > 0 || (row.surface === 'wall' && row.item_type === 'PPV')) return 'paid'
+  const { kind } = kindRule(row.platform, row.surface, price)
+  if (kind === null || !AGENT_KINDS.includes(kind)) return 'kind'
+  if (kind === 'subscriber_post' && row.item_type !== 'SET' && row.item_type !== 'LIFE') {
+    return 'kind'
+  }
+  if (row.approved_version === null) return row.hub_sent_at !== null ? 'spent' : 'not_approved'
+  if (row.approved_version !== row.row_version) return 'changed'
+  if (row.hub_status !== 'draft') return null
+  if (row.hub_prepared_version !== row.row_version) return 'changed'
+  const checks = row.hub_checks
+  if (!checks || checks.blocked || checks.findings.length > 0) return 'hub_findings'
+  return null
+}
+
+/** The refusal in words: the 403 of the route and the error of the work. */
+export const AGENT_SEND_TEXT: Record<AgentSendReason, string> = {
+  not_approved: 'Строку не утверждал владелец — агент её не отправляет',
+  changed: 'Строку изменили после утверждения владельца или после «Подготовить»',
+  spent: 'Утверждение уже ушло на отправку — строку утверждают заново',
+  paid: 'Платный пост — отправляет только человек',
+  kind: 'Такую строку отправляет только человек',
+  release: 'Строку выпуска PPV отправляет только человек',
+  hub_findings: 'У черновика есть проверки Hub — отправляет человек',
 }
 
 /** OnlyFans: posts and stories only from files already in the page's vault (SPEC §7). */

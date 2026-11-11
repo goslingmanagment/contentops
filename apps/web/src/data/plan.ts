@@ -282,6 +282,32 @@ export function usePlanCommands(model: ModelCode) {
         }),
       sendMany: ({ key, rows }: Call & { rows: readonly { id: string; version: number }[] }) =>
         api.plan.sendMany({ params: { model }, body: { rows: [...rows] }, idempotencyKey: key }),
+      /** «Утвердить неделю» страницы (владелец, 11.11.2026): строки с версиями, как он их видел. */
+      approveWeek: ({
+        key,
+        week,
+        account,
+        rows,
+      }: Call & {
+        week: IsoWeek
+        account: AccountCode
+        rows: readonly { id: string; version: number }[]
+      }) =>
+        api.plan.approveWeek({
+          params: { model, week },
+          body: { account, rows: [...rows] },
+          idempotencyKey: key,
+        }),
+      revokeWeekApproval: ({
+        key,
+        week,
+        account,
+      }: Call & { week: IsoWeek; account: AccountCode }) =>
+        api.plan.revokeWeekApproval({
+          params: { model, week },
+          body: { account },
+          idempotencyKey: key,
+        }),
       /** Файл строки плана: имя с кодом страницы, днём и временем строки (§2.5). */
       downloadRow: ({
         key,

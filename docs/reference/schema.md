@@ -770,7 +770,8 @@ PPV (триггер).
 | `caption?`, `tier_refs text[]?`, `price_mills?`, `repost`, `album_name?` | для публикации через Hub, с 4а: подпись; аудитория Fansly — пусто: подписчики, иначе тиры; цена в тысячных долях доллара, как у Hub (с ценой — `paid_post`); флаг повтора (`boolean NOT NULL DEFAULT false`); имя альбома vault |
 | `hub_publication_id?`, `hub_kind?`, `hub_status?`, `hub_status_reason?`, `hub_status_at?`, `hub_updated_at?` | с 5б (`0009_publications`): публикация Hub, её вид по поверхности (SPEC §7), статус и причина как отдаёт Hub (опрос раз в 10 мин; списка статусов в CHECK нет — он растёт у Hub), время смены статуса и `updatedAt` Hub — более старая строка ленты ничего не меняет |
 | `hub_version?`, `hub_checks?`, `hub_files`, `hub_content_hash?` | черновик: версия содержимого (её утверждает «Отправить»), проверки Hub `{blocked, findings}`, файлы черновика (`jsonb`: версия, имя по naming §5–6, SHA-256 и размер, `file_id` загрузки или `vault_media_ref` того же файла из vault страницы, когда загружен) — повторное «Подготовить» не грузит то, что уже здесь; отпечаток черновика — тот же черновик дважды не создаётся |
-| `hub_prepared_at/by?`, `hub_prepared_version?`, `hub_sent_at/by?` | кто подготовил и с какой версии строки (правка строки после этого — «подготовьте заново»); кто отправил — только человек (SPEC §11.1) |
+| `hub_prepared_at/by?`, `hub_prepared_version?`, `hub_sent_at/by?` | кто подготовил и с какой версии строки (правка строки после этого — «подготовьте заново»); кто отправил — человек или агент по утверждённой неделе (SPEC §7, §11.1) |
+| `approved_at?`, `approved_by?`, `approved_version?` | с `0019_week_approval` (11.11.2026): «Утвердить неделю» — когда, кто (владелец, человек) и какую версию строки он видел; строка утверждена, пока `approved_version = row_version`, утверждение версию не меняет; как только публикация строки перестала быть черновиком, отметка стирается — утверждение на одну отправку (SPEC §7) |
 | `platform_post_ref?`, `vault_album_ref?` | пост или альбом vault на площадке, которыми стала публикация, — к посту Hub без сопоставления (схема §9.6) |
 | `cancelled_at/by`, `cancel_reason` | |
 | `note`, `row_version`, `created_at/by` | |
@@ -778,8 +779,8 @@ PPV (триггер).
 CHECK `marked_at IS NULL OR cancelled_at IS NULL`; CHECK `release_id IS NULL OR
 item_id IS NOT NULL`; частичный UNIQUE `(hub_publication_id)`; CHECK: без публикации нет ни
 вида, ни статуса, ни черновика; у публикации — вид, статус, версия и автор подготовки; пост
-или альбом — одно из двух, альбом только у `vault_album`; FK на состав только
-закрытый. Индексы `(model_id, account_id, platform_post_ref)` и `(…, vault_album_ref)` и
+или альбом — одно из двух, альбом только у `vault_album`; CHECK: утверждение — время,
+человек и версия вместе или ничего; FK на состав только закрытый. Индексы `(model_id, account_id, platform_post_ref)` и `(…, vault_album_ref)` и
 функции `is_publication_post`, `is_publication_album` — сопоставление пропускает посты и
 альбомы, пришедшие по публикации Hub (SPEC §7). Уникальности по слоту нет: два
 поста в один слот представимы и показываются как конфликт. Индексы:
@@ -1712,6 +1713,7 @@ LLM.
 | после 3 (05.11.2026) | `0016_video_prints` | `video_prints` (1): отпечатки роликов; кандидат `similar_video`, ◆ `video_copy`, работа `video_print` (SPEC §6.2) |
 | 8 (8а, 07.11.2026) | `0017_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
 | после 8а (11.11.2026) | `0018_custom_copies` | таблиц нет: вид `custom_copy` в `review_cases` — «Копии кастомов» (SPEC §6.2) |
+| 5б (11.11.2026) | `0019_week_approval` | таблиц нет: «Утвердить неделю» — `posting_plan_rows.approved_at/by/version` (схема §3.5, SPEC §7) |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
 Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего

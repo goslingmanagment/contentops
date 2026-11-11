@@ -569,6 +569,18 @@
           "reader"
         ]
       },
+      "AgentSendReason": {
+        "type": "string",
+        "enum": [
+          "not_approved",
+          "changed",
+          "spent",
+          "paid",
+          "kind",
+          "release",
+          "hub_findings"
+        ]
+      },
       "AgentToken": {
         "type": "object",
         "properties": {
@@ -797,6 +809,39 @@
           "request_id"
         ],
         "additionalProperties": false
+      },
+      "ApproveWeekCommandInput": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountCodeInput"
+          },
+          "rows": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "version"
+              ]
+            }
+          }
+        },
+        "required": [
+          "account",
+          "rows"
+        ]
       },
       "AssignLifeCommandInput": {
         "type": "object",
@@ -8842,6 +8887,29 @@
           },
           "can_cancel": {
             "type": "boolean"
+          },
+          "agent_send": {
+            "type": "object",
+            "properties": {
+              "allowed": {
+                "type": "boolean"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentSendReason"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "allowed",
+              "reason"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -9169,6 +9237,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PlanHub"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RowApproval"
               },
               {
                 "type": "null"
@@ -10440,6 +10518,17 @@
           "new_version"
         ]
       },
+      "RevokeWeekApprovalCommandInput": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountCodeInput"
+          }
+        },
+        "required": [
+          "account"
+        ]
+      },
       "Role": {
         "type": "string",
         "enum": [
@@ -10455,6 +10544,30 @@
           "manager",
           "reader"
         ]
+      },
+      "RowApproval": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "by": {
+            "$ref": "#/components/schemas/ActorRef"
+          },
+          "version": {
+            "$ref": "#/components/schemas/RecordVersion"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "at",
+          "by",
+          "version",
+          "current"
+        ],
+        "additionalProperties": false
       },
       "RowCheckResult": {
         "type": "object",
@@ -12453,6 +12566,54 @@
                 "type": "null"
               }
             ]
+          },
+          "approval": {
+            "type": "object",
+            "properties": {
+              "approved": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "changed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "unapproved": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "at": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Instant"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "by": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ActorRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "approved",
+              "changed",
+              "unapproved",
+              "at",
+              "by"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -18179,6 +18340,126 @@
         ],
         "responses": {
           "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/plan/weeks/{week}:approve": {
+      "post": {
+        "operationId": "plan.approveWeek",
+        "tags": [
+          "plan"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveWeekCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "week",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/plan/weeks/{week}:revoke-approval": {
+      "post": {
+        "operationId": "plan.revokeWeekApproval",
+        "tags": [
+          "plan"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeWeekApprovalCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "week",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
             "description": "Default Response",
             "content": {
               "application/json": {

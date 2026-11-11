@@ -1,8 +1,11 @@
 import {
+  type AgentSendReason,
+  capitalize,
   formatStamp,
   type PlanRow,
   PUBLICATION_STATE_WORD,
   type PublicationState,
+  pastVerb,
 } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { Checkbox } from '@contentops/ui/components/checkbox'
@@ -72,6 +75,7 @@ export function RowPublication({ row, canAct }: { row: PlanRow; canAct: boolean 
           </p>
         ) : null}
         {publication ? <p>{publication.text}</p> : null}
+        <ApprovalNote row={row} />
         {hub.pending ? <p className="text-ink-3">{PENDING_TEXT[hub.pending]}…</p> : null}
         {hub.error ? (
           <p role="alert" className="flex items-start gap-1.5 text-destructive text-sm">
@@ -131,6 +135,48 @@ export function RowPublication({ row, canAct }: { row: PlanRow; canAct: boolean 
       </div>
     </InfoSection>
   )
+}
+
+/** Почему агент не отправит строку сам (решение владельца 11.11.2026). */
+const AGENT_WORD: Record<AgentSendReason, string> = {
+  not_approved: 'неделю не утверждали — агент не отправит',
+  changed: 'изменено после утверждения или после «Подготовить» — агент не отправит',
+  spent: 'утверждение ушло на отправку — агент снова не отправит',
+  paid: 'платный пост — отправляет человек',
+  kind: 'такую строку отправляет человек',
+  release: 'строка выпуска PPV — отправляет человек',
+  hub_findings: 'у черновика есть проверки Hub — отправляет человек',
+}
+
+/**
+ * Одна строка об утверждении недели (DESIGN §4.11): кто и когда утвердил строку и может ли
+ * агент отправить её сам, или почему нет.
+ */
+function ApprovalNote({ row }: { row: PlanRow }) {
+  const clock = useClock()
+  const approval = row.approval ?? null
+  const reason = row.hub?.agent_send?.reason ?? null
+  if (approval && !approval.current) {
+    return (
+      <p className="flex items-start gap-1.5 text-attention-ink text-sm">
+        <StatusSign kind="turn" size={14} className="mt-0.5" />
+        <span>
+          Утверждено {formatStamp(approval.at, clock.now())}, потом строку изменили — агент не
+          отправит, пока владелец не утвердит снова
+        </span>
+      </p>
+    )
+  }
+  if (approval) {
+    return (
+      <p className="text-ink-3 text-sm">
+        {pastVerb('Утвердил', approval.by.gender)} {approval.by.name}{' '}
+        {formatStamp(approval.at, clock.now())} ·{' '}
+        {reason ? AGENT_WORD[reason] : 'агент может отправить сам'}
+      </p>
+    )
+  }
+  return reason ? <p className="text-ink-3 text-sm">{capitalize(AGENT_WORD[reason])}</p> : null
 }
 
 function dollars(mills: number): string {
