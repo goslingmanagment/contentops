@@ -51,7 +51,7 @@ function forbidden(message: string): ApiProblem {
 }
 
 /** Agents work only while the owner keeps them on: all of them and this token (SPEC §8). */
-async function agentSwitchedOn(db: Db, tokenId: string | null): Promise<boolean> {
+export async function agentSwitchedOn(db: Db, tokenId: string | null): Promise<boolean> {
   if (!(await isSwitchOn(db, 'agents.enabled'))) return false
   if (!tokenId) return false
   const { rows } = await db.execute<{ off: boolean }>(sql`

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { addDays } from '@contentops/contracts/clock'
+import { addDays, isoWeekOf, weekDates } from '@contentops/contracts/clock'
 import type { NewPlanRow } from '@contentops/contracts/commands/plan'
 import { IssuedTokenSchema } from '@contentops/contracts/domain/agents'
-import { type PlanRow, PlanRowSchema } from '@contentops/contracts/domain/plan'
+import { type PlanRow, PlanRowSchema, PlanWeekSchema } from '@contentops/contracts/domain/plan'
 import { type Db, enqueueWork, resumeSwitch, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { type FakeHub, fakeRow, startFakeHub } from '@contentops/hub/testing'
 import { sql } from 'drizzle-orm'
@@ -35,7 +35,8 @@ import {
 /**
  * PLAN 5б, SPEC §7 «Публикация через Hub», §8, §11.1 on a fake Hub: «Подготовить» uploads only
  * what Hub lacks (a repeat uploads nothing), reuses the very same file from the page's vault,
- * shows Hub's checks; an agent prepares but never sends, a person's «Отправить» approves once;
+ * shows Hub’s checks; an agent sends only free rows of a week the owner approved («Утвердить
+ * неделю», 11.11.2026), once per approval; a person’s «Отправить» approves once;
  * the own cancel before the hand-off and the owner-only after it; the statuses of the feed
  * mapped onto the row, «не удалось проверить — решает владелец в Hub» included; the exact
  * placement from `platformPostRef` without matching; the switch with a pending work; OnlyFans
@@ -279,6 +280,19 @@ function versionOf(row: PlanRow): number {
   return version
 }
 
+/** «Утвердить неделю» of lora-1 with the versions of the rows as they are given. */
+async function approveWeek(rows: readonly PlanRow[], as = owner) {
+  const response = await call(server.app, {
+    method: 'POST',
+    url: `/api/v1/lora/plan/weeks/${isoWeekOf((rows[0] as PlanRow).date)}:approve`,
+    as,
+    key: newKey(),
+    body: { account: 'lora-1', rows: rows.map((row) => ({ id: row.id, version: row.version })) },
+  })
+  if (as === owner) expect(response.statusCode, response.body).toBe(200)
+  return response
+}
+
 /** A PPV release with its story cell: stories are put only as the teaser of a release. */
 async function putStory(date: string, time: string): Promise<PlanRow> {
   const response = await call(server.app, {
@@ -479,14 +493,49 @@ describe('checks and «Отправить»', () => {
     expect(hub.calls('publications.approve').length).toBe(approves)
   })
 
-  it('an agent prepares but never sends — by the route and by the work', async () => {
+  it('an agent sends a free row only after the owner approved its week, and once', async () => {
     const row = await put({ item_id: 'FYP-0801', surface: 'fyp', date: day(4), time: '03:00' })
     const after = await prepared(row.id, agent)
     expect(after.hub?.publication?.prepared.by.type).toBe('agent')
+    expect(after.hub?.agent_send).toEqual({ allowed: false, reason: 'not_approved' })
     const approves = hub.calls('publications.approve').length
     const refused = await command(row.id, 'send', agent, { version: versionOf(after) })
     expect(refused.statusCode).toBe(403)
-    expect(refused.json().message).toContain('только человек')
+    expect(refused.json()).toMatchObject({
+      code: 'forbidden',
+      details: { reason: 'not_approved' },
+      message: expect.stringContaining('не утверждал владелец'),
+    })
+    expect(hub.calls('publications.approve').length).toBe(approves)
+
+    const approved = await approveWeek([after])
+    expect(approved.json().results).toEqual([{ id: row.id, ok: true, code: null }])
+    const stamped = await rowOf(row.id, agent)
+    // The stamp changes no version.
+    expect(stamped.version).toBe(after.version)
+    expect(stamped.approval).toMatchObject({ by: { name: 'Дмитрий' }, current: true })
+    expect(stamped.hub?.agent_send).toEqual({ allowed: true, reason: null })
+    const queued = await command(row.id, 'send', agent, { version: versionOf(after) })
+    expect(queued.statusCode, queued.body).toBe(202)
+    const outcome = await runRow(row.id)
+    expect(outcome.state, outcome.error_text ?? '').toBe('succeeded')
+    expect(hub.calls('publications.approve').length).toBe(approves + 1)
+    const sentRow = await rowOf(row.id)
+    expect(sentRow.hub?.publication?.sent?.by.type).toBe('agent')
+    // The approval went on this send: the row needs the owner again.
+    expect(sentRow.approval).toBeNull()
+    expect(sentRow.hub?.agent_send).toEqual({ allowed: false, reason: 'spent' })
+    const again = await command(row.id, 'send', agent, { version: versionOf(after) })
+    expect(again.statusCode).toBe(403)
+    expect(again.json().details).toEqual({ reason: 'spent' })
+    expect(hub.calls('publications.approve').length).toBe(approves + 1)
+  })
+
+  it('a send work naming an agent without its token is refused by the work', async () => {
+    const row = await put({ item_id: 'FYP-0801', surface: 'fyp', date: day(4), time: '04:00' })
+    const after = await prepared(row.id, agent)
+    await approveWeek([after])
+    const approves = hub.calls('publications.approve').length
     // A send work naming the agent, queued around the route, is refused by the work too.
     const { work } = await withActorTx(
       db,
@@ -504,7 +553,7 @@ describe('checks and «Отправить»', () => {
         }),
     )
     const outcome = await runHubWork(db, work.id, publish(), { kind: 'hub_publish' })
-    expect(outcome).toMatchObject({ state: 'failed', error_code: 'agent_cannot_send' })
+    expect(outcome).toMatchObject({ state: 'failed', error_code: 'agent_off' })
     expect(hub.calls('publications.approve').length).toBe(approves)
     expect(publicationOf(after).status).toBe('draft')
   })
@@ -577,11 +626,16 @@ describe('«Подготовить 12» and «Отправить 12»', () => {
     expect(blocked.hub?.publication?.blocked).toBe(true)
     const rows = [ready, blocked].map((row) => ({ id: row.id, version: versionOf(row) }))
 
-    // An agent never sends, not even in a batch.
-    const refused = await batch('send', { rows }, agent)
-    expect(refused.statusCode).toBe(403)
-
+    // An agent sends nothing the owner did not approve, a paid post never: each row its own.
     const approves = hub.calls('publications.approve').length
+    const refused = await batch('send', { rows }, agent)
+    expect(refused.statusCode, refused.body).toBe(202)
+    expect(refused.json().results).toEqual([
+      { id: ready.id, ok: false, code: 'forbidden' },
+      { id: blocked.id, ok: false, code: 'forbidden' },
+    ])
+    expect(hub.calls('publications.approve').length).toBe(approves)
+
     const sentBatch = await batch('send', { rows })
     expect(sentBatch.statusCode, sentBatch.body).toBe(202)
     expect(sentBatch.json().results).toEqual([
@@ -812,6 +866,29 @@ describe('the page and the platform', () => {
     const outcome = await runRow(row.id)
     expect(outcome.state, outcome.error_text ?? '').toBe('succeeded')
     expect(hub.requests.length).toBeGreaterThan(calls)
+
+    // An agent's send of an approved free row waits for the switch the same way, then goes once.
+    const free = await prepared(
+      (await put({ item_id: 'SET-074', date: day(10), time: '22:00' })).id,
+    )
+    await approveWeek([free])
+    const queuedSend = await command(free.id, 'send', agent, { version: versionOf(free) })
+    expect(queuedSend.statusCode, queuedSend.body).toBe(202)
+    await setPublish(lora1, false)
+    const approves = hub.calls('publications.approve').length
+    const waiting = await runHubWork(db, await lastWork(free.id), publish(), {
+      kind: 'hub_publish',
+      claim: false,
+    })
+    expect(waiting.paused_reason).toBe('switch_off:hub.publish')
+    expect(hub.calls('publications.approve').length).toBe(approves)
+    await setPublish(lora1, true)
+    const went = await runRow(free.id)
+    expect(went.state, went.error_text ?? '').toBe('succeeded')
+    expect(hub.calls('publications.approve').length).toBe(approves + 1)
+    const twice = await command(free.id, 'send', agent, { version: versionOf(free) })
+    expect(twice.statusCode).toBe(403)
+    expect(hub.calls('publications.approve').length).toBe(approves + 1)
   })
 
   it('OnlyFans publishes only files already in its vault', async () => {
@@ -898,5 +975,213 @@ describe('the page and the platform', () => {
     })
     expect(response.statusCode, response.body).toBe(200)
     expect(response.json()).toMatchObject({ enabled: true, publication: null, can_prepare: true })
+  })
+})
+
+describe('«Утвердить неделю» (decision of the owner 11.11.2026)', () => {
+  /** A week of its own, far from the other tests: its column counts only these rows. */
+  const far = weekDates(isoWeekOf(day(35)))
+  const on = (index: number) => far[index] as string
+
+  async function weekColumn() {
+    const response = await call(server.app, {
+      method: 'GET',
+      url: `/api/v1/lora/plan?week=${isoWeekOf(on(0))}`,
+      as: diana.session,
+    })
+    expect(response.statusCode, response.body).toBe(200)
+    return PlanWeekSchema.parse(response.json()).columns.find(
+      (column) => column.account === 'lora-1',
+    )
+  }
+
+  async function revoke(as = owner) {
+    return call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/plan/weeks/${isoWeekOf(on(0))}:revoke-approval`,
+      as,
+      key: newKey(),
+      body: { account: 'lora-1' },
+    })
+  }
+
+  async function switchAgents(enabled: boolean) {
+    const response = await call(server.app, {
+      method: 'PATCH',
+      url: '/api/v1/admin/integrations/agents',
+      as: owner,
+      key: newKey(),
+      body: { switches: { enabled } },
+    })
+    expect(response.statusCode, response.body).toBe(200)
+  }
+
+  it('only the owner, a person: a manager and an agent of any role are refused', async () => {
+    const row = await put({ item_id: 'SET-074', date: on(0), time: '19:00' })
+    expect((await approveWeek([row], diana.session)).statusCode).toBe(403)
+    expect((await approveWeek([row], agent)).statusCode).toBe(403)
+    // An agent with the owner's role (the API never gives one; the database could hold it).
+    const added = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/admin/agents',
+      as: owner,
+      key: newKey(),
+      body: { name: 'Агент владельца', role: 'manager', models: ['lora'] },
+    })
+    const id = added.json().id as string
+    const token = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/admin/agents/${id}/tokens`,
+      as: owner,
+      key: newKey(),
+      body: { agent_id: id, expires_in_days: null },
+    })
+    await withActorTx(
+      db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test.role', requestId: randomUUID() },
+      (tx) => tx.execute(sql`UPDATE principals SET role = 'owner' WHERE id = ${id}::uuid`),
+    )
+    const ownerAgent = `Bearer ${IssuedTokenSchema.parse(token.json()).secret}`
+    const refused = await approveWeek([row], ownerAgent)
+    expect(refused.statusCode).toBe(403)
+    expect(refused.json().message).toContain('только владелец')
+    expect((await revoke(ownerAgent)).statusCode).toBe(403)
+    expect((await revoke(diana.session)).statusCode).toBe(403)
+    expect((await rowOf(row.id)).approval).toBeNull()
+  })
+
+  it('stamps the rows as the owner saw them: an edit voids it, a repeat picks it up', async () => {
+    const set = await put({ item_id: 'SET-074', date: on(1), time: '19:00' })
+    const fyp = await put({ item_id: 'FYP-0801', surface: 'fyp', date: on(2), time: '03:00' })
+    const ppv = await put({ item_id: 'PPV-076', date: on(3), time: '20:00' })
+    const other = await put({ item_id: 'SET-074', date: day(4), time: '23:00' })
+    expect((await weekColumn())?.approval).toMatchObject({
+      approved: 0,
+      changed: 0,
+      at: null,
+    })
+    const first = await approveWeek([set, { ...fyp, version: fyp.version + 5 }, other])
+    expect(first.json().results).toEqual([
+      { id: set.id, ok: true, code: null },
+      { id: fyp.id, ok: false, code: 'version_mismatch' },
+      // Another week: not this week's row.
+      { id: other.id, ok: false, code: 'not_found' },
+    ])
+    const column = await weekColumn()
+    expect(column?.approval).toMatchObject({ approved: 1, changed: 0, by: { name: 'Дмитрий' } })
+    const unapproved = column?.approval?.unapproved ?? 0
+    expect(unapproved).toBeGreaterThanOrEqual(2)
+
+    const edited = await call(server.app, {
+      method: 'PATCH',
+      url: `/api/v1/lora/plan/rows/${set.id}`,
+      as: diana.session,
+      key: newKey(),
+      ifMatch: set.version,
+      body: { caption: 'Another fictional caption' },
+    })
+    expect(edited.statusCode, edited.body).toBe(200)
+    const changed = PlanRowSchema.parse(edited.json())
+    expect(changed.approval).toMatchObject({ version: set.version, current: false })
+    expect(changed.hub?.agent_send?.reason).toBe('changed')
+    expect((await weekColumn())?.approval).toMatchObject({ approved: 0, changed: 1, unapproved })
+
+    const again = await approveWeek([changed, fyp, ppv])
+    expect(again.json().results.every((result: { ok: boolean }) => result.ok)).toBe(true)
+    expect((await weekColumn())?.approval).toMatchObject({
+      approved: 3,
+      changed: 0,
+      unapproved: unapproved - 2,
+    })
+    // The journal names the rows and the versions the owner saw.
+    const { rows: journal } = await db.execute<{ after: { Строки: unknown[] } }>(sql`
+      SELECT after FROM action_log WHERE action = 'plan.approveWeek' AND entry_kind = 'action'
+       ORDER BY id DESC LIMIT 1`)
+    expect(journal[0]?.after.Строки).toEqual([
+      { id: changed.id, version: changed.version },
+      { id: fyp.id, version: fyp.version },
+      { id: ppv.id, version: ppv.version },
+    ])
+  })
+
+  it('a paid post, a PPV on the wall and a draft with Hub’s findings stay for a person', async () => {
+    const ppv = await put({ item_id: 'PPV-076', date: on(4), time: '20:00' })
+    const priced = await put(
+      { item_id: 'SET-074', date: on(4), time: '21:00' },
+      { price_mills: 9_000 },
+    )
+    const warned = await prepared(
+      (await put({ item_id: 'SET-074', date: on(4), time: '22:00' })).id,
+    )
+    await approveWeek([ppv, priced, warned])
+    expect((await rowOf(ppv.id)).hub?.agent_send?.reason).toBe('paid')
+    expect((await rowOf(priced.id)).hub?.agent_send?.reason).toBe('paid')
+    expect((await rowOf(warned.id)).hub?.agent_send).toEqual({ allowed: true, reason: null })
+    // Hub warns about the draft (a file posted recently): an agent leaves it to a person.
+    await withActorTx(
+      db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test.checks', requestId: randomUUID() },
+      (tx) =>
+        tx.execute(sql`
+          UPDATE posting_plan_rows
+             SET hub_checks = '{"blocked": false, "findings": [{"code": "media_recently_posted", "severity": "warning", "media_key": null}]}'::jsonb
+           WHERE id = ${warned.id}::uuid`),
+    )
+    const after = await rowOf(warned.id)
+    expect(after.hub).toMatchObject({ can_send: true, agent_send: { reason: 'hub_findings' } })
+    const approves = hub.calls('publications.approve').length
+    for (const [row, reason] of [
+      [ppv, 'paid'],
+      [priced, 'paid'],
+      [after, 'hub_findings'],
+    ] as const) {
+      const refused = await command(row.id, 'send', agent, { version: 1 })
+      expect(refused.statusCode).toBe(403)
+      expect(refused.json().details).toEqual({ reason })
+    }
+    expect(hub.calls('publications.approve').length).toBe(approves)
+  })
+
+  it('a revoked approval, an edited row or switched-off agents stop a queued agent send', async () => {
+    const approves = hub.calls('publications.approve').length
+    const queue = async (time: string) => {
+      const row = await prepared((await put({ item_id: 'SET-074', date: on(5), time })).id)
+      await approveWeek([row])
+      const queued = await command(row.id, 'send', agent, { version: versionOf(row) })
+      expect(queued.statusCode, queued.body).toBe(202)
+      return row
+    }
+
+    const revoked = await queue('18:00')
+    const answer = await revoke()
+    expect(answer.statusCode, answer.body).toBe(200)
+    expect(answer.json().results).toContainEqual({ id: revoked.id, ok: true, code: null })
+    expect(await runRow(revoked.id)).toMatchObject({
+      state: 'failed',
+      error_code: 'agent_not_approved',
+    })
+    expect((await rowOf(revoked.id)).approval).toBeNull()
+
+    const edited = await queue('19:00')
+    const patched = await call(server.app, {
+      method: 'PATCH',
+      url: `/api/v1/lora/plan/rows/${edited.id}`,
+      as: diana.session,
+      key: newKey(),
+      ifMatch: edited.version,
+      body: { note: 'fictional note' },
+    })
+    expect(patched.statusCode, patched.body).toBe(200)
+    expect((await runRow(edited.id)).state).toBe('failed')
+
+    const switched = await queue('20:00')
+    await switchAgents(false)
+    try {
+      expect(await runRow(switched.id)).toMatchObject({ state: 'failed', error_code: 'agent_off' })
+    } finally {
+      await switchAgents(true)
+    }
+    expect(hub.calls('publications.approve').length).toBe(approves)
+    expect(publicationOf(switched).status).toBe('draft')
   })
 })

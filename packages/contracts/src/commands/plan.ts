@@ -162,6 +162,20 @@ export const SendRowsCommandSchema = z.object({
 })
 export type SendRowsCommand = z.infer<typeof SendRowsCommandSchema>
 
+/**
+ * «Утвердить неделю» of a page (owner, 11.11.2026): each row with the version the owner saw;
+ * a row changed since stays unapproved (`version_mismatch`).
+ */
+export const ApproveWeekCommandSchema = z.object({
+  account: AccountCodeSchema,
+  rows: z.array(z.object({ id: z.string(), version: z.int().positive() })).min(1),
+})
+export type ApproveWeekCommand = z.infer<typeof ApproveWeekCommandSchema>
+
+/** «Отозвать» the approval of a page's week: the stamps of its rows go. */
+export const RevokeWeekApprovalCommandSchema = z.object({ account: AccountCodeSchema })
+export type RevokeWeekApprovalCommand = z.infer<typeof RevokeWeekApprovalCommandSchema>
+
 export const UpdateWeekNormCommandSchema = WeekNormSchema.omit({ account: true, version: true })
 export type UpdateWeekNormCommand = z.infer<typeof UpdateWeekNormCommandSchema>
 

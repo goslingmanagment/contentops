@@ -2173,6 +2173,11 @@ CREATE TABLE public.posting_plan_rows (
     hub_sent_by uuid,
     platform_post_ref text,
     vault_album_ref text,
+    approved_at timestamp with time zone,
+    approved_by uuid,
+    approved_version bigint,
+    CONSTRAINT posting_plan_rows_approval CHECK (((num_nonnulls(approved_at, approved_by, approved_version) = 0) OR (num_nulls(approved_at, approved_by, approved_version) = 0))),
+    CONSTRAINT posting_plan_rows_approved_version_positive CHECK ((approved_version > 0)),
     CONSTRAINT posting_plan_rows_cancel CHECK (((cancelled_at IS NOT NULL) OR ((cancelled_by IS NULL) AND (cancel_reason IS NULL)))),
     CONSTRAINT posting_plan_rows_cancel_reason_check CHECK ((cancel_reason = ANY (ARRAY['late'::text, 'replaced'::text, 'paused'::text, 'second_person'::text]))),
     CONSTRAINT posting_plan_rows_expected_role CHECK ((expected_role = 'teaser'::text)),
@@ -3867,6 +3872,9 @@ ALTER TABLE ONLY public.policy_settings
 
 ALTER TABLE ONLY public.policy_settings
     ADD CONSTRAINT policy_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.posting_plan_rows
+    ADD CONSTRAINT posting_plan_rows_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.posting_plan_rows
     ADD CONSTRAINT posting_plan_rows_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES public.principals(id) ON DELETE RESTRICT;

@@ -31,6 +31,11 @@ const files = (n: string | undefined) =>
     ? null
     : `${formatNumber(Number(n))} ${plural(Number(n), ['файл', 'файла', 'файлов'])}`
 
+const rowsCount = (n: string | undefined) =>
+  n === undefined || Number.isNaN(Number(n))
+    ? null
+    : `${formatNumber(Number(n))} ${plural(Number(n), ['строка', 'строки', 'строк'])}`
+
 const quoted = (value: string | undefined) => (value ? `«${value}»` : null)
 
 const joined = (...parts: (string | null | undefined)[]) =>
@@ -448,6 +453,19 @@ const WORDING: Record<string, Wording> = {
     verb: 'отменил',
     rest: 'публикацию {subject}',
     noun: 'отмена публикации',
+  },
+  // «Утвердить неделю» (11.11.2026): `{subject}` is «Fansly 1 · 09.11–15.11».
+  'plan.approveWeek': {
+    verb: 'утвердил',
+    rest: 'неделю {subject}',
+    noun: 'утверждение недели',
+    tail: (after) => rowsCount(after.get('Строк')),
+  },
+  'plan.revokeWeekApproval': {
+    verb: 'отозвал',
+    rest: 'утверждение недели {subject}',
+    noun: 'отзыв утверждения недели',
+    tail: (after) => rowsCount(after.get('Строк')),
   },
   // Сверка: `check.decide` keeps the decision in words — «Сверка: «Это оно»».
   'check.decide': { verb: 'решил', rest: '{subject}', noun: 'решение сверки' },

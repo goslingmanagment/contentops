@@ -150,6 +150,11 @@ class Session {
       aliasCall = await alias.toRoute(Object.fromEntries(this.flags), {
         read: (target, flags) => this.read(target, toFlagMap(flags)),
       })
+      if (aliasCall.nothing) {
+        this.io.stderr(`${key}: nothing to do, ${alias.route} not called\n`)
+        this.print(alias.report ? alias.report(null, aliasCall) : null)
+        return EXIT.ok
+      }
       routeKey = alias.route
       routeFlags = toFlagMap(aliasCall.flags)
     }
@@ -184,7 +189,7 @@ class Session {
         `accepted: operation ${accepted.data.operation_id} (${accepted.data.status_url}); --wait waits for it\n`,
       )
     }
-    this.print(result)
+    this.print(alias?.report && aliasCall ? alias.report(result, aliasCall) : result)
     return EXIT.ok
   }
 

@@ -94,6 +94,10 @@ export interface RowRecord {
   hub_sent_by: string | null
   platform_post_ref: string | null
   vault_album_ref: string | null
+  /** «Утвердить неделю» (11.11.2026, schema §3.5): approved while `approved_version = row_version`. */
+  approved_at: string | null
+  approved_by: string | null
+  approved_version: number | null
 }
 
 export type PublicationKind = 'fyp_post' | 'subscriber_post' | 'paid_post' | 'story' | 'vault_album'
@@ -135,7 +139,8 @@ const ROW_COLUMNS = sql`
   r.hub_status_at::text AS hub_status_at, r.hub_updated_at::text AS hub_updated_at, r.hub_version,
   r.hub_checks, r.hub_files, r.hub_content_hash, r.hub_prepared_at::text AS hub_prepared_at,
   r.hub_prepared_by, r.hub_prepared_version::int AS hub_prepared_version,
-  r.hub_sent_at::text AS hub_sent_at, r.hub_sent_by, r.platform_post_ref, r.vault_album_ref`
+  r.hub_sent_at::text AS hub_sent_at, r.hub_sent_by, r.platform_post_ref, r.vault_album_ref,
+  r.approved_at::text AS approved_at, r.approved_by, r.approved_version::int AS approved_version`
 
 const ROW_JOINS = sql`
   FROM posting_plan_rows r
@@ -160,6 +165,7 @@ function normalise(row: RowRecord): RowRecord {
     hub_updated_at: instantOrNull(row.hub_updated_at),
     hub_prepared_at: instantOrNull(row.hub_prepared_at),
     hub_sent_at: instantOrNull(row.hub_sent_at),
+    approved_at: instantOrNull(row.approved_at),
   }
 }
 

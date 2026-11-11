@@ -12,7 +12,7 @@ import type { Queryable } from '@contentops/db'
 import { canCancel, publicationRowState } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import { instantOrNull } from '../commands'
-import { kindRule, replaceable } from '../hub/publish-rules'
+import { agentSendRefusal, kindRule, replaceable } from '../hub/publish-rules'
 import { actorRef, type RowRecord } from './records'
 import type { PlanState } from './state'
 
@@ -201,6 +201,10 @@ export function hubView(
     row.manifest_id !== null &&
     (level === undefined || !isConfirmedLevel(level))
   const free = enabled && pending === null
+  const canSend =
+    free && open && publication?.state === 'draft' && !publication.blocked && !publication.stale
+  // What an agent may send (11.11.2026): the same rule the route and the work ask.
+  const agentRefusal = agentSendRefusal(row)
   return {
     enabled,
     manual,
@@ -209,9 +213,9 @@ export function hubView(
     error,
     statuses_at: context.statusesAt.get(row.account_id) ?? null,
     can_prepare: free && open && manual === null && replaceable(row.hub_status),
-    can_send:
-      free && open && publication?.state === 'draft' && !publication.blocked && !publication.stale,
+    can_send: canSend,
     can_cancel: free && publication !== null && canCancel(publication.hub_status),
+    agent_send: { allowed: canSend && agentRefusal === null, reason: agentRefusal },
   }
 }
 

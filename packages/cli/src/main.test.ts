@@ -26,6 +26,81 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
 const PAGE = { items: [], next_cursor: null }
 const OK = { ok: true }
 
+const AT = '2026-11-11T10:00:00Z'
+const AGENT = { type: 'agent', id: 'a-1', name: 'Оператор', gender: null }
+
+/** A plan row of lora-1 on the wall with a current draft in Hub; `hub` patches its Hub part. */
+function planRow(id: string, hub: Record<string, unknown>) {
+  return {
+    id,
+    date: '2026-11-12',
+    time: '19:00',
+    account: 'lora-1',
+    surface: 'wall',
+    manifest: null,
+    awaiting_montage: null,
+    assignee: null,
+    mark: null,
+    cancelled: null,
+    release_id: null,
+    requires_new_upload: false,
+    has_newer_version: false,
+    note: null,
+    album: null,
+    publication: { caption: null, tiers: null, price_mills: null, repost: false },
+    hub: {
+      enabled: true,
+      manual: null,
+      publication: {
+        id: 7,
+        version: 3,
+        kind: 'subscriber_post',
+        state: 'draft',
+        hub_status: 'draft',
+        text: 'черновик в Hub',
+        publish_at: AT,
+        checks: [],
+        blocked: false,
+        stale: false,
+        files: [],
+        prepared: { at: AT, by: AGENT },
+        sent: null,
+        post_ref: null,
+        album_ref: null,
+      },
+      pending: null,
+      error: null,
+      statuses_at: null,
+      can_prepare: true,
+      can_send: true,
+      can_cancel: true,
+      ...hub,
+    },
+    copy: null,
+    downloaded: null,
+    warnings: [],
+    mark_button: 'mark',
+    created_by: AGENT,
+    created_at: AT,
+    version: 2,
+    verdict: {
+      level: 'planned',
+      sign: null,
+      word: 'в плане',
+      detail: null,
+      reason: 'ждёт слота',
+      notes: [],
+      date: null,
+      facts: { plan: null, mark: null, hub: null },
+    },
+  }
+}
+
+function planWeek(rows: unknown[]) {
+  const dates = ['09', '10', '11', '12', '13', '14', '15'].map((day) => `2026-11-${day}`)
+  return { week: '2026-W46', dates, columns: [], rows, gaps: [], releases: [] }
+}
+
 function harness(
   answers: Answer | Answer[],
   options: { env?: Record<string, string | undefined>; stdin?: string; cwd?: string } = {},
@@ -413,6 +488,43 @@ describe('aliases', () => {
     expect(await cli.run('objects', 'open', '--link', 'x', '--id', 'PPV-1')).toBe(64)
     expect(await cli.run('objects', 'open', '--link', 'http://x/#/lora/plan')).toBe(64)
     expect(cli.sent).toEqual([])
+  })
+
+  it('plan send-week sends only the rows an agent may send and reports every row', async () => {
+    const week = planWeek([
+      planRow('r-ok', { agent_send: { allowed: true, reason: null } }),
+      planRow('r-paid', { agent_send: { allowed: false, reason: 'paid' } }),
+      planRow('r-new', { publication: null, agent_send: { allowed: false, reason: null } }),
+      { ...planRow('r-other', {}), account: 'lora-2' },
+    ])
+    const cli = harness([
+      () => json(200, week),
+      () => json(202, { results: [{ id: 'r-ok', ok: true, code: null }] }),
+    ])
+    const flags = ['--model', 'lora', '--week', '2026-W46', '--account', 'lora-1']
+    expect(await cli.run('plan', 'send-week', ...flags)).toBe(0)
+    expect(cli.sent.map((request) => `${request.method} ${request.url}`)).toEqual([
+      'GET http://co.test/api/v1/lora/plan?week=2026-W46',
+      'POST http://co.test/api/v1/lora/plan/rows:send',
+    ])
+    expect(cli.sent[1]?.body).toEqual({ rows: [{ id: 'r-ok', version: 3 }] })
+    expect(JSON.parse(cli.out).rows).toEqual([
+      { id: 'r-ok', row: 'row · 2026-11-12 19:00 · wall', ok: true, code: null },
+      { id: 'r-paid', row: 'row · 2026-11-12 19:00 · wall', ok: false, code: 'paid' },
+      { id: 'r-new', row: 'row · 2026-11-12 19:00 · wall', ok: false, code: 'not_prepared' },
+    ])
+  })
+
+  it('plan prepare-week with nothing to prepare calls nothing', async () => {
+    const week = planWeek([planRow('r-ready', { can_prepare: true })])
+    const cli = harness([() => json(200, week)])
+    const flags = ['--model', 'lora', '--week', '2026-W46', '--account', 'lora-1']
+    expect(await cli.run('plan', 'prepare-week', ...flags)).toBe(0)
+    expect(cli.sent).toHaveLength(1)
+    expect(JSON.parse(cli.out).rows).toEqual([
+      { id: 'r-ready', row: 'row · 2026-11-12 19:00 · wall', ok: false, code: 'prepared' },
+    ])
+    expect(await cli.run('plan', 'prepare-week', '--model', 'lora', '--week', '2026-W46')).toBe(64)
   })
 
   it('call existing routes and never shadow one', () => {

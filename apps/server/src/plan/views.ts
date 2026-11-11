@@ -28,6 +28,7 @@ import { publicIdOf } from '../catalog/ids'
 import { instant } from '../commands'
 import { loosePosts, unplannedOn } from '../hub/check/cases'
 import type { DownloadItem } from '../media/downloads'
+import { rowApproval, weekApproval } from './approval'
 import { planWarnings, slotOrder } from './checks'
 import {
   compositionOf,
@@ -218,6 +219,7 @@ export async function rowView(
       repost: row.repost,
     },
     hub,
+    approval: rowApproval(state, row),
     copy,
     downloaded: await lastDownload(q, state.model.id, row.id),
     warnings: open
@@ -580,6 +582,10 @@ export async function weekView(context: ViewContext, week: IsoWeek): Promise<Pla
         ).length,
         norm_hint: norm ? normHint(norm) : '',
         integration: hubLine(context, account.code, null),
+        approval: weekApproval(
+          state,
+          rows.filter((row) => row.account === account.code),
+        ),
       }
     }),
     rows: views,
