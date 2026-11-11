@@ -3205,7 +3205,7 @@ END)`),
 	check("posting_plan_rows_hub_sent", sql`(hub_sent_at IS NULL) = (hub_sent_by IS NULL)`),
 	check("posting_plan_rows_hub_ref", sql`(num_nonnulls(platform_post_ref, vault_album_ref) <= 1) AND ((vault_album_ref IS NULL) OR (hub_kind = 'vault_album'::text))`),
 	check("posting_plan_rows_approved_version_positive", sql`approved_version > 0`),
-	check("posting_plan_rows_approval", sql`num_nonnulls(approved_at, approved_by, approved_version) = ANY (ARRAY[0, 3])`),
+	check("posting_plan_rows_approval", sql`(num_nonnulls(approved_at, approved_by, approved_version) = 0) OR (num_nulls(approved_at, approved_by, approved_version) = 0)`),
 ]);
 export const catalogIndex = pgView("catalog_index", {	modelId: uuid("model_id"),
 	itemId: uuid("item_id"),

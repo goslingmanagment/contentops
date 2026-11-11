@@ -20,5 +20,6 @@ ALTER TABLE posting_plan_rows
     CONSTRAINT posting_plan_rows_approved_version_positive CHECK (approved_version > 0),
   -- A stamp is the time, the person and the version together, or nothing.
   ADD CONSTRAINT posting_plan_rows_approval CHECK (
-    num_nonnulls(approved_at, approved_by, approved_version) IN (0, 3)
+    num_nonnulls(approved_at, approved_by, approved_version) = 0
+    OR num_nulls(approved_at, approved_by, approved_version) = 0
   );

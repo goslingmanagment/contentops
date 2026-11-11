@@ -2176,7 +2176,7 @@ CREATE TABLE public.posting_plan_rows (
     approved_at timestamp with time zone,
     approved_by uuid,
     approved_version bigint,
-    CONSTRAINT posting_plan_rows_approval CHECK ((num_nonnulls(approved_at, approved_by, approved_version) = ANY (ARRAY[0, 3]))),
+    CONSTRAINT posting_plan_rows_approval CHECK (((num_nonnulls(approved_at, approved_by, approved_version) = 0) OR (num_nulls(approved_at, approved_by, approved_version) = 0))),
     CONSTRAINT posting_plan_rows_approved_version_positive CHECK ((approved_version > 0)),
     CONSTRAINT posting_plan_rows_cancel CHECK (((cancelled_at IS NOT NULL) OR ((cancelled_by IS NULL) AND (cancel_reason IS NULL)))),
     CONSTRAINT posting_plan_rows_cancel_reason_check CHECK ((cancel_reason = ANY (ARRAY['late'::text, 'replaced'::text, 'paused'::text, 'second_person'::text]))),
