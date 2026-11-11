@@ -9,9 +9,10 @@ import { type SQL, sql } from 'drizzle-orm'
  * `2. FYP`. An alias of the custom does not catch every such copy: a file moved there takes a
  * second path without a draft, custom ↔ PPV gives an object of its own, and the holder of the
  * same bytes is one object only. So the signal goes by the bytes themselves: the SHA-256 of any
- * version of a live custom (source or master) seen at a cloud path outside the customs section
- * — a copy or a moved file, whichever came first. One per custom and path (`review_cases`,
- * kind `custom_copy`): a rescan raises nothing new, «Понятно» of the owner closes it for good.
+ * version of a live custom (source or master) seen at a cloud path outside the customs and PPV
+ * sections — a copy or a moved file, whichever came first; in `1. PPV` it is «PPV из кастома».
+ * One per custom and path (`review_cases`, kind `custom_copy`): a rescan raises nothing new,
+ * «Понятно» of the owner closes it for good.
  */
 
 /** What to look at: the files just seen, the customs just accepted, or the whole model. */
@@ -27,10 +28,19 @@ interface SeenCopy extends Record<string, unknown> {
   sha: string
 }
 
-/** A path of the customs section: `3. Customs/…`, `BG/3. Customs/…`, a timed name in `BG`. */
-export function inCustoms(relative: string): boolean {
+/**
+ * Where a custom's bytes may lie without a signal: its own section (`3. Customs/…`,
+ * `BG/3. Customs/…`, a timed name in `BG`) and the PPV section (`1. PPV/…`, `BG/1. PPV/…`) —
+ * «PPV из кастома», the one reuse of a custom (решение владельца 11.11.2026).
+ */
+export function customMayLie(relative: string): boolean {
   const context = contextOf(relative, { isDir: false })
-  return context.subArea === 'customs' || context.typeHint === 'CUS'
+  return (
+    context.subArea === 'customs' ||
+    context.typeHint === 'CUS' ||
+    context.subArea === 'ppv' ||
+    context.typeHint === 'PPV'
+  )
 }
 
 /** The bytes of the live customs of the model: every version of their files. */
@@ -110,7 +120,7 @@ export async function raiseCustomCopies(
   }
   const copies = (await seenCopies(tx, modelId, scope)).flatMap((copy) => {
     const relative = sourcePath(copy.path, copy.root ?? '').relative
-    return inCustoms(relative) ? [] : [{ ...copy, relative }]
+    return customMayLie(relative) ? [] : [{ ...copy, relative }]
   })
   let raised = 0
   for (const copy of copies) {

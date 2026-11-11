@@ -256,22 +256,27 @@ describe('a copy of a custom outside the customs section (SPEC §6.2)', () => {
     })
   })
 
-  it('CUS ↔ PPV pair: a PPV of the same bytes is an object of its own, and still a copy', async () => {
+  it('CUS ↔ PPV pair: a PPV of the same bytes in the PPV section is no signal, the same bytes in FYP are', async () => {
     h.dropbox.tree.addFile(`${LORA_ROOT}/3. Customs/15:00 жёлтое.mp4`, 6400)
     await arrive()
     const yellow = await accept('3. Customs/15:00 жёлтое.mp4')
-    h.dropbox.tree.addFile(
-      `${LORA_ROOT}/1. PPV/Жёлтое/master.mp4`,
-      bytesOf('3. Customs/15:00 жёлтое.mp4'),
-    )
+    const bytes = bytesOf('3. Customs/15:00 жёлтое.mp4')
+    h.dropbox.tree.addFile(`${LORA_ROOT}/1. PPV/Жёлтое/master.mp4`, bytes)
     await arrive()
+    // «PPV из кастома»: an object of its own, the one reuse of a custom — not a copy to report.
     const { rows } = await h.db.execute<{ state: string }>(sql`
       SELECT state FROM inbox_drafts WHERE path = ${`${LORA_ROOT}/1. PPV/Жёлтое/master.mp4`}`)
     expect(rows[0]?.state).not.toBe('resolved')
-    expect(await alertOf('1. PPV/Жёлтое/master.mp4')).toMatchObject({
+    expect(await alertOf('1. PPV/Жёлтое/master.mp4')).toBeUndefined()
+    h.dropbox.tree.addFile(`${LORA_ROOT}/2. FYP/Жёлтое.mp4`, bytes)
+    await arrive()
+    expect(await alertOf('2. FYP/Жёлтое.mp4')).toMatchObject({
       custom: { id: yellow },
       state: 'open',
     })
+    // The owner command over the catalog finds the FYP copy only.
+    expect(await opsCustomCopies(h.db, { model: 'lora' })).toMatchObject({ raised: 0 })
+    expect(await alertOf('1. PPV/Жёлтое/master.mp4')).toBeUndefined()
   })
 })
 
