@@ -335,6 +335,19 @@ const WORDING: Record<string, Wording> = {
     rest: 'копию: такой ролик уже есть в {subject}',
     noun: 'копия ролика',
   },
+  // «Копии кастомов» (SPEC §6.2): the bytes of {subject} outside the customs section.
+  'draft.custom_copy': {
+    verb: 'нашёл',
+    rest: 'копию кастома {subject} вне папки кастомов',
+    noun: 'копия кастома',
+    tail: (after) => quoted(after.get('Где')),
+  },
+  'inbox.dismissAlert': {
+    verb: 'отметил',
+    rest: '«Понятно» у копии кастома {subject}',
+    noun: '«Понятно» у копии кастома',
+    tail: (after) => quoted(after.get('Где')),
+  },
   'inbox.update': { verb: 'изменил', rest: 'черновик «{subject}»', noun: 'правка черновика' },
   'inbox.files': {
     verb: 'изменил',

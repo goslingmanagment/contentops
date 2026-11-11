@@ -82,7 +82,19 @@ pnpm contentops orders find --model lora --tg https://t.me/c/2627984998/12/9844 
 
 # A new card: the order from the card's fields (see `orders create --help` for the body)
 pnpm contentops orders create --model lora --body @order.json --json
+
+# «Копии кастомов»: the bytes of a custom outside its folder, open ones or what came since
+pnpm contentops inbox alerts --model ari --state open --json
+pnpm contentops inbox alerts --model ari --state all --since 2026-11-10T00:00:00Z --json
 ```
+
+## What an agent cannot do
+
+The server answers an agent token 403 `forbidden` where a person must act (SPEC §11.1):
+`plan send` / `plan sendMany` (agents prepare, people send), a `price_mills` in `plan createRows`
+or a changed one in `plan updateRow`, `objects remove`, and `inbox dismissAlert` (the owner's
+«Понятно» on a copy of a custom). A row without a price, an edit that leaves the price as it is,
+and every read stay open to an agent.
 
 ## Aliases
 

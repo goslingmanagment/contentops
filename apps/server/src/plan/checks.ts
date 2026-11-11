@@ -21,7 +21,8 @@ import { evaluatePlacementRecord, evaluateRow, type PlanState, threshold, todayO
  * The rules of putting a row into the plan (SPEC §7, DESIGN §4.13) — the same for a person in
  * «В план» and for an agent by API (`rows:check`, `rows?dry_run=1`). Hard refusals: the type
  * goes only to its surfaces, the second person never to OnlyFans (an unchecked legacy object is
- * asked once). Everything else is a warning and «Поставить» stays available: already in this
+ * asked once), an object from a custom never goes out free (`customRefusal`). Everything else
+ * is a warning and «Поставить» stays available: already in this
  * page's plan, too early by the threshold, two posts in one time, posts closer than two
  * tolerances, the threshold not set.
  */
@@ -34,6 +35,8 @@ export interface Candidate {
     type: DbItemType
     number: number
     has_second_person: boolean | null
+    /** The custom the object is made from or repeats (`fromCustom`), when it is. */
+    from_custom?: string | null
   } | null
   /** «Под монтаж»: the raw object the row waits a montage from. */
   montage_from: {
@@ -41,7 +44,12 @@ export interface Candidate {
     type: DbItemType
     number: number
     has_second_person: boolean | null
+    from_custom?: string | null
   } | null
+  /** «Под монтаж»: what the row waits for. */
+  montage_expects?: 'fyp' | 'ppv' | 'teaser' | null
+  /** The price of the row: a paid wall post. */
+  price_mills?: number | null
   account: string
   surface: DbSurface
   date: LocalDate
@@ -91,8 +99,14 @@ export function refusalOf(state: PlanState, candidate: Candidate): Refusal | nul
   const page = state.view.accounts.find((account) => account.code === candidate.account)
   if (!page) return { code: 'not_found', text: `Страницы ${candidate.account} нет` }
   const item = candidate.item
+  const price = candidate.price_mills ?? null
   if (!item) {
     if (!candidate.montage_from) return { code: 'invalid_request', text: 'Не выбран объект' }
+    const custom = candidate.montage_from.from_custom
+    const refusal = custom
+      ? customRefusal(custom, candidate.surface, price, candidate.montage_expects ?? null)
+      : null
+    if (refusal) return refusal
     // The montage takes the flag of its source: an answer now, or the upload is refused later.
     return page.platform === 'onlyfans' ? secondPersonRefusal(candidate.montage_from) : null
   }
@@ -111,12 +125,38 @@ export function refusalOf(state: PlanState, candidate: Candidate): Refusal | nul
       text: `${TYPE_WORD[item.type]} ${SURFACE_WORD[candidate.surface]} не ставится`,
     }
   }
+  const custom = item.from_custom ? customRefusal(item.from_custom, candidate.surface, price) : null
+  if (custom) return custom
   // Stories are put only as the teaser of a PPV release (decision 28.09.2026); a story that
   // already went out is recorded marked.
   if (candidate.surface === 'story' && !candidate.release_id && !candidate.marked) {
     return { code: 'invalid_request', text: 'сториз ставится только тизером выпуска PPV' }
   }
   return page.platform === 'onlyfans' ? secondPersonRefusal(item) : null
+}
+
+/**
+ * An object made from a custom or repeating its bytes (SPEC §7, решение владельца 11.11.2026):
+ * a fan's paid custom never goes out free — not to FYP, not to stories, not to the wall as an
+ * open post. It is reused only as PPV: the vault, the mass message and a wall post with a
+ * price stay; a montage of it is only a PPV.
+ */
+export function customRefusal(
+  custom: string,
+  surface: DbSurface,
+  price: number | null,
+  expects: 'fyp' | 'ppv' | 'teaser' | null = null,
+): Refusal | null {
+  const refused = (text: string): Refusal => ({ code: 'invalid_request', text })
+  if (expects !== null && expects !== 'ppv') {
+    return refused(`из кастома ${custom} монтируется только PPV`)
+  }
+  if (surface === 'fyp') return refused(`из кастома ${custom} — в фуп не ставится`)
+  if (surface === 'story') return refused(`из кастома ${custom} — в сториз не ставится`)
+  if (surface === 'wall' && !(price !== null && price > 0)) {
+    return refused(`из кастома ${custom} — на стену только платным постом, с ценой`)
+  }
+  return null
 }
 
 /** OnlyFans takes only «второго человека нет»: flagged is refused, unanswered is asked (§7). */

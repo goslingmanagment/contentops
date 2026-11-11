@@ -355,6 +355,36 @@ export const AcceptManyResultSchema = z.object({
 export type AcceptManyResult = z.infer<typeof AcceptManyResultSchema>
 
 /**
+ * «Копии кастомов» (SPEC §6.2, DESIGN §4.8): the bytes of a custom seen at a path outside the
+ * customs section of the model — a copy or a moved file. One per custom and path; open until
+ * the owner says «Понятно».
+ */
+export const InboxAlertSchema = z.object({
+  id: z.string(),
+  kind: z.literal('custom_copy'),
+  state: z.enum(['open', 'dismissed']),
+  /** The custom whose bytes lie elsewhere. */
+  custom: z.object({ id: ItemIdSchema, title: z.string().nullable() }),
+  /** Where the copy lies: the path from the model's folder, as the source names it. */
+  path: z.string(),
+  source: z.enum(['yandex_disk', 'dropbox']),
+  /** Other live objects over the same bytes: what the copy became in the catalog. */
+  also_in: z.array(ItemIdSchema),
+  seen_at: InstantSchema,
+  dismissed: z.object({ at: InstantSchema, by: ActorRefSchema }).nullable(),
+})
+export type InboxAlert = z.infer<typeof InboxAlertSchema>
+
+/** `GET /api/v1/<model>/inbox/alerts`, newest first, a page at a time. */
+export const InboxAlertListSchema = z.object({
+  items: z.array(InboxAlertSchema),
+  next_cursor: z.string().nullable(),
+  /** Open alerts of the model, whatever the filter: «Копии кастомов · 2». */
+  open: z.int().nonnegative(),
+})
+export type InboxAlertList = z.infer<typeof InboxAlertListSchema>
+
+/**
  * A group the batch leaves alone: «похоже на исправление» becomes a new master version and
  * closes the revision, so someone has to look at it and accept it on its own (DESIGN §4.8).
  */

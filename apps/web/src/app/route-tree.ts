@@ -250,6 +250,12 @@ const legacyReviewRoute = createRoute({
   component: lazyRouteComponent(inboxScreens, 'LegacyReviewScreen'),
 })
 
+const customCopiesRoute = createRoute({
+  getParentRoute: () => modelRoute,
+  path: 'inbox/copies',
+  component: lazyRouteComponent(inboxScreens, 'CustomCopiesScreen'),
+})
+
 const planIndexRoute = createRoute({
   getParentRoute: () => modelRoute,
   path: 'plan',
@@ -340,6 +346,7 @@ export const routeTree = rootRoute.addChildren([
       inboxGroupRoute,
       inboxDoneRoute,
       legacyReviewRoute,
+      customCopiesRoute,
       planIndexRoute,
       planDayRoute,
       planWeekRoute,

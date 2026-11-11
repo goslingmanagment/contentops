@@ -15,6 +15,7 @@ import { handleOf } from '../media/downloads'
 import { bindGenerations } from '../media/renditions'
 import { lockBlobForReference } from '../media/storage-ops'
 import { completeRevision, deliveryMessageAt, markDeliveredParts } from '../orders/writes'
+import { raiseCustomCopies } from './custom-copies'
 import { aliasOpenDuplicates, resolveAlias } from './fetch'
 import { type ExportRole, exportRoleOf, type PackNumber } from './grouping'
 import { appendRefusal, newObjectRefusal } from './refusal'
@@ -1092,6 +1093,8 @@ export async function acceptGroup(
   const elsewhere = await aliasOpenDuplicates(tx, model.id, group.id, hexes)
   // Other bytes of the same picture waiting there ask ◆ «Похоже на ролик» from now on.
   await flagOpenCopies(tx, model.id, group.id, hexes)
+  // A custom whose bytes already lie outside its section: «Копии кастомов» (§6.2).
+  if (item.type === 'CUS') await raiseCustomCopies(tx, model.id, { items: [item.id] })
   // Files of the pack the catalog already had are links of the collection, not copies (SPEC
   // §7.1); the import of the old disk links its own after the accept.
   if (item.type === 'PRM' && channelId && !options.legacy) {

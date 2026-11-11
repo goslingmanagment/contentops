@@ -26,6 +26,7 @@ import {
   restoreItem,
 } from '../catalog/structure'
 import { checkItemVersion, lockItem, logItemAction, touchItem } from '../catalog/writes'
+import { requirePerson } from '../commands'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
@@ -189,6 +190,8 @@ export function catalogEditHandlers({ command }: Services): HandlerRegistry {
         })),
       remove: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
+          // Deletion stays with people (SPEC §11.1, решение владельца 11.11.2026).
+          requirePerson(actor, 'Удалить может только человек: агент объекты не удаляет')
           await removeItem(tx, modelOf(ctx.model), params.id, ctx, actor)
           return { ok: true as const }
         }),

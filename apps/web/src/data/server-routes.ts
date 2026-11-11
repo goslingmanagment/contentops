@@ -125,6 +125,9 @@ export const SERVER_ROUTES: ServerRoutes = {
     'upload',
     'download',
     'source',
+    // «Копии кастомов» (SPEC §6.2).
+    'alerts',
+    'dismissAlert',
   ],
   // Промо (4в): папки каналов, подборки, передачи и подрядчики.
   promo: 'all',

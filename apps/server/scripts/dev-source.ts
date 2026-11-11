@@ -61,6 +61,15 @@ for (const [index, [name, source, seconds]] of (
     modified: minutesAgo(25 - index),
   })
   thumbs.set(node.id, clip.poster)
+  // The model's copy of the first custom in `2. FYP`, byte for byte: once the custom is
+  // accepted, «Приехало › Копии кастомов» shows it (SPEC §6.2).
+  if (index === 0) {
+    const copy = tree.addFile('/2. FYP/в красном.mp4', clip.bytes, {
+      created: minutesAgo(22),
+      modified: minutesAgo(22),
+    })
+    thumbs.set(copy.id, clip.poster)
+  }
 }
 // Дубли модели прямо в корне `2. FYP` — сырьё фупов одной группой по окну заливки, папка
 // исходников — тоже сырьё; папка-ответ на одну карточку в кастомах — один кастом из частей

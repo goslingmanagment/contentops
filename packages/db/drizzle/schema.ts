@@ -1865,10 +1865,10 @@ export const reviewCases = pgTable("review_cases", {
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.id, table.modelId], name: "review_cases_pkey"}),
 	unique("review_cases_model_id_kind_dedup_key_key").on(table.dedupKey, table.kind, table.modelId),
-	check("review_cases_kind_check", sql`kind = ANY (ARRAY['cross_model_duplicate'::text, 'legacy_unparsed'::text, 'merge_split'::text, 'unreadable_input'::text, 'smm_folder'::text, 'number_hole'::text])`),
 	check("review_cases_state_check", sql`state = ANY (ARRAY['open'::text, 'resolved'::text, 'dismissed'::text])`),
 	check("review_cases_blob_sha256_check", sql`octet_length(blob_sha256) = 32`),
 	check("review_cases_resolved", sql`(state = 'open'::text) = (resolved_at IS NULL)`),
+	check("review_cases_kind_check", sql`kind = ANY (ARRAY['cross_model_duplicate'::text, 'legacy_unparsed'::text, 'merge_split'::text, 'unreadable_input'::text, 'smm_folder'::text, 'number_hole'::text, 'custom_copy'::text])`),
 ]);
 
 export const customOrderRevisions = pgTable("custom_order_revisions", {

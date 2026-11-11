@@ -19,12 +19,16 @@ afterAll(async () => {
   for (const dir of dirs) await rm(dir, { recursive: true, force: true })
 })
 
-async function migrationsBefore(file: string): Promise<string> {
+/** A copy of the files before `file`, or up to it with `through`: later migrations stay out. */
+async function migrationsUpTo(file: string, through: boolean): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'contentops-before-annotation-'))
   dirs.push(dir)
   await cp(MIGRATIONS_DIR, dir, {
     recursive: true,
-    filter: (source) => !source.endsWith('.sql') || basename(source) < file,
+    filter: (source) => {
+      const name = basename(source)
+      return !source.endsWith('.sql') || name < file || (through && name === file)
+    },
   })
   return dir
 }
@@ -54,7 +58,7 @@ describe(LATE, () => {
     await runMigrations({
       databaseUrl: db.url('migrate'),
       appliedBy: 'test',
-      migrationsDir: await migrationsBefore(LATE),
+      migrationsDir: await migrationsUpTo(LATE, false),
     })
     const client = new pg.Client({ connectionString: db.url('migrate') })
     await client.connect()
@@ -107,7 +111,12 @@ describe(LATE, () => {
       await client.query('COMMIT')
       const before = await snapshot(client)
 
-      const result = await runMigrations({ databaseUrl: db.url('migrate'), appliedBy: 'test' })
+      // Only the late migration itself: whatever came after it is not what this test checks.
+      const result = await runMigrations({
+        databaseUrl: db.url('migrate'),
+        appliedBy: 'test',
+        migrationsDir: await migrationsUpTo(LATE, true),
+      })
       expect(result.applied.map((file) => file.version)).toEqual([17])
 
       const after = await snapshot(client)

@@ -31,6 +31,11 @@ export const NewPlanRowSchema = z.object({
     .nullable(),
   /** «Уже залито» and «выложено вне плана» create rows already marked. */
   marked: MarkKindSchema.nullable(),
+  /**
+   * The price of a paid wall post (5б), set at once: an object made from a custom goes to the
+   * wall only paid (SPEC §7). A person only (§11.1).
+   */
+  price_mills: z.int().nonnegative().nullable().optional(),
 })
 export type NewPlanRow = z.infer<typeof NewPlanRowSchema>
 

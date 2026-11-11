@@ -6,6 +6,7 @@ import { catalogHandlers } from './catalog'
 import { catalogEditHandlers } from './catalog-edits'
 import { checkHandlers } from './check'
 import { inboxHandlers } from './inbox'
+import { inboxAlertHandlers } from './inbox-alerts'
 import { integrationHandlers } from './integrations'
 import { journalHandlers } from './journal'
 import { legacyHandlers } from './legacy'
@@ -59,6 +60,7 @@ export function createHandlers(services: Services): HandlerRegistry {
     tagHandlers(services),
     mediaRouteHandlers(services),
     inboxHandlers(services),
+    inboxAlertHandlers(services),
     legacyHandlers(services),
     promoHandlers(services),
     orderHandlers(services),

@@ -1,23 +1,25 @@
 import { randomUUID } from 'node:crypto'
 import type { NewPlanRow } from '@contentops/contracts/commands/plan'
 import type { MarkKind } from '@contentops/contracts/domain/placement'
-import { formatDate } from '@contentops/contracts/format'
+import { capitalize, formatDate } from '@contentops/contracts/format'
 import {
   dbErrorCode,
   enqueueWork,
   logAction,
+  type Queryable,
   setJournalItem,
   type Tx,
   values,
 } from '@contentops/db'
 import { sql } from 'drizzle-orm'
+import { fromCustom } from '../catalog/from-custom'
 import { findItem, type ItemRow, publicIdOfRow } from '../catalog/ids'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import type { FileRow } from '../media/downloads'
 import { uniqKey } from '../media/work/copies'
 import type { Candidate, Refusal } from './checks'
-import { refusalOf } from './checks'
+import { customRefusal, refusalOf } from './checks'
 import {
   compositionOf,
   currentFiles,
@@ -157,6 +159,7 @@ export async function resolveRow(
   if (input.awaiting_montage && !montage) {
     return { code: 'not_found', text: `${input.awaiting_montage.from_item} нет` }
   }
+  const customs = await fromCustom(tx, model.id, [item?.id, montage?.id])
   return {
     input,
     item,
@@ -170,6 +173,7 @@ export async function resolveRow(
             type: item.type,
             number: item.number,
             has_second_person: item.has_second_person,
+            from_custom: customs.get(item.id) ?? null,
           }
         : null,
       montage_from: montage
@@ -178,8 +182,11 @@ export async function resolveRow(
             type: montage.type,
             number: montage.number,
             has_second_person: montage.has_second_person,
+            from_custom: customs.get(montage.id) ?? null,
           }
         : null,
+      montage_expects: input.awaiting_montage?.expected_type ?? null,
+      price_mills: input.price_mills ?? null,
       account: input.account,
       surface: dbSurface(input.surface),
       date: input.date,
@@ -192,6 +199,37 @@ export async function resolveRow(
 
 export function isRefusal(value: ResolvedRow | Refusal): value is Refusal {
   return 'code' in value
+}
+
+/**
+ * The custom rule of a row already in the plan (SPEC §7): its object or the source of its
+ * montage, at its surface and with its price — `price` when the command changes it. A change
+ * of price or composition, «Подготовить» and «Отправить» ask it again: a row put before the
+ * rule, or one whose price went away, does not slip a custom onto the open wall.
+ */
+export async function rowCustomRefusal(
+  q: Queryable,
+  model: ModelScope,
+  row: RowRecord,
+  price: number | null = row.price_mills === null ? null : Number(row.price_mills),
+): Promise<Refusal | null> {
+  const id = row.item_id ?? row.input_item_id
+  const custom = (await fromCustom(q, model.id, [id])).get(id ?? '')
+  if (!custom) return null
+  const expects = row.item_id
+    ? null
+    : row.expected_role === 'teaser'
+      ? 'teaser'
+      : row.expected_type === 'FYP'
+        ? 'fyp'
+        : 'ppv'
+  return customRefusal(custom, row.surface, price, expects)
+}
+
+/** «Подготовить» and «Отправить» of a row from a custom that would go out free: refused. */
+export async function assertNotCustom(q: Queryable, model: ModelScope, row: RowRecord) {
+  const refusal = await rowCustomRefusal(q, model, row)
+  if (refusal) throw new ApiProblem('publication_refused', capitalize(refusal.text))
 }
 
 /** The refusal of a resolved row by the rules, if any. */
@@ -279,14 +317,14 @@ export async function insertRow(
       INSERT INTO posting_plan_rows (
         model_id, id, item_id, account_id, surface_id, slot_date, slot_time, assignee_id,
         release_id, release_surface_kind, manifest_id, expected_type, expected_role,
-        input_manifest_id, uniq_variant_no, requires_new_upload, note,
+        input_manifest_id, uniq_variant_no, requires_new_upload, note, price_mills,
         marked_by, marked_at, mark_kind, marked_manifest_id, created_by
       ) VALUES (
         ${model.id}::uuid, ${id}::uuid, ${item?.id ?? null}::uuid, ${resolved.accountId}::uuid,
         ${surfaceKey}::uuid, ${input.date}::date, ${input.time}::time, ${input.assignee}::uuid,
         ${options.releaseId ?? null}::uuid, ${options.releaseId ? (options.releaseSurface ?? surface) : null},
         ${manifestId}::uuid, ${expectedType}, ${expectedRole}, ${inputManifestId}::uuid, ${uniq},
-        ${input.requires_new_upload}, ${input.note},
+        ${input.requires_new_upload}, ${input.note}, ${input.price_mills ?? null},
         ${marked ? actor.id : null}::uuid, ${marked ? sql`now()` : null}, ${marked},
         ${marked ? manifestId : null}::uuid, ${actor.id}::uuid
       )`),

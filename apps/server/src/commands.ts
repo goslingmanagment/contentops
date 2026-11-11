@@ -23,6 +23,14 @@ export function requireActor(ctx: RequestContext): Actor {
   return ctx.actor
 }
 
+/**
+ * What stays with people (SPEC §11.1, решение владельца 11.11.2026): a price, a deletion, the
+ * «Понятно» of a signal. An agent gets the same 403 as on «Отправить».
+ */
+export function requirePerson(actor: Actor, text: string): void {
+  if (actor.type !== 'person') throw new ApiProblem('forbidden', text)
+}
+
 export interface CommandOptions {
   /**
    * The answer carries a secret (an agent token, a temporary password, a session): it is
