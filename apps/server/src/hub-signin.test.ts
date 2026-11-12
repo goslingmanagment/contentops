@@ -21,6 +21,7 @@ const OWNER_AT_HUB: HubSigninUser = { id: 7, username: 'boss', role: 'owner' }
 class FakeHub implements HubSignin {
   redeemed = 0
   checks = 0
+  probes = 0
   unreachable = false
   private readonly codes = new Map<string, HubRedeemed>()
   private readonly live = new Map<string, HubSigninUser>()
@@ -40,8 +41,14 @@ class FakeHub implements HubSignin {
     this.live.clear()
   }
 
-  startUrl({ state, next }: { state: string; next: string }): string {
-    return `https://hub.example.test/api/v1/auth/sso?${new URLSearchParams({ to: 'contentops', state, next })}`
+  startUrl({ state, next, silent }: { state: string; next: string; silent?: boolean }): string {
+    const query = { to: 'contentops', state, next, ...(silent ? { silent: '1' } : {}) }
+    return `https://hub.example.test/api/v1/auth/sso?${new URLSearchParams(query)}`
+  }
+
+  async answers(): Promise<boolean> {
+    this.probes += 1
+    return !this.unreachable
   }
 
   async redeem(code: string): Promise<HubRedeemed> {
@@ -354,5 +361,100 @@ describe('what stays as it was', () => {
     })
     expect(models.statusCode).toBe(200)
     expect(hub.checks).toBe(checks)
+  })
+})
+
+/** All `Set-Cookie` lines of an answer. */
+function setCookies(response: LightMyRequestResponse): string[] {
+  const header = response.headers['set-cookie']
+  return Array.isArray(header) ? header : header ? [header] : []
+}
+
+describe('the silent try (a page that got 401 before the sign-in screen)', () => {
+  const silentStart = (cookie?: string, host = PUBLIC) =>
+    get('/auth/hub/start?silent=1&next=%2Flora%2Flibrary', {
+      host,
+      ...(cookie === undefined ? {} : { cookie }),
+    })
+
+  it('goes to the hub once, silently; with nobody there, the sign-in screen', async () => {
+    const { redeemed, probes } = hub
+    const first = await silentStart()
+    expect(first.statusCode).toBe(302)
+    const location = new URL(String(first.headers.location))
+    expect(location.origin).toBe('https://hub.example.test')
+    expect(location.searchParams.get('silent')).toBe('1')
+    expect(location.searchParams.get('next')).toBe('/lora/library')
+    const state = cookieOf(first, 'co_hub_state')
+    expect(location.searchParams.get('state')).toBe(state)
+    // Marked before the browser leaves, readable by the page.
+    expect(setCookies(first)).toContain('co_hub_try=1; Path=/; Max-Age=600; SameSite=Lax')
+    expect(hub.probes).toBe(probes + 1)
+    const back = await get(
+      `/auth/hub/callback?${new URLSearchParams({ error: 'none', state: state ?? '', next: '/lora/library' })}`,
+      { cookie: `co_hub_state=${state}; co_hub_try=1` },
+    )
+    expect(back.statusCode).toBe(302)
+    expect(back.headers.location).toBe('/login?from=%2Flora%2Flibrary')
+    expect(cookieOf(back, 'co_session')).toBeUndefined()
+    expect(cookieOf(back, 'co_hub_state')).toBe('')
+    expect(hub.redeemed).toBe(redeemed)
+  })
+
+  it('signs the person in on the page asked when the hub has a session', async () => {
+    const first = await silentStart()
+    const state = cookieOf(first, 'co_hub_state') ?? ''
+    const back = await callback({
+      code: hub.mint(OWNER_AT_HUB),
+      state,
+      cookie: `co_hub_state=${state}`,
+    })
+    expect(back.headers.location).toBe('/lora/library')
+    const session = cookieOf(back, 'co_session') ?? ''
+    expect((await me(session)).statusCode).toBe(200)
+  })
+
+  it('is not made twice in ten minutes, after «Выйти», off the public name or to a silent hub', async () => {
+    const probes = hub.probes
+    for (const cookie of ['co_hub_try=1', 'co_hub_out=1']) {
+      const again = await silentStart(cookie)
+      expect(again.headers.location).toBe('/login?from=%2Flora%2Flibrary')
+      expect(cookieOf(again, 'co_hub_state')).toBeUndefined()
+    }
+    const tailnet = await silentStart(undefined, TAILNET)
+    expect(tailnet.headers.location).toBe('/login?from=%2Flora%2Flibrary')
+    expect(hub.probes).toBe(probes)
+
+    hub.unreachable = true
+    const down = await silentStart()
+    expect(down.headers.location).toBe('/login?from=%2Flora%2Flibrary')
+    expect(cookieOf(down, 'co_hub_state')).toBeUndefined()
+    expect(setCookies(down)).toEqual(['co_hub_try=1; Path=/; Max-Age=600; SameSite=Lax'])
+  })
+
+  it('«Выйти» ends this browser’s session and leaves the mark until «Войти через хаб»', async () => {
+    const session = await signInThroughHub()
+    const out = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/auth/sign-out',
+      as: session,
+    })
+    expect(out.statusCode).toBe(200)
+    expect(setCookies(out)).toEqual([
+      'co_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax',
+      // Until the browser session ends: no lifetime of its own.
+      'co_hub_out=1; Path=/; SameSite=Lax',
+    ])
+    expect((await me(session)).statusCode).toBe(401)
+    const { rows } = await server.db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM action_log WHERE action = 'auth.signOut'`)
+    expect(rows[0]?.n).toBeGreaterThan(0)
+    // Without a session it answers the same: the mark is what matters.
+    const again = await call(server.app, { method: 'POST', url: '/api/v1/auth/sign-out' })
+    expect(again.statusCode).toBe(200)
+    expect(setCookies(again)).toContain('co_hub_out=1; Path=/; SameSite=Lax')
+    // Pressing «Войти через хаб» takes the mark away.
+    const pressed = await get('/auth/hub/start?next=%2F', { cookie: 'co_hub_out=1' })
+    expect(setCookies(pressed)).toContain('co_hub_out=; Path=/; Max-Age=0; SameSite=Lax')
   })
 })

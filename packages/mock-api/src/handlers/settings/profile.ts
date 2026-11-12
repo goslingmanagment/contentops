@@ -45,6 +45,11 @@ export function profileHandlers(): BoundRoute[] {
       return { person }
     }),
 
+    bind(authRoutes.signOut, 'read', ({ state }) => {
+      state.signed_out = true
+      return { ok: true as const }
+    }),
+
     bind(authRoutes.signOutEverywhere, 'read', ({ state }) => {
       state.world.admin.sessions.set(state.principal.id, [])
       state.principal.sessions = 0

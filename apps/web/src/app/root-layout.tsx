@@ -5,6 +5,7 @@ import { useCallback } from 'react'
 import { ActionToastProvider } from '@/actions/action-toast-provider'
 import { ApiProvider } from '@/data/api-provider'
 import { useSession } from '@/data/session'
+import { leaveForSilentHubSignIn } from '@/screens/login/silent-hub'
 import { RouterUiLink } from './router-ui-link'
 import type { Skin } from './search-params'
 import { useSkin } from './use-skin'
@@ -29,11 +30,13 @@ export function RootLayout() {
   const { demo, as, skin } = rootRouteApi.useSearch()
   const router = useRouter()
   // После входа — тот же адрес целиком: фильтры, вид и вкладка живут в запросе (§3.10).
+  // Сначала — одна молчаливая попытка через хаб (SPEC §11.1): вошли там — сразу здесь.
   const toLogin = useCallback(() => {
     const { pathname, href } = router.state.location
-    if (pathname !== '/login') {
-      void router.navigate({ to: '/login', search: { from: href } })
-    }
+    if (pathname === '/login') return
+    void leaveForSilentHubSignIn(href).then((leaving) => {
+      if (!leaving) void router.navigate({ to: '/login', search: { from: href } })
+    })
   }, [router])
 
   return (

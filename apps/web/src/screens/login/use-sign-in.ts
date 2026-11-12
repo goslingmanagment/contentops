@@ -50,6 +50,19 @@ export function useHubSignIn(): { offered: boolean; known: boolean } {
   return { offered: methods.data?.hub === true, known: !methods.isPending }
 }
 
+/**
+ * «Выйти» (`POST /api/v1/auth/sign-out`): сеанс этого браузера закрыт, и следующая страница
+ * не впустит молча через хаб. Ответ или сбой — всё равно на вход, с чистой страницы.
+ */
+export function useSignOut() {
+  const api = useApi()
+  return () =>
+    void api.auth
+      .signOut({})
+      .catch(() => undefined)
+      .finally(() => window.location.assign('/login'))
+}
+
 /** Адрес входа через хаб: сервер уводит в хаб и возвращает туда, откуда пришли. */
 export function hubSignInHref(from: string | undefined): string {
   return from && from !== '/'

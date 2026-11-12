@@ -2,6 +2,7 @@ import type { Session } from '@contentops/contracts/domain/admin'
 import { logAction, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { hash, verify } from '@node-rs/argon2'
 import { sql } from 'drizzle-orm'
+import { hubMarkCookie } from '../auth/hub-signin'
 import {
   clearedSessionCookie,
   deviceOf,
@@ -153,6 +154,45 @@ export function authHandlers(services: Services): HandlerRegistry {
         )
         ctx.setHeader('Set-Cookie', sessionCookie(token, cookieOptions(ctx)))
         return { person: await personById(db, row.id) }
+      },
+
+      /**
+       * «Выйти» (DESIGN §2.1): this browser's session ends. Public, so it always answers and
+       * always leaves the «signed out here» mark: the next page load does not sign the person
+       * back in through the hub (SPEC §11.1).
+       */
+      signOut: async ({ ctx }) => {
+        const actor = ctx.actor
+        if (actor?.type === 'person' && actor.sessionId !== null) {
+          const { sessionId } = actor
+          await withActorTx(
+            db,
+            {
+              actor: { type: 'human', id: actor.id, label: actor.name },
+              action: ctx.route,
+              requestId: ctx.requestId,
+            },
+            async (tx) => {
+              const revoked = await tx.execute(sql`
+                UPDATE sessions SET revoked_at = now()
+                 WHERE id = ${sessionId}::uuid AND revoked_at IS NULL`)
+              if ((revoked.rowCount ?? 0) === 0) return
+              await logAction(tx, {
+                modelId: null,
+                subjectKind: 'principals',
+                subjectId: actor.id,
+                subjectLabel: actor.name,
+                after: { Устройство: deviceOf(ctx.userAgent) },
+              })
+            },
+          )
+        }
+        const options = cookieOptions(ctx)
+        ctx.setHeader('Set-Cookie', [
+          clearedSessionCookie(options),
+          ...(services.hubSignin ? [hubMarkCookie('out', options.secure)] : []),
+        ])
+        return { ok: true as const }
       },
 
       signOutEverywhere: ({ body, ctx }) =>
