@@ -1,17 +1,23 @@
 import type { Role } from '@contentops/contracts/domain/people'
 import type { Db } from '@contentops/db'
+import { HUB_AGENT_KEY_PREFIX } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
 import type { Actor, Authenticate } from '../context'
 import { parseCookies } from '../context'
+import { ApiProblem } from '../errors'
+import type { HubAgentKeyService } from './hub-agent-keys'
 import type { HubSessions } from './hub-signin'
 import { SESSION_COOKIE, sessionDigest, sha256 } from './secrets'
 
-interface PrincipalRow extends Record<string, unknown> {
+interface AgentRow extends Record<string, unknown> {
   id: string
   role: Role
   display_name: string
   gender: 'f' | 'm' | null
+}
+
+interface PrincipalRow extends AgentRow {
   credential_id: string
 }
 
@@ -62,6 +68,63 @@ async function agentByToken(db: Db, token: string): Promise<PrincipalRow | undef
   return row
 }
 
+/** The local agent a hub agent's code is linked to (`principals.hub_agent_code`, set by the owner). */
+async function agentByHubCode(db: Db, code: string): Promise<AgentRow | undefined> {
+  const { rows } = await db.execute<AgentRow>(sql`
+    SELECT p.id, p.role, p.display_name, p.gender FROM principals p
+     WHERE p.hub_agent_code = ${code} AND p.kind = 'agent' AND p.disabled_at IS NULL`)
+  return rows[0]
+}
+
+/**
+ * An agent's Agency Hub key (ecosystem package M2): Hub says whose key it is, the owner's link
+ * says which local agent it acts as — its role, its models, its switch, its journal. A code
+ * without a link gets nothing. Every such call is written to `hub_agent_calls` under the code.
+ */
+async function agentByHubKey(
+  db: Db,
+  keys: HubAgentKeyService,
+  token: string,
+  request: FastifyRequest,
+): Promise<Actor> {
+  const verdict = await keys.who(token)
+  if (verdict.kind === 'unreachable') {
+    throw new ApiProblem(
+      'unavailable',
+      'Ключ хаба не проверить: хаб не отвечает, а последнего ответа о ключе нет или ему больше часа',
+    )
+  }
+  if (verdict.kind === 'refused') {
+    throw new ApiProblem('unavailable', 'Ключ хаба не проверить: хаб отказал ContentOps в ответе')
+  }
+  if (verdict.kind === 'inactive') {
+    throw new ApiProblem(
+      'unauthenticated',
+      'Ключ хаба не действует: отозван, истёк или не принадлежит агенту',
+    )
+  }
+  const agent = await agentByHubCode(db, verdict.code)
+  await db.execute(sql`
+    INSERT INTO hub_agent_calls (agent_code, principal_id, method, url, request_id, outcome, held)
+    VALUES (${verdict.code}, ${agent?.id ?? null}::uuid, ${request.method},
+            ${request.url.slice(0, 1024)}, ${request.id}, ${agent ? 'ok' : 'not_linked'},
+            ${verdict.held})`)
+  if (!agent) {
+    throw new ApiProblem('forbidden', `Агент хаба ${verdict.code} не связан с агентом ContentOps`)
+  }
+  return {
+    type: 'agent',
+    id: agent.id,
+    role: agent.role,
+    models: await modelsOf(db, agent.id, agent.role),
+    name: agent.display_name,
+    gender: agent.gender,
+    sessionId: null,
+    tokenId: null,
+    hubAgent: verdict.code,
+  }
+}
+
 async function personBySession(db: Db, token: string): Promise<SessionRow | undefined> {
   const { rows } = await db.execute<SessionRow>(sql`
     SELECT p.id, p.role, p.display_name, p.gender, s.id AS credential_id, p.login,
@@ -85,12 +148,21 @@ async function personBySession(db: Db, token: string): Promise<SessionRow | unde
  * session cookie for people. Revoked or expired credentials and disabled principals give
  * `null`, that is 401; rights are read on every request, so a revoke acts at once. A session
  * opened through the hub also needs the hub's «still signed in» (`hubSessions`); without the
- * hub sign-in configured such a session is refused.
+ * hub sign-in configured such a session is refused. An agent's hub key (`agency_hub_agent_…`)
+ * is asked about at the hub (`hubAgentKeys`); without ContentOps' own key for that it is just an
+ * unknown token, 401.
  */
-export function createAuthenticate(db: Db, hubSessions: HubSessions | null = null): Authenticate {
+export function createAuthenticate(
+  db: Db,
+  hubSessions: HubSessions | null = null,
+  hubAgentKeys: HubAgentKeyService | null = null,
+): Authenticate {
   return async (request) => {
     const bearer = bearerOf(request)
     if (bearer !== undefined) {
+      if (bearer && hubAgentKeys && bearer.startsWith(HUB_AGENT_KEY_PREFIX)) {
+        return agentByHubKey(db, hubAgentKeys, bearer, request)
+      }
       const agent = bearer ? await agentByToken(db, bearer) : undefined
       if (!agent) return null
       return actorOf(db, 'agent', agent)

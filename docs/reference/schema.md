@@ -70,7 +70,7 @@
 
 | Область | Таблицы |
 |---|---|
-| Модель и доступ | `models`, `accounts`, `surfaces`, `promo_channels`, `principals`, `principal_grants`, `sessions`, `api_tokens`, `id_counters`, `policy_settings`, `pipeline_versions` |
+| Модель и доступ | `models`, `accounts`, `surfaces`, `promo_channels`, `principals`, `principal_grants`, `sessions`, `api_tokens`, `hub_agent_calls`, `id_counters`, `policy_settings`, `pipeline_versions` |
 | Каталог | `content_items`, `assets`, `asset_versions`, `item_memberships`, `asset_manifests`, `asset_manifest_entries`, `aliases`, `provenance`, `tags`, `item_tags`, `annotation_fields`, `annotation_runs`, `annotation_suggestions`, `chronology_entries`, `platform_texts` |
 | Байты и производные | `blobs`, `blob_probes`, `blob_phashes`, `video_prints`, `master_checks`, `storage_operations`, `rendition_generations`, `rendition_artifacts` |
 | Источники, приёмка, фон | `sources`, `source_objects`, `source_paths`, `source_revisions`, `inbox_groups`, `inbox_drafts`, `inbox_draft_candidates`, `web_uploads`, `work_operations`, `legacy_claims`, `legacy_number_claims`, `review_cases` |
@@ -143,7 +143,9 @@ UNIQUE `(account_id, kind)`; UNIQUE
 (argon2; CHECK только у людей), `ui_skin` (`blue | focus`, по умолчанию `blue`; вид
 интерфейса, DESIGN §7.10), `disabled_at`, `created_at`, `row_version`; связь с человеком
 Agency Hub для «Войти через хаб» (SPEC §11.1, `0020_hub_signin`): `hub_user_id` (id в хабе,
-UNIQUE, только у людей) и `hub_login` (логин в хабе для показа).
+UNIQUE, только у людей) и `hub_login` (логин в хабе для показа); связь агента с агентом хаба
+(SPEC §11.1, `0021_hub_agent_keys`): `hub_agent_code` (код агента в хабе, UNIQUE, только у агентов) —
+ключ хаба этого агента действует как этот принципал.
 
 **`principal_grants`** — область прав (§11.1): права на модель, прав на страницу нет.
 `id`, `principal_id`, `model_id`, `granted_at`, `granted_by`, `revoked_at`.
@@ -156,7 +158,10 @@ UNIQUE, только у людей) и `hub_login` (логин в хабе дл�
 повторной проверки) и `hub_checked_at` (последнее «вошёл» от хаба), её токен — с префиксом
 `hub.` и своим видом хэша (SPEC §11.1). **`api_tokens`** — токены агентов: `id`, `principal_id`, `name`,
 `token_hash` (UNIQUE), `token_prefix`, `created_at`, `expires_at`, `revoked_at`,
-`last_used_at`.
+`last_used_at`. **`hub_agent_calls`** — каждый вызов ключом хаба агента (SPEC §11.1): `id`, `at`,
+`agent_code`, `principal_id` (связанный агент; пусто — связи нет), `method`, `url`, `request_id`,
+`outcome` (`ok | not_linked`), `held` (хаб молчал, держался последний ответ); только вставка, ни
+ключа, ни его отпечатка.
 
 **`id_counters`** — живой счётчик (§4.1, §6.4). PK `(model_id, type)`,
 `next_number integer CHECK (>= 1)` (начальный задаёт bootstrap),
@@ -1662,7 +1667,7 @@ LLM.
   `forbid_update_delete()` + `REVOKE UPDATE, DELETE` у прикладной роли на
   `asset_versions`, `asset_manifests`, `asset_manifest_entries`, `download_receipts`,
   `download_receipt_entries`, `custom_order_deliveries`, `placement_evidence`,
-  `hub_observations`, `action_log`.
+  `hub_observations`, `hub_agent_calls`, `action_log`.
   Тест перечисляет все охраны.
 - Приёмочные тесты (Testcontainers, PostgreSQL 18, прикладная роль): чистое применение
   и повтор без изменений; два раннера одновременно; обрыв между DDL и записью версии;
@@ -1719,6 +1724,7 @@ LLM.
 | после 8а (11.11.2026) | `0018_custom_copies` | таблиц нет: вид `custom_copy` в `review_cases` — «Копии кастомов» (SPEC §6.2) |
 | 5б (11.11.2026) | `0019_week_approval` | таблиц нет: «Утвердить неделю» — `posting_plan_rows.approved_at/by/version` (схема §3.5, SPEC §7) |
 | после 5б (12.11.2026) | `0020_hub_signin` | таблиц нет: «Войти через хаб» — `principals.hub_user_id/hub_login`, `sessions.hub_grant/hub_checked_at` (SPEC §11.1) |
+| после 5б (12.11.2026) | `0021_hub_agent_keys` | `hub_agent_calls` (1): ключ хаба агента — `principals.hub_agent_code`, журнал вызовов (SPEC §11.1) |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
 Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего

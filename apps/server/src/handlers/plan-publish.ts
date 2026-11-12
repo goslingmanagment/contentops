@@ -101,7 +101,12 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
     model: ModelScope,
     row: RowRecord,
     op: 'prepare' | 'send' | 'cancel',
-    job: { principalId: string; version?: number; tokenId?: string | null },
+    job: {
+      principalId: string
+      version?: number
+      tokenId?: string | null
+      hubAgent?: string | null
+    },
     requestId: string,
   ) {
     const { work, created } = await enqueueRowWork(tx, {
@@ -223,7 +228,12 @@ export function planPublishHandlers(services: Services): HandlerRegistry {
       model,
       row,
       'send',
-      { principalId: actor.id, version, ...(actor.tokenId ? { tokenId: actor.tokenId } : {}) },
+      {
+        principalId: actor.id,
+        version,
+        ...(actor.tokenId ? { tokenId: actor.tokenId } : {}),
+        ...(actor.hubAgent ? { hubAgent: actor.hubAgent } : {}),
+      },
       requestId,
     )
     await logRow(tx, state, row, { Публикация: WORD.send })

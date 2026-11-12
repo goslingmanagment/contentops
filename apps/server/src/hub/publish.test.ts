@@ -558,6 +558,50 @@ describe('checks and «Отправить»', () => {
     expect(publicationOf(after).status).toBe('draft')
   })
 
+  it('a send work of an agent with its hub key holds only while the owner keeps its link', async () => {
+    const row = await put({ item_id: 'FYP-0801', surface: 'fyp', date: day(4), time: '05:00' })
+    const after = await prepared(row.id, agent)
+    await approveWeek([after])
+    const approves = hub.calls('publications.approve').length
+    // The work an agent's hub key queues: no token of ours, the hub agent's code instead.
+    const sendAs = async (hubAgent: string) => {
+      const { work } = await withActorTx(
+        db,
+        { actor: SYSTEM_ACTOR('test'), action: 'test.enqueue', requestId: randomUUID() },
+        (tx) =>
+          enqueueWork(tx, {
+            modelId: lora1.modelId,
+            kind: 'hub_publish',
+            workKey: `hubpub:${row.id}:send:test-${randomUUID()}`,
+            accountId: lora1.accountId,
+            dataset: 'send',
+            scope: `row:${row.id}`,
+            streamKey: `hubpub-row:${row.id}`,
+            checkpoint: {
+              rowId: row.id,
+              principalId: agentId,
+              version: versionOf(after),
+              hubAgent,
+            },
+          }),
+      )
+      return runHubWork(db, work.id, publish(), { kind: 'hub_publish' })
+    }
+    expect(await sendAs('gengar')).toMatchObject({ state: 'failed', error_code: 'agent_off' })
+    await db.execute(
+      sql`UPDATE principals SET hub_agent_code = 'gengar' WHERE id = ${agentId}::uuid`,
+    )
+    try {
+      expect(await sendAs('os-machine')).toMatchObject({ state: 'failed', error_code: 'agent_off' })
+      expect(hub.calls('publications.approve').length).toBe(approves)
+      const linked = await sendAs('gengar')
+      expect(linked.state, linked.error_text ?? '').toBe('succeeded')
+      expect(hub.calls('publications.approve').length).toBe(approves + 1)
+    } finally {
+      await db.execute(sql`UPDATE principals SET hub_agent_code = NULL WHERE id = ${agentId}::uuid`)
+    }
+  })
+
   it('a person’s «Отправить» approves the version they saw, once', async () => {
     const row = await put({ item_id: 'SET-074', date: day(5), time: '19:00' })
     const draft = await prepared(row.id)

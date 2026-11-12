@@ -1,9 +1,17 @@
 /**
  * Client of the Agency Hub agent API for ContentOps (SPEC §7, §8.1; PLAN 5, 5б): datasets
  * with the pinned field list checked against `capabilities`, the poll windows, and
- * publication through Hub, and the server half of «Войти через хаб». A pure client: no
+ * publication through Hub, the server half of «Войти через хаб» and «кто этот ключ». A pure client: no
  * database, no clock of its own.
  */
+export {
+  createHubAgentKeys,
+  HUB_AGENT_CODE,
+  HUB_AGENT_KEY_PREFIX,
+  type HubAgentKeys,
+  type HubAgentKeysOptions,
+  type HubKeyAnswer,
+} from './agent-keys.ts'
 export {
   type CapabilityCheck,
   type CatalogEntry,

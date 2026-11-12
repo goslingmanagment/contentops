@@ -9,11 +9,12 @@ import {
   WorkRunner,
   WorkScheduler,
 } from '@contentops/db'
-import { createHubSignin } from '@contentops/hub'
+import { createHubAgentKeys, createHubSignin } from '@contentops/hub'
 import type { ToolVersions } from '@contentops/media'
 import type { Logger } from 'pino'
 import { configuredProviders, envProviders } from './annotation/providers'
 import { annotateHandler } from './annotation/work'
+import { createHubAgentKeyService, type HubAgentKeyService } from './auth/hub-agent-keys'
 import type { HubSigninSetup } from './auth/hub-signin'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
@@ -99,6 +100,21 @@ function hubSigninOf(config: Config, logger: Logger): HubSigninSetup | undefined
   }
 }
 
+/**
+ * An agent's Agency Hub key (SPEC §11.1, ecosystem M2): Hub's address and ContentOps' own key with
+ * `introspect:agent_keys`. Without one of them hub keys are not accepted, as before.
+ */
+function hubAgentKeysOf(config: Config, logger: Logger): HubAgentKeyService | undefined {
+  if (!config.HUB_BASE_URL || !config.HUB_INTROSPECT_KEY) return undefined
+  logger.info('agents may call with their hub key')
+  return createHubAgentKeyService(
+    createHubAgentKeys({ baseUrl: config.HUB_BASE_URL, key: config.HUB_INTROSPECT_KEY }),
+    {
+      onError: (error) => logger.warn({ err: error }, 'the hub did not say whose an agent key is'),
+    },
+  )
+}
+
 async function runWeb(config: Config, logger: Logger): Promise<void> {
   const pool = createPool(required(config.DATABASE_URL, 'DATABASE_URL'), {
     applicationName: 'web',
@@ -113,6 +129,7 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     tmpRoot: required(config.TMP_ROOT, 'TMP_ROOT'),
   }
   const hubSignin = hubSigninOf(config, logger)
+  const hubAgentKeys = hubAgentKeysOf(config, logger)
   const app = buildServer({
     db,
     publicUrl: required(config.PUBLIC_URL, 'PUBLIC_URL'),
@@ -130,6 +147,7 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     storage,
     filesDirect: config.FILES_DIRECT,
     ...(hubSignin ? { hubSignin } : {}),
+    ...(hubAgentKeys ? { hubAgentKeys } : {}),
   })
   app.addHook('onClose', () => pool.end())
   onStop(logger, () => app.close())
