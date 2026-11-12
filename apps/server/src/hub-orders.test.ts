@@ -4,11 +4,13 @@ import {
   HubOrderListSchema,
   HubOrderSchema,
 } from '@contentops/contracts/domain/hub-orders'
+import { parseTelegramRef, telegramRefText } from '@contentops/contracts/order-link'
 import type { WorkContext } from '@contentops/db'
 import {
   type HubClient,
   type HubCustomOrder,
   HubError,
+  type HubOrderMessage,
   type HubOrderReportBody,
 } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
@@ -70,18 +72,38 @@ function hubOrder(id: number, fields: Partial<HubCustomOrder> = {}): HubCustomOr
   }
 }
 
-/** The hub's agent door as far as ContentOps uses it; the hub derives partly and shot. */
+const normalRef = (text: string | undefined) => {
+  const ref = text ? parseTelegramRef(text) : null
+  return ref ? telegramRefText(ref) : null
+}
+const MOVES_FROM: readonly string[] = ['recorded', 'paid', 'at_model', 'partly', 'revision']
+
+/**
+ * The hub's agent door as far as ContentOps uses it, and as the hub keeps a message: one per
+ * Telegram link and ordinal, or one per event ref; the same again answers `unchanged` with the
+ * event it already had, a link that holds another kind of message keeps nothing (`event: null`).
+ * The hub derives partly and shot from the parts, and takes a retracted delivery's part back.
+ */
 class FakeHub {
   orders = new Map<string, HubCustomOrder>()
   reports: { code: string; body: HubOrderReportBody }[] = []
   matters = new Map<string, 'open' | 'closed'>()
   down = false
 
+  static wanted(order: HubCustomOrder): ('video' | 'photos')[] {
+    const parts: ('video' | 'photos')[] = []
+    if (order.card.wantsVideo !== false) parts.push('video')
+    if ((order.card.wantsPhotos ?? 0) > 0) parts.push('photos')
+    return parts.length === 0 ? ['photos'] : parts
+  }
+
   client(): HubClient {
     const away = () => {
       if (this.down)
         throw new HubError('transient', 'network: connect ECONNREFUSED', { endpoint: 'x' })
     }
+    const refused = (status: number, reason: string) =>
+      new HubError('refused', `HTTP ${status} ${reason}`, { endpoint: 'x', status, code: reason })
     return {
       customOrders: async () => {
         away()
@@ -90,35 +112,80 @@ class FakeHub {
       reportCustomOrder: async (code: string, body: HubOrderReportBody) => {
         away()
         const order = this.orders.get(code)
-        if (!order)
-          throw new HubError('refused', 'HTTP 404 not_found', {
-            endpoint: 'x',
-            status: 404,
-            code: 'not_found',
-          })
+        if (!order) throw refused(404, 'not_found')
         this.reports.push({ code, body })
-        if (body.action === 'delivery') {
-          const parts = new Set(order.partsDone)
-          if (body.complete) parts.add(body.part)
-          const wanted = [
-            order.card.wantsVideo !== false ? 'video' : null,
-            (order.card.wantsPhotos ?? 0) > 0 ? 'photos' : null,
-          ].filter(Boolean)
-          order.partsDone = [...parts]
-          order.state = wanted.every((part) => parts.has(part as 'video')) ? 'shot' : 'partly'
-          order.version++
-        }
-        order.messages.push({
-          telegramRef: body.message.telegramRef,
-          ordinal: 0,
-          kind: body.action === 'delivery' ? 'delivery' : 'note',
-          part: body.action === 'delivery' ? body.part : null,
-          at: body.message.at ?? null,
-          author: body.message.author ?? null,
-          excerpt: body.message.excerpt ?? null,
-          doneAt: null,
+        const link = normalRef(body.message?.telegramRef)
+        const ref = body.eventRef ?? link
+        if (ref === null) throw refused(400, 'bad_request')
+        const kind = body.action === 'delivery' ? 'delivery' : 'note'
+        const answer = (
+          outcome: 'changed' | 'unchanged',
+          event: HubOrderMessage | null,
+          result: 'stored' | 'already',
+        ) => ({
+          order: structuredClone(order),
+          outcome,
+          event: event === null ? null : { ref, result },
         })
-        return { order, outcome: 'changed' as const }
+        const same = order.messages.find((message) =>
+          body.eventRef
+            ? message.eventRef === body.eventRef
+            : message.eventRef === null && message.telegramRef === link && message.ordinal === 0,
+        )
+        if (same) return answer('unchanged', same.kind === kind ? same : null, 'already')
+        const wanted = FakeHub.wanted(order)
+        const message: HubOrderMessage = {
+          telegramRef: link,
+          eventRef: body.eventRef ?? null,
+          ordinal: 0,
+          kind,
+          part: body.action === 'delivery' ? body.part : null,
+          complete: body.action === 'delivery' ? body.complete : null,
+          at: body.message?.at ?? null,
+          author: body.message?.author ?? null,
+          excerpt:
+            body.action === 'retract'
+              ? (body.message?.excerpt ?? body.reason)
+              : (body.message?.excerpt ?? null),
+          doneAt: null,
+          retractedAt: null,
+        }
+        if (body.action === 'retract') {
+          const by = normalRef(body.retracts)
+          const hits = order.messages.filter(
+            (one) =>
+              one.kind === 'delivery' &&
+              (one.eventRef === body.retracts || (by !== null && one.telegramRef === by)),
+          )
+          if (hits.length === 0) throw refused(409, 'unknown_event')
+          const now = new Date().toISOString()
+          const taken = hits.filter((one) => one.retractedAt === null)
+          for (const one of taken) one.retractedAt = now
+          const live = order.messages.filter(
+            (one) => one.kind === 'delivery' && one.retractedAt === null,
+          )
+          const lost = taken
+            .filter((one) => one.complete !== false && one.part !== null)
+            .map((one) => one.part)
+            .filter((part) => !live.some((one) => one.part === part && one.complete !== false))
+          order.partsDone = order.partsDone.filter((part) => !lost.includes(part))
+          if (taken.length > 0 && (order.state === 'shot' || order.state === 'partly')) {
+            order.state = wanted.every((part) => order.partsDone.includes(part))
+              ? 'shot'
+              : order.partsDone.length > 0 || live.length > 0
+                ? 'partly'
+                : 'at_model'
+          }
+        } else if (body.action === 'delivery' && MOVES_FROM.includes(order.state)) {
+          if (body.complete) order.partsDone = [...new Set([...order.partsDone, body.part])]
+          const open = order.openRevisions > 0 || order.state === 'revision'
+          if (open && body.complete) order.openRevisions = 0
+          const whole = wanted.every((part) => order.partsDone.includes(part))
+          order.state = open && !body.complete ? 'revision' : whole ? 'shot' : 'partly'
+        }
+        order.messages.push(message)
+        order.version++
+        return answer('changed', message, 'stored')
       },
       openMatter: async (body: { key: string }) => {
         away()
@@ -276,9 +343,10 @@ describe('the hub orders of a model', () => {
       code: 'K-1',
       body: {
         action: 'delivery',
+        eventRef: `contentops:delivery:${before.files[0]?.id}`,
         part: 'video',
         complete: true,
-        message: { telegramRef: `tg:${CHAT}/3/9001`, author: 'ContentOps' },
+        message: { author: 'ContentOps' },
       },
     })
     const after = await card('K-1')
@@ -291,16 +359,30 @@ describe('the hub orders of a model', () => {
     expect(HubOrderSchema.parse(again.json()).files).toHaveLength(1)
   })
 
-  it('a retraction goes to the hub as a note of the order', async () => {
+  it("an order with no Telegram card gets its delivery: the hub keeps it by ContentOps' own id", async () => {
     const item = await custom({ video: true })
     const linked = HubOrderSchema.parse((await link('K-4', { item_id: item })).json())
     const delivery = linked.files.find((file) => file.archive_order === null)
-    expect(delivery).toBeDefined()
-    // K-4 has no Telegram card in the hub: the hub refuses a step without one, said at once.
-    expect(delivery?.report).toMatchObject({
-      state: 'refused',
-      error: expect.stringContaining('Telegram'),
+    // K-4 has no Telegram card in the hub: the delivery still goes, known by its own id.
+    expect(delivery?.report).toMatchObject({ state: 'pending' })
+    await run()
+    const eventRef = `contentops:delivery:${delivery?.id}`
+    expect(hub.reports.at(-1)).toMatchObject({
+      code: 'K-4',
+      body: { action: 'delivery', eventRef },
     })
+    expect(hub.orders.get('K-4')?.messages).toContainEqual(
+      expect.objectContaining({ kind: 'delivery', eventRef, telegramRef: null }),
+    )
+    expect(hub.orders.get('K-4')?.state).toBe('shot')
+    const after = await card('K-4')
+    expect(after.files.find((file) => file.id === delivery?.id)?.report).toMatchObject({
+      state: 'sent',
+      error: null,
+    })
+  })
+
+  it('a retraction is its own event in the hub: the delivery is taken back there', async () => {
     const k2 = await custom({ video: true })
     const second = HubOrderSchema.parse((await link('K-2', { item_id: k2 })).json())
     const file = second.files[0]
@@ -314,17 +396,58 @@ describe('the hub orders of a model', () => {
     })
     expect(retracted.statusCode, retracted.body).toBe(200)
     await run()
+    const deliveryRef = `contentops:delivery:${file.id}`
     expect(hub.reports.at(-1)).toMatchObject({
       code: 'K-2',
-      body: {
-        action: 'message',
-        kind: 'note',
-        message: { excerpt: expect.stringContaining('отвязана') },
-      },
+      body: { action: 'retract', retracts: deliveryRef, reason: 'это другой заказ' },
     })
+    const order = hub.orders.get('K-2')
+    // The hub took the delivery back: its part no longer counts, nothing else delivered it.
+    expect(
+      order?.messages.find((message) => message.eventRef === deliveryRef)?.retractedAt,
+    ).toEqual(expect.any(String))
+    expect(order).toMatchObject({ state: 'at_model', partsDone: [] })
     const after = await card('K-2')
     expect(after.files[0]?.retracted).toMatchObject({ reason: 'это другой заказ' })
     expect(after.files[0]?.retraction_report).toMatchObject({ state: 'sent' })
+  })
+
+  it('a report the hub keeps no event of is «refused» with words, never «sent» on a 200', async () => {
+    hub.orders.set('K-8', hubOrder(8))
+    await run()
+    const item = await custom({ video: true })
+    const linked = HubOrderSchema.parse((await link('K-8', { item_id: item })).json())
+    const file = linked.files[0]
+    if (!file) throw new Error('no file')
+    // A report written before events: a note under the order's card, a link the hub has a delivery under.
+    const cardRef = `tg:${CHAT}/3/9008`
+    hub.orders.get('K-8')?.messages.push({
+      telegramRef: cardRef,
+      eventRef: null,
+      ordinal: 0,
+      kind: 'delivery',
+      part: 'video',
+      complete: true,
+      at: null,
+      author: null,
+      excerpt: null,
+      doneAt: null,
+      retractedAt: null,
+    })
+    const old = {
+      action: 'message',
+      kind: 'note',
+      message: { telegramRef: cardRef, excerpt: 'отвязана' },
+    }
+    await server.db.execute(sql`
+      UPDATE hub_order_reports SET body = ${JSON.stringify(old)}::jsonb
+       WHERE delivery_id = ${file.id}::uuid`)
+    await run()
+    expect(hub.reports.at(-1)).toMatchObject({ code: 'K-8', body: old })
+    expect((await card('K-8')).files[0]?.report).toMatchObject({
+      state: 'refused',
+      error: expect.stringContaining('не сохранил'),
+    })
   })
 
   it('the hub away: the last read stays with its time, the reports wait', async () => {

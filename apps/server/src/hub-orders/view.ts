@@ -228,7 +228,7 @@ function messageView(
     at: hubInstant(message.at),
     author: message.author,
     excerpt: reader ? null : message.excerpt,
-    url: reader ? null : telegramUrlOf(message.telegramRef),
+    url: reader || !message.telegramRef ? null : telegramUrlOf(message.telegramRef),
     done_at: hubInstant(message.doneAt),
   }
 }

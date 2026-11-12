@@ -45,6 +45,7 @@ export {
   type HubMatterAnswer,
   type HubMatterOpen,
   type HubOrderCard,
+  type HubOrderEvent,
   type HubOrderMessage,
   type HubOrderMessageInput,
   type HubOrderPart,

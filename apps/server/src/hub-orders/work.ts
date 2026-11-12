@@ -1,4 +1,4 @@
-import { parseTelegramRef } from '@contentops/contracts/order-link'
+import { parseTelegramRef, telegramRefText } from '@contentops/contracts/order-link'
 import {
   type Db,
   enqueueWork,
@@ -24,8 +24,9 @@ import { keepMatters, type MattersOutcome } from './matters'
  * Work `hub_orders` of role `worker` (ecosystem plan 12.11.2026, package N), one stream per
  * model with a Hub page, every 5 minutes and right after a delivery or a retraction:
  *
- * 1. the outbox: every report the hub has not taken goes, the oldest first; a refusal is kept
- *    with the hub's words (the card shows it), a failure leaves the rest for the next run;
+ * 1. the outbox: every report the hub has not taken goes, the oldest first; it is «sent» only when
+ *    the hub answers that it keeps that very event (stored now, or had it), else it is refused
+ *    with the hub's words (the card shows it); a failure leaves the rest for the next run;
  * 2. the read: the hub's open orders (`write:customs`), cut to the model's — by the page, by
  *    ContentOps' old order of the import, or by the model's Telegram chats — become the last
  *    read; a read that does not come back keeps the previous one and says why;
@@ -186,6 +187,13 @@ interface PendingReport extends Record<string, unknown> {
   body: HubOrderReportBody
 }
 
+/** The event a report names, as the hub writes it: its eventRef, else its Telegram link. */
+function eventOf(body: HubOrderReportBody): string | null {
+  if (body.eventRef) return body.eventRef
+  const ref = body.message?.telegramRef ? parseTelegramRef(body.message.telegramRef) : null
+  return ref ? telegramRefText(ref) : null
+}
+
 interface SendOutcome {
   sent: number
   refused: number
@@ -207,6 +215,19 @@ async function sendReports(
     signal.throwIfAborted()
     try {
       const answer = await client.reportCustomOrder(report.order_code, report.body, signal)
+      const wanted = eventOf(report.body)
+      if (wanted === null || answer.event?.ref !== wanted) {
+        // A 200 is not enough: the hub keeps no such event (a note under a link it has another
+        // message under, an older hub). Refused in words, never «sent».
+        outcome.refused++
+        const words = `Hub не сохранил это событие (ответ «${answer.outcome}»): отметьте в Hub вручную`
+        await db.execute(sql`
+          UPDATE hub_order_reports
+             SET state = 'refused', tried_at = now(), attempts = attempts + 1, error = ${words},
+                 outcome = ${answer.outcome}, hub_state = ${answer.order.state}
+           WHERE model_id = ${modelId}::uuid AND id = ${report.id}::uuid`)
+        continue
+      }
       outcome.sent++
       await db.execute(sql`
         UPDATE hub_order_reports

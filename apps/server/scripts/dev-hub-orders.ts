@@ -1,7 +1,8 @@
 // Custom orders of the fake Agency Hub (`dev-hub.ts`; ecosystem plan 12.11.2026, package N): the
-// hub's agent door as ContentOps uses it — the open orders, a delivery of a part, a note — and
-// the matters by reason key. The hub derives «сдано частично» and «снято» from the parts, as the
-// real one does. Every order, name and text here is made up.
+// hub's agent door as ContentOps uses it — the open orders, a delivery of a part, its retraction,
+// a note — and the matters by reason key. A message is kept once per eventRef (else per link),
+// the answer names the event it keeps; the hub derives «сдано частично» and «снято» from the
+// parts, as the real one does. Every order, name and text here is made up.
 //
 // The developer moves an order the way the hub's board would:
 //   POST /__dev/custom-orders                       {page?, task, duration?, photos?, deadline?}
@@ -12,14 +13,17 @@ type State = 'recorded' | 'paid' | 'at_model' | 'partly' | 'shot' | 'revision' |
 type Part = 'video' | 'photos'
 
 interface Message {
-  telegramRef: string
+  telegramRef: string | null
+  eventRef: string | null
   ordinal: number
   kind: 'repost' | 'delivery' | 'revision' | 'confirmation' | 'note'
   part: Part | null
+  complete: boolean | null
   at: string | null
   author: string | null
   excerpt: string | null
   doneAt: string | null
+  retractedAt: string | null
 }
 
 interface Order {
@@ -93,7 +97,7 @@ export class DevOrders {
       version: 1,
       createdAt: now,
       messages: input.note
-        ? [{ telegramRef: `tg:7000000001/3/${30000 + id}`, ordinal: 0, kind: 'revision', part: null, at: now, author: 'менеджер', excerpt: input.note, doneAt: null }]
+        ? [{ telegramRef: `tg:7000000001/3/${30000 + id}`, eventRef: null, ordinal: 0, kind: 'revision', part: null, complete: null, at: now, author: 'менеджер', excerpt: input.note, doneAt: null, retractedAt: null }]
         : [],
     }
     this.orders.set(id, order)
@@ -167,29 +171,49 @@ export class DevOrders {
     if (method === 'POST' && step) {
       const order = this.orders.get(Number(step[1]))
       if (!order) return { status: 404, body: { error: 'not_found', message: 'Not found' } }
-      const body = req.json as { action: string; part?: Part; complete?: boolean; kind?: string; message: Omit<Message, 'ordinal' | 'kind' | 'part' | 'doneAt'> }
-      const exists = order.messages.some((m) => m.telegramRef === body.message.telegramRef && m.ordinal === 0)
-      if (!exists) {
-        order.messages.push({
-          telegramRef: body.message.telegramRef,
-          ordinal: 0,
-          kind: body.action === 'delivery' ? 'delivery' : 'note',
-          part: body.action === 'delivery' ? (body.part ?? 'video') : null,
-          at: body.message.at ?? null,
-          author: body.message.author ?? null,
-          excerpt: body.message.excerpt ?? null,
-          doneAt: null,
-        })
+      const body = req.json as {
+        action: string; eventRef?: string; retracts?: string; reason?: string; part?: Part; complete?: boolean; kind?: string
+        message?: { telegramRef?: string; at?: string; author?: string; excerpt?: string }
       }
+      const ref = body.eventRef ?? body.message?.telegramRef ?? null
+      if (ref === null) return { status: 400, body: { error: 'Bad Request', message: 'no eventRef and no message link' } }
+      const kind = body.action === 'delivery' ? 'delivery' : 'note'
+      const same = order.messages.find((m) => (body.eventRef ? m.eventRef === body.eventRef : m.eventRef === null && m.telegramRef === ref && m.ordinal === 0))
+      if (same) {
+        const event = same.kind === kind ? { ref, result: 'already' } : null
+        return { status: 200, body: { order: this.wire(order), outcome: 'unchanged', event } }
+      }
+      if (body.action === 'retract') {
+        const hits = order.messages.filter((m) => m.kind === 'delivery' && (m.eventRef === body.retracts || m.telegramRef === body.retracts))
+        if (hits.length === 0) return { status: 409, body: { error: 'conflict', message: 'no such delivery', reason: 'unknown_event' } }
+        for (const m of hits) m.retractedAt ??= new Date().toISOString()
+        const live = order.messages.filter((m) => m.kind === 'delivery' && m.retractedAt === null && m.complete !== false)
+        order.partsDone = order.partsDone.filter((part) => live.some((m) => m.part === part))
+        if (order.state === 'shot' || order.state === 'partly') {
+          this.#move(order, this.#wanted(order).every((part) => order.partsDone.includes(part)) ? 'shot' : order.partsDone.length > 0 ? 'partly' : 'at_model')
+        }
+      }
+      order.messages.push({
+        telegramRef: body.eventRef ? (body.message?.telegramRef ?? null) : ref,
+        eventRef: body.eventRef ?? null,
+        ordinal: 0,
+        kind,
+        part: body.action === 'delivery' ? (body.part ?? 'video') : null,
+        complete: body.action === 'delivery' ? body.complete !== false : null,
+        at: body.message?.at ?? null,
+        author: body.message?.author ?? null,
+        excerpt: body.message?.excerpt ?? body.reason ?? null,
+        doneAt: null,
+        retractedAt: null,
+      })
       if (body.action === 'delivery' && ['recorded', 'paid', 'at_model', 'partly', 'revision'].includes(order.state)) {
         const parts = new Set(order.partsDone)
         if (body.complete !== false) parts.add(body.part ?? 'video')
         order.partsDone = [...parts]
-        this.#move(order, this.#wanted(order).every((part) => parts.has(part)) ? 'shot' : 'partly')
-        for (const m of order.messages) if (m.kind === 'revision' && order.state === 'shot') m.doneAt ??= null
-        return { status: 200, body: { order: this.wire(order), outcome: 'changed' } }
+        const open = order.state === 'revision'
+        this.#move(order, open && body.complete === false ? 'revision' : this.#wanted(order).every((part) => parts.has(part)) ? 'shot' : 'partly')
       }
-      return { status: 200, body: { order: this.wire(order), outcome: exists ? 'unchanged' : 'changed' } }
+      return { status: 200, body: { order: this.wire(order), outcome: 'changed', event: { ref, result: 'stored' } } }
     }
     if (method === 'POST' && path === '/api/v1/agent/matters') {
       const body = req.json as { key: string; title: string }
@@ -216,7 +240,10 @@ export class DevOrders {
       if (!order) return { status: 404, body: { error: 'not_found' } }
       const note = (req.json as { note?: string } | undefined)?.note ?? 'правка'
       if (dev[2] === 'revision') {
-        order.messages.push({ telegramRef: `tg:7000000001/3/${40000 + order.messages.length}`, ordinal: 0, kind: 'revision', part: null, at: new Date().toISOString(), author: 'менеджер', excerpt: note, doneAt: null })
+        order.messages.push({
+          telegramRef: `tg:7000000001/3/${40000 + order.messages.length}`, eventRef: null, ordinal: 0, kind: 'revision', part: null, complete: null,
+          at: new Date().toISOString(), author: 'менеджер', excerpt: note, doneAt: null, retractedAt: null,
+        })
         this.#move(order, 'revision', note)
       } else {
         this.#move(order, dev[2] === 'cancel' ? 'cancelled' : (dev[2] as State))
