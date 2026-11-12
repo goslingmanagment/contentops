@@ -34,6 +34,10 @@ export type PrincipalKind = (typeof principalKinds)[number]
 export const principalRoles = ['owner', 'manager', 'reader'] as const
 export type PrincipalRole = (typeof principalRoles)[number]
 
+/** A call with an agent's hub key: acted as the linked agent, or no link for the code (SPEC §11.1). */
+export const hubAgentCallOutcomes = ['ok', 'not_linked'] as const
+export type HubAgentCallOutcome = (typeof hubAgentCallOutcomes)[number]
+
 /** Verb form in the feed: «отметила» / «отметил». */
 export const genders = ['f', 'm'] as const
 export type Gender = (typeof genders)[number]
