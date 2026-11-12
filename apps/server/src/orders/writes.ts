@@ -527,15 +527,22 @@ export async function deliveryMessageAt(
   return rows.find((row) => names.some((name) => sameLine(name, row.excerpt)))?.at ?? null
 }
 
+/**
+ * When the files of a composition came: the oldest of them (an order's own delivery: when the model first sent it),
+ * or the newest (`newest`: what a delivery reported to the hub is dated by — a redelivery after a revision keeps
+ * older files beside the new one, and the hub reads a delivery older than the revision request as the old round).
+ */
 export async function sourceTimeOf(
   tx: Tx,
   model: ModelScope,
   itemId: string,
   versionIds: readonly string[],
+  pick: 'oldest' | 'newest' = 'oldest',
 ): Promise<string> {
+  const edge = pick === 'newest' ? sql`max` : sql`min`
   const { rows } = await tx.execute<{ at: string }>(sql`
     SELECT coalesce(
-             (SELECT min(coalesce(sr.remote_created_at, sr.detected_at))
+             (SELECT ${edge}(coalesce(sr.remote_created_at, sr.detected_at))
                 FROM asset_versions v
                 JOIN source_revisions sr ON sr.model_id = v.model_id AND sr.id = v.source_revision_id
                WHERE v.model_id = ${model.id}::uuid AND v.id = ANY(${sql.param([...versionIds])}::uuid[])),
