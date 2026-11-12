@@ -35,6 +35,7 @@ const underModel = ROUTES.filter(({ route }) => route.path.includes('{model}'))
 const changing = ROUTES.filter(({ route }) => route.method !== 'GET')
 /** A person's own profile and sessions: «только чтение» changes them too. */
 const SELF = new Set([
+  'auth.signOut',
   'auth.signOutEverywhere',
   'settings.updateProfile',
   'settings.changePassword',

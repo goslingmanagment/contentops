@@ -61,6 +61,7 @@ const downloadTail = (after: Map<string, string>) => {
 const WORDING: Record<string, Wording> = {
   'auth.signIn': { verb: 'выполнил', rest: 'вход', noun: 'вход' },
   'auth.hubSignIn': { verb: 'выполнил', rest: 'вход через хаб', noun: 'вход через хаб' },
+  'auth.signOut': { verb: 'завершил', rest: 'сессию этого браузера', noun: 'выход' },
   'auth.signOutEverywhere': {
     verb: 'завершил',
     rest: 'все свои сессии',

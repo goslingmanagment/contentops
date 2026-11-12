@@ -33,8 +33,14 @@ export interface HubRedeemed extends HubSigninPerson {
 export type HubCheck = ({ active: true } & HubSigninPerson) | { active: false }
 
 export interface HubSignin {
-  /** The browser's address at Hub: it signs in there if needed and comes back with a code. */
-  startUrl(input: { state: string; next: string }): string
+  /**
+   * The browser's address at Hub: it signs in there if needed and comes back with a code.
+   * `silent`: Hub never shows its sign-in page; nobody signed in there comes back as
+   * `error=none` (no code).
+   */
+  startUrl(input: { state: string; next: string; silent?: boolean }): string
+  /** Whether Hub answers at all (its health, within 2 s): asked before a silent try. */
+  answers(): Promise<boolean>
   /**
    * Spends the code: `refused` (409) when it is unknown, used, expired or another client's;
    * never retried — a lost answer has spent it anyway.
@@ -78,6 +84,9 @@ function personOf(endpoint: string, value: Record<string, unknown>): HubSigninPe
   return { user: userOf(endpoint, value.user), owner: value.owner, expiresAt }
 }
 
+/** How long a silent try waits to learn whether Hub answers at all. */
+const HEALTH_TIMEOUT_MS = 2_000
+
 export function createHubSignin(options: HubSigninOptions): HubSignin {
   const ctx: HttpContext = {
     baseUrl: options.baseUrl,
@@ -89,13 +98,37 @@ export function createHubSignin(options: HubSigninOptions): HubSignin {
   const { client } = options
 
   return {
-    startUrl({ state, next }) {
+    startUrl({ state, next, silent = false }) {
       const url = new URL(
         'api/v1/auth/sso',
         ctx.baseUrl.endsWith('/') ? ctx.baseUrl : `${ctx.baseUrl}/`,
       )
-      url.search = new URLSearchParams({ to: client, state, next }).toString()
+      url.search = new URLSearchParams({
+        to: client,
+        state,
+        next,
+        ...(silent ? { silent: '1' } : {}),
+      }).toString()
       return url.href
+    },
+
+    async answers() {
+      // No key: the health is public, and the key is for redeem and check only.
+      const url = new URL(
+        'api/v1/health',
+        ctx.baseUrl.endsWith('/') ? ctx.baseUrl : `${ctx.baseUrl}/`,
+      )
+      try {
+        const response = await ctx.fetch(url, {
+          headers: { accept: 'application/json' },
+          redirect: 'manual',
+          signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+        })
+        await response.body?.cancel().catch(() => undefined)
+        return response.ok
+      } catch {
+        return false
+      }
     },
 
     async redeem(code, signal) {

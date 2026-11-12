@@ -12,11 +12,13 @@ import {
 import { useNavigate } from '@tanstack/react-router'
 import { LogOutIcon, SettingsIcon, UserIcon } from 'lucide-react'
 import { useSession } from '@/data/session'
+import { useSignOut } from '@/screens/login/use-sign-in'
 
 /** Аватар справа (DESIGN §2.1): «Профиль и сессии», «Настройки», «Выйти». */
 export function AccountMenu() {
   const person = useSession().data?.person
   const navigate = useNavigate()
+  const signOut = useSignOut()
   if (!person) {
     return <span aria-hidden className="size-9" />
   }
@@ -46,7 +48,7 @@ export function AccountMenu() {
           Настройки
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void navigate({ to: '/login' })}>
+        <DropdownMenuItem onSelect={signOut}>
           <LogOutIcon />
           Выйти
         </DropdownMenuItem>

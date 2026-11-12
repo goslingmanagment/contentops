@@ -23270,6 +23270,36 @@
         }
       }
     },
+    "/api/v1/auth/sign-out": {
+      "post": {
+        "operationId": "auth.signOut",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/sign-out-everywhere": {
       "post": {
         "operationId": "auth.signOutEverywhere",

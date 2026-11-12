@@ -22,6 +22,14 @@ import {
  * with its own hub key for «who is this» and opens its OWN session for the principal linked to
  * that hub person. The hub's session token never reaches this machine. Such a session asks the
  * hub again at most once a minute whether the person is still signed in there.
+ *
+ * Silent sign-in: a page that got 401 on the public name first goes to
+ * `/auth/hub/start?silent=1` (`apps/web/src/screens/login/silent-hub.ts`), once — the hub never
+ * shows its sign-in page then: signed in there, the person is back on the page signed in; nobody
+ * there (`error=none`), the sign-in screen. The try is marked before the browser leaves
+ * (`co_hub_try`, 10 minutes) and the hub's health is asked first, so a hub that does not answer
+ * means the sign-in screen at once. «Выйти» leaves `co_hub_out` (until the browser session ends
+ * or «Войти через хаб» is pressed). Both marks are readable by the page, they carry no secret.
  */
 
 /** The hub is asked about a session at most this often. */
@@ -33,6 +41,8 @@ export const HUB_CHECK_EVERY_MS = 60_000
 export const HUB_SILENCE_MS = 30 * 60_000
 /** The state of a sign-in that went to the hub: enough to sign in there first. */
 const STATE_SECONDS = 600
+/** A silent try was made: no other for this long. */
+const TRY_SECONDS = 600
 /** Hub's codes: 32 random bytes, base64url. */
 const CODE = /^[A-Za-z0-9_-]{43}$/
 const SIGN_IN_ACTION = 'auth.hubSignIn'
@@ -122,6 +132,22 @@ function stateCookie(value: string, maxAgeSeconds: number, secure: boolean): str
     'Path=/',
     `Max-Age=${maxAgeSeconds}`,
     'HttpOnly',
+    'SameSite=Lax',
+    ...(secure ? ['Secure'] : []),
+  ].join('; ')
+}
+
+/** `__Host-` over HTTPS like the state; not HttpOnly: the page reads them before a silent try. */
+function markName(mark: 'try' | 'out', secure: boolean): string {
+  return `${secure ? '__Host-' : ''}co_hub_${mark}`
+}
+
+/** `try`: ten minutes; `out` («Выйти»): until the browser session ends; `set = false`: taken away. */
+export function hubMarkCookie(mark: 'try' | 'out', secure: boolean, set = true): string {
+  return [
+    `${markName(mark, secure)}=${set ? '1' : ''}`,
+    'Path=/',
+    ...(!set ? ['Max-Age=0'] : mark === 'try' ? [`Max-Age=${TRY_SECONDS}`] : []),
     'SameSite=Lax',
     ...(secure ? ['Secure'] : []),
   ].join('; ')
@@ -364,11 +390,32 @@ export function registerHubSignin(app: FastifyInstance, options: HubRoutesOption
 
   app.get('/auth/hub/start', { schema: { hide: true } }, async (request, reply) => {
     handoffHeaders(reply)
-    const next = ownPath((request.query as Record<string, unknown>).next)
+    const query = request.query as Record<string, unknown>
+    const next = ownPath(query.next)
     if (!service?.offeredAt(request.host)) return reply.redirect(loginAddress(next), 302)
+    const secure = secureOf(request)
+    const cookies = parseCookies(request.headers.cookie)
+    const silent = query.silent === '1'
+    if (silent) {
+      // One silent try: not after «Выйти» here, not twice in ten minutes, not to a hub that
+      // does not answer — then the sign-in screen at once.
+      if (cookies[markName('try', secure)] || cookies[markName('out', secure)]) {
+        return reply.redirect(loginAddress(next), 302)
+      }
+      if (!(await service.setup.hub.answers())) {
+        request.log.warn('the hub does not answer: no silent sign-in')
+        reply.header('set-cookie', hubMarkCookie('try', secure))
+        return reply.redirect(loginAddress(next), 302)
+      }
+    }
     const state = newSecret()
-    reply.header('set-cookie', stateCookie(state, STATE_SECONDS, secureOf(request)))
-    return reply.redirect(service.setup.hub.startUrl({ state, next }), 302)
+    reply.header('set-cookie', [
+      stateCookie(state, STATE_SECONDS, secure),
+      // Marked before the browser leaves; pressed by the person, the «signed out here» mark is over.
+      hubMarkCookie('try', secure),
+      ...(!silent && cookies[markName('out', secure)] ? [hubMarkCookie('out', secure, false)] : []),
+    ])
+    return reply.redirect(service.setup.hub.startUrl({ state, next, silent }), 302)
   })
 
   app.get(
@@ -385,6 +432,11 @@ export function registerHubSignin(app: FastifyInstance, options: HubRoutesOption
       const state = single(query.state)
       const code = single(query.code)
       const cookiesOut = [stateCookie('', 0, secure)]
+      // A silent try found nobody at the hub: the sign-in screen. Nothing is redeemed.
+      if (query.error !== undefined) {
+        reply.header('set-cookie', [...cookiesOut, hubMarkCookie('try', secure)])
+        return reply.redirect(loginAddress(next), 302)
+      }
       const refuse = (refusal: HubSigninRefusal, reason: string) => {
         request.log.warn({ reason }, 'hub sign-in refused')
         reply.header('set-cookie', cookiesOut)

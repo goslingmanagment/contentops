@@ -212,6 +212,12 @@ export const authRoutes = {
     body: SignInCommandSchema,
     response: SignInResultSchema,
   }),
+  /** «Выйти»: this browser's session ends, and no silent sign-in through the hub follows. */
+  signOut: defineRoute({
+    method: 'POST',
+    path: '/api/v1/auth/sign-out',
+    response: OkSchema,
+  }),
   signOutEverywhere: defineRoute({
     method: 'POST',
     path: '/api/v1/auth/sign-out-everywhere',
