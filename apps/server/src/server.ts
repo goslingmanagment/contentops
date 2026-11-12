@@ -75,6 +75,10 @@ export function buildServer(options: ServerOptions) {
     ...(options.requireMounts ? { requireMounts: options.requireMounts } : {}),
     ...(options.requireVolumes ? { requireVolumes: options.requireVolumes } : {}),
     filesDirect: options.filesDirect === true,
+    allowedOrigins: [
+      new URL(options.publicUrl).origin,
+      ...(options.hubSignin ? [new URL(options.hubSignin.origin).origin] : []),
+    ],
   }
   return buildApp(deps)
 }

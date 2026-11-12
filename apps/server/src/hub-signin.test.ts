@@ -23,6 +23,8 @@ class FakeHub implements HubSignin {
   checks = 0
   probes = 0
   unreachable = false
+  /** The hub answers the re-check with this refusal (401, 403, 404…): it is not down, it says no. */
+  refusing: { kind: 'auth_rejected' | 'refused'; status: number } | null = null
   private readonly codes = new Map<string, HubRedeemed>()
   private readonly live = new Map<string, HubSigninUser>()
 
@@ -69,6 +71,12 @@ class FakeHub implements HubSignin {
     if (this.unreachable) {
       throw new HubError('transient', 'network: connect ECONNREFUSED', { endpoint: 'signin.check' })
     }
+    if (this.refusing) {
+      throw new HubError(this.refusing.kind, `signin.check: HTTP ${this.refusing.status}`, {
+        endpoint: 'signin.check',
+        status: this.refusing.status,
+      })
+    }
     const user = this.live.get(grant)
     return user
       ? {
@@ -102,6 +110,7 @@ beforeAll(async () => {
 afterAll(() => Promise.all([server.close(), plain.close()]))
 beforeEach(() => {
   hub.unreachable = false
+  hub.refusing = null
 })
 
 function cookieOf(response: LightMyRequestResponse, name: string): string | undefined {
@@ -297,6 +306,27 @@ describe('a session opened through the hub', () => {
       SELECT count(*)::int AS n FROM action_log WHERE action = 'auth.hubSessionEnded'`)
     expect(journal[0]?.n).toBeGreaterThan(0)
     expect((await me(session)).statusCode).toBe(401)
+  })
+
+  it('ends at once when the hub refuses the re-check (401, 403, 404): only silence keeps the grace', async () => {
+    for (const refusing of [
+      { kind: 'auth_rejected', status: 401 },
+      { kind: 'auth_rejected', status: 403 },
+      { kind: 'refused', status: 404 },
+    ] as const) {
+      const session = await signInThroughHub()
+      hub.refusing = refusing
+      clock += HUB_CHECK_EVERY_MS + 1
+      expect((await me(session)).statusCode, String(refusing.status)).toBe(401)
+      // Ended, not refused for a while: the hub answering again does not bring it back.
+      hub.refusing = null
+      clock += HUB_CHECK_EVERY_MS + 1
+      expect((await me(session)).statusCode, String(refusing.status)).toBe(401)
+      const { rows } = await server.db.execute<{ revoked: boolean }>(sql`
+        SELECT revoked_at IS NOT NULL AS revoked FROM sessions
+         WHERE hub_grant IS NOT NULL ORDER BY created_at DESC LIMIT 1`)
+      expect(rows[0]?.revoked, String(refusing.status)).toBe(true)
+    }
   })
 
   it('outlives a silent hub for a bounded time, then ends until the hub answers', async () => {

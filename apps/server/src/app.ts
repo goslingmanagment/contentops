@@ -21,6 +21,7 @@ import type { HandlerRegistry } from './handlers'
 import { type HealthCheck, mountsCheck, registerHealth, volumesCheck } from './health'
 import { createLogger } from './logger'
 import { swaggerOptions } from './openapi'
+import { originRefusal } from './origin-check'
 import { type RecordFailure, registerApiRoutes } from './routes'
 
 export interface AppDeps {
@@ -43,6 +44,11 @@ export interface AppDeps {
   filesDirect?: boolean
   /** Routes outside the table: answers that are not JSON (pictures of the source). */
   routes?: (api: FastifyInstance) => void
+  /**
+   * Origins a browser's change is taken from besides the request's own name (`PUBLIC_URL`, the hub sign-in's
+   * public name): origin-check.ts.
+   */
+  allowedOrigins?: readonly string[]
 }
 
 /**
@@ -89,8 +95,12 @@ export function buildApp(deps: AppDeps = {}) {
 
   app.setValidatorCompiler(validatorCompiler)
   app.setSerializerCompiler(parsingSerializer)
+  const allowedOrigins = deps.allowedOrigins ?? []
   app.addHook('onRequest', async (request, reply) => {
     reply.header(HEADER.requestId, request.id)
+    // A change from another site's page is refused before anything else (origin-check.ts).
+    const refusal = originRefusal(request, allowedOrigins)
+    if (refusal) return sendError(refusal, request, reply)
   })
   app.setErrorHandler((error, request, reply) => sendError(error, request, reply))
   app.setNotFoundHandler((request, reply) =>
