@@ -3,6 +3,11 @@
  * Компоненты берут значения только через утилиты Tailwind, собранные из этих токенов;
  * сырые цвета и размеры шрифта в компонентах не пишутся.
  *
+ * Значения — вид хаба: имена ContentOps (shadcn и свои) ссылаются на `--ui-*` копии
+ * `vendor/hub-look` (hub `packages/look`, `scripts/vendor-look.mjs`). Цвет хаба записан
+ * через light-dark(): `:root` держит светлую сторону (тёмной темы у ContentOps нет),
+ * тёмное поддерево `.dark` берёт тёмную сторону тех же значений.
+ *
  * Ступени шрифта (§7.2) лежат на привычных именах Tailwind, чтобы слияние классов
  * (`cn`) понимало их как размер шрифта:
  *   text-2xs 11,5/14 600 — только подписи на обложках
@@ -12,67 +17,68 @@
  *   text-md  15/20 600  — только слово логотипа и «Загрузить» (§2.1, §2.2)
  *   text-lg  16/22 600  — названия папок, заголовки групп и панели
  *   text-xl  20/28 600  — заголовок экрана (шрифт `font-heading`)
- * Радиусы (§7.4): sm 6 · md 8 · lg 10 · xl 12 · 2xl 14 · 3xl 16.
+ * Радиусы (§7.4) — три ступени хаба: sm 6 · md, lg 8 · xl, 2xl, 3xl 12.
  * Тени (§7.5): xs — «Загрузить»; md — меню, всплывашки, выпадающий поиск, лоток;
  * lg — перетаскиваемая плитка; xl — окно. Остальное плоское.
  */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@hub/look/css/ui-tokens.css";
 
 @custom-variant dark (&:is(.dark *));
 
-/* Шрифты: только кириллица и латиница, только woff2, веса из §7.2. */
+/* Шрифты: Inter, как в хабе, — только кириллица и латиница, только woff2, веса из §7.2. */
 @font-face {
-  font-family: "Golos Text";
+  font-family: "Inter";
   font-style: normal;
   font-display: swap;
   font-weight: 400;
-  src: url("@fontsource/golos-text/files/golos-text-cyrillic-400-normal.woff2") format("woff2");
+  src: url("@fontsource/inter/files/inter-cyrillic-400-normal.woff2") format("woff2");
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 @font-face {
-  font-family: "Golos Text";
+  font-family: "Inter";
   font-style: normal;
   font-display: swap;
   font-weight: 400;
-  src: url("@fontsource/golos-text/files/golos-text-latin-400-normal.woff2") format("woff2");
+  src: url("@fontsource/inter/files/inter-latin-400-normal.woff2") format("woff2");
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
     U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: "Golos Text";
+  font-family: "Inter";
   font-style: normal;
   font-display: swap;
   font-weight: 500;
-  src: url("@fontsource/golos-text/files/golos-text-cyrillic-500-normal.woff2") format("woff2");
+  src: url("@fontsource/inter/files/inter-cyrillic-500-normal.woff2") format("woff2");
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 @font-face {
-  font-family: "Golos Text";
+  font-family: "Inter";
   font-style: normal;
   font-display: swap;
   font-weight: 500;
-  src: url("@fontsource/golos-text/files/golos-text-latin-500-normal.woff2") format("woff2");
+  src: url("@fontsource/inter/files/inter-latin-500-normal.woff2") format("woff2");
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
     U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: "Golos Text";
+  font-family: "Inter";
   font-style: normal;
   font-display: swap;
   font-weight: 600;
-  src: url("@fontsource/golos-text/files/golos-text-cyrillic-600-normal.woff2") format("woff2");
+  src: url("@fontsource/inter/files/inter-cyrillic-600-normal.woff2") format("woff2");
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 @font-face {
-  font-family: "Golos Text";
+  font-family: "Inter";
   font-style: normal;
   font-display: swap;
   font-weight: 600;
-  src: url("@fontsource/golos-text/files/golos-text-latin-600-normal.woff2") format("woff2");
+  src: url("@fontsource/inter/files/inter-latin-600-normal.woff2") format("woff2");
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
     U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -99,7 +105,7 @@
 
 @theme inline {
   --font-*: initial;
-  --font-sans: "Golos Text", system-ui, sans-serif;
+  --font-sans: var(--ui-font);
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --font-heading: var(--heading-font);
 
@@ -124,18 +130,19 @@
   --text-xl--font-weight: var(--heading-weight);
 
   --radius-*: initial;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
-  --radius-2xl: 14px;
-  --radius-3xl: 16px;
+  --radius-sm: var(--ui-radius-sm);
+  --radius-md: var(--ui-radius);
+  --radius-lg: var(--ui-radius);
+  --radius-xl: var(--ui-radius-lg);
+  --radius-2xl: var(--ui-radius-lg);
+  --radius-3xl: var(--ui-radius-lg);
 
   --shadow-*: initial;
-  --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.1), 0 1px 3px rgb(16 24 40 / 0.08);
-  --shadow-md: 0 8px 24px rgb(16 24 40 / 0.12), 0 2px 6px rgb(16 24 40 / 0.08);
-  --shadow-lg: 0 12px 28px rgb(16 24 40 / 0.22);
-  --shadow-xl: 0 24px 48px rgb(16 24 40 / 0.18);
+  --shadow-xs: var(--ui-shadow-raised);
+  --shadow-md: var(--ui-shadow-float);
+  /* У хаба этих двух нет: те же размеры, тёплая тень хаба. */
+  --shadow-lg: 0 12px 28px rgb(28 25 23 / 0.22);
+  --shadow-xl: 0 24px 48px rgb(28 25 23 / 0.18);
 
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
 
@@ -186,56 +193,62 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* §7.1. Светлая тема; других нет. */
+/* §7.1. Светлая тема; других нет: светлая сторона значений хаба. */
 :root {
-  --sidebar: #edeff2;
-  --sidebar-foreground: #1f2329;
-  --sidebar-primary: #2b5bdf;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #ffffff;
-  --sidebar-accent-foreground: #1f2329;
-  --sidebar-border: #e6e8ec;
-  --sidebar-ring: #2b5bdf;
+  color-scheme: light;
 
-  --background: #ffffff;
-  --card: #ffffff;
-  --popover: #ffffff;
-  --foreground: #1f2329;
-  --card-foreground: #1f2329;
-  --popover-foreground: #1f2329;
-  --muted-foreground: #5b6270;
-  --ink-3: #646b77;
-  --muted: #eef0f3;
-  --accent: #f4f5f7;
-  --accent-foreground: #1f2329;
-  --secondary: #eceef1;
-  --secondary-hover: #e3e6ea;
-  --secondary-foreground: #1f2329;
-  --border: #e6e8ec;
-  --line-strong: #d5dae1;
-  --input: #848b96;
-  --folder: #dce2ec;
-  --folder-tab: #ccd4e1;
-  --primary: #2b5bdf;
-  --primary-hover: #224bc0;
-  --primary-foreground: #ffffff;
-  --ring: #2b5bdf;
-  --primary-tint: #edf2fe;
-  --primary-ink: #1f48b8;
-  --attention: #b86e00;
-  --attention-ink: #9a5a00;
-  --attention-bg: #fff4e0;
-  --destructive: #c23b2e;
-  --destructive-bg: #fdecea;
-  --destructive-foreground: #ffffff;
-  --bar: #2c3038;
+  --sidebar: var(--ui-bg);
+  --sidebar-foreground: var(--ui-text);
+  --sidebar-primary: var(--ui-accent);
+  --sidebar-primary-foreground: var(--ui-on-fill);
+  --sidebar-accent: var(--ui-active);
+  --sidebar-accent-foreground: var(--ui-text);
+  --sidebar-border: var(--ui-line);
+  --sidebar-ring: var(--ui-accent);
+
+  --background: var(--ui-surface);
+  --card: var(--ui-surface);
+  --popover: var(--ui-raised);
+  --foreground: var(--ui-text);
+  --card-foreground: var(--ui-text);
+  --popover-foreground: var(--ui-text);
+  --muted-foreground: var(--ui-text-2);
+  --ink-3: var(--ui-text-3);
+  --muted: var(--ui-hover);
+  --accent: var(--ui-hover);
+  --accent-foreground: var(--ui-text);
+  --secondary: var(--ui-track);
+  --secondary-hover: var(--ui-line);
+  --secondary-foreground: var(--ui-text);
+  --border: var(--ui-line);
+  --line-strong: var(--ui-line-strong);
+  /* Рамки полей, галочки, выключенный выключатель: 3 : 1 и больше (§7.1), поэтому
+     тихий текст хаба, а не его рамка поля. */
+  --input: var(--ui-text-3);
+  --folder: var(--ui-track);
+  --folder-tab: var(--ui-line-strong);
+  --primary: var(--ui-accent-fill);
+  --primary-hover: var(--ui-accent-fill-hover);
+  --primary-foreground: var(--ui-on-fill);
+  --ring: var(--ui-accent);
+  --primary-tint: var(--ui-accent-soft);
+  --primary-ink: var(--ui-accent);
+  --attention: var(--ui-warn);
+  --attention-ink: var(--ui-warn-text);
+  --attention-bg: var(--ui-warn-soft);
+  --destructive: var(--ui-bad);
+  --destructive-bg: var(--ui-bad-soft);
+  --destructive-foreground: var(--ui-on-fill);
+  /* Полоса выделения стоит и вне `.dark` (метка на миниатюре плана), поэтому не
+     light-dark(), а сама тёмная сторона хаба: `raised` (`tokens.json` colors.raised[1]). */
+  --bar: #2a2724;
   --viewer: #000000;
   --scrim: rgb(0 0 0 / 0.6);
   --scrim-foreground: #ffffff;
-  --overlay: rgb(16 24 40 / 0.32);
+  --overlay: var(--ui-backdrop);
 
-  --radius: 10px;
-  --heading-font: "Golos Text", system-ui, sans-serif;
+  --radius: var(--ui-radius);
+  --heading-font: var(--ui-font);
   --heading-weight: 600;
 
   /* §7.9. Семейства синтетических обложек: светлый и тёмный концы градиента из DESIGN;
@@ -291,38 +304,40 @@
   --cover-office-ink: #c9ced9;
 }
 
-/* §7.1. Тёмное поддерево: полоса выделения, просмотр и их меню. */
+/* §7.1. Тёмное поддерево: полоса выделения, просмотр и их меню. Те же значения хаба,
+   их тёмная сторона (`color-scheme: dark`). */
 .dark {
-  --background: #2c3038;
-  --card: #2c3038;
-  --popover: #383d46;
-  --foreground: #ffffff;
-  --card-foreground: #ffffff;
-  --popover-foreground: #ffffff;
-  --muted-foreground: #c3c8d1;
-  --ink-3: #aeb4bf;
+  color-scheme: dark;
+  --background: var(--ui-raised);
+  --card: var(--ui-raised);
+  --popover: var(--ui-picked);
+  --foreground: var(--ui-text);
+  --card-foreground: var(--ui-text);
+  --popover-foreground: var(--ui-text);
+  --muted-foreground: var(--ui-text-2);
+  --ink-3: var(--ui-text-3);
   --muted: rgb(255 255 255 / 0.1);
   --accent: rgb(255 255 255 / 0.12);
-  --accent-foreground: #ffffff;
+  --accent-foreground: var(--ui-text);
   --secondary: rgb(255 255 255 / 0.14);
   --secondary-hover: rgb(255 255 255 / 0.22);
-  --secondary-foreground: #ffffff;
+  --secondary-foreground: var(--ui-text);
   --border: rgb(255 255 255 / 0.14);
   --line-strong: rgb(255 255 255 / 0.3);
   --input: rgb(255 255 255 / 0.56);
-  --primary: #ffffff;
-  --primary-hover: #e3e6ea;
-  --primary-foreground: #1f2329;
-  --ring: #ffffff;
+  /* Главная кнопка на тёмной полосе — белая, как раньше. */
+  --primary: var(--ui-on-fill);
+  --primary-hover: var(--ui-text);
+  --primary-foreground: var(--ui-raised);
+  --ring: var(--ui-on-fill);
   --primary-tint: rgb(255 255 255 / 0.14);
-  --primary-ink: #ffffff;
-  --attention: #f0a53a;
-  --attention-ink: #f5b95e;
-  --attention-bg: rgb(240 165 58 / 0.16);
-  --destructive: #ff8577;
-  --destructive-bg: rgb(255 133 119 / 0.16);
-  --overlay: rgb(0 0 0 / 0.5);
-  color-scheme: dark;
+  --primary-ink: var(--ui-on-fill);
+  --attention: var(--ui-warn);
+  --attention-ink: var(--ui-warn-text);
+  --attention-bg: var(--ui-warn-soft);
+  --destructive: var(--ui-bad);
+  --destructive-bg: var(--ui-bad-soft);
+  --overlay: var(--ui-backdrop);
 }
 
 /* §7.10. Запасной вид «Фокус»: меняются только токены. Literata в сборку не входит,
@@ -340,10 +355,10 @@
   --heading-weight: 500;
 }
 [data-skin="focus"] .dark {
-  --primary: #ffffff;
-  --primary-hover: #e3e6ea;
-  --ring: #ffffff;
-  --primary-ink: #ffffff;
+  --primary: var(--ui-on-fill);
+  --primary-hover: var(--ui-text);
+  --ring: var(--ui-on-fill);
+  --primary-ink: var(--ui-on-fill);
 }
 
 /* Сопоставление семейства обложки с общими переменными мотивов. */

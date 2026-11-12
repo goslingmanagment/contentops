@@ -1,5 +1,7 @@
 node_modules
 dist
+# The vendored copy of Hub's look ships compiled.
+!vendor/hub-look/dist
 *.tsbuildinfo
 __pycache__/
 .env

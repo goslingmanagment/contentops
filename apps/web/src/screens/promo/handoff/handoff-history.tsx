@@ -32,7 +32,7 @@ export function HandoffHistory({ handoffs, currentId, onPick }: HandoffHistoryPr
                 handoff.id === currentId && 'bg-primary-tint hover:bg-primary-tint',
               )}
             >
-              <span className="w-11 shrink-0 text-muted-foreground text-sm tabular-nums">
+              <span className="min-w-16 shrink-0 whitespace-nowrap text-muted-foreground text-sm tabular-nums">
                 {formatDate(handoff.sent_on ?? mskDate(handoff.created_at), today)}
               </span>
               <span className="min-w-0 flex-1 truncate text-base">{handoff.contractor_name}</span>

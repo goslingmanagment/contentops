@@ -39,7 +39,7 @@ export function HandoffRow({ handoff, title, cover, selected, onOpen }: HandoffR
         showCaptions={false}
         className="w-10 shrink-0 rounded-md"
       />
-      <span className="w-12 shrink-0 text-muted-foreground text-sm tabular-nums">
+      <span className="min-w-16 shrink-0 whitespace-nowrap text-muted-foreground text-sm tabular-nums">
         {formatDate(handoff.sent_on ?? mskDate(handoff.created_at), today)}
       </span>
       <span className="w-36 shrink-0 truncate text-base">{handoff.contractor_name}</span>

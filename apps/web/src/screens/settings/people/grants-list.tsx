@@ -21,7 +21,7 @@ export function GrantsList({ person }: { person: Person }) {
     <ol aria-label={`История прав: ${person.name}`} className="flex flex-col gap-1 pb-4">
       {grants.data.map((grant) => (
         <li key={`${grant.at}-${grant.text}`} className="flex gap-3 text-sm">
-          <span className="w-11 shrink-0 text-ink-3 tabular-nums">
+          <span className="min-w-16 shrink-0 whitespace-nowrap text-ink-3 tabular-nums">
             {formatDate(mskDate(grant.at), today)}
           </span>
           <span className="text-muted-foreground">

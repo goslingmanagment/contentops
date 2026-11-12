@@ -39,7 +39,7 @@ describe('строка проверки «В план» (DESIGN §4.13)', () => 
     const result = await check({})
     expect(result.warnings[0]?.kind).toBe('already_planned')
     expect(result.tone).toBe('attention')
-    expect(result.text).toBe('Уже в плане: Fansly 1 · вт 22.09, 20:00 · в планировщике')
+    expect(result.text).toBe('Уже в плане: Fansly 1 · вт 22 сент., 20:00 · в планировщике')
   })
 
   it('«уже в плане» и тогда, когда строка стоит раньше выбранного дня', async () => {
@@ -67,7 +67,7 @@ describe('строка проверки «В план» (DESIGN §4.13)', () => 
       awaiting_montage: { from_item: 'RAW-0214', expected_type: 'fyp', file_keys: ['raw03'] },
     })
     expect(result.warnings[0]?.kind).toBe('already_planned')
-    expect(result.text).toBe('Уже в плане: Fansly 1 · вт 22.09, весь день · ждёт монтаж')
+    expect(result.text).toBe('Уже в плане: Fansly 1 · вт 22 сент., весь день · ждёт монтаж')
   })
 
   it('отменённая строка не держит место: PPV-071 в сториз Fansly 2', async () => {
@@ -82,14 +82,14 @@ describe('строка проверки «В план» (DESIGN §4.13)', () => 
 
   it('без повтора дни считаются к выбранному дню и так и подписаны', async () => {
     const today = await check({ item_id: 'FYP-0801', surface: 'fyp', time: '03:00' })
-    expect(today.text).toMatch(/^Повторов нет · на Fansly 1 было 12\.08 — 41 день назад$/)
+    expect(today.text).toMatch(/^Повторов нет · на Fansly 1 было 12 авг\. — 41 день назад$/)
     const later = await check({
       item_id: 'FYP-0801',
       surface: 'fyp',
       time: '03:00',
       date: '2026-09-26',
     })
-    expect(later.text).toBe('Повторов нет · на Fansly 1 было 12.08, к сб 26 будет 45 дней')
+    expect(later.text).toBe('Повторов нет · на Fansly 1 было 12 авг., к сб 26 будет 45 дней')
   })
 
   it('сегодня уже вышло на этой странице — «слишком рано», а не «повторов нет»', async () => {
@@ -101,7 +101,7 @@ describe('строка проверки «В план» (DESIGN §4.13)', () => 
       time: '03:00',
     })
     expect(result.warnings[0]?.kind).toBe('too_early')
-    expect(result.text).toBe('Слишком рано: на Fansly 3 было 22.09, к ср 23 будет 1 день')
+    expect(result.text).toBe('Слишком рано: на Fansly 3 было 22 сент., к ср 23 будет 1 день')
   })
 
   it('предпросмотр пакета несёт «уже в плане», а строки плана — только янтарь строки', async () => {
@@ -120,7 +120,7 @@ describe('строка проверки «В план» (DESIGN §4.13)', () => 
   it('слишком рано и два поста в одно время — янтарные подписи из проверки строки', async () => {
     const result = await check({ item_id: 'SET-071' })
     expect(result.warnings.map((warning) => warning.text)).toEqual([
-      'слишком рано: на Fansly 1 было 21.09 — вчера',
+      'слишком рано: на Fansly 1 было 21 сент. — вчера',
       'в 20:00 на Fansly 1 уже стоит SET-074 — два поста в одно время',
     ])
     expect(result.tone).toBe('attention')

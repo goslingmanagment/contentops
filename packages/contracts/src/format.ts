@@ -1,3 +1,8 @@
+import {
+  formatDay,
+  formatDate as formatHubDate,
+  formatDayRange as formatHubDayRange,
+} from '@hub/look'
 import { addDays, instantMs, mskDate, mskTime, weekdayIndex } from './clock'
 import type { Gender, Instant, LocalDate } from './domain/common'
 
@@ -99,12 +104,22 @@ export function formatPercent(fraction: number): string {
 const sameYear = (date: LocalDate, today: LocalDate) => date.slice(0, 4) === today.slice(0, 4)
 
 /**
- * Одно правило дат на всё приложение: дата текущего года — «22.09», другого года —
- * «22.09.2025». `today` — сегодняшний день по Москве (`mskDate(clock.now())`).
+ * Одно правило дат на всё приложение, как в хабе (`@hub/look`): дата текущего года —
+ * «22 сент.», другого года — «22 сент. 2025 г.». `today` — сегодняшний день по Москве
+ * (`mskDate(clock.now())`). Плотные сетки со своими метками дня («ср 23») его не берут.
  */
 export function formatDate(date: LocalDate, today: LocalDate): string {
-  const dayMonth = `${date.slice(8, 10)}.${date.slice(5, 7)}`
-  return sameYear(date, today) ? dayMonth : `${dayMonth}.${date.slice(0, 4)}`
+  return formatHubDate(date, { includeYear: !sameYear(date, today) })
+}
+
+/** «12 авг.»: день и месяц без года, как в хабе, — где год не нужен (дни рядом с сегодня). */
+export function formatDayMonth(date: LocalDate): string {
+  return formatDay(date)
+}
+
+/** «9–15 нояб.», «28 окт. – 3 нояб.»: дни с первого по последний, как в хабе. */
+export function formatDayRange(from: LocalDate, to: LocalDate): string {
+  return formatHubDayRange(from, to)
 }
 
 /** «22 сентября» — день месяца словами, без года. Для дней рядом с сегодня: план, лента. */
@@ -140,20 +155,20 @@ export function formatClock(instant: Instant): string {
   return mskTime(instant)
 }
 
-/** «18:32» today, «21.09 18:32» another day: data «на» a moment (DESIGN §3.11). */
+/** «18:32» today, «21 сент., 18:32» another day: data «на» a moment (DESIGN §3.11). */
 export function formatStamp(instant: Instant, now: Instant): string {
   const date = mskDate(instant)
   const today = mskDate(now)
-  return date === today ? mskTime(instant) : `${formatDate(date, today)} ${mskTime(instant)}`
+  return date === today ? mskTime(instant) : `${formatDate(date, today)}, ${mskTime(instant)}`
 }
 
-/** «сегодня 11:02», «вчера 22:10», «20.09 18:00», «20.09.2025 18:00». */
+/** «сегодня 11:02», «вчера 22:10», «20 сент., 18:00», «20 сент. 2025 г., 18:00». */
 export function formatWhen(instant: Instant, now: Instant): string {
   const date = mskDate(instant)
   const today = mskDate(now)
   if (date === today) return `сегодня ${mskTime(instant)}`
   if (date === addDays(today, -1)) return `вчера ${mskTime(instant)}`
-  return `${formatDate(date, today)} ${mskTime(instant)}`
+  return `${formatDate(date, today)}, ${mskTime(instant)}`
 }
 
 /** «1 ч 20 мин», «8 мин», «3 дня». */

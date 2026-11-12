@@ -239,7 +239,7 @@ describe('правила ответа', () => {
       params: { model: 'lora', collection: 'PRM-016' },
       query: { contractor: 'c-coraline' },
     })
-    expect(overlap.text).toBe('38 из 100 уже передавали Coraline Red (PRM-011, 02.09)')
+    expect(overlap.text).toBe('38 из 100 уже передавали Coraline Red (PRM-011, 2 сент.)')
   })
 
   it('повтор с тем же ключом отдаёт прежний ответ, с другим телом — 409', async () => {

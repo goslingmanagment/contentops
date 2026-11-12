@@ -71,7 +71,7 @@ export function OrderRow({ order, accounts, selected, onOpen }: OrderRowProps) {
           {orderMeta(order, accounts)}
         </p>
       </div>
-      <span className="w-16 shrink-0 text-muted-foreground text-sm tabular-nums">
+      <span className="min-w-20 shrink-0 whitespace-nowrap text-muted-foreground text-sm tabular-nums">
         {deadlineText(order, today)}
       </span>
       <span className="flex w-44 shrink-0 @3xl:w-64 @4xl:w-80">

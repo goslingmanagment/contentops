@@ -1,5 +1,5 @@
 import { addDays, isoWeekOf } from '@contentops/contracts/clock'
-import { formatShortDay } from '@contentops/contracts/format'
+import { formatDate, formatShortDay } from '@contentops/contracts/format'
 import type { Locator, Page } from '@playwright/test'
 import { type Api, dbQuery, expect, mskToday, test } from '../fixtures.ts'
 
@@ -50,12 +50,30 @@ function viewTab(page: Page, name: string) {
     .getByRole('link', { name, exact: true })
 }
 
-/** «12.11» or «12.11.2027» of the summary line → `2026-11-12`. */
+/** The hub's months, as `formatDate` writes them: «12 нояб.», «12 нояб. 2027 г.». */
+const MONTHS = [
+  'янв.',
+  'февр.',
+  'мар.',
+  'апр.',
+  'мая',
+  'июн.',
+  'июл.',
+  'авг.',
+  'сент.',
+  'окт.',
+  'нояб.',
+  'дек.',
+]
+
+/** «12 нояб.» or «12 нояб. 2027 г.» of the summary line → `2026-11-12`. */
 function dateOf(text: string, today: string): string {
-  const match = /(\d{2})\.(\d{2})(?:\.(\d{4}))?/.exec(text)
+  const names = MONTHS.map((name) => name.replace('.', '\\.')).join('|')
+  const match = new RegExp(`(\\d{1,2}) (${names})(?: (\\d{4}) г\\.)?`).exec(text)
   if (!match) throw new Error(`no date in «${text}»`)
-  const [, day, month, year] = match
-  return `${year ?? today.slice(0, 4)}-${month}-${day}`
+  const [, day = '', name = '', year] = match
+  const month = String(MONTHS.indexOf(name) + 1).padStart(2, '0')
+  return `${year ?? today.slice(0, 4)}-${month}-${day.padStart(2, '0')}`
 }
 
 /** Leaves exactly these pages pressed in the «Страницы» pills of the plan dialog. */
@@ -239,7 +257,7 @@ test('the owner plans a week and a PPV release, Диана does her day', async 
     await owner.goto(`/lora/i/${SET}`)
     const placed = owner
       .getByRole('list', { name: 'Где залито' })
-      .getByRole('button', { name: `${SET_PAGE.label} ${today.slice(8, 10)}.${today.slice(5, 7)}` })
+      .getByRole('button', { name: `${SET_PAGE.label} ${formatDate(today, today)}` })
     await expect(placed).toBeVisible()
     await placed.click()
     await expect(owner.getByText(/вручную, Диана/).first()).toBeVisible()

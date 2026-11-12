@@ -11,6 +11,7 @@ import {
 } from '@contentops/contracts/domain/inbox'
 import type { ItemType } from '@contentops/contracts/domain/item-type'
 import { DEFAULT_PAGE_LIMIT } from '@contentops/contracts/domain/pagination'
+import { formatDayMonth } from '@contentops/contracts/format'
 import { orderTitleOf } from '@contentops/contracts/order-card'
 import type { Queryable, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
@@ -200,9 +201,9 @@ function matchedWords(signals: Record<string, unknown> | null): string[] {
     .sort((left, right) => rank(left) - rank(right))
 }
 
-/** `2026-10-28` → `28.10`. */
+/** `2026-10-28` → «28 окт.», как в хабе. */
 function shortDay(iso: string): string {
-  return `${iso.slice(8, 10)}.${iso.slice(5, 7)}`
+  return formatDayMonth(iso.slice(0, 10))
 }
 
 function dayWords(iso: string): string {

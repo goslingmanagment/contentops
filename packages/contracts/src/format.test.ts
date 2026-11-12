@@ -3,8 +3,8 @@ import { formatDate, formatDaysAgo, formatDaysSpan } from './format'
 
 describe('даты и промежутки словами', () => {
   it('год пишется только у другого года', () => {
-    expect(formatDate('2026-08-12', '2026-09-22')).toBe('12.08')
-    expect(formatDate('2025-09-22', '2026-09-22')).toBe('22.09.2025')
+    expect(formatDate('2026-08-12', '2026-09-22')).toBe('12 авг.')
+    expect(formatDate('2025-09-22', '2026-09-22')).toBe('22 сент. 2025 г.')
   })
 
   it('словоформы и длинные промежутки', () => {
