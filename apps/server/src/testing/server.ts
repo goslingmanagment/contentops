@@ -1,6 +1,7 @@
 import { bootstrap, createDb, createPool, type Db } from '@contentops/db'
 import { createTestDatabase, type TestDatabase } from '@contentops/db/testing'
 import type { InjectOptions, LightMyRequestResponse } from 'fastify'
+import type { HubAgentKeyService } from '../auth/hub-agent-keys'
 import type { HubSigninSetup } from '../auth/hub-signin'
 import { createLogger } from '../logger'
 import type { BlobStore } from '../media/storage'
@@ -59,7 +60,12 @@ export interface TestServer {
 
 /** The `web` role on a fresh database of its own, after bootstrap. */
 export async function testServer(
-  options: { secrets?: IntegrationSecrets; filesDirect?: boolean; hubSignin?: HubSigninSetup } = {},
+  options: {
+    secrets?: IntegrationSecrets
+    filesDirect?: boolean
+    hubSignin?: HubSigninSetup
+    hubAgentKeys?: HubAgentKeyService
+  } = {},
 ): Promise<TestServer> {
   const database = await createTestDatabase()
   const pool = createPool(database.url(), { max: 20 })
@@ -75,6 +81,7 @@ export async function testServer(
     storage: store.roots,
     ...(options.filesDirect ? { filesDirect: true } : {}),
     ...(options.hubSignin ? { hubSignin: options.hubSignin } : {}),
+    ...(options.hubAgentKeys ? { hubAgentKeys: options.hubAgentKeys } : {}),
   })
   await app.ready()
   return {

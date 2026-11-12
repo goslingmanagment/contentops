@@ -70,6 +70,11 @@ Agency Hub (`README.md`, `PRD.md`).
   `pnpm --filter @contentops/server openapi`, иначе CI красный.
   Клиенты Я.Диска и Dropbox — `packages/sources` (только чтение); живая проверка Я.Диска —
   `node packages/sources/scripts/live-smoke.ts` (токен из Keychain `ydisk-audit`, печатает только счёт).
+- **Ключ хаба агента** (SPEC §11.1, `ops/README.md` «Ключ хаба агента»): Bearer `agency_hub_agent_…`
+  проверяется в хабе по sha256 (`HUB_INTROSPECT_KEY` — свой ключ с `introspect:agent_keys`; пусто —
+  не принимается) и действует как агент ContentOps со связью `principals.hub_agent_code`
+  (`ops.js hub-agent "<имя>" --code <код>`, снять — `--off`); кода без связи нет — 403. Код —
+  `apps/server/src/auth/hub-agent-keys.ts`, права — `apps/server/src/hub-agent-keys.test.ts`.
 - **База задачи** — своя: `DEV_PG_CONTAINER=contentops-<тема>-pg DEV_PG_PORT=<порт>
   PORT=<порт> pnpm dev:server` или свой `docker run postgres:18.6` (например, под
   восстановленный бэкап) с `--tmpfs /var/lib/postgresql -e PGDATA=/var/lib/pgdata` — тогда

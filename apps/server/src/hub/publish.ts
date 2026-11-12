@@ -134,6 +134,8 @@ export interface RowJob {
   version?: number
   /** `send` of an agent: its token, whose switch the work checks again before Hub approves. */
   tokenId?: string | null
+  /** `send` of an agent with its hub key: its code, whose link the work checks again. */
+  hubAgent?: string | null
 }
 
 export const rowStreamKey = (rowId: string) => `hubpub-row:${rowId}`
@@ -312,10 +314,15 @@ class Run {
    * good.
    */
   async agentGuard(): Promise<void> {
-    const { principalId, tokenId } = this.job
+    const { principalId, tokenId, hubAgent } = this.job
     if (
       !principalId ||
-      !(await agentMaySend(this.db, principalId, tokenId ?? null, this.page.modelId))
+      !(await agentMaySend(
+        this.db,
+        principalId,
+        { tokenId: tokenId ?? null, hubAgent: hubAgent ?? null },
+        this.page.modelId,
+      ))
     ) {
       throw refused(
         'agent_off',
@@ -773,21 +780,27 @@ async function principalKind(
 async function agentMaySend(
   db: Db,
   principalId: string,
-  tokenId: string | null,
+  { tokenId, hubAgent }: { tokenId: string | null; hubAgent: string | null },
   modelId: string,
 ): Promise<boolean> {
-  if (!tokenId) return false
+  if (!tokenId && !hubAgent) return false
+  // A token still alive, or — for an agent's hub key, which this work never holds — the owner's
+  // link of the hub agent to this principal still standing.
+  const credential = tokenId
+    ? sql`EXISTS (SELECT 1 FROM api_tokens t
+                   WHERE t.id = ${tokenId}::uuid AND t.principal_id = p.id
+                     AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now()))`
+    : sql`p.hub_agent_code = ${hubAgent}`
   const { rows } = await db.execute<{ ok: boolean }>(sql`
-    SELECT true AS ok FROM api_tokens t JOIN principals p ON p.id = t.principal_id
-     WHERE t.id = ${tokenId}::uuid AND p.id = ${principalId}::uuid
+    SELECT true AS ok FROM principals p
+     WHERE p.id = ${principalId}::uuid AND ${credential}
        AND p.kind = 'agent' AND p.disabled_at IS NULL
-       AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())
        AND p.role IN ('owner', 'manager')
        AND (p.role = 'owner' OR EXISTS (
              SELECT 1 FROM principal_grants g
               WHERE g.principal_id = p.id AND g.model_id = ${modelId}::uuid
                 AND g.revoked_at IS NULL))`)
-  return rows[0]?.ok === true && (await agentSwitchedOn(db, tokenId))
+  return rows[0]?.ok === true && (await agentSwitchedOn(db, tokenId, tokenId ? null : hubAgent))
 }
 
 /**

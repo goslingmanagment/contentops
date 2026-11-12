@@ -134,6 +134,8 @@ const LISTS: Record<string, readonly string[]> = {
   annotation_runs_state_check: v.annotationRunStates,
   annotation_runs_finished: v.finishedAnnotationRunStates,
   annotation_suggestions_field_check: v.suggestionFields,
+  // 0021_hub_agent_keys
+  hub_agent_calls_outcome_check: v.hubAgentCallOutcomes,
 }
 
 let pool: pg.Pool

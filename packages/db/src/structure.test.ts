@@ -16,6 +16,7 @@ const GLOBAL_TABLES = [
   'blob_phashes',
   'blob_probes',
   'blobs',
+  'hub_agent_calls',
   'master_checks',
   'models',
   'pipeline_versions',
@@ -74,6 +75,7 @@ const APPEND_ONLY = [
   'custom_order_deliveries',
   'download_receipt_entries',
   'download_receipts',
+  'hub_agent_calls',
   'hub_observations',
   'placement_evidence',
 ]

@@ -1585,6 +1585,31 @@ CREATE TABLE public.download_receipts (
 
 ALTER TABLE public.download_receipts OWNER TO contentops_migrate;
 
+CREATE TABLE public.hub_agent_calls (
+    id bigint NOT NULL,
+    at timestamp with time zone DEFAULT now() NOT NULL,
+    agent_code text NOT NULL,
+    principal_id uuid,
+    method text NOT NULL,
+    url text NOT NULL,
+    request_id text NOT NULL,
+    outcome text NOT NULL,
+    held boolean DEFAULT false NOT NULL,
+    CONSTRAINT hub_agent_calls_outcome_check CHECK ((outcome = ANY (ARRAY['ok'::text, 'not_linked'::text]))),
+    CONSTRAINT hub_agent_calls_principal_when_ok CHECK (((outcome <> 'ok'::text) OR (principal_id IS NOT NULL)))
+);
+
+ALTER TABLE public.hub_agent_calls OWNER TO contentops_migrate;
+
+ALTER TABLE public.hub_agent_calls ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.hub_agent_calls_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 CREATE TABLE public.hub_observations (
     model_id uuid NOT NULL,
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -2256,8 +2281,11 @@ CREATE TABLE public.principals (
     row_version bigint DEFAULT 1 NOT NULL,
     hub_user_id bigint,
     hub_login text,
+    hub_agent_code text,
     CONSTRAINT principals_gender_check CHECK ((gender = ANY (ARRAY['f'::text, 'm'::text]))),
     CONSTRAINT principals_gender_of_humans CHECK (((gender IS NOT NULL) OR (kind = 'agent'::text))),
+    CONSTRAINT principals_hub_agent_code_agents_only CHECK (((hub_agent_code IS NULL) OR (kind = 'agent'::text))),
+    CONSTRAINT principals_hub_agent_code_format CHECK ((hub_agent_code ~ '^[a-z0-9][a-z0-9-]{0,62}$'::text)),
     CONSTRAINT principals_hub_link_humans_only CHECK (((hub_user_id IS NULL) OR (kind = 'human'::text))),
     CONSTRAINT principals_hub_login_with_link CHECK (((hub_login IS NULL) OR (hub_user_id IS NOT NULL))),
     CONSTRAINT principals_hub_user_id_positive CHECK ((hub_user_id > 0)),
@@ -2637,6 +2665,9 @@ ALTER TABLE ONLY public.download_receipt_entries
 ALTER TABLE ONLY public.download_receipts
     ADD CONSTRAINT download_receipts_pkey PRIMARY KEY (model_id, id);
 
+ALTER TABLE ONLY public.hub_agent_calls
+    ADD CONSTRAINT hub_agent_calls_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.hub_observations
     ADD CONSTRAINT hub_observations_pkey PRIMARY KEY (model_id, id);
 
@@ -2807,6 +2838,9 @@ ALTER TABLE ONLY public.ppv_releases
 
 ALTER TABLE ONLY public.principal_grants
     ADD CONSTRAINT principal_grants_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.principals
+    ADD CONSTRAINT principals_hub_agent_code_key UNIQUE (hub_agent_code);
 
 ALTER TABLE ONLY public.principals
     ADD CONSTRAINT principals_hub_user_id_key UNIQUE (hub_user_id);
@@ -3001,6 +3035,10 @@ CREATE UNIQUE INDEX download_receipts_corrects ON public.download_receipts USING
 CREATE INDEX download_receipts_issued ON public.download_receipts USING btree (model_id, issued_at DESC);
 
 CREATE INDEX download_receipts_plan_row ON public.download_receipts USING btree (model_id, plan_row_id) WHERE (plan_row_id IS NOT NULL);
+
+CREATE INDEX hub_agent_calls_agent_at ON public.hub_agent_calls USING btree (agent_code, at DESC);
+
+CREATE INDEX hub_agent_calls_at_brin ON public.hub_agent_calls USING brin (at);
 
 CREATE INDEX hub_post_attachments_media ON public.hub_post_attachments USING btree (model_id, media_ref);
 
@@ -3223,6 +3261,8 @@ CREATE CONSTRAINT TRIGGER download_receipt_entries_sealed AFTER INSERT ON public
 CREATE TRIGGER download_receipts_append_only BEFORE DELETE OR UPDATE ON public.download_receipts FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
 CREATE CONSTRAINT TRIGGER download_receipts_sealed AFTER INSERT ON public.download_receipts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_sealed_count('download_receipts', 'download_receipt_entries', 'receipt_id');
+
+CREATE TRIGGER hub_agent_calls_append_only BEFORE DELETE OR UPDATE ON public.hub_agent_calls FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
 CREATE TRIGGER hub_observations_append_only BEFORE DELETE OR UPDATE ON public.hub_observations FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
@@ -3616,6 +3656,9 @@ ALTER TABLE ONLY public.download_receipts
 
 ALTER TABLE ONLY public.download_receipts
     ADD CONSTRAINT download_receipts_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_agent_calls
+    ADD CONSTRAINT hub_agent_calls_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.hub_observations
     ADD CONSTRAINT hub_observations_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
@@ -4175,6 +4218,10 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.custom_order_revisions TO cont
 GRANT SELECT,INSERT ON TABLE public.download_receipt_entries TO contentops_app;
 
 GRANT SELECT,INSERT ON TABLE public.download_receipts TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.hub_agent_calls TO contentops_app;
+
+GRANT SELECT,USAGE ON SEQUENCE public.hub_agent_calls_id_seq TO contentops_app;
 
 GRANT SELECT,INSERT ON TABLE public.hub_observations TO contentops_app;
 

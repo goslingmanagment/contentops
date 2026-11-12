@@ -20,8 +20,10 @@ export interface Actor {
   gender: Gender | null
   /** The session of a person; `null` for an agent. */
   sessionId: string | null
-  /** The bearer token of an agent; `null` for a person. */
+  /** The bearer token of an agent; `null` for a person and for an agent's hub key. */
   tokenId: string | null
+  /** The hub agent's code when an agent came with its Agency Hub key (`principals.hub_agent_code`). */
+  hubAgent?: string | null
 }
 
 /** Resolves the caller of a request: a session cookie or a bearer token. */

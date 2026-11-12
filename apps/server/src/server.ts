@@ -4,6 +4,7 @@ import type { Logger } from 'pino'
 import { createAuthorize } from './access'
 import { type AppDeps, buildApp } from './app'
 import { createAuthenticate } from './auth/authenticate'
+import type { HubAgentKeyService } from './auth/hub-agent-keys'
 import { createHubSigninService, type HubSigninSetup, registerHubSignin } from './auth/hub-signin'
 import { createCommands, createFailureRecorder } from './commands'
 import { createHandlers } from './handlers/index'
@@ -33,6 +34,8 @@ export interface ServerOptions {
   filesDirect?: boolean
   /** «Войти через хаб» (`HUB_SIGNIN_*`); absent — the password only. */
   hubSignin?: HubSigninSetup
+  /** An agent's hub key (`HUB_INTROSPECT_KEY`); absent — such keys are not accepted. */
+  hubAgentKeys?: HubAgentKeyService
 }
 
 /** The `web` role: the table routes on the database, sessions, rights and the journal. */
@@ -49,7 +52,7 @@ export function buildServer(options: ServerOptions) {
     space: options.space ?? { file: undefined, ...PILOT_SPACE },
     store: new BlobStore(options.storage),
   }
-  const authenticate = createAuthenticate(db, hubSignin)
+  const authenticate = createAuthenticate(db, hubSignin, options.hubAgentKeys ?? null)
   const authorize = createAuthorize(db)
   const deps: AppDeps = {
     handlers: createHandlers(services),

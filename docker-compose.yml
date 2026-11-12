@@ -99,6 +99,8 @@ services:
       HUB_SIGNIN_CLIENT: ${HUB_SIGNIN_CLIENT:-contentops}
       HUB_SIGNIN_KEY: ${HUB_SIGNIN_KEY:-}
       HUB_SIGNIN_OWNER: ${HUB_SIGNIN_OWNER:-}
+      # An agent's hub key (SPEC §11.1): only `web` asks Hub whose it is.
+      HUB_INTROSPECT_KEY: ${HUB_INTROSPECT_KEY:-}
     volumes:
       - ${DATA_ROOT:-/srv/content}:/srv/content
       - ${DERIVED_ROOT:-/srv/derived}:/srv/derived

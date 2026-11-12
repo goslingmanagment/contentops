@@ -51,10 +51,17 @@ function forbidden(message: string): ApiProblem {
   return new ApiProblem('forbidden', message)
 }
 
-/** Agents work only while the owner keeps them on: all of them and this token (SPEC §8). */
-export async function agentSwitchedOn(db: Db, tokenId: string | null): Promise<boolean> {
+/**
+ * Agents work only while the owner keeps them on: all of them and this token (SPEC §8). An agent
+ * with its hub key has no token of ours: «Агенты» and its link (`principals.hub_agent_code`).
+ */
+export async function agentSwitchedOn(
+  db: Db,
+  tokenId: string | null,
+  hubAgent: string | null | undefined = null,
+): Promise<boolean> {
   if (!(await isSwitchOn(db, 'agents.enabled'))) return false
-  if (!tokenId) return false
+  if (!tokenId) return typeof hubAgent === 'string' && hubAgent !== ''
   const { rows } = await db.execute<{ off: boolean }>(sql`
     SELECT value = 'false'::jsonb AS off FROM policy_settings
      WHERE key = ${`agents.token.${tokenId}`} AND model_id IS NULL`)
@@ -85,7 +92,7 @@ export function createAuthorize(db: Db): Authorize {
     const access = accessOf(key, route)
     if (access === 'public') return null
     if (!actor) throw new ApiProblem('unauthenticated', 'Нужно войти')
-    if (actor.type === 'agent' && !(await agentSwitchedOn(db, actor.tokenId))) {
+    if (actor.type === 'agent' && !(await agentSwitchedOn(db, actor.tokenId, actor.hubAgent))) {
       throw forbidden('Агенты выключены владельцем')
     }
     if (access === 'human' && actor.type !== 'person') throw forbidden('Только для людей')

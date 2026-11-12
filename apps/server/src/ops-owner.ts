@@ -15,6 +15,7 @@ import {
   values,
   withActorTx,
 } from '@contentops/db'
+import { HUB_AGENT_CODE } from '@contentops/hub'
 import { hash } from '@node-rs/argon2'
 import { sql } from 'drizzle-orm'
 import {
@@ -154,6 +155,74 @@ export async function opsAgent(
     models: result.models,
     created: result.created,
     token: result.token,
+    agents_enabled: await isSwitchOn(db, 'agents.enabled'),
+  }
+}
+
+export interface OpsHubAgentResult {
+  agent: string
+  id: string
+  /** The hub agent whose hub key now acts as this agent; `null` — none. */
+  hub_agent: string | null
+  agents_enabled: boolean
+}
+
+/**
+ * `ops.js hub-agent <name> --code <hub code>` / `--off` — which local agent an agent's Agency Hub
+ * key acts as (ecosystem package M2): the hub agent's code is linked to the existing agent of
+ * that name, never a new one; its role, models, switch and journal are that agent's. One code —
+ * one agent; `--off` takes the link away at once (the agent's own tokens stay).
+ */
+export async function opsHubAgent(
+  db: Db,
+  input: { name: string; code: string | null },
+): Promise<OpsHubAgentResult> {
+  const name = input.name.trim()
+  if (!name) throw new Error('the agent needs a name')
+  if (input.code !== null && !HUB_AGENT_CODE.test(input.code)) {
+    throw new Error(`hub code ${input.code}: lowercase latin letters, digits and '-'`)
+  }
+  const result = await withActorTx(db, context('agent.hubKey'), async (tx) => {
+    const { rows: found } = await tx.execute<{ id: string; hub_agent_code: string | null }>(sql`
+      SELECT id, hub_agent_code FROM principals
+       WHERE kind = 'agent' AND disabled_at IS NULL AND display_name = ${name}
+       ORDER BY id FOR UPDATE`)
+    if (found.length !== 1) {
+      throw new Error(
+        found.length === 0
+          ? `no agent named «${name}»: make it first (ops.js agent)`
+          : `${found.length} agents are named «${name}»`,
+      )
+    }
+    const agent = found[0] as { id: string; hub_agent_code: string | null }
+    if (input.code !== null) {
+      const { rows: taken } = await tx.execute<{ display_name: string }>(sql`
+        SELECT display_name FROM principals
+         WHERE hub_agent_code = ${input.code} AND id <> ${agent.id}::uuid`)
+      if (taken[0]) {
+        throw new Error(
+          `${input.code} already acts as «${taken[0].display_name}»: --off there first`,
+        )
+      }
+    }
+    if (agent.hub_agent_code !== input.code) {
+      await tx.execute(sql`UPDATE principals SET hub_agent_code = ${input.code},
+        row_version = row_version + 1 WHERE id = ${agent.id}::uuid`)
+      await logAction(tx, {
+        modelId: null,
+        subjectKind: 'principals',
+        subjectId: agent.id,
+        subjectLabel: name,
+        before: { 'Ключ хаба': agent.hub_agent_code ?? 'нет' },
+        after: { 'Ключ хаба': input.code ?? 'нет' },
+      })
+    }
+    return { id: agent.id }
+  })
+  return {
+    agent: name,
+    id: result.id,
+    hub_agent: input.code,
     agents_enabled: await isSwitchOn(db, 'agents.enabled'),
   }
 }

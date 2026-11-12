@@ -23,6 +23,7 @@ import {
   opsContractor,
   opsCustomCopies,
   opsGrant,
+  opsHubAgent,
   opsPerson,
   opsPolicy,
   opsSwitch,
@@ -131,6 +132,7 @@ const USAGE = `usage:
   ops.js custom-copies --model <m>          (signals «Копии кастомов» for copies already in the catalog)
   ops.js smoke-setup [--token]             (the smoke model and agent; a new token once)
   ops.js agent <name> --role manager|reader --models <a,b> [--token]   (a new token once)
+  ops.js hub-agent <name> --code <hub code> | --off   (whose Agency Hub key acts as this agent)
   ops.js person <login> --name <имя> --role manager|reader --models <a,b>   (a temporary password once)
   ops.js grant <login> --models <a,b>      (the models a person already there lacks)
   ops.js contractor <name> --model <m> [--channel <code>] [--contact <text>] [--format upload|master|compat]
@@ -206,6 +208,9 @@ async function main(argv: string[]): Promise<number> {
       limit: { type: 'string' },
       probe: { type: 'boolean' },
       since: { type: 'string' },
+      // ops.js hub-agent …
+      code: { type: 'string' },
+      off: { type: 'boolean' },
     },
     allowPositionals: true,
   })
@@ -340,6 +345,21 @@ async function main(argv: string[]): Promise<number> {
       if (!result.agents_enabled) {
         process.stderr.write(
           'agent: «Агенты» are off: the token is refused until `ops.js switch agents enabled=on`\n',
+        )
+      }
+      out(result)
+      return 0
+    }
+    if (command === 'hub-agent') {
+      const [name] = positionals
+      if (!name || (values.code === undefined) === (values.off !== true)) throw new Error(USAGE)
+      const result = await opsHubAgent(db, {
+        name,
+        code: values.off ? null : (values.code ?? null),
+      })
+      if (!result.agents_enabled) {
+        process.stderr.write(
+          'hub-agent: «Агенты» are off: the hub key is refused until `ops.js switch agents enabled=on`\n',
         )
       }
       out(result)

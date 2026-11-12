@@ -151,6 +151,12 @@ const EnvSchema = z.object({
   /** A Hub agent key with `signin:<client>`; empty — `HUB_API_KEY` carries it. */
   HUB_SIGNIN_KEY: z.string().optional(),
   /**
+   * ContentOps' own Hub key with `introspect:agent_keys` (SPEC §11.1, ecosystem M2): with it and
+   * `HUB_BASE_URL` an agent may call with its Agency Hub key, acting as the local agent linked to
+   * its code (`ops.js hub-agent`). Empty — hub keys are not accepted, nothing else changes.
+   */
+  HUB_INTROSPECT_KEY: z.string().optional(),
+  /**
    * Login of the ContentOps owner whom Hub's owner signs in as: linked at the first sign-in
    * through the hub (`principals.hub_user_id`). Nobody else is linked by configuration.
    */
