@@ -14,6 +14,7 @@ import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { instant } from '../commands'
 import type { ModelScope } from '../context'
+import { itemHubOrder } from '../hub-orders/view'
 import { mediaPreviews } from '../media/previews'
 import { itemOrderSummary } from '../orders/view'
 import { loadState } from '../plan/state'
@@ -762,6 +763,7 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
     },
   ])
   const order = item.type === 'CUS' ? await itemOrderSummary(q, model, item.id) : null
+  const hubOrder = item.type === 'CUS' ? await itemHubOrder(q, model, item.id) : null
   const plan = await loadState(q, model, { rows: sql`AND r.item_id = ${item.id}::uuid` })
   const versionsPlaced = versionPlacements(plan, item.id)
   return {
@@ -779,6 +781,7 @@ export async function itemDetail(q: Queryable, model: ModelScope, id: string): P
     ydisk: await diskOf(q, model, item),
     pages: itemPages(plan, { ...entry, id: publicIdOf(item.type, item.number) }, item.id),
     order: order ? { id: order.id, title: order.title, status: order.status } : null,
+    hub_order: hubOrder,
     handoffs:
       item.type === 'PRM'
         ? (await handoffsOf(q, model, { packages: [item.id] })).map(({ id, status }) => ({

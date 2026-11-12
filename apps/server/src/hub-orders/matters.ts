@@ -1,4 +1,5 @@
 import { mskDate } from '@contentops/contracts/clock'
+import { formatDate } from '@contentops/contracts/format'
 import type { Db } from '@contentops/db'
 import { type HubClient, type HubMatterOpen, isHubError } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
@@ -102,7 +103,7 @@ async function customsInPlan(db: Db, modelId: string, model: string): Promise<Fi
     const price = row.price_mills === null ? null : Number(row.price_mills)
     const refusal = customRefusal(custom, row.surface, price)
     if (!refusal) return []
-    const when = `${row.slot_date === today ? 'сегодня' : row.slot_date}${row.slot_time ? ` ${row.slot_time}` : ''}`
+    const when = `${row.slot_date === today ? 'сегодня' : formatDate(row.slot_date, today)}${row.slot_time ? ` ${row.slot_time}` : ''}`
     return [
       {
         key: `contentops.custom_in_plan:${row.id}`,

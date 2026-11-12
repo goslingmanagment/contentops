@@ -57,7 +57,7 @@ export function HubOrderRow({ order, accounts, selected, onOpen }: HubOrderRowPr
           {hubOrderMeta(order, accounts)}
         </span>
       </span>
-      <span className="w-16 shrink-0 text-muted-foreground text-sm tabular-nums">
+      <span className="min-w-20 shrink-0 whitespace-nowrap text-muted-foreground text-sm tabular-nums">
         {hubDeadlineText(order, today)}
       </span>
       <span className="hidden w-20 shrink-0 text-muted-foreground text-sm tabular-nums @3xl:inline">

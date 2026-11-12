@@ -192,7 +192,7 @@ export const workOperations = pgTable("work_operations", {
 	check("work_operations_running_lease", sql`(state <> 'running'::text) OR ((lease_owner IS NOT NULL) AND (lease_until IS NOT NULL))`),
 	check("work_operations_finished_at", sql`(state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL)`),
 	check("work_operations_model_targets", sql`(model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0)`),
-	check("work_operations_kind_check", sql`kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text])`),
+	check("work_operations_kind_check", sql`kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text, 'hub_orders'::text])`),
 ]);
 
 export const policySettings = pgTable("policy_settings", {
@@ -557,6 +557,55 @@ export const hubAgentCalls = pgTable("hub_agent_calls", {
 	check("hub_agent_calls_principal_when_ok", sql`(outcome <> 'ok'::text) OR (principal_id IS NOT NULL)`),
 ]);
 
+export const hubOrderReads = pgTable("hub_order_reads", {
+	modelId: uuid("model_id").primaryKey().notNull(),
+	readAt: timestamp("read_at", { withTimezone: true, mode: 'string' }),
+	orders: jsonb().default([]).notNull(),
+	unassigned: integer().default(0).notNull(),
+	triedAt: timestamp("tried_at", { withTimezone: true, mode: 'string' }),
+	error: text(),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.modelId],
+			foreignColumns: [models.id],
+			name: "hub_order_reads_model_id_fkey"
+		}).onDelete("restrict"),
+	check("hub_order_reads_orders_check", sql`jsonb_typeof(orders) = 'array'::text`),
+	check("hub_order_reads_unassigned_check", sql`unassigned >= 0`),
+]);
+
+export const backupCheckpoints = pgTable("backup_checkpoints", {
+	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
+	runId: uuid("run_id"),
+	dbSnapshotAt: timestamp("db_snapshot_at", { withTimezone: true, mode: 'string' }).notNull(),
+	dumpKey: text("dump_key").notNull(),
+	dumpSha256: text("dump_sha256"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	dumpBytes: bigint("dump_bytes", { mode: "number" }),
+	requiredManifestKey: text("required_manifest_key"),
+	requiredCount: integer("required_count"),
+	missingCount: integer("missing_count"),
+	state: text().notNull(),
+	repository: text().notNull(),
+	finalizedAt: timestamp("finalized_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	lastRestoreTestAt: timestamp("last_restore_test_at", { withTimezone: true, mode: 'string' }),
+	reportedBy: uuid("reported_by"),
+}, (table): PgTableExtraConfigValue[] => [
+	index("backup_checkpoints_latest").using("btree", table.dbSnapshotAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.reportedBy],
+			foreignColumns: [principals.id],
+			name: "backup_checkpoints_reported_by_fkey"
+		}).onDelete("restrict"),
+	unique("backup_checkpoints_dump").on(table.dumpKey, table.repository),
+	check("backup_checkpoints_dump_sha256_check", sql`dump_sha256 ~ '^[0-9a-f]{64}$'::text`),
+	check("backup_checkpoints_dump_bytes_check", sql`dump_bytes > 0`),
+	check("backup_checkpoints_required_count_check", sql`required_count >= 0`),
+	check("backup_checkpoints_missing_count_check", sql`missing_count >= 0`),
+	check("backup_checkpoints_state_check", sql`state = ANY (ARRAY['db_only'::text, 'complete'::text, 'expired'::text])`),
+	check("backup_checkpoints_repository_check", sql`repository ~ '^[a-z][a-z0-9_-]*$'::text`),
+]);
+
 export const principalGrants = pgTable("principal_grants", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -698,6 +747,24 @@ export const assetManifests = pgTable("asset_manifests", {
 	primaryKey({ columns: [table.id, table.modelId], name: "asset_manifests_pkey"}),
 	check("asset_manifests_purpose_check", sql`purpose = ANY (ARRAY['plan'::text, 'download'::text, 'delivery'::text, 'submission'::text])`),
 	check("asset_manifests_entry_count_check", sql`entry_count > 0`),
+]);
+
+export const hubMatters = pgTable("hub_matters", {
+	modelId: uuid("model_id").notNull(),
+	key: text().notNull(),
+	kind: text().notNull(),
+	title: text().notNull(),
+	openedAt: timestamp("opened_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	closedAt: timestamp("closed_at", { withTimezone: true, mode: 'string' }),
+	error: text(),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.modelId],
+			foreignColumns: [models.id],
+			name: "hub_matters_model_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.key, table.modelId], name: "hub_matters_pkey"}),
+	check("hub_matters_key_check", sql`key ~ '^contentops\.[a-z_]+:\S+$'::text`),
 ]);
 
 export const sourcePaths = pgTable("source_paths", {
@@ -1492,6 +1559,91 @@ export const legacyNumberClaims = pgTable("legacy_number_claims", {
 	check("legacy_number_claims_decision_check", sql`decision = ANY (ARRAY['keep'::text, 'renumber'::text, 'typo'::text, 'unclear'::text])`),
 	check("legacy_number_claims_assigned_range", sql`(assigned_number >= 1) AND (assigned_number <= 999999)`),
 	check("legacy_number_claims_decided", sql`(decision IS NULL) = (decided_at IS NULL)`),
+]);
+
+export const hubOrderDeliveries = pgTable("hub_order_deliveries", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	orderCode: text("order_code").notNull(),
+	part: text(),
+	complete: boolean(),
+	itemId: uuid("item_id"),
+	itemType: text("item_type").default('CUS').notNull(),
+	manifestId: uuid("manifest_id"),
+	messageRef: text("message_ref"),
+	deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: 'string' }),
+	linkedAt: timestamp("linked_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	linkedBy: uuid("linked_by"),
+	retractsId: uuid("retracts_id"),
+	retractReason: text("retract_reason"),
+}, (table): PgTableExtraConfigValue[] => [
+	index("hub_order_deliveries_item").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.itemId.asc().nullsLast().op("uuid_ops")).where(sql`(item_id IS NOT NULL)`),
+	index("hub_order_deliveries_order").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.orderCode.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.modelId, table.manifestId],
+			foreignColumns: [assetManifests.id, assetManifests.modelId],
+			name: "hub_order_deliveries_model_id_manifest_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.orderCode, table.retractsId],
+			foreignColumns: [table.id, table.modelId, table.orderCode],
+			name: "hub_order_deliveries_model_id_order_code_retracts_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.linkedBy],
+			foreignColumns: [principals.id],
+			name: "hub_order_deliveries_linked_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.itemId, table.itemType],
+			foreignColumns: [contentItems.id, contentItems.modelId, contentItems.type],
+			name: "hub_order_deliveries_model_id_item_id_item_type_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "hub_order_deliveries_pkey"}),
+	unique("hub_order_deliveries_model_id_order_code_id_key").on(table.id, table.modelId, table.orderCode),
+	unique("hub_order_deliveries_manifest").on(table.manifestId, table.modelId),
+	unique("hub_order_deliveries_retracts_once").on(table.retractsId),
+	check("hub_order_deliveries_order_code_check", sql`order_code ~ '^K-[1-9][0-9]{0,15}$'::text`),
+	check("hub_order_deliveries_part_check", sql`part = ANY (ARRAY['video'::text, 'photos'::text])`),
+	check("hub_order_deliveries_item_type_check", sql`item_type = 'CUS'::text`),
+	check("hub_order_deliveries_message_ref_check", sql`message_ref ~ '^tg:[a-z0-9_]+/[0-9]+(/[0-9]+)?$'::text`),
+	check("hub_order_deliveries_shape", sql`CHECK (
+CASE
+    WHEN (retracts_id IS NULL) THEN ((num_nulls(part, complete, item_id, manifest_id, delivered_at) = 0) AND (retract_reason IS NULL))
+    ELSE ((num_nonnulls(part, complete, item_id, manifest_id, delivered_at, message_ref) = 0) AND (retract_reason IS NOT NULL))
+END)`),
+	check("hub_order_deliveries_not_self", sql`retracts_id <> id`),
+]);
+
+export const hubOrderReports = pgTable("hub_order_reports", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	orderCode: text("order_code").notNull(),
+	deliveryId: uuid("delivery_id").notNull(),
+	kind: text().notNull(),
+	body: jsonb().notNull(),
+	state: text().default('pending').notNull(),
+	attempts: integer().default(0).notNull(),
+	triedAt: timestamp("tried_at", { withTimezone: true, mode: 'string' }),
+	error: text(),
+	sentAt: timestamp("sent_at", { withTimezone: true, mode: 'string' }),
+	outcome: text(),
+	hubState: text("hub_state"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	index("hub_order_reports_pending").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.asc().nullsLast().op("uuid_ops")).where(sql`(state = 'pending'::text)`),
+	foreignKey({
+			columns: [table.modelId, table.orderCode, table.deliveryId],
+			foreignColumns: [hubOrderDeliveries.id, hubOrderDeliveries.modelId, hubOrderDeliveries.orderCode],
+			name: "hub_order_reports_model_id_order_code_delivery_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "hub_order_reports_pkey"}),
+	unique("hub_order_reports_once").on(table.deliveryId, table.modelId),
+	check("hub_order_reports_kind_check", sql`kind = ANY (ARRAY['delivery'::text, 'retraction'::text])`),
+	check("hub_order_reports_body_check", sql`jsonb_typeof(body) = 'object'::text`),
+	check("hub_order_reports_state_check", sql`state = ANY (ARRAY['pending'::text, 'sent'::text, 'refused'::text])`),
+	check("hub_order_reports_attempts_check", sql`attempts >= 0`),
+	check("hub_order_reports_sent", sql`(state = 'sent'::text) = (sent_at IS NOT NULL)`),
 ]);
 
 export const sourceObjects = pgTable("source_objects", {
@@ -2462,6 +2614,7 @@ export const inboxGroups = pgTable("inbox_groups", {
 	customOrderId: uuid("custom_order_id"),
 	proposedChannelId: uuid("proposed_channel_id"),
 	proposedCollectionId: uuid("proposed_collection_id"),
+	hubOrderCode: text("hub_order_code"),
 }, (table): PgTableExtraConfigValue[] => [
 	foreignKey({
 			columns: [table.modelId, table.sourceId],
@@ -2494,6 +2647,8 @@ export const inboxGroups = pgTable("inbox_groups", {
 	check("inbox_groups_proposed_type_check", sql`proposed_type = ANY (ARRAY['PPV'::text, 'SET'::text, 'SXT'::text, 'CUS'::text, 'FYP'::text, 'LIFE'::text, 'RAW'::text, 'PRM'::text])`),
 	check("inbox_groups_proposed_ppv_kind_check", sql`proposed_ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text])`),
 	check("inbox_groups_proposed_purpose_check", sql`proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text])`),
+	check("inbox_groups_hub_order_code_format", sql`hub_order_code ~ '^K-[1-9][0-9]{0,15}$'::text`),
+	check("inbox_groups_one_order", sql`(custom_order_id IS NULL) OR (hub_order_code IS NULL)`),
 ]);
 
 export const hubSyncState = pgTable("hub_sync_state", {

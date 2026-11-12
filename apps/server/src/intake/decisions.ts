@@ -5,6 +5,7 @@ import { components } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
+import { readHubOrders } from '../hub-orders/view'
 import { splitArchive } from '../legacy/split'
 import { lockOrder } from '../orders/writes'
 import { acceptGroup, lockGroupForDecision, lockOpenDrafts, rejectGroup } from './accept'
@@ -23,6 +24,9 @@ import { answerVideoCopy } from './video-copies'
  * before acceptance, the answers to ◆, roles and order of the files, and «Повторить» after ▲.
  * A group is a proposal with evidence: it changes freely until something is accepted from it.
  */
+
+/** The hub's order code: `K-12` (package N). */
+const HUB_CODE = /^K-[1-9]\d{0,15}$/
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -311,10 +315,20 @@ export async function chooseOrder(
   address: string | null,
   draftIds: readonly string[],
 ): Promise<void> {
-  const orderId = address === null ? null : (await lockOrder(tx, model, address)).id
+  // A hub order (`K-12`, package N): it must be in the last read of the hub for this model.
+  const hubCode = address !== null && HUB_CODE.test(address) ? address : null
+  if (
+    hubCode &&
+    !(await readHubOrders(tx, model.id)).orders.some((order) => order.code === hubCode)
+  ) {
+    throw new ApiProblem('not_found', `Заказа ${hubCode} в последнем чтении Hub нет`)
+  }
+  const orderId =
+    address === null || hubCode !== null ? null : (await lockOrder(tx, model, address)).id
+  const chosen = hubCode !== null || orderId !== null
   await tx.execute(sql`
-    UPDATE inbox_groups SET custom_order_id = ${orderId}::uuid,
-           proposed_type = CASE WHEN ${orderId}::uuid IS NULL THEN proposed_type ELSE 'CUS' END
+    UPDATE inbox_groups SET custom_order_id = ${orderId}::uuid, hub_order_code = ${hubCode},
+           proposed_type = CASE WHEN ${chosen} THEN 'CUS' ELSE proposed_type END
      WHERE model_id = ${model.id}::uuid AND id = ${groupId}::uuid`)
   // A person's answer ends the order the system chose (SPEC §8.2): another order or «Без
   // заказа» takes back its mark and its «похоже на исправление»; the same order becomes theirs.

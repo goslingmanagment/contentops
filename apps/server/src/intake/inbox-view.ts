@@ -74,6 +74,8 @@ interface GroupRow extends Record<string, unknown> {
   proposed_purpose: values.RawPurpose | null
   has_second_person: boolean | null
   custom_order_id: string | null
+  /** The hub's order (`K-12`) the custom is delivered for (package N), instead of a history one. */
+  hub_order_code: string | null
   /** «Канал ▾» of a promo pack: the code of the channel; «Подборка ▾»: the collection. */
   channel_code: string | null
   collection_public_id: string | null
@@ -402,10 +404,10 @@ export function activeState(
         ? { kind: 'extends', item_id: target }
         : group.fix_item_public && group.fix_revision_id && group.custom_order_id
           ? { kind: 'fix_of', item_id: group.fix_item_public, revision_id: group.fix_revision_id }
-          : group.custom_order_id
+          : (group.hub_order_code ?? group.custom_order_id)
             ? {
                 kind: 'order_part',
-                order_id: group.custom_order_id,
+                order_id: (group.hub_order_code ?? group.custom_order_id) as string,
                 part: orderPart(drafts),
                 ...(group.order_proposed ? { proposed: true } : {}),
               }
@@ -595,7 +597,8 @@ function view(
       collection: group.collection_public_id,
       second_person: group.has_second_person,
       fan_name: null,
-      order_id: group.custom_order_id,
+      // A hub order by its code (`K-12`), a history one by its id.
+      order_id: group.hub_order_code ?? group.custom_order_id,
       shot_on: null,
     },
     hints:
@@ -625,7 +628,7 @@ function view(
 const GROUP_COLUMNS = sql`
   g.id, g.group_key, g.grouping, g.evidence, g.proposed_type, g.proposed_title, g.proposed_title_en,
   g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
-  g.has_second_person, g.custom_order_id, g.row_version, g.discovered_at, s.kind AS source_kind,
+  g.has_second_person, g.custom_order_id, g.hub_order_code, g.row_version, g.discovered_at, s.kind AS source_kind,
   s.label AS source_label,
   (SELECT ch.code FROM promo_channels ch
     WHERE ch.model_id = g.model_id AND ch.id = g.proposed_channel_id) AS channel_code,

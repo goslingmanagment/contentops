@@ -76,13 +76,14 @@ function MainAction() {
     }
     // Заказ не сдан или ждёт правку: главное — заказ, «Сделать PPV» — в «⋯». Пока свой монтаж
     // для PPV проверяется, главной нет: в шапке ход проверки.
-    const order = detail.order
+    // The hub's order first (package N): the order's home; else the history's.
+    const order = detail.hub_order?.code ?? detail.order?.id
     return order && !entry.ppv_made_as && !detail.ppv_montage ? (
       <Button
         onClick={() =>
           void navigate({
             to: '/$model/library/customs/orders/$order',
-            params: { model: model.code, order: order.id },
+            params: { model: model.code, order },
           })
         }
       >

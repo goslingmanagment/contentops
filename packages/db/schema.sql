@@ -159,7 +159,7 @@ CREATE TABLE public.work_operations (
     CONSTRAINT work_operations_finished_at CHECK (((state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL))),
     CONSTRAINT work_operations_global_kinds CHECK (((model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text])))),
     CONSTRAINT work_operations_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
-    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text]))),
+    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text, 'hub_orders'::text]))),
     CONSTRAINT work_operations_model_targets CHECK (((model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0))),
     CONSTRAINT work_operations_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
     CONSTRAINT work_operations_paused_reason_format CHECK ((paused_reason ~ '^switch_off:.+$'::text)),
@@ -1104,6 +1104,31 @@ CREATE TABLE public.asset_manifests (
 
 ALTER TABLE public.asset_manifests OWNER TO contentops_migrate;
 
+CREATE TABLE public.backup_checkpoints (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    run_id uuid,
+    db_snapshot_at timestamp with time zone NOT NULL,
+    dump_key text NOT NULL,
+    dump_sha256 text,
+    dump_bytes bigint,
+    required_manifest_key text,
+    required_count integer,
+    missing_count integer,
+    state text NOT NULL,
+    repository text NOT NULL,
+    finalized_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_restore_test_at timestamp with time zone,
+    reported_by uuid,
+    CONSTRAINT backup_checkpoints_dump_bytes_check CHECK ((dump_bytes > 0)),
+    CONSTRAINT backup_checkpoints_dump_sha256_check CHECK ((dump_sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT backup_checkpoints_missing_count_check CHECK ((missing_count >= 0)),
+    CONSTRAINT backup_checkpoints_repository_check CHECK ((repository ~ '^[a-z][a-z0-9_-]*$'::text)),
+    CONSTRAINT backup_checkpoints_required_count_check CHECK ((required_count >= 0)),
+    CONSTRAINT backup_checkpoints_state_check CHECK ((state = ANY (ARRAY['db_only'::text, 'complete'::text, 'expired'::text])))
+);
+
+ALTER TABLE public.backup_checkpoints OWNER TO contentops_migrate;
+
 CREATE TABLE public.blob_phashes (
     sha256 bytea NOT NULL,
     algorithm text NOT NULL,
@@ -1610,6 +1635,19 @@ ALTER TABLE public.hub_agent_calls ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
     CACHE 1
 );
 
+CREATE TABLE public.hub_matters (
+    model_id uuid NOT NULL,
+    key text NOT NULL,
+    kind text NOT NULL,
+    title text NOT NULL,
+    opened_at timestamp with time zone DEFAULT now() NOT NULL,
+    closed_at timestamp with time zone,
+    error text,
+    CONSTRAINT hub_matters_key_check CHECK ((key ~ '^contentops\.[a-z_]+:\S+$'::text))
+);
+
+ALTER TABLE public.hub_matters OWNER TO contentops_migrate;
+
 CREATE TABLE public.hub_observations (
     model_id uuid NOT NULL,
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -1635,6 +1673,72 @@ CREATE TABLE public.hub_observations (
 );
 
 ALTER TABLE public.hub_observations OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_order_deliveries (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    order_code text NOT NULL,
+    part text,
+    complete boolean,
+    item_id uuid,
+    item_type text DEFAULT 'CUS'::text NOT NULL,
+    manifest_id uuid,
+    message_ref text,
+    delivered_at timestamp with time zone,
+    linked_at timestamp with time zone DEFAULT now() NOT NULL,
+    linked_by uuid,
+    retracts_id uuid,
+    retract_reason text,
+    CONSTRAINT hub_order_deliveries_item_type_check CHECK ((item_type = 'CUS'::text)),
+    CONSTRAINT hub_order_deliveries_message_ref_check CHECK ((message_ref ~ '^tg:[a-z0-9_]+/[0-9]+(/[0-9]+)?$'::text)),
+    CONSTRAINT hub_order_deliveries_not_self CHECK ((retracts_id <> id)),
+    CONSTRAINT hub_order_deliveries_order_code_check CHECK ((order_code ~ '^K-[1-9][0-9]{0,15}$'::text)),
+    CONSTRAINT hub_order_deliveries_part_check CHECK ((part = ANY (ARRAY['video'::text, 'photos'::text]))),
+    CONSTRAINT hub_order_deliveries_shape CHECK (
+CASE
+    WHEN (retracts_id IS NULL) THEN ((num_nulls(part, complete, item_id, manifest_id, delivered_at) = 0) AND (retract_reason IS NULL))
+    ELSE ((num_nonnulls(part, complete, item_id, manifest_id, delivered_at, message_ref) = 0) AND (retract_reason IS NOT NULL))
+END)
+);
+
+ALTER TABLE public.hub_order_deliveries OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_order_reads (
+    model_id uuid NOT NULL,
+    read_at timestamp with time zone,
+    orders jsonb DEFAULT '[]'::jsonb NOT NULL,
+    unassigned integer DEFAULT 0 NOT NULL,
+    tried_at timestamp with time zone,
+    error text,
+    CONSTRAINT hub_order_reads_orders_check CHECK ((jsonb_typeof(orders) = 'array'::text)),
+    CONSTRAINT hub_order_reads_unassigned_check CHECK ((unassigned >= 0))
+);
+
+ALTER TABLE public.hub_order_reads OWNER TO contentops_migrate;
+
+CREATE TABLE public.hub_order_reports (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    order_code text NOT NULL,
+    delivery_id uuid NOT NULL,
+    kind text NOT NULL,
+    body jsonb NOT NULL,
+    state text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    tried_at timestamp with time zone,
+    error text,
+    sent_at timestamp with time zone,
+    outcome text,
+    hub_state text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT hub_order_reports_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT hub_order_reports_body_check CHECK ((jsonb_typeof(body) = 'object'::text)),
+    CONSTRAINT hub_order_reports_kind_check CHECK ((kind = ANY (ARRAY['delivery'::text, 'retraction'::text]))),
+    CONSTRAINT hub_order_reports_sent CHECK (((state = 'sent'::text) = (sent_at IS NOT NULL))),
+    CONSTRAINT hub_order_reports_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'sent'::text, 'refused'::text])))
+);
+
+ALTER TABLE public.hub_order_reports OWNER TO contentops_migrate;
 
 CREATE TABLE public.hub_post_attachments (
     model_id uuid NOT NULL,
@@ -1872,7 +1976,10 @@ CREATE TABLE public.inbox_groups (
     custom_order_id uuid,
     proposed_channel_id uuid,
     proposed_collection_id uuid,
+    hub_order_code text,
     CONSTRAINT inbox_groups_grouping_check CHECK (("grouping" = ANY (ARRAY['folder'::text, 'exif_day'::text, 'upload_cluster'::text, 'single'::text, 'manual'::text]))),
+    CONSTRAINT inbox_groups_hub_order_code_format CHECK ((hub_order_code ~ '^K-[1-9][0-9]{0,15}$'::text)),
+    CONSTRAINT inbox_groups_one_order CHECK (((custom_order_id IS NULL) OR (hub_order_code IS NULL))),
     CONSTRAINT inbox_groups_proposed_ppv_kind_check CHECK ((proposed_ppv_kind = ANY (ARRAY['bundle'::text, 'dm'::text]))),
     CONSTRAINT inbox_groups_proposed_purpose_check CHECK ((proposed_purpose = ANY (ARRAY['fyp'::text, 'ppv'::text, 'mass_dm'::text, 'unknown'::text]))),
     CONSTRAINT inbox_groups_proposed_type_check CHECK ((proposed_type = ANY (ARRAY['PPV'::text, 'SET'::text, 'SXT'::text, 'CUS'::text, 'FYP'::text, 'LIFE'::text, 'RAW'::text, 'PRM'::text])))
@@ -2587,6 +2694,12 @@ ALTER TABLE ONLY public.assets
 ALTER TABLE ONLY public.assets
     ADD CONSTRAINT assets_pkey PRIMARY KEY (model_id, id);
 
+ALTER TABLE ONLY public.backup_checkpoints
+    ADD CONSTRAINT backup_checkpoints_dump UNIQUE (repository, dump_key);
+
+ALTER TABLE ONLY public.backup_checkpoints
+    ADD CONSTRAINT backup_checkpoints_pkey PRIMARY KEY (id);
+
 ALTER TABLE ONLY public.blob_phashes
     ADD CONSTRAINT blob_phashes_pkey PRIMARY KEY (sha256, algorithm, algo_version, normalization);
 
@@ -2668,11 +2781,35 @@ ALTER TABLE ONLY public.download_receipts
 ALTER TABLE ONLY public.hub_agent_calls
     ADD CONSTRAINT hub_agent_calls_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.hub_matters
+    ADD CONSTRAINT hub_matters_pkey PRIMARY KEY (model_id, key);
+
 ALTER TABLE ONLY public.hub_observations
     ADD CONSTRAINT hub_observations_pkey PRIMARY KEY (model_id, id);
 
 ALTER TABLE ONLY public.hub_observations
     ADD CONSTRAINT hub_observations_sequence UNIQUE (model_id, account_id, dataset, external_key, sequence_no);
+
+ALTER TABLE ONLY public.hub_order_deliveries
+    ADD CONSTRAINT hub_order_deliveries_manifest UNIQUE (model_id, manifest_id);
+
+ALTER TABLE ONLY public.hub_order_deliveries
+    ADD CONSTRAINT hub_order_deliveries_model_id_order_code_id_key UNIQUE (model_id, order_code, id);
+
+ALTER TABLE ONLY public.hub_order_deliveries
+    ADD CONSTRAINT hub_order_deliveries_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.hub_order_deliveries
+    ADD CONSTRAINT hub_order_deliveries_retracts_once UNIQUE (retracts_id);
+
+ALTER TABLE ONLY public.hub_order_reads
+    ADD CONSTRAINT hub_order_reads_pkey PRIMARY KEY (model_id);
+
+ALTER TABLE ONLY public.hub_order_reports
+    ADD CONSTRAINT hub_order_reports_once UNIQUE (model_id, delivery_id);
+
+ALTER TABLE ONLY public.hub_order_reports
+    ADD CONSTRAINT hub_order_reports_pkey PRIMARY KEY (model_id, id);
 
 ALTER TABLE ONLY public.hub_post_attachments
     ADD CONSTRAINT hub_post_attachments_key UNIQUE (model_id, post_id, hub_key);
@@ -3000,6 +3137,8 @@ CREATE INDEX asset_versions_source ON public.asset_versions USING btree (source_
 
 CREATE UNIQUE INDEX assets_uniq_variant ON public.assets USING btree (model_id, created_in_item_id, variant_no) WHERE (variant_kind = 'uniq'::text);
 
+CREATE INDEX backup_checkpoints_latest ON public.backup_checkpoints USING btree (db_snapshot_at DESC);
+
 CREATE INDEX blob_probes_duration_size ON public.blob_probes USING btree (duration_ms, width, height);
 
 CREATE INDEX blob_probes_shot_at ON public.blob_probes USING btree (shot_at);
@@ -3039,6 +3178,12 @@ CREATE INDEX download_receipts_plan_row ON public.download_receipts USING btree 
 CREATE INDEX hub_agent_calls_agent_at ON public.hub_agent_calls USING btree (agent_code, at DESC);
 
 CREATE INDEX hub_agent_calls_at_brin ON public.hub_agent_calls USING brin (at);
+
+CREATE INDEX hub_order_deliveries_item ON public.hub_order_deliveries USING btree (model_id, item_id) WHERE (item_id IS NOT NULL);
+
+CREATE INDEX hub_order_deliveries_order ON public.hub_order_deliveries USING btree (model_id, order_code);
+
+CREATE INDEX hub_order_reports_pending ON public.hub_order_reports USING btree (model_id, created_at) WHERE (state = 'pending'::text);
 
 CREATE INDEX hub_post_attachments_media ON public.hub_post_attachments USING btree (model_id, media_ref);
 
@@ -3265,6 +3410,8 @@ CREATE CONSTRAINT TRIGGER download_receipts_sealed AFTER INSERT ON public.downlo
 CREATE TRIGGER hub_agent_calls_append_only BEFORE DELETE OR UPDATE ON public.hub_agent_calls FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
 CREATE TRIGGER hub_observations_append_only BEFORE DELETE OR UPDATE ON public.hub_observations FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
+
+CREATE TRIGGER hub_order_deliveries_append_only BEFORE DELETE OR UPDATE ON public.hub_order_deliveries FOR EACH ROW EXECUTE FUNCTION public.forbid_update_delete();
 
 CREATE TRIGGER hub_post_attachments_fixed BEFORE UPDATE ON public.hub_post_attachments FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'post_id', 'hub_key');
 
@@ -3528,6 +3675,9 @@ ALTER TABLE ONLY public.assets
 ALTER TABLE ONLY public.assets
     ADD CONSTRAINT assets_model_id_created_in_item_id_fkey FOREIGN KEY (model_id, created_in_item_id) REFERENCES public.content_items(model_id, id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.backup_checkpoints
+    ADD CONSTRAINT backup_checkpoints_reported_by_fkey FOREIGN KEY (reported_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.chronology_entries
     ADD CONSTRAINT chronology_entries_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
@@ -3660,6 +3810,9 @@ ALTER TABLE ONLY public.download_receipts
 ALTER TABLE ONLY public.hub_agent_calls
     ADD CONSTRAINT hub_agent_calls_principal_id_fkey FOREIGN KEY (principal_id) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.hub_matters
+    ADD CONSTRAINT hub_matters_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.hub_observations
     ADD CONSTRAINT hub_observations_model_id_account_id_fkey FOREIGN KEY (model_id, account_id) REFERENCES public.accounts(model_id, id) ON DELETE RESTRICT;
 
@@ -3668,6 +3821,24 @@ ALTER TABLE ONLY public.hub_observations
 
 ALTER TABLE ONLY public.hub_observations
     ADD CONSTRAINT hub_observations_model_id_run_id_fkey FOREIGN KEY (model_id, run_id) REFERENCES public.work_operations(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_order_deliveries
+    ADD CONSTRAINT hub_order_deliveries_linked_by_fkey FOREIGN KEY (linked_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_order_deliveries
+    ADD CONSTRAINT hub_order_deliveries_model_id_item_id_item_type_fkey FOREIGN KEY (model_id, item_id, item_type) REFERENCES public.content_items(model_id, id, type) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_order_deliveries
+    ADD CONSTRAINT hub_order_deliveries_model_id_manifest_id_fkey FOREIGN KEY (model_id, manifest_id) REFERENCES public.asset_manifests(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_order_deliveries
+    ADD CONSTRAINT hub_order_deliveries_model_id_order_code_retracts_id_fkey FOREIGN KEY (model_id, order_code, retracts_id) REFERENCES public.hub_order_deliveries(model_id, order_code, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_order_reads
+    ADD CONSTRAINT hub_order_reads_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.hub_order_reports
+    ADD CONSTRAINT hub_order_reports_model_id_order_code_delivery_id_fkey FOREIGN KEY (model_id, order_code, delivery_id) REFERENCES public.hub_order_deliveries(model_id, order_code, id) ON DELETE RESTRICT;
 
 ALTER TABLE ONLY public.hub_post_attachments
     ADD CONSTRAINT hub_post_attachments_model_id_current_observation_id_fkey FOREIGN KEY (model_id, current_observation_id) REFERENCES public.hub_observations(model_id, id) ON DELETE RESTRICT;
@@ -4187,6 +4358,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.api_tokens TO contentops_app;
 
 GRANT SELECT,INSERT ON TABLE public.asset_manifests TO contentops_app;
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.backup_checkpoints TO contentops_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.blob_phashes TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.blob_probes TO contentops_app;
@@ -4223,7 +4396,15 @@ GRANT SELECT,INSERT ON TABLE public.hub_agent_calls TO contentops_app;
 
 GRANT SELECT,USAGE ON SEQUENCE public.hub_agent_calls_id_seq TO contentops_app;
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_matters TO contentops_app;
+
 GRANT SELECT,INSERT ON TABLE public.hub_observations TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.hub_order_deliveries TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_order_reads TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_order_reports TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.hub_post_attachments TO contentops_app;
 

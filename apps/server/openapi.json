@@ -5558,6 +5558,33 @@
               }
             ]
           },
+          "hub_order": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/StatusWord"
+                  }
+                },
+                "required": [
+                  "code",
+                  "title",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "handoffs": {
             "type": "array",
             "items": {

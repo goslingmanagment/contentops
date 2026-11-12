@@ -23,6 +23,9 @@
 --                           is gone here, then closed there.
 --   backup_checkpoints    — a copy of the database (schema §3.9): for now the nightly copy to the
 --                           owner's Mac reports itself (`db_only`); the masters have no copy yet.
+--   inbox_groups.hub_order_code — the hub order a custom in «Приехало» is delivered for (◆ «Какой
+--                           заказ?», the field «Заказ»): «Принять как сдачу» links it to that order.
+--                           Nullable; a group names an order of the hub or of the history, not both.
 --
 -- `hub_orders` is the work of role `worker` that reads the hub's orders of a model, sends the
 -- outbox and keeps the matters (every 5 minutes and right after a delivery).
@@ -161,3 +164,9 @@ CREATE TABLE backup_checkpoints (
   CONSTRAINT backup_checkpoints_dump UNIQUE (repository, dump_key)
 );
 CREATE INDEX backup_checkpoints_latest ON backup_checkpoints (db_snapshot_at DESC);
+
+-- The hub order of a group in «Приехало»: the accepted CUS becomes its delivery.
+ALTER TABLE inbox_groups
+  ADD COLUMN hub_order_code text
+    CONSTRAINT inbox_groups_hub_order_code_format CHECK (hub_order_code ~ '^K-[1-9][0-9]{0,15}$'),
+  ADD CONSTRAINT inbox_groups_one_order CHECK (custom_order_id IS NULL OR hub_order_code IS NULL);

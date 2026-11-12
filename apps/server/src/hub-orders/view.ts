@@ -405,3 +405,49 @@ export function deliveryExcerpt(item: string, part: OrderPartKind, files: number
   const count = `${files} ${plural(files, ['файл', 'файла', 'файлов'])}`
   return `ContentOps: ${item} · ${PART_WORD[part]} · ${count}`
 }
+
+/**
+ * The hub order a CUS belongs to (package N), for its card: its latest live delivery to a hub
+ * order, else the hub order its old order of the history became (the import's `contentopsRef`,
+ * or the same Telegram card). `null` — none. An order no longer in the last read (given, closed)
+ * is named by its code.
+ */
+export async function itemHubOrder(
+  q: Queryable,
+  model: ModelScope,
+  itemUid: string,
+): Promise<{ code: string; title: string; status: StatusWord } | null> {
+  const { rows } = await q.execute<{ code: string | null; address: string | null }>(sql`
+    SELECT (SELECT d.order_code FROM hub_order_deliveries d
+             WHERE d.model_id = ${model.id}::uuid AND d.item_id = ${itemUid}::uuid
+               AND d.retracts_id IS NULL
+               AND NOT EXISTS (SELECT 1 FROM hub_order_deliveries r WHERE r.retracts_id = d.id)
+             ORDER BY d.linked_at DESC, d.id DESC LIMIT 1) AS code,
+           (SELECT 'tg-' || o.tg_chat || coalesce('-' || o.tg_topic::text, '') || '-'
+                   || o.tg_message_id::text
+              FROM catalog_index c
+              JOIN custom_orders o ON o.model_id = c.model_id AND o.id = c.order_id
+             WHERE c.model_id = ${model.id}::uuid AND c.item_id = ${itemUid}::uuid) AS address`)
+  const row = rows[0]
+  if (!row?.code && !row?.address) return null
+  const read = await readHubOrders(q, model.id)
+  const order = row.code
+    ? read.orders.find((one) => one.code === row.code)
+    : read.orders.find((one) => {
+        if (one.contentopsRef === `${model.code}/${row.address}`) return true
+        return one.telegramRefs.some((ref) => {
+          const parsed = parseTelegramRef(ref)
+          return parsed !== null && orderAddress(parsed) === row.address
+        })
+      })
+  if (!order) {
+    return row.code
+      ? { code: row.code, title: row.code, status: { sign: null, word: 'в Hub', detail: null } }
+      : null
+  }
+  return {
+    code: order.code,
+    title: order.what || order.code,
+    status: statusOf(order, 0, new Date().toISOString()),
+  }
+}
