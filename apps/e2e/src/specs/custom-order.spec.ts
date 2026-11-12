@@ -176,7 +176,8 @@ test('КМ: заказ → сдача из «Приехало» → правка
     await api.post(`/api/v1/lora/orders/tg-${CHAT}-12-${RUN}/revisions/${revisionId}:complete`, {
       basis: 'new_version',
     })
-    await api.post(`/api/v1/lora/orders/tg-${CHAT}-12-${RUN}:close`, {})
+    // «Закрыть заказ» has no body.
+    await api.post(`/api/v1/lora/orders/tg-${CHAT}-12-${RUN}:close`)
     await api.context.dispose()
     await km.reload()
     const revision = panel.getByRole('listitem').filter({ hasText: `«${REVISION}»` })
