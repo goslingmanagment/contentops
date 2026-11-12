@@ -136,6 +136,28 @@ const EnvSchema = z.object({
   DROPBOX_APP_SECRET: z.string().optional(),
   HUB_BASE_URL: z.url().optional(),
   HUB_API_KEY: z.string().optional(),
+  /**
+   * «Войти через хаб» (SPEC §11.1): the address of ContentOps where the sign-in screen offers
+   * it — the public name, whose `/auth/hub/callback` Hub knows for `HUB_SIGNIN_CLIENT`. Other
+   * names (the VPN, the tailnet) keep the password only. Empty — no hub sign-in anywhere.
+   * The browser goes to Hub's console at `HUB_BASE_URL`, and the code is redeemed there.
+   */
+  HUB_SIGNIN_ORIGIN: z.url({ protocol: /^https?$/ }).optional(),
+  /** The client's name at Hub (its capability is `signin:<name>`). */
+  HUB_SIGNIN_CLIENT: z
+    .string()
+    .regex(/^[a-z][a-z0-9_-]{0,63}$/)
+    .default('contentops'),
+  /** A Hub agent key with `signin:<client>`; empty — `HUB_API_KEY` carries it. */
+  HUB_SIGNIN_KEY: z.string().optional(),
+  /**
+   * Login of the ContentOps owner whom Hub's owner signs in as: linked at the first sign-in
+   * through the hub (`principals.hub_user_id`). Nobody else is linked by configuration.
+   */
+  HUB_SIGNIN_OWNER: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9._-]*$/)
+    .optional(),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   /**

@@ -11078,6 +11078,18 @@
           "password"
         ]
       },
+      "SignInMethods": {
+        "type": "object",
+        "properties": {
+          "hub": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hub"
+        ],
+        "additionalProperties": false
+      },
       "SignInResult": {
         "type": "object",
         "properties": {
@@ -22262,6 +22274,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AiSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/methods": {
+      "get": {
+        "operationId": "auth.signInMethods",
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInMethods"
                 }
               }
             }

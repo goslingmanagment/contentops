@@ -2254,8 +2254,13 @@ CREATE TABLE public.principals (
     disabled_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     row_version bigint DEFAULT 1 NOT NULL,
+    hub_user_id bigint,
+    hub_login text,
     CONSTRAINT principals_gender_check CHECK ((gender = ANY (ARRAY['f'::text, 'm'::text]))),
     CONSTRAINT principals_gender_of_humans CHECK (((gender IS NOT NULL) OR (kind = 'agent'::text))),
+    CONSTRAINT principals_hub_link_humans_only CHECK (((hub_user_id IS NULL) OR (kind = 'human'::text))),
+    CONSTRAINT principals_hub_login_with_link CHECK (((hub_login IS NULL) OR (hub_user_id IS NOT NULL))),
+    CONSTRAINT principals_hub_user_id_positive CHECK ((hub_user_id > 0)),
     CONSTRAINT principals_kind_check CHECK ((kind = ANY (ARRAY['human'::text, 'agent'::text]))),
     CONSTRAINT principals_login_format CHECK ((login ~ '^[a-z0-9][a-z0-9._-]*$'::text)),
     CONSTRAINT principals_password_humans_only CHECK (((password_hash IS NULL) OR (kind = 'human'::text))),
@@ -2375,6 +2380,9 @@ CREATE TABLE public.sessions (
     last_seen_at timestamp with time zone,
     revoked_at timestamp with time zone,
     replaced_by_id uuid,
+    hub_grant text,
+    hub_checked_at timestamp with time zone,
+    CONSTRAINT sessions_hub_checked_with_grant CHECK (((hub_checked_at IS NULL) OR (hub_grant IS NOT NULL))),
     CONSTRAINT sessions_token_hash_sha256 CHECK ((octet_length(token_hash) = 32))
 );
 
@@ -2799,6 +2807,9 @@ ALTER TABLE ONLY public.ppv_releases
 
 ALTER TABLE ONLY public.principal_grants
     ADD CONSTRAINT principal_grants_pkey PRIMARY KEY (model_id, id);
+
+ALTER TABLE ONLY public.principals
+    ADD CONSTRAINT principals_hub_user_id_key UNIQUE (hub_user_id);
 
 ALTER TABLE ONLY public.principals
     ADD CONSTRAINT principals_login_key UNIQUE (login);

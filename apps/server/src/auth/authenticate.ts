@@ -4,7 +4,8 @@ import { sql } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
 import type { Actor, Authenticate } from '../context'
 import { parseCookies } from '../context'
-import { SESSION_COOKIE, sha256 } from './secrets'
+import type { HubSessions } from './hub-signin'
+import { SESSION_COOKIE, sessionDigest, sha256 } from './secrets'
 
 interface PrincipalRow extends Record<string, unknown> {
   id: string
@@ -12,6 +13,14 @@ interface PrincipalRow extends Record<string, unknown> {
   display_name: string
   gender: 'f' | 'm' | null
   credential_id: string
+}
+
+interface SessionRow extends PrincipalRow {
+  login: string
+  hub_user_id: string | null
+  /** A session opened through the hub; null — by password. */
+  hub_grant: string | null
+  hub_checked_ms: number | null
 }
 
 /** `last_seen_at` and `last_used_at` move at most this often: a mark, not a log. */
@@ -53,11 +62,13 @@ async function agentByToken(db: Db, token: string): Promise<PrincipalRow | undef
   return row
 }
 
-async function personBySession(db: Db, token: string): Promise<PrincipalRow | undefined> {
-  const { rows } = await db.execute<PrincipalRow>(sql`
-    SELECT p.id, p.role, p.display_name, p.gender, s.id AS credential_id
+async function personBySession(db: Db, token: string): Promise<SessionRow | undefined> {
+  const { rows } = await db.execute<SessionRow>(sql`
+    SELECT p.id, p.role, p.display_name, p.gender, s.id AS credential_id, p.login,
+           p.hub_user_id::text AS hub_user_id, s.hub_grant,
+           (extract(epoch FROM s.hub_checked_at) * 1000)::float8 AS hub_checked_ms
       FROM sessions s JOIN principals p ON p.id = s.principal_id
-     WHERE s.token_hash = ${sha256(token)}
+     WHERE s.token_hash = ${sessionDigest(token)}
        AND s.revoked_at IS NULL AND s.expires_at > now()
        AND p.kind = 'human' AND p.disabled_at IS NULL`)
   const row = rows[0]
@@ -72,9 +83,11 @@ async function personBySession(db: Db, token: string): Promise<PrincipalRow | un
 /**
  * The caller of a request (SPEC §11.1, §12.0): `Authorization: Bearer` for agents, the
  * session cookie for people. Revoked or expired credentials and disabled principals give
- * `null`, that is 401; rights are read on every request, so a revoke acts at once.
+ * `null`, that is 401; rights are read on every request, so a revoke acts at once. A session
+ * opened through the hub also needs the hub's «still signed in» (`hubSessions`); without the
+ * hub sign-in configured such a session is refused.
  */
-export function createAuthenticate(db: Db): Authenticate {
+export function createAuthenticate(db: Db, hubSessions: HubSessions | null = null): Authenticate {
   return async (request) => {
     const bearer = bearerOf(request)
     if (bearer !== undefined) {
@@ -85,7 +98,24 @@ export function createAuthenticate(db: Db): Authenticate {
     const token = parseCookies(request.headers.cookie)[SESSION_COOKIE]
     if (!token) return null
     const person = await personBySession(db, token)
-    return person ? actorOf(db, 'person', person) : null
+    if (!person) return null
+    if (person.hub_grant !== null) {
+      const alive = hubSessions
+        ? await hubSessions.stillSignedIn(
+            {
+              sessionId: person.credential_id,
+              principalId: person.id,
+              login: person.login,
+              hubUserId: person.hub_user_id,
+              grant: person.hub_grant,
+              checkedAtMs: person.hub_checked_ms,
+            },
+            request,
+          )
+        : false
+      if (!alive) return null
+    }
+    return actorOf(db, 'person', person)
   }
 }
 

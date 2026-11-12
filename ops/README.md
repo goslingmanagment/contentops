@@ -167,6 +167,30 @@
 - Проверка: `curl -fsS https://contentops.gosling-agency.ru/healthz`. Закрыть адрес — убрать
   блок и `systemctl reload caddy`.
 
+## Вход через хаб
+
+На публичном адресе экран входа предлагает «Войти через хаб» (SPEC §11.1): кто вошёл в Agency
+Hub, открывает ContentOps без второго пароля. Пароль остаётся ниже; на адресах VPN и tailnet —
+только пароль. Caddy передаёт имя `contentops.gosling-agency.ru` в `Host`, nginx стека ведёт
+`/auth/hub/` в `web` (`ops/nginx/contentops.conf`).
+
+- В Hub: у ключа ContentOps (тот, что в `HUB_API_KEY`) — право `signin:contentops`, либо
+  отдельный ключ с этим правом в `HUB_SIGNIN_KEY`. В Hub адрес возврата ContentOps —
+  `https://contentops.gosling-agency.ru/auth/hub/callback` (`WEB_SIGNIN_CLIENTS` Hub, по
+  умолчанию уже он).
+- В `/opt/contentops/.env`: `HUB_SIGNIN_ORIGIN=https://contentops.gosling-agency.ru`,
+  `HUB_SIGNIN_OWNER=<логин владельца в ContentOps>`; `HUB_BASE_URL` — имя консоли хаба
+  (`https://hub.gosling-agency.ru`): туда уходит браузер, там же обменивается код. Затем
+  `ops/up.sh`. В логе `web` при старте — `hub sign-in offered`.
+- Связь людей: владелец хаба при первом входе через хаб связывается с владельцем ContentOps из
+  `HUB_SIGNIN_OWNER` (запись в журнале «Вход через хаб: …»). Других людей конфигурация не
+  связывает: у них «У вас нет доступа к ContentOps. Попросите владельца».
+- Сессия через хаб раз в минуту спрашивает хаб, вошёл ли человек; вышел или отозван там —
+  сессия здесь закрыта. Хаб не отвечает (выкатка, сеть) — до 30 мин держится последний ответ,
+  дальше отказ, пока хаб не ответит; пароль работает всегда.
+- Выключить — убрать `HUB_SIGNIN_ORIGIN` и `ops/up.sh`: кнопка пропадёт, сессии через хаб
+  перестанут приниматься, парольные останутся.
+
 ## Стек и выкатка
 
 - Стек — один Compose (SPEC §12.1): `db` (PostgreSQL 18.6), одноразовый `migrate`, `web`,

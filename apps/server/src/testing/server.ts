@@ -1,6 +1,7 @@
 import { bootstrap, createDb, createPool, type Db } from '@contentops/db'
 import { createTestDatabase, type TestDatabase } from '@contentops/db/testing'
 import type { InjectOptions, LightMyRequestResponse } from 'fastify'
+import type { HubSigninSetup } from '../auth/hub-signin'
 import { createLogger } from '../logger'
 import type { BlobStore } from '../media/storage'
 import { tempStore } from '../media/testing'
@@ -58,7 +59,7 @@ export interface TestServer {
 
 /** The `web` role on a fresh database of its own, after bootstrap. */
 export async function testServer(
-  options: { secrets?: IntegrationSecrets; filesDirect?: boolean } = {},
+  options: { secrets?: IntegrationSecrets; filesDirect?: boolean; hubSignin?: HubSigninSetup } = {},
 ): Promise<TestServer> {
   const database = await createTestDatabase()
   const pool = createPool(database.url(), { max: 20 })
@@ -73,6 +74,7 @@ export async function testServer(
     logger: createLogger({ level: process.env.TEST_LOG === '1' ? 'error' : 'silent' }),
     storage: store.roots,
     ...(options.filesDirect ? { filesDirect: true } : {}),
+    ...(options.hubSignin ? { hubSignin: options.hubSignin } : {}),
   })
   await app.ready()
   return {

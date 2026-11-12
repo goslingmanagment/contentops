@@ -94,6 +94,11 @@ services:
       DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET:-}
       HUB_BASE_URL: ${HUB_BASE_URL:-}
       HUB_API_KEY: ${HUB_API_KEY:-}
+      # «Войти через хаб» (SPEC §11.1): only `web` takes part.
+      HUB_SIGNIN_ORIGIN: ${HUB_SIGNIN_ORIGIN:-}
+      HUB_SIGNIN_CLIENT: ${HUB_SIGNIN_CLIENT:-contentops}
+      HUB_SIGNIN_KEY: ${HUB_SIGNIN_KEY:-}
+      HUB_SIGNIN_OWNER: ${HUB_SIGNIN_OWNER:-}
     volumes:
       - ${DATA_ROOT:-/srv/content}:/srv/content
       - ${DERIVED_ROOT:-/srv/derived}:/srv/derived

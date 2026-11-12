@@ -9,7 +9,7 @@ import {
   SESSION_COOKIE,
   SESSION_DAYS,
   sessionCookie,
-  sha256,
+  sessionDigest,
 } from '../auth/secrets'
 import { ADDRESS_RULE, LOGIN_RULE, Throttle } from '../auth/throttle'
 import { instant, requireActor } from '../commands'
@@ -54,17 +54,19 @@ interface SessionRow extends Record<string, unknown> {
   user_agent: string | null
   created_at: string
   last_seen_at: string | null
+  via_hub: boolean
 }
 
 async function liveSessions(services: Services, ctx: RequestContext): Promise<Session[]> {
   const actor = requireActor(ctx)
   const { rows } = await services.db.execute<SessionRow>(sql`
-    SELECT id, user_agent, created_at, last_seen_at FROM sessions
+    SELECT id, user_agent, created_at, last_seen_at, hub_grant IS NOT NULL AS via_hub
+      FROM sessions
      WHERE principal_id = ${actor.id}::uuid AND revoked_at IS NULL AND expires_at > now()
      ORDER BY coalesce(last_seen_at, created_at) DESC, id DESC`)
   const sessions = rows.map((row) => ({
     id: row.id,
-    device: deviceOf(row.user_agent),
+    device: `${deviceOf(row.user_agent)}${row.via_hub ? ' · через хаб' : ''}`,
     last_seen_at: instant(row.last_seen_at ?? row.created_at),
     current: row.id === actor.sessionId,
   }))
@@ -81,6 +83,9 @@ export function authHandlers(services: Services): HandlerRegistry {
 
   return {
     auth: {
+      /** «Войти через хаб» on this name (SPEC §11.1): only the public name, when configured. */
+      signInMethods: ({ ctx }) => ({ hub: services.hubSignin?.offeredAt(ctx.host) ?? false }),
+
       /** No `Idempotency-Key` (SPEC §11.2): a double click must not answer 409. */
       signIn: async ({ body, ctx }) => {
         const login = body.login.trim().toLowerCase()
@@ -125,7 +130,7 @@ export function authHandlers(services: Services): HandlerRegistry {
           async (tx) => {
             const { rows: created } = await tx.execute<{ id: string }>(sql`
             INSERT INTO sessions (principal_id, token_hash, user_agent, expires_at)
-            VALUES (${row.id}::uuid, ${sha256(token)}, ${ctx.userAgent},
+            VALUES (${row.id}::uuid, ${sessionDigest(token)}, ${ctx.userAgent},
                     now() + ${`${SESSION_DAYS} days`}::interval)
             RETURNING id`)
             const session = created[0]
@@ -134,7 +139,7 @@ export function authHandlers(services: Services): HandlerRegistry {
             if (previous) {
               await tx.execute(sql`
               UPDATE sessions SET revoked_at = now(), replaced_by_id = ${session.id}::uuid
-               WHERE token_hash = ${sha256(previous)} AND principal_id = ${row.id}::uuid
+               WHERE token_hash = ${sessionDigest(previous)} AND principal_id = ${row.id}::uuid
                  AND revoked_at IS NULL`)
             }
             await logAction(tx, {
@@ -199,7 +204,7 @@ export function authHandlers(services: Services): HandlerRegistry {
             UPDATE sessions SET revoked_at = now()
              WHERE id::text = ${params.session} AND principal_id = ${actor.id}::uuid
                AND revoked_at IS NULL AND expires_at > now()
-            RETURNING id, user_agent, created_at, last_seen_at`)
+            RETURNING id, user_agent, created_at, last_seen_at, hub_grant IS NOT NULL AS via_hub`)
           const session = rows[0]
           if (!session) throw new ApiProblem('not_found', 'Такой сессии нет')
           await logAction(tx, {

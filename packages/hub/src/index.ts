@@ -1,7 +1,8 @@
 /**
  * Client of the Agency Hub agent API for ContentOps (SPEC §7, §8.1; PLAN 5, 5б): datasets
  * with the pinned field list checked against `capabilities`, the poll windows, and
- * publication through Hub. A pure client: no database, no clock of its own.
+ * publication through Hub, and the server half of «Войти через хаб». A pure client: no
+ * database, no clock of its own.
  */
 export {
   type CapabilityCheck,
@@ -90,3 +91,14 @@ export {
   type UploadResult,
 } from './publications.ts'
 export { backoffDelay, DEFAULT_RETRY, type RetryPolicy, withRetry } from './retry.ts'
+export {
+  createHubSignin,
+  type HubCheck,
+  type HubRedeemed,
+  type HubRole,
+  type HubSignin,
+  type HubSigninOptions,
+  type HubSigninPerson,
+  type HubSigninUser,
+  isSpentCode,
+} from './signin.ts'
