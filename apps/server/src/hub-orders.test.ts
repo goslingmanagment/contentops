@@ -384,6 +384,30 @@ describe('the hub orders of a model', () => {
     })
   })
 
+  it('a file uploaded through the web dates its delivery by the upload, not by the day its custom was made', async () => {
+    // The custom is ten days old; its corrected file came through the web today (no disk revision).
+    const created = new Date(Date.now() - 10 * 86_400_000).toISOString()
+    const [item] = await createCatalogItems(server.db, 'lora', [
+      {
+        type: 'custom',
+        title: 'исправленный файл',
+        createdAt: created,
+        files: [{ role: 'master', durationS: 300 }],
+      },
+    ])
+    if (!item) throw new Error('no item')
+    hub.orders.set('K-17', hubOrder(17))
+    await run()
+    const linked = await link('K-17', { item_id: item.id })
+    expect(linked.statusCode, linked.body).toBe(201)
+    await run()
+    const report = hub.reports.findLast((one) => one.code === 'K-17')
+    const body = (report?.body ?? {}) as { message?: { at?: string } }
+    const at = Date.parse(String(body.message?.at))
+    // Before the fix the delivery carried the custom's creation day and the hub read it as older than a revision request.
+    expect(Date.now() - at).toBeLessThan(3_600_000)
+  })
+
   it('a retraction is its own event in the hub: the delivery is taken back there', async () => {
     const k2 = await custom({ video: true })
     const second = HubOrderSchema.parse((await link('K-2', { item_id: k2 })).json())
