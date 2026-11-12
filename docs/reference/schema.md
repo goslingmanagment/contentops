@@ -141,7 +141,9 @@ UNIQUE `(account_id, kind)`; UNIQUE
 (UNIQUE), `display_name`, `gender` (`f | m`; форма глагола в ленте: «отметила»; у агента
 может быть пусто), `role` (`owner | manager | reader`), `password_hash`
 (argon2; CHECK только у людей), `ui_skin` (`blue | focus`, по умолчанию `blue`; вид
-интерфейса, DESIGN §7.10), `disabled_at`, `created_at`, `row_version`.
+интерфейса, DESIGN §7.10), `disabled_at`, `created_at`, `row_version`; связь с человеком
+Agency Hub для «Войти через хаб» (SPEC §11.1, `0020_hub_signin`): `hub_user_id` (id в хабе,
+UNIQUE, только у людей) и `hub_login` (логин в хабе для показа).
 
 **`principal_grants`** — область прав (§11.1): права на модель, прав на страницу нет.
 `id`, `principal_id`, `model_id`, `granted_at`, `granted_by`, `revoked_at`.
@@ -150,7 +152,9 @@ UNIQUE `(account_id, kind)`; UNIQUE
 
 **`sessions`** — парольные сессии людей, 30 дней (§12.0): `id`, `principal_id`,
 `token_hash` (UNIQUE), `user_agent`, `created_at`, `expires_at`, `last_seen_at`, `revoked_at`,
-`replaced_by_id`. **`api_tokens`** — токены агентов: `id`, `principal_id`, `name`,
+`replaced_by_id`; у сессии, открытой через хаб, — `hub_grant` (непрозрачный ответ хаба для
+повторной проверки) и `hub_checked_at` (последнее «вошёл» от хаба), её токен — с префиксом
+`hub.` и своим видом хэша (SPEC §11.1). **`api_tokens`** — токены агентов: `id`, `principal_id`, `name`,
 `token_hash` (UNIQUE), `token_prefix`, `created_at`, `expires_at`, `revoked_at`,
 `last_used_at`.
 
@@ -1714,6 +1718,7 @@ LLM.
 | 8 (8а, 07.11.2026) | `0017_annotation` | `annotation_runs`, `annotation_suggestions` (2); nullable-ссылки и FK на запуски из полей, хронологии и текстов |
 | после 8а (11.11.2026) | `0018_custom_copies` | таблиц нет: вид `custom_copy` в `review_cases` — «Копии кастомов» (SPEC §6.2) |
 | 5б (11.11.2026) | `0019_week_approval` | таблиц нет: «Утвердить неделю» — `posting_plan_rows.approved_at/by/version` (схема §3.5, SPEC §7) |
+| после 5б (12.11.2026) | `0020_hub_signin` | таблиц нет: «Войти через хаб» — `principals.hub_user_id/hub_login`, `sessions.hub_grant/hub_checked_at` (SPEC §11.1) |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
 Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего

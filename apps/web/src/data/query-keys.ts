@@ -6,6 +6,7 @@ import type { ModelCode } from '@contentops/contracts'
  */
 export const queryKeys = {
   session: () => ['session'] as const,
+  signInMethods: () => ['sign-in-methods'] as const,
   models: () => ['models'] as const,
   counters: () => ['counters'] as const,
   integrations: () => ['integrations'] as const,

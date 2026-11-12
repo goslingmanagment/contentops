@@ -36,6 +36,10 @@ export type PersonCreated = z.infer<typeof PersonCreatedSchema>
 export const SignInResultSchema = z.object({ person: PersonSchema })
 export type SignInResult = z.infer<typeof SignInResultSchema>
 
+/** What the sign-in screen offers on this address (SPEC §11.1): «Войти через хаб» or not. */
+export const SignInMethodsSchema = z.object({ hub: z.boolean() })
+export type SignInMethods = z.infer<typeof SignInMethodsSchema>
+
 /** What an AI service is allowed to do (DESIGN §4.20). */
 export const AiTaskSchema = z.enum(['markup', 'timeline', 'texts', 'frames'])
 export type AiTask = z.infer<typeof AiTaskSchema>

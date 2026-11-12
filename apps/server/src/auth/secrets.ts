@@ -12,6 +12,19 @@ export function sha256(text: string): Buffer {
   return createHash('sha256').update(text, 'utf8').digest()
 }
 
+/**
+ * A session opened through the hub (SPEC §11.1) has a token of its own form: this prefix (a
+ * dot never occurs in `newSecret`) and a digest under its own label. An image without the
+ * hub's re-check finds no row for such a token, so after a rollback it cannot outlive the
+ * person's sign-out at the hub.
+ */
+export const HUB_SESSION_PREFIX = 'hub.'
+
+/** What `sessions.token_hash` holds for a session cookie. */
+export function sessionDigest(token: string): Buffer {
+  return token.startsWith(HUB_SESSION_PREFIX) ? sha256(`hub-session\n${token}`) : sha256(token)
+}
+
 /** 32 random bytes, URL-safe: a session token or the secret of an agent token. */
 export function newSecret(prefix = ''): string {
   return `${prefix}${randomBytes(32).toString('base64url')}`

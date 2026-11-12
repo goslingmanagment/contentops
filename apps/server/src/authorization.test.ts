@@ -77,19 +77,21 @@ describe('every route of the table', () => {
     for (const { key, route } of ROUTES) expect(accessOf(key, route)).toBeTruthy()
   })
 
-  it.each(ROUTES.filter(({ key }) => key !== 'auth.signIn').map((entry) => [entry.key, entry]))(
-    '%s: without a session → 401',
-    async (_key, { route }) => {
-      const response = await call(server.app, {
-        method: route.method,
-        url: urlOf(route, 'lora'),
-        key: newKey(),
-        body: route.method === 'GET' ? undefined : {},
-      })
-      expect(response.statusCode).toBe(401)
-      expect(ApiErrorBodySchema.parse(response.json()).code).toBe('unauthenticated')
-    },
-  )
+  it.each(
+    ROUTES.filter(({ key, route }) => accessOf(key, route) !== 'public').map((entry) => [
+      entry.key,
+      entry,
+    ]),
+  )('%s: without a session → 401', async (_key, { route }) => {
+    const response = await call(server.app, {
+      method: route.method,
+      url: urlOf(route, 'lora'),
+      key: newKey(),
+      body: route.method === 'GET' ? undefined : {},
+    })
+    expect(response.statusCode).toBe(401)
+    expect(ApiErrorBodySchema.parse(response.json()).code).toBe('unauthenticated')
+  })
 
   it.each(underModel.map((entry) => [entry.key, entry]))(
     '%s: a manager of another model → 403',

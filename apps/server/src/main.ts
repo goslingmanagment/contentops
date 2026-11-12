@@ -9,10 +9,12 @@ import {
   WorkRunner,
   WorkScheduler,
 } from '@contentops/db'
+import { createHubSignin } from '@contentops/hub'
 import type { ToolVersions } from '@contentops/media'
 import type { Logger } from 'pino'
 import { configuredProviders, envProviders } from './annotation/providers'
 import { annotateHandler } from './annotation/work'
+import type { HubSigninSetup } from './auth/hub-signin'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
 import { hubHistoryHandler } from './hub/match/auto'
@@ -74,6 +76,29 @@ function required(value: string | undefined, name: string): string {
   return value
 }
 
+/**
+ * «Войти через хаб» (SPEC §11.1): its own name, Hub's console and a key with `signin:<client>`
+ * (`HUB_SIGNIN_KEY`, or `HUB_API_KEY` carries the capability). Without one of them — the
+ * password only, as before.
+ */
+function hubSigninOf(config: Config, logger: Logger): HubSigninSetup | undefined {
+  const key = config.HUB_SIGNIN_KEY ?? config.HUB_API_KEY
+  if (!config.HUB_SIGNIN_ORIGIN || !config.HUB_BASE_URL || !key) return undefined
+  logger.info(
+    {
+      origin: config.HUB_SIGNIN_ORIGIN,
+      client: config.HUB_SIGNIN_CLIENT,
+      owner_linked_by_config: config.HUB_SIGNIN_OWNER !== undefined,
+    },
+    'hub sign-in offered',
+  )
+  return {
+    hub: createHubSignin({ baseUrl: config.HUB_BASE_URL, key, client: config.HUB_SIGNIN_CLIENT }),
+    origin: config.HUB_SIGNIN_ORIGIN,
+    ownerLogin: config.HUB_SIGNIN_OWNER ?? null,
+  }
+}
+
 async function runWeb(config: Config, logger: Logger): Promise<void> {
   const pool = createPool(required(config.DATABASE_URL, 'DATABASE_URL'), {
     applicationName: 'web',
@@ -87,6 +112,7 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     derivedRoot: required(config.DERIVED_ROOT, 'DERIVED_ROOT'),
     tmpRoot: required(config.TMP_ROOT, 'TMP_ROOT'),
   }
+  const hubSignin = hubSigninOf(config, logger)
   const app = buildServer({
     db,
     publicUrl: required(config.PUBLIC_URL, 'PUBLIC_URL'),
@@ -103,6 +129,7 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     requireVolumes: config.REQUIRE_VOLUMES,
     storage,
     filesDirect: config.FILES_DIRECT,
+    ...(hubSignin ? { hubSignin } : {}),
   })
   app.addHook('onClose', () => pool.end())
   onStop(logger, () => app.close())

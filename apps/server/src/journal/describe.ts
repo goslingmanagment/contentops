@@ -60,6 +60,7 @@ const downloadTail = (after: Map<string, string>) => {
 
 const WORDING: Record<string, Wording> = {
   'auth.signIn': { verb: 'выполнил', rest: 'вход', noun: 'вход' },
+  'auth.hubSignIn': { verb: 'выполнил', rest: 'вход через хаб', noun: 'вход через хаб' },
   'auth.signOutEverywhere': {
     verb: 'завершил',
     rest: 'все свои сессии',
@@ -723,6 +724,10 @@ const SYSTEM_PHRASE: Record<string, (row: LogRow, after: Map<string, string>) =>
   'hub.history.enqueue': (row) => `Проход по истории Hub поставлен в очередь: ${row.subject_label}`,
   'hub.match': (row) => `Автосверка Hub: ${row.subject_label}`,
   'hub.publish.checks': (row) => `Проверки публикации Hub: ${row.subject_label}`,
+  'auth.hubLink': (row, after) =>
+    `Вход через хаб: ${row.subject_label} — это «${after.get('Хаб') ?? '?'}» в хабе`,
+  'auth.hubSessionEnded': (row, after) =>
+    `Сессия через хаб закрыта: ${row.subject_label}${after.get('Причина') ? ` · ${after.get('Причина')}` : ''}`,
   'policy.ops': (row) => `Из консоли ВМ задано: ${row.subject_label}`,
   'integration.ops': (row) => `Из консоли ВМ переключено: ${row.subject_label}`,
   'agent.ops': (row, after) =>
@@ -760,6 +765,9 @@ export function describeEvent(row: LogRow): Pick<JournalEvent, 'phrase' | 'chang
   const actor = actorOf(row)
   if (row.result !== 'ok' && row.action === 'auth.signIn') {
     return { phrase: `Вход не удался: ${row.subject_label}`, changes: [] }
+  }
+  if (row.result !== 'ok' && row.action === 'auth.hubSignIn') {
+    return { phrase: `Вход через хаб: нет доступа — ${row.subject_label}`, changes: [] }
   }
   if (row.result !== 'ok') {
     const word = row.result === 'denied' ? 'отказ' : 'ошибка'

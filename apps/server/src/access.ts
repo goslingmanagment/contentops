@@ -13,6 +13,7 @@ export type Access = 'public' | 'signed' | 'human' | 'staff' | 'owner'
 
 const ROUTE_ACCESS: Record<string, Access> = {
   'auth.signIn': 'public',
+  'auth.signInMethods': 'public',
   // A person's own session and profile; agents have neither.
   'auth.signOutEverywhere': 'human',
   'admin.me': 'human',

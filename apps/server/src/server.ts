@@ -4,6 +4,7 @@ import type { Logger } from 'pino'
 import { createAuthorize } from './access'
 import { type AppDeps, buildApp } from './app'
 import { createAuthenticate } from './auth/authenticate'
+import { createHubSigninService, type HubSigninSetup, registerHubSignin } from './auth/hub-signin'
 import { createCommands, createFailureRecorder } from './commands'
 import { createHandlers } from './handlers/index'
 import { envSourceFactory } from './intake/source-client'
@@ -30,21 +31,25 @@ export interface ServerOptions {
   storage: StorageRoots
   /** `FILES_DIRECT=1`: stream files from `web` (development without nginx). */
   filesDirect?: boolean
+  /** «Войти через хаб» (`HUB_SIGNIN_*`); absent — the password only. */
+  hubSignin?: HubSigninSetup
 }
 
 /** The `web` role: the table routes on the database, sessions, rights and the journal. */
 export function buildServer(options: ServerOptions) {
   const { db } = options
+  const hubSignin = options.hubSignin ? createHubSigninService(db, options.hubSignin) : null
   const services = {
     db,
     command: createCommands(db),
+    hubSignin,
     secureCookies: options.publicUrl.startsWith('https:'),
     secrets: options.secrets,
     sourceEnv: options.sourceEnv ?? process.env,
     space: options.space ?? { file: undefined, ...PILOT_SPACE },
     store: new BlobStore(options.storage),
   }
-  const authenticate = createAuthenticate(db)
+  const authenticate = createAuthenticate(db, hubSignin)
   const authorize = createAuthorize(db)
   const deps: AppDeps = {
     handlers: createHandlers(services),
@@ -57,6 +62,7 @@ export function buildServer(options: ServerOptions) {
         cacheDir: options.storage.tmpRoot,
       })
       registerTus(api, { db, authenticate, authorize, dataRoot: services.store.roots.dataRoot })
+      registerHubSignin(api, { db, service: hubSignin, secureCookies: services.secureCookies })
     },
     authorize,
     recordFailure: createFailureRecorder(db),

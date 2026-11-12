@@ -23,6 +23,7 @@ import {
   AiSettingsSchema,
   PersonCreatedSchema,
   SessionSchema,
+  SignInMethodsSchema,
   SignInResultSchema,
 } from '../../domain/admin'
 import { AgentSchema } from '../../domain/agents'
@@ -199,6 +200,12 @@ export const settingsRoutes = {
 
 /** Sign-in and sign-out; every other route answers 401 until the person signs in (§3.10). */
 export const authRoutes = {
+  /** Before sign-in: whether this address offers «Войти через хаб» (`/auth/hub/start`). */
+  signInMethods: defineRoute({
+    method: 'GET',
+    path: '/api/v1/auth/methods',
+    response: SignInMethodsSchema,
+  }),
   signIn: defineRoute({
     method: 'POST',
     path: '/api/v1/auth/sign-in',

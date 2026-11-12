@@ -1,4 +1,5 @@
 import type { Db } from '@contentops/db'
+import type { HubSigninService } from './auth/hub-signin'
 import type { RunCommand } from './commands'
 import type { BlobStore } from './media/storage'
 import type { SpaceOptions } from './space'
@@ -24,4 +25,6 @@ export interface Services {
   space: SpaceOptions
   /** Storage roots: bytes go out by `X-Accel-Redirect` to their keys. */
   store: BlobStore
+  /** «Войти через хаб» (SPEC §11.1); absent — not configured. */
+  hubSignin?: HubSigninService | null
 }

@@ -11,6 +11,37 @@ const tsvector = customType<{ data: string; driverData: string }>({ dataType: ()
 
 
 
+export const principals = pgTable("principals", {
+	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
+	kind: text().notNull(),
+	login: text().notNull(),
+	displayName: text("display_name").notNull(),
+	gender: text(),
+	role: text().notNull(),
+	passwordHash: text("password_hash"),
+	uiSkin: text("ui_skin").default('blue').notNull(),
+	disabledAt: timestamp("disabled_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	hubUserId: bigint("hub_user_id", { mode: "number" }),
+	hubLogin: text("hub_login"),
+}, (table): PgTableExtraConfigValue[] => [
+	unique("principals_login_key").on(table.login),
+	unique("principals_hub_user_id_key").on(table.hubUserId),
+	check("principals_kind_check", sql`kind = ANY (ARRAY['human'::text, 'agent'::text])`),
+	check("principals_login_format", sql`login ~ '^[a-z0-9][a-z0-9._-]*$'::text`),
+	check("principals_gender_check", sql`gender = ANY (ARRAY['f'::text, 'm'::text])`),
+	check("principals_role_check", sql`role = ANY (ARRAY['owner'::text, 'manager'::text, 'reader'::text])`),
+	check("principals_ui_skin_check", sql`ui_skin = ANY (ARRAY['blue'::text, 'focus'::text])`),
+	check("principals_password_humans_only", sql`(password_hash IS NULL) OR (kind = 'human'::text)`),
+	check("principals_gender_of_humans", sql`(gender IS NOT NULL) OR (kind = 'agent'::text)`),
+	check("principals_hub_user_id_positive", sql`hub_user_id > 0`),
+	check("principals_hub_link_humans_only", sql`(hub_user_id IS NULL) OR (kind = 'human'::text)`),
+	check("principals_hub_login_with_link", sql`(hub_login IS NULL) OR (hub_user_id IS NOT NULL)`),
+]);
+
 export const models = pgTable("models", {
 	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
 	code: text().notNull(),
@@ -25,55 +56,6 @@ export const models = pgTable("models", {
 	unique("models_code_key").on(table.code),
 	check("models_code_format", sql`code ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'::text`),
 	check("models_code_reserved", sql`code <> ALL (ARRAY['admin'::text, 'auth'::text])`),
-]);
-
-export const principals = pgTable("principals", {
-	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
-	kind: text().notNull(),
-	login: text().notNull(),
-	displayName: text("display_name").notNull(),
-	gender: text(),
-	role: text().notNull(),
-	passwordHash: text("password_hash"),
-	uiSkin: text("ui_skin").default('blue').notNull(),
-	disabledAt: timestamp("disabled_at", { withTimezone: true, mode: 'string' }),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
-}, (table): PgTableExtraConfigValue[] => [
-	unique("principals_login_key").on(table.login),
-	check("principals_kind_check", sql`kind = ANY (ARRAY['human'::text, 'agent'::text])`),
-	check("principals_login_format", sql`login ~ '^[a-z0-9][a-z0-9._-]*$'::text`),
-	check("principals_gender_check", sql`gender = ANY (ARRAY['f'::text, 'm'::text])`),
-	check("principals_role_check", sql`role = ANY (ARRAY['owner'::text, 'manager'::text, 'reader'::text])`),
-	check("principals_ui_skin_check", sql`ui_skin = ANY (ARRAY['blue'::text, 'focus'::text])`),
-	check("principals_password_humans_only", sql`(password_hash IS NULL) OR (kind = 'human'::text)`),
-	check("principals_gender_of_humans", sql`(gender IS NOT NULL) OR (kind = 'agent'::text)`),
-]);
-
-export const sessions = pgTable("sessions", {
-	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
-	principalId: uuid("principal_id").notNull(),
-	tokenHash: bytea("token_hash").notNull(),
-	userAgent: text("user_agent"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
-	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }),
-	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
-	replacedById: uuid("replaced_by_id"),
-}, (table): PgTableExtraConfigValue[] => [
-	foreignKey({
-			columns: [table.principalId],
-			foreignColumns: [principals.id],
-			name: "sessions_principal_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.replacedById],
-			foreignColumns: [table.id],
-			name: "sessions_replaced_by_id_fkey"
-		}).onDelete("restrict"),
-	unique("sessions_token_hash_key").on(table.tokenHash),
-	check("sessions_token_hash_sha256", sql`octet_length(token_hash) = 32`),
 ]);
 
 export const apiTokens = pgTable("api_tokens", {
@@ -518,6 +500,34 @@ export const tags = pgTable("tags", {
 		}).onDelete("restrict"),
 	unique("tags_slug").on(table.modelId, table.slug),
 	check("tags_tag_group_check", sql`tag_group = ANY (ARRAY['action'::text, 'attribute'::text, 'mood'::text])`),
+]);
+
+export const sessions = pgTable("sessions", {
+	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
+	principalId: uuid("principal_id").notNull(),
+	tokenHash: bytea("token_hash").notNull(),
+	userAgent: text("user_agent"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	replacedById: uuid("replaced_by_id"),
+	hubGrant: text("hub_grant"),
+	hubCheckedAt: timestamp("hub_checked_at", { withTimezone: true, mode: 'string' }),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.principalId],
+			foreignColumns: [principals.id],
+			name: "sessions_principal_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.replacedById],
+			foreignColumns: [table.id],
+			name: "sessions_replaced_by_id_fkey"
+		}).onDelete("restrict"),
+	unique("sessions_token_hash_key").on(table.tokenHash),
+	check("sessions_token_hash_sha256", sql`octet_length(token_hash) = 32`),
+	check("sessions_hub_checked_with_grant", sql`(hub_checked_at IS NULL) OR (hub_grant IS NOT NULL)`),
 ]);
 
 export const principalGrants = pgTable("principal_grants", {

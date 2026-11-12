@@ -69,6 +69,8 @@ export interface RequestContext {
   ip: string
   /** The browser came over HTTPS: TLS of its own or `X-Forwarded-Proto` of a trusted proxy. */
   https: boolean
+  /** The name the browser asked for, with its port (`X-Forwarded-Host` of a trusted proxy). */
+  host: string
   userAgent: string | null
   log: FastifyBaseLogger
 }
@@ -154,6 +156,7 @@ export async function createRequestContext(
     },
     ip: request.ip,
     https: request.protocol === 'https',
+    host: request.host,
     userAgent: single(headers['user-agent']) ?? null,
     log: request.log,
   }
