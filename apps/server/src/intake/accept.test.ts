@@ -968,17 +968,28 @@ describe('which order a new custom is (SPEC §8.2, DESIGN §6.1, §6.6)', () => 
     const item = (accepted.json() as { item_id: string; how: string }).item_id
     expect(accepted.json()).toMatchObject({ how: 'delivery' })
     const { rows } = await h.db.execute<{
+      id: string
       code: string
       part: string
       state: string
-      ref: string
+      event: string
+      ref: string | null
     }>(sql`
-      SELECT d.order_code AS code, d.part, r.state, r.body #>> '{message,telegramRef}' AS ref
+      SELECT d.id, d.order_code AS code, d.part, r.state, r.body ->> 'eventRef' AS event,
+             r.body #>> '{message,telegramRef}' AS ref
         FROM hub_order_deliveries d
         JOIN hub_order_reports r ON r.model_id = d.model_id AND r.delivery_id = d.id
        WHERE d.model_id = ${h.modelId}::uuid AND d.order_code = 'K-9001'`)
+    // The hub keeps the delivery by ContentOps' own id; the order's card is no evidence of it.
     expect(rows).toEqual([
-      { code: 'K-9001', part: 'video', state: 'pending', ref: 'tg:7000000001/3/901' },
+      {
+        id: expect.any(String),
+        code: 'K-9001',
+        part: 'video',
+        state: 'pending',
+        event: `contentops:delivery:${rows[0]?.id}`,
+        ref: null,
+      },
     ])
     // The custom's card names its hub order.
     const detail = await call(app, { method: 'GET', url: `/api/v1/lora/i/${item}`, as: owner })
