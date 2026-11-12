@@ -531,6 +531,8 @@ export async function deliveryMessageAt(
  * When the files of a composition came: the oldest of them (an order's own delivery: when the model first sent it),
  * or the newest (`newest`: what a delivery reported to the hub is dated by — a redelivery after a revision keeps
  * older files beside the new one, and the hub reads a delivery older than the revision request as the old round).
+ * A file came when it appeared on the disk; one uploaded through the web has no disk revision and came when its
+ * version was made — never when its custom was created, which may be days before a corrected file.
  */
 export async function sourceTimeOf(
   tx: Tx,
@@ -542,9 +544,9 @@ export async function sourceTimeOf(
   const edge = pick === 'newest' ? sql`max` : sql`min`
   const { rows } = await tx.execute<{ at: string }>(sql`
     SELECT coalesce(
-             (SELECT ${edge}(coalesce(sr.remote_created_at, sr.detected_at))
+             (SELECT ${edge}(coalesce(sr.remote_created_at, sr.detected_at, v.created_at))
                 FROM asset_versions v
-                JOIN source_revisions sr ON sr.model_id = v.model_id AND sr.id = v.source_revision_id
+                LEFT JOIN source_revisions sr ON sr.model_id = v.model_id AND sr.id = v.source_revision_id
                WHERE v.model_id = ${model.id}::uuid AND v.id = ANY(${sql.param([...versionIds])}::uuid[])),
              (SELECT created_at FROM content_items
                WHERE model_id = ${model.id}::uuid AND id = ${itemId}::uuid)
