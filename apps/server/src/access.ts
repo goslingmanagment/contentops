@@ -58,10 +58,10 @@ function forbidden(message: string): ApiProblem {
 export async function agentSwitchedOn(
   db: Db,
   tokenId: string | null,
-  hubAgent: string | null = null,
+  hubAgent: string | null | undefined = null,
 ): Promise<boolean> {
   if (!(await isSwitchOn(db, 'agents.enabled'))) return false
-  if (!tokenId) return hubAgent !== null
+  if (!tokenId) return typeof hubAgent === 'string' && hubAgent !== ''
   const { rows } = await db.execute<{ off: boolean }>(sql`
     SELECT value = 'false'::jsonb AS off FROM policy_settings
      WHERE key = ${`agents.token.${tokenId}`} AND model_id IS NULL`)
