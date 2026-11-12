@@ -226,6 +226,18 @@ export function createHubSigninService(db: Db, setup: HubSigninSetup): HubSignin
     try {
       answer = await setup.hub.check(row.grant)
     } catch (error) {
+      // Only «the hub did not answer» (the network, a 5xx, a timeout, its limit) keeps the last «signed in» for a
+      // while. A refusal (401, 403, 404, a bad request) or an answer that breaks the contract cannot confirm the
+      // sign-in: it ends now, as when the hub says the person is gone.
+      if (!isHubError(error, 'transient') && !isHubError(error, 'rate_limited')) {
+        remember(row.sessionId, { at, ok: false, activeAt })
+        request.log.warn(
+          { err: error, session: row.sessionId },
+          'the hub refused to say whether a person is still signed in: the session ends',
+        )
+        await end(row, request.id, 'хаб не подтвердил вход')
+        return false
+      }
       const ok = at - activeAt < HUB_SILENCE_MS
       remember(row.sessionId, { at, ok, activeAt })
       request.log.warn(
