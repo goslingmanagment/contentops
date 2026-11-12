@@ -132,7 +132,14 @@ export function buildSystemState(): SystemState {
         measured_at: '2026-09-22T11:15:00Z',
       },
     ],
-    backup: { text: 'Бэкапа нет (пилот)', last_full_at: null, last_dump_at: null },
+    backup: {
+      text: 'Копии базы нет',
+      last_full_at: null,
+      last_dump_at: null,
+      dump_where: null,
+      stale_after_hours: 36,
+      uncovered_bytes: null,
+    },
     hub_latency: {
       typical_hours: 3,
       max_hours: 19,

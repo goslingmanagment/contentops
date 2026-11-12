@@ -59,7 +59,9 @@ export function SpaceSection({ disks, backup }: SpaceSectionProps) {
         </SettingsRow>
       ))}
       <SettingsRow label="Бэкап" detail={words.detail}>
-        <span className="text-muted-foreground">{words.value}</span>
+        <span className={words.warning ? 'text-attention-ink' : 'text-muted-foreground'}>
+          {words.value}
+        </span>
       </SettingsRow>
     </SettingsSection>
   )

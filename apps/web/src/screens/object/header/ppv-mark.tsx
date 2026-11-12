@@ -34,7 +34,7 @@ export function PpvMark() {
   }
   // Заказ ещё не сдан или ждёт правку: слово заказа объясняет, почему главная — «Открыть заказ».
   if (!madeAs) {
-    const status = detail.order?.status
+    const status = detail.hub_order?.status ?? detail.order?.status
     return status ? (
       <StatusWord sign={status.sign ?? undefined} className="shrink-0">
         {status.word}

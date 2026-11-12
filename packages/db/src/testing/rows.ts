@@ -505,6 +505,38 @@ export const FACTORIES: Record<string, Factory> = {
       retract_reason: 'не тот заказ',
     }
   },
+  // 0022_hub_orders
+  /** A delivery of the video part of a hub order; with `retracts_id` — a retraction of one. */
+  hub_order_deliveries: async (client, modelId, testing = []) => {
+    const code = `K-${nextNumber()}`
+    const delivery: Row = {
+      model_id: modelId,
+      order_code: code,
+      part: 'video',
+      complete: true,
+      item_id: await idOf(client, 'content_items', modelId),
+      manifest_id: await idOf(client, 'asset_manifests', modelId),
+      delivered_at: new Date().toISOString(),
+    }
+    if (!testing.includes('retracts_id')) return delivery
+    const retracted = await insert(client, 'hub_order_deliveries', delivery)
+    return {
+      model_id: modelId,
+      order_code: code,
+      retracts_id: retracted.id,
+      retract_reason: 'не тот заказ',
+    }
+  },
+  hub_order_reports: async (client, modelId) => {
+    const delivery = await make(client, 'hub_order_deliveries', modelId)
+    return {
+      model_id: modelId,
+      order_code: delivery.order_code,
+      delivery_id: delivery.id,
+      kind: 'delivery',
+      body: { action: 'delivery' },
+    }
+  },
   /** An open revision; with `fixed_delivery_id` — bound to a delivery of its order. */
   custom_order_revisions: async (client, modelId, testing = []) => {
     const fixed = testing.includes('fixed_delivery_id')

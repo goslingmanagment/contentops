@@ -32,6 +32,8 @@ export const queryKeys = {
   orders: (model: ModelCode, tab: 'open' | 'closed' | 'cancelled') =>
     ['model', model, 'orders', tab] as const,
   order: (model: ModelCode, id: string) => ['model', model, 'order', id] as const,
+  hubOrders: (model: ModelCode) => ['model', model, 'hub-orders'] as const,
+  hubOrder: (model: ModelCode, code: string) => ['model', model, 'hub-order', code] as const,
   inbox: (model: ModelCode, view: string) => ['model', model, 'inbox', view] as const,
   inboxGroup: (model: ModelCode, id: string) => ['model', model, 'inbox-group', id] as const,
   inboxAlerts: (model: ModelCode) => ['model', model, 'inbox-alerts'] as const,

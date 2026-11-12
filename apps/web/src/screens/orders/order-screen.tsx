@@ -2,19 +2,27 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { type OrderTab, useOrder } from '@/data/orders'
 import { useCurrentModel } from '@/shell/model/model-context'
+import { HubOrderScreen } from './hub/hub-orders-screen'
 import { OrdersView } from './orders-view'
 
 const routeApi = getRouteApi('/_shell/$model/library/customs/orders/$order')
 
 /**
- * Заказ по своему адресу `/<модель>/library/customs/orders/<id>` (DESIGN §2.4): тот же
- * список с открытой панелью. Сюда ведут ссылки из «Приехало», поиска и объекта; другой
- * заказ открывается заменой адреса, закрытие панели возвращает в список на то же место.
- * «Найти заказ» стоит и здесь: ряд чипов не меняется, слово уходит в адрес списка при
- * закрытии панели.
+ * Заказ по своему адресу `/<модель>/library/customs/orders/<id>`: код Hub `K-12` — заказ
+ * Hub в «Заказах» (пакет N), адрес карточки `tg-…` — заказ ContentOps в архиве.
  */
 export function OrderScreen() {
   const { order } = routeApi.useParams()
+  return /^K-\d+$/.test(order) ? <HubOrderScreen /> : <ArchiveOrderScreen order={order} />
+}
+
+/**
+ * Заказ до Hub по своему адресу (DESIGN §2.4): тот же список архива с открытой панелью.
+ * Сюда ведут ссылки из «Приехало», поиска, объекта и карточки заказа Hub; другой заказ
+ * открывается заменой адреса, закрытие панели возвращает в архив на то же место. «Найти
+ * заказ» стоит и здесь: ряд чипов не меняется, слово уходит в адрес списка при закрытии.
+ */
+function ArchiveOrderScreen({ order }: { order: string }) {
   const model = useCurrentModel().code
   const navigate = useNavigate()
   const scrolled = useRef(0)
@@ -29,7 +37,7 @@ export function OrderScreen() {
       params: { model },
       search: (previous) => ({
         ...previous,
-        view: 'orders' as const,
+        view: 'archive' as const,
         tab: next === 'open' ? undefined : next,
         q: query || undefined,
       }),
@@ -39,6 +47,7 @@ export function OrderScreen() {
 
   return (
     <OrdersView
+      archive
       tab={tab}
       query={query}
       onQueryChange={setQuery}

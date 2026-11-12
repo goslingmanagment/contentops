@@ -7,6 +7,9 @@ const CustomsSectionScreen = lazy(() =>
 const OrdersScreen = lazy(() =>
   import('@/screens/orders').then((screens) => ({ default: screens.OrdersScreen })),
 )
+const HubOrdersScreen = lazy(() =>
+  import('@/screens/orders').then((screens) => ({ default: screens.HubOrdersScreen })),
+)
 const ToPpvScreen = lazy(() =>
   import('@/screens/orders').then((screens) => ({ default: screens.ToPpvScreen })),
 )
@@ -15,15 +18,19 @@ const routeApi = getRouteApi('/_shell/$model/library/customs')
 
 /**
  * Раздел «Кастомы» (DESIGN §4.2, §4.16): одна папка, три вида — плитки раздела, «Заказы»
- * и «Переделка в PPV». Переключатель вида живёт в адресе (`?view=orders`).
+ * и «Переделка в PPV». Переключатель вида живёт в адресе (`?view=orders`). «Заказы» — это
+ * заказы Hub (пакет N, 12.11.2026); заказы ContentOps до Hub — `?view=archive`.
  */
 export function CustomsRoute() {
   const { view } = routeApi.useSearch()
   return (
     <Suspense fallback={null}>
-      {view === 'orders' ? <OrdersScreen /> : null}
+      {view === 'orders' ? <HubOrdersScreen /> : null}
+      {view === 'archive' ? <OrdersScreen /> : null}
       {view === 'to-ppv' ? <ToPpvScreen /> : null}
-      {view !== 'orders' && view !== 'to-ppv' ? <CustomsSectionScreen /> : null}
+      {view !== 'orders' && view !== 'archive' && view !== 'to-ppv' ? (
+        <CustomsSectionScreen />
+      ) : null}
     </Suspense>
   )
 }

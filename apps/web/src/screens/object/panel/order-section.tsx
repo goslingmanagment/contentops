@@ -10,6 +10,7 @@ import { UiLink } from '@contentops/ui/components/ui-link'
 import { ExternalLinkIcon } from 'lucide-react'
 import { useHref } from '@/app/use-href'
 import { useToday } from '@/data/api-session'
+import { useHubOrderList } from '@/data/hub-orders'
 import { useOrder } from '@/data/orders'
 import { StatusLine } from '@/objects/status-line'
 import { useObjectPage } from '../object-context'
@@ -28,7 +29,56 @@ function partText(part: Order['parts'][number]): string {
  */
 export function OrderSection() {
   const { detail } = useObjectPage()
-  return detail.order ? <OrderDetails summary={detail.order} /> : null
+  return (
+    <>
+      {detail.hub_order ? <HubOrderDetails summary={detail.hub_order} /> : null}
+      {detail.order ? <OrderDetails summary={detail.order} /> : null}
+    </>
+  )
+}
+
+/**
+ * Заказ Hub, сдача которого — этот кастом (пакет N): код ссылкой в Hub, что заказано и шаг
+ * Hub; карточка заказа с файлами — в «Заказах» ContentOps.
+ */
+function HubOrderDetails({ summary }: { summary: NonNullable<ItemDetail['hub_order']> }) {
+  const { model } = useObjectPage()
+  const href = useHref()
+  const board = useHubOrderList(model.code).data?.board_url ?? null
+  return (
+    <InfoSection title="Заказ в Hub">
+      <StatusLine
+        sign={summary.status.sign ?? undefined}
+        detail={summary.status.detail ?? undefined}
+      >
+        {summary.status.word}
+      </StatusLine>
+      <p className="flex min-w-0 items-baseline gap-2">
+        {board ? (
+          <a
+            href={`${board}/${summary.code}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex shrink-0 items-center gap-1 text-primary-ink tabular-nums hover:underline"
+          >
+            {summary.code}
+            <ExternalLinkIcon className="size-3.5" />
+          </a>
+        ) : (
+          <span className="shrink-0 tabular-nums">{summary.code}</span>
+        )}
+        <UiLink
+          href={href({
+            to: '/$model/library/customs/orders/$order',
+            params: { model: model.code, order: summary.code },
+          })}
+          className="min-w-0 truncate text-primary-ink hover:underline"
+        >
+          {summary.title}
+        </UiLink>
+      </p>
+    </InfoSection>
+  )
 }
 
 function OrderDetails({ summary }: { summary: NonNullable<ItemDetail['order']> }) {

@@ -30,6 +30,8 @@ import { useOrderUpdate } from './use-order-update'
 interface OrderPanelProps {
   orderId: string
   accounts: readonly Account[]
+  /** Заказ из архива до Hub: только чтение (пакет N). */
+  readOnly?: boolean
   width: PanelFrameWidth
   /** Пункт меню строки, с которым открыт заказ: форма правки или поиск сдачи. */
   intent: OrderPanelIntent | null
@@ -103,6 +105,7 @@ const CANCEL_REASONS = ['возврат', 'отказ фана', 'дубль к�
 function LoadedOrderPanel({
   order,
   accounts,
+  readOnly = false,
   width,
   intent,
   onIntentHandled,
@@ -111,6 +114,7 @@ function LoadedOrderPanel({
   const role = useRole()
   // Закрытый и снятый заказы только читаются: правки и сдачи к ним не добавляются (§5.5).
   const editable =
+    !readOnly &&
     (role === 'owner' || role === 'manager') &&
     order.state !== 'closed' &&
     order.state !== 'cancelled'

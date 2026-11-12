@@ -909,6 +909,82 @@ describe('which order a new custom is (SPEC §8.2, DESIGN §6.1, §6.6)', () => 
     expect(group.candidates).toHaveLength(2)
   })
 
+  it('a custom for a hub order is accepted as its delivery, and the hub hears of it', async () => {
+    // The last read of the hub (package N): one order at the model, its card in a made-up chat.
+    const hubOrder = {
+      id: 9001,
+      code: 'K-9001',
+      pageLabel: null,
+      platform: null,
+      model: null,
+      fan: null,
+      buyer: 'fan_9001',
+      card: { task: 'танец для хаба', wantsVideo: true },
+      what: 'танец для хаба',
+      deadlineOn: null,
+      state: 'at_model',
+      stateAt: '2026-11-01T09:00:00.000Z',
+      stateNote: null,
+      stateRef: null,
+      telegramRefs: ['tg:7000000001/3/901'],
+      contentopsRef: null,
+      overdueDays: null,
+      partsDone: [],
+      openRevisions: 0,
+      version: 1,
+      createdAt: '2026-11-01T09:00:00.000Z',
+      updatedAt: '2026-11-01T09:00:00.000Z',
+      cardText: '📦 Описание заказа · K-9001',
+      sourceText: null,
+      messages: [],
+    }
+    await h.db.execute(sql`
+      INSERT INTO hub_order_reads (model_id, read_at, orders)
+      VALUES (${h.modelId}::uuid, now(), ${JSON.stringify([hubOrder])}::jsonb)
+      ON CONFLICT (model_id) DO UPDATE SET orders = EXCLUDED.orders, read_at = now()`)
+    // `.mp4`: the test's master of a `.mov` is registered as a photo (see `makeReady`).
+    const path = `${LORA_ROOT}/3. Customs/Видео для хаба 9001.mp4`
+    upload(path, 5401)
+    await scan()
+    const { group_id, draft_id } = await groupOfPath(path)
+    await fetchAll()
+    await makeReady(draft_id)
+    const before = await groupView(group_id)
+    const chosen = await call(app, {
+      method: 'PATCH',
+      url: `/api/v1/lora/inbox/groups/${group_id}`,
+      as: owner,
+      key: newKey(),
+      ifMatch: before.version,
+      body: { order_id: 'K-9001' },
+    })
+    expect(chosen.statusCode, chosen.body).toBe(200)
+    expect(chosen.json()).toMatchObject({
+      fields: { order_id: 'K-9001' },
+      state: { kind: 'ready', note: { kind: 'order_part', order_id: 'K-9001' } },
+    })
+    const accepted = await accept(group_id)
+    expect(accepted.statusCode, accepted.body).toBe(200)
+    const item = (accepted.json() as { item_id: string; how: string }).item_id
+    expect(accepted.json()).toMatchObject({ how: 'delivery' })
+    const { rows } = await h.db.execute<{
+      code: string
+      part: string
+      state: string
+      ref: string
+    }>(sql`
+      SELECT d.order_code AS code, d.part, r.state, r.body #>> '{message,telegramRef}' AS ref
+        FROM hub_order_deliveries d
+        JOIN hub_order_reports r ON r.model_id = d.model_id AND r.delivery_id = d.id
+       WHERE d.model_id = ${h.modelId}::uuid AND d.order_code = 'K-9001'`)
+    expect(rows).toEqual([
+      { code: 'K-9001', part: 'video', state: 'pending', ref: 'tg:7000000001/3/901' },
+    ])
+    // The custom's card names its hub order.
+    const detail = await call(app, { method: 'GET', url: `/api/v1/lora/i/${item}`, as: owner })
+    expect(detail.json()).toMatchObject({ hub_order: { code: 'K-9001', title: 'танец для хаба' } })
+  })
+
   it('a folder that answers one card is one custom of parts, delivered when the model wrote', async () => {
     const order = await newOrder({ brief: 'Видео из 4 этапов, можно не одним дублем' })
     // Лора, 25.10.2026: the reply to the card names the folder, not the files.

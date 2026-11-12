@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { InstantSchema } from '../domain/common'
 import { IntegrationSwitchesSchema } from '../domain/integrations'
 import { ItemTypeSchema } from '../domain/item-type'
 import { LabelTargetSchema, VaultAlbumEvidenceSchema } from '../domain/legacy'
@@ -6,6 +7,27 @@ import { ThresholdSchema, ThresholdScopeSchema } from '../domain/system'
 
 export const UpdateIntegrationCommandSchema = z.object({ switches: IntegrationSwitchesSchema })
 export type UpdateIntegrationCommand = z.infer<typeof UpdateIntegrationCommandSchema>
+
+/**
+ * A copy of the database taken outside the product reports itself (SPEC §12.3): the nightly
+ * copy to the owner's Mac (hub `scripts/backup/pull-contentops-backup.sh`, its `manifest.json`).
+ * The masters are not in it: the point is `db_only`. A repeat of the same dump changes nothing.
+ */
+export const ReportBackupCommandSchema = z.object({
+  /** `mac` — the owner's Mac. */
+  repository: z.string().regex(/^[a-z][a-z0-9_-]*$/),
+  /** Where the dump lies there: `20261112T024500Z/contentops.dump`. */
+  dump_key: z.string().trim().min(1).max(300),
+  /** When the copy was taken (the snapshot it was dumped from). */
+  db_snapshot_at: InstantSchema,
+  dump_sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .nullable()
+    .optional(),
+  dump_bytes: z.int().positive().nullable().optional(),
+})
+export type ReportBackupCommand = z.infer<typeof ReportBackupCommandSchema>
 
 /** Which threshold row: the one for everything or an exception for a model, page or type. */
 const THRESHOLD_ROW = {

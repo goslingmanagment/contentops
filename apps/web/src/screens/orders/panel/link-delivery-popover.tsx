@@ -30,6 +30,8 @@ interface LinkDeliveryPopoverProps {
   onOpenChange: (open: boolean) => void
   onPick: (item: ItemId) => void
   pending: boolean
+  /** Подпись кнопки: «Привязать сдачу…»; у заказа Hub — «Привязать файл…». */
+  label?: string
 }
 
 function facts(entry: CatalogEntry, today: LocalDate): string {
@@ -52,6 +54,7 @@ export function LinkDeliveryPopover({
   onOpenChange,
   onPick,
   pending,
+  label = 'Привязать сдачу…',
 }: LinkDeliveryPopoverProps) {
   const today = useToday()
   const model = useCurrentModel().code
@@ -72,7 +75,7 @@ export function LinkDeliveryPopover({
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button ref={triggerRef} variant="outline" size="sm" pending={pending}>
-          Привязать сдачу…
+          {label}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-90 gap-0 p-0">

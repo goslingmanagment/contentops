@@ -963,6 +963,15 @@ account_id, album_ref)`; индекс по `lower(title)` — альбом `PPV-
 
 ### 3.7. Заказы кастомов
 
+С 12.11.2026 (миграция `0022_hub_orders`, пакет N) дом заказа — Hub; таблицы ниже —
+история. Заказы Hub: **`hub_order_reads`** (последнее чтение открытых заказов Hub по модели:
+`orders jsonb` как ответил Hub, `read_at`, `unassigned`, `tried_at`, `error`),
+**`hub_order_deliveries`** (файл заказа Hub: `order_code` `K-<n>`, часть, `complete`, CUS и
+закрытый состав версий, `message_ref?`, `delivered_at`; только вставка, отвязка — новой
+строкой `retracts_id`), **`hub_order_reports`** (очередь отправки в Hub: тело запроса,
+`pending | sent | refused`, попытки, ошибка, ответ Hub), **`hub_matters`** (дела ContentOps в
+Hub по ключу причины, открыто или закрыто). Работа `hub_orders` роли `worker` их пишет.
+
 **`custom_orders`** (§8.2). `id`, `model_id`, `account_id?`, `tg_chat`, `tg_topic?`,
 `tg_message_id`, `card_author`, `card_at`, `buyer_name?` (в файлы и публикации
 не подставляется), `brief`, `ordered_duration_raw?` («8-10
@@ -1056,7 +1065,9 @@ key)`; тот же ключ с другим запросом — конфлик�
 `log_row_change()` и код типизированных событий; UPDATE и DELETE запрещены.
 Секреты и сырые заголовки не пишутся; фон пишет итог шага, не каждый кадр.
 
-**`backup_checkpoints`** — точка восстановления (§12.3). `id`, `run_id`,
+**`backup_checkpoints`** — точка восстановления (§12.3; создана в `0022_hub_orders`: копия
+базы на маке сообщает о себе точкой `db_only`, `run_id` у неё пуст, `reported_by` — агент,
+`dump_bytes` — размер дампа). `id`, `run_id`,
 `db_snapshot_at`, `dump_key`, `dump_sha256`, `required_manifest_key` (список нужных
 SHA-256 мастеров и загрузок, снятый из того же снимка PostgreSQL, что и дамп, через
 `pg_export_snapshot`), `required_count`, `missing_count`, `state` (`db_only |

@@ -13,6 +13,7 @@ import { dbErrorCodes } from './values.ts'
 /** Tables without `model_id`: no content of a model in them (people, bytes, derivatives). */
 const GLOBAL_TABLES = [
   'api_tokens',
+  'backup_checkpoints',
   'blob_phashes',
   'blob_probes',
   'blobs',
@@ -45,9 +46,16 @@ const NO_JOURNAL = [
   'annotation_runs',
   'annotation_suggestions',
   'api_tokens',
+  // Restore points report themselves: their journal is the `action` row of the report.
+  'backup_checkpoints',
   'blob_phashes',
   'blob_probes',
   'blobs',
+  // The hub's custom orders as last read, the outbox to the hub and the matters there: their
+  // journal is the work's report and the `action` rows of the deliveries (package N).
+  'hub_matters',
+  'hub_order_reads',
+  'hub_order_reports',
   // Current Hub rows: their journal is the observation log (schema §9.3).
   'hub_post_attachments',
   'hub_posts',
@@ -77,6 +85,7 @@ const APPEND_ONLY = [
   'download_receipts',
   'hub_agent_calls',
   'hub_observations',
+  'hub_order_deliveries',
   'placement_evidence',
 ]
 /** Rows that are updated but never deleted by the app role. */

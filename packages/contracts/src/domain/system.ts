@@ -62,10 +62,18 @@ export const SystemStateSchema = z.object({
   queues: z.array(QueueSchema),
   disks: z.array(DiskSchema),
   backup: z.object({
-    /** «Бэкапа нет (пилот)». */
+    /** Without any copy: «Копии базы нет». */
     text: z.string(),
+    /** The newest restore point with the masters (in-product backup, stage 9б). */
     last_full_at: InstantSchema.nullable(),
+    /** The newest copy of the database: the snapshot it was taken from. */
     last_dump_at: InstantSchema.nullable(),
+    /** Where the newest copy of the database lies: «на маке». */
+    dump_where: z.string().nullable(),
+    /** A copy older than this is a warning (SPEC §12.3). */
+    stale_after_hours: z.int().positive(),
+    /** Masters and uploads without any copy, in bytes; `null` — they have one. */
+    uncovered_bytes: z.int().nonnegative().nullable(),
   }),
   /** `null` until ContentOps reads Hub (stage 5). */
   hub_latency: z

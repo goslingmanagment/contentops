@@ -1,5 +1,6 @@
 import { adminRoutes } from './admin'
 import { checkRoutes } from './check'
+import { hubOrderRoutes } from './hub-orders'
 import { inboxRoutes, legacyRoutes } from './inbox'
 import { journalRoutes, operationRoutes } from './journal'
 import { markupRoutes } from './markup'
@@ -23,6 +24,7 @@ export const apiRoutes = {
   plan: planRoutes,
   check: checkRoutes,
   orders: orderRoutes,
+  hubOrders: hubOrderRoutes,
   promo: promoRoutes,
   journal: journalRoutes,
   operations: operationRoutes,

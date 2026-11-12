@@ -81,6 +81,7 @@ export const workKindsByRole = {
     'hub_sync',
     'hub_history',
     'hub_publish',
+    'hub_orders',
     'annotate',
     'verify_blobs',
     'backup',
@@ -132,6 +133,7 @@ export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
   hub_sync: 'hub',
   hub_history: 'hub',
   hub_publish: 'hub',
+  hub_orders: 'hub',
   annotate: 'ai',
   verify_blobs: 'general',
   backup: 'general',
@@ -166,6 +168,7 @@ export const workKindQueue: Readonly<Record<WorkKind, WorkQueue | null>> = {
   hub_sync: null,
   hub_history: null,
   hub_publish: null,
+  hub_orders: null,
   annotate: 'frames',
   verify_blobs: null,
   backup: null,
@@ -669,6 +672,18 @@ export const finalOrderStatuses = ['closed', 'cancelled'] as const
 /** Parts of an order: several clips are one part `video`; photos count distinct files. */
 export const orderParts = ['video', 'photos'] as const
 export type OrderPart = (typeof orderParts)[number]
+
+// ---------------------------------------------------------------------------
+// The hub's custom orders (0022_hub_orders; ecosystem plan 12.11.2026, package N)
+// ---------------------------------------------------------------------------
+
+/** What the hub must learn of a file of its order: a delivery, or its retraction. */
+export const hubOrderReportKinds = ['delivery', 'retraction'] as const
+/** `pending` until the hub took it, `refused` when it said no. */
+export const hubOrderReportStates = ['pending', 'sent', 'refused'] as const
+
+/** A restore point (schema §3.9): the database only, with the masters, or gone. */
+export const backupCheckpointStates = ['db_only', 'complete', 'expired'] as const
 
 export const orderMessageKinds = [
   'card',

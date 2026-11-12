@@ -107,6 +107,14 @@ export const ItemDetailSchema = z.object({
   pages: z.array(ItemPagePlacementSchema),
   /** Custom: the order and its state word. */
   order: z.object({ id: z.string(), title: z.string(), status: StatusWordSchema }).nullable(),
+  /**
+   * Custom: the hub's order it is a delivery of (`K-102`, package N), with the hub's state in
+   * words; absent or `null` — none.
+   */
+  hub_order: z
+    .object({ code: z.string(), title: z.string(), status: StatusWordSchema })
+    .nullable()
+    .optional(),
   /** Promo collection: handoffs of this collection. */
   handoffs: z.array(z.object({ id: z.string(), status: StatusWordSchema })),
   /** Collections and handoffs that hold the object's files (SPEC §7.1). */

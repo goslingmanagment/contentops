@@ -3,9 +3,11 @@ import { FieldHeader, HeaderAction } from '@contentops/ui/components/field-heade
 import { FilterChipsRow, FilterToggleChip } from '@contentops/ui/components/filter-chips'
 import { IntegrationLine } from '@contentops/ui/components/integration-line'
 import { EmptyState } from '@contentops/ui/components/state-lines'
+import { UiLink } from '@contentops/ui/components/ui-link'
 import { useNavigate } from '@tanstack/react-router'
 import { PlusIcon } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
+import { useHref } from '@/app/use-href'
 import { type OrderTab, useOrderList } from '@/data/orders'
 import { useRole } from '@/data/session'
 import { useKeyboardShortcut } from '@/lib/use-keyboard-shortcut'
@@ -32,6 +34,8 @@ import { OrderPanel } from './panel/order-panel'
 import { useOrderActions } from './panel/use-order-actions'
 
 interface OrdersViewProps {
+  /** Архив заказов ContentOps до Hub (пакет N): только чтение, нового заказа здесь нет. */
+  archive?: boolean
   tab: OrderTab
   /** «Найти заказ»: слово в адресе (`q`); пусто — вкладка. */
   query?: string
@@ -59,6 +63,7 @@ interface PendingIntent {
  * адреса: `?view=orders` и `…/customs/orders/<id>`.
  */
 export function OrdersView({
+  archive = false,
   tab,
   query = '',
   onQueryChange,
@@ -70,7 +75,7 @@ export function OrdersView({
 }: OrdersViewProps) {
   const model = useCurrentModel()
   const role = useRole()
-  const editable = role === 'owner' || role === 'manager'
+  const editable = !archive && (role === 'owner' || role === 'manager')
   const navigate = useNavigate()
   const { openNewOrderDialog } = useNewOrderDialog()
   const list = useOrderList(model.code, tab, query)
@@ -79,6 +84,11 @@ export function OrdersView({
   const narrow = useMediaQuery('(max-width: 1319px)')
   const [intent, setIntent] = useState<PendingIntent | null>(null)
   const crumbs = useCustomsCrumbs()
+  const hubOrdersHref = useHref()({
+    to: '/$model/library/customs',
+    params: { model: model.code },
+    search: { view: 'orders' },
+  })
   const customsCount = useCustomsCount()
 
   const data = list.data
@@ -92,8 +102,9 @@ export function OrdersView({
   useKeyboardShortcut({ code: 'Escape', enabled: selectedId !== null }, onClosePanel)
   const onIntentHandled = useCallback(() => setIntent(null), [])
 
+  // В архиве заказ не закрывают: «Сдано — можно закрыть» там просто «Сдано».
   const groupLabel = (row: Extract<OrderListRow, { kind: 'group' }>) =>
-    orderGroupLabel(row.state, model.name_genitive)
+    archive && row.state === 'delivered' ? 'Сдано' : orderGroupLabel(row.state, model.name_genitive)
   const menuFor = (row: Extract<OrderListRow, { kind: 'order' }>) =>
     orderMenu(row.order, {
       editable,
@@ -116,6 +127,7 @@ export function OrdersView({
           <OrderPanel
             orderId={selectedId}
             accounts={model.accounts}
+            readOnly={archive}
             width={narrow ? 'narrow' : 'wide'}
             intent={intent?.order === selectedId ? intent.kind : null}
             onIntentHandled={onIntentHandled}
@@ -135,7 +147,17 @@ export function OrdersView({
         canReset={false}
         onReset={() => onTabChange('open')}
         trailing={
-          data?.agent_silence ? (
+          archive ? (
+            <span className="flex min-w-0 items-center gap-3 text-ink-3 text-sm">
+              <span className="truncate">Архив заказов ContentOps до Hub · только чтение</span>
+              <UiLink
+                href={hubOrdersHref}
+                className="shrink-0 text-primary-ink underline-offset-4 hover:underline"
+              >
+                Заказы Hub
+              </UiLink>
+            </span>
+          ) : data?.agent_silence ? (
             <IntegrationLine
               state="down"
               action={{

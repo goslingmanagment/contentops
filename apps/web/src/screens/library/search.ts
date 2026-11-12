@@ -77,8 +77,11 @@ export const librarySectionSearchSchema = z.object({
   ...catalogFilterShape,
 })
 
-/** «Кастомы»: вид раздела или «Заказы» и «Переделка в PPV» (`?view=orders`, `?view=to-ppv`). */
-export const CustomsViewSchema = z.enum(['large', 'grid', 'list', 'orders', 'to-ppv'])
+/**
+ * «Кастомы»: вид раздела, «Заказы» Hub, «Переделка в PPV» и «Архив заказов» ContentOps до Hub
+ * (`?view=orders`, `?view=to-ppv`, `?view=archive`).
+ */
+export const CustomsViewSchema = z.enum(['large', 'grid', 'list', 'orders', 'to-ppv', 'archive'])
 
 export const customsSearchSchema = librarySectionSearchSchema.extend({
   view: CustomsViewSchema.optional().catch(undefined),

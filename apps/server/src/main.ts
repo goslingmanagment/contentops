@@ -22,6 +22,7 @@ import { hubHistoryHandler } from './hub/match/auto'
 import { hubPublishHandler, publicationStreams } from './hub/publish'
 import { storedMedia } from './hub/publish-media'
 import { envHubClient, hubStreams, hubSyncHandler } from './hub/sync'
+import { envHubOrdersClient, hubOrderStreams, hubOrdersHandler } from './hub-orders/work'
 import { draftZipExport } from './intake/draft-files'
 import { fetchHandler } from './intake/fetch'
 import { intakeMediaHandlers } from './intake/media'
@@ -134,7 +135,10 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     db,
     publicUrl: required(config.PUBLIC_URL, 'PUBLIC_URL'),
     // The app starts without the secrets of switched-off integrations (SPEC §8).
-    secrets: { hub: config.HUB_API_KEY !== undefined && config.HUB_BASE_URL !== undefined },
+    secrets: {
+      hub: config.HUB_API_KEY !== undefined && config.HUB_BASE_URL !== undefined,
+      hubBaseUrl: config.HUB_BASE_URL ?? null,
+    },
     space: {
       file: config.HOST_SPACE_FILE,
       warnGb: config.SPACE_WARN_GB,
@@ -249,6 +253,8 @@ function hubHandlers(
     hub_sync: hubSyncHandler({ client }),
     hub_publish: hubPublishHandler({ client, media: storedMedia(store, versions) }),
     hub_history: hubHistoryHandler(),
+    // The hub's custom orders, the outbox of deliveries and the matters (package N, 12.11.2026).
+    hub_orders: hubOrdersHandler({ client: envHubOrdersClient(config) }),
   }
 }
 
@@ -374,6 +380,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
             ...(await scanStreams(db, process.env, startedAt)),
             ...(await hubStreams(db, { configured: hubConfigured, since: startedAt })),
             ...(await publicationStreams(db, { configured: hubConfigured })),
+            ...(await hubOrderStreams(db, { configured: hubConfigured })),
           ],
           pollMs: 10_000,
           log,

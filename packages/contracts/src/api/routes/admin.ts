@@ -1,6 +1,7 @@
 import {
   IssueTokenCommandSchema,
   RemoveThresholdCommandSchema,
+  ReportBackupCommandSchema,
   UpdateIntegrationCommandSchema,
   UpdateThresholdCommandSchema,
 } from '../../commands/settings'
@@ -78,6 +79,13 @@ export const adminRoutes = {
     response: OkSchema,
   }),
   tags: defineRoute({ method: 'GET', path: '/api/v1/admin/tags', response: pageSchema(TagSchema) }),
+  /** A copy of the database taken outside reports itself: «Состояние» shows its age. */
+  reportBackup: defineRoute({
+    method: 'POST',
+    path: '/api/v1/admin/backup-checkpoints',
+    body: ReportBackupCommandSchema,
+    response: OkSchema,
+  }),
   state: defineRoute({ method: 'GET', path: '/api/v1/admin/state', response: SystemStateSchema }),
   operation: defineRoute({
     method: 'GET',

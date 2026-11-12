@@ -4,6 +4,7 @@ import { StatusWord } from '@contentops/ui/components/status-word'
 import { UiLink } from '@contentops/ui/components/ui-link'
 import { useHref } from '@/app/use-href'
 import { useToday } from '@/data/api-session'
+import { useHubOrder } from '@/data/hub-orders'
 import { useOrder } from '@/data/orders'
 import { useCurrentModel } from '@/shell/model/model-context'
 
@@ -24,6 +25,39 @@ function partsText(order: Order): string | null {
  * что сдача закроет, а что останется («фото 0 из 20»).
  */
 export function OrderLine({ orderId }: { orderId: string }) {
+  return /^K-\d+$/.test(orderId) ? (
+    <HubOrderLine code={orderId} />
+  ) : (
+    <ArchiveOrderLine orderId={orderId} />
+  )
+}
+
+/** Заказ Hub (пакет N): код, что заказано, срок и шаг Hub; ссылка — его карточка в «Заказах». */
+function HubOrderLine({ code }: { code: string }) {
+  const today = useToday()
+  const model = useCurrentModel().code
+  const order = useHubOrder(model, code).data
+  const href = useHref()({
+    to: '/$model/library/customs/orders/$order',
+    params: { model, order: code },
+  })
+  if (!order) {
+    return <Skeleton className="h-10 w-full rounded-md" />
+  }
+  return (
+    <div className="flex flex-col gap-0.5">
+      <UiLink href={href} className="truncate text-primary-ink underline-offset-4 hover:underline">
+        {order.code} · «{order.title}»
+        {order.deadline ? ` · до ${formatDate(order.deadline, today)}` : ''}
+      </UiLink>
+      <StatusWord sign={order.status.sign ?? undefined} detail={order.status.detail}>
+        {order.status.word}
+      </StatusWord>
+    </div>
+  )
+}
+
+function ArchiveOrderLine({ orderId }: { orderId: string }) {
   const today = useToday()
   const model = useCurrentModel().code
   const order = useOrder(model, orderId).data

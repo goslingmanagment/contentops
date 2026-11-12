@@ -9,8 +9,9 @@ const routeApi = getRouteApi('/_shell/$model/library/customs')
 const SelectedOrderSchema = z.string().nullable()
 
 /**
- * Кастомы › Заказы `/<модель>/library/customs?view=orders` (DESIGN §4.16). Открытый
- * заказ — выделение: живёт в записи истории, адрес не меняется, «Назад» его возвращает.
+ * Архив заказов `/<модель>/library/customs?view=archive` (DESIGN §4.16; пакет N): заказы
+ * ContentOps до Hub, только для чтения. Открытый заказ — выделение: живёт в записи
+ * истории, адрес не меняется, «Назад» его возвращает.
  */
 export function OrdersScreen() {
   const search = routeApi.useSearch()
@@ -33,6 +34,7 @@ export function OrdersScreen() {
     })
   return (
     <OrdersView
+      archive
       tab={tab}
       query={search.q ?? ''}
       onQueryChange={changeQuery}

@@ -9,6 +9,8 @@ import { claimNumber, issueNumber } from '../catalog/numbers'
 import { logItemAction, touchItem } from '../catalog/writes'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
+import { readHubOrders } from '../hub-orders/view'
+import { linkHubDelivery } from '../hub-orders/writes'
 import { materializeClaims } from '../legacy/materialize'
 import { linkDuplicates } from '../legacy/promo'
 import { handleOf } from '../media/downloads'
@@ -123,6 +125,8 @@ interface GroupRow extends Record<string, unknown> {
   proposed_purpose: values.RawPurpose | null
   has_second_person: boolean | null
   custom_order_id: string | null
+  /** The hub's order (package N): the accepted CUS becomes its delivery. */
+  hub_order_code: string | null
   created_item_id: string | null
   /** «Канал ▾» and «Подборка ▾» of a promo pack (DESIGN §4.8); no collection — a new one. */
   proposed_channel_id: string | null
@@ -167,7 +171,7 @@ export async function lockGroupForDecision(
   const { rows } = await tx.execute<GroupRow>(sql`
     SELECT g.id, g.source_id, g.proposed_type, g.proposed_title, g.proposed_title_en,
            g.proposed_description, g.proposed_tags, g.proposed_ppv_kind, g.proposed_purpose,
-           g.has_second_person, g.custom_order_id, g.proposed_channel_id, g.proposed_collection_id,
+           g.has_second_person, g.custom_order_id, g.hub_order_code, g.proposed_channel_id, g.proposed_collection_id,
            g.evidence -> 'pack' AS pack,
            (SELECT i.id FROM content_items i
              WHERE i.model_id = g.model_id AND i.created_from_group_id = g.id) AS created_item_id
@@ -612,6 +616,12 @@ async function orderTitle(tx: Tx, modelId: string, orderId: string): Promise<str
   return rows[0] ? orderTitleOf(rows[0].brief) || null : null
 }
 
+/** The title of a hub order (its task's first line), from the last read of the hub. */
+async function hubOrderTitle(tx: Tx, modelId: string, code: string): Promise<string | null> {
+  const order = (await readHubOrders(tx, modelId)).orders.find((one) => one.code === code)
+  return order?.what || null
+}
+
 /** The open order a CUS was delivered for: its latest live delivery; closed orders take none. */
 async function openOrderOf(tx: Tx, modelId: string, itemId: string): Promise<string | null> {
   const { rows } = await tx.execute<{ order_id: string }>(sql`
@@ -897,7 +907,9 @@ export async function acceptGroup(
       group.proposed_title ??
       (type === 'CUS' && group.custom_order_id
         ? await orderTitle(tx, model.id, group.custom_order_id)
-        : null)
+        : type === 'CUS' && group.hub_order_code
+          ? await hubOrderTitle(tx, model.id, group.hub_order_code)
+          : null)
     const { rows } = await tx.execute<{ id: string }>(sql`
       INSERT INTO content_items (
         model_id, type, number, title, title_en, description, ppv_kind, raw_purpose,
@@ -915,7 +927,7 @@ export async function acceptGroup(
       )
       RETURNING id`)
     item = { id: (rows[0] as { id: string }).id, type, number }
-    how = options.how ?? (group.custom_order_id ? 'delivery' : 'new')
+    how = options.how ?? (group.custom_order_id || group.hub_order_code ? 'delivery' : 'new')
     await setJournalItem(tx, item.id)
   }
 
@@ -1042,6 +1054,19 @@ export async function acceptGroup(
         actor,
       )
     }
+  }
+
+  // The hub's order of the group (package N): the CUS becomes its delivery, and the hub hears
+  // of it through the outbox, as from «Привязать файл…» on the order's card.
+  if (item.type === 'CUS' && group.hub_order_code) {
+    await linkHubDelivery(
+      tx,
+      model,
+      group.hub_order_code,
+      { item_id: publicIdOf(item.type, item.number) },
+      actor,
+      `accept:${group.id}:${item.id}`,
+    )
   }
 
   for (const { draft, of } of twins) {
