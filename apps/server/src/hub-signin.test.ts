@@ -4,7 +4,7 @@ import { HubError, type HubRedeemed, type HubSignin, type HubSigninUser } from '
 import { sql } from 'drizzle-orm'
 import type { LightMyRequestResponse } from 'fastify'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { HUB_CHECK_EVERY_MS, HUB_SILENCE_MS } from './auth/hub-signin'
+import { HUB_CHECK_EVERY_MS, HUB_SILENCE_MS, ownPath } from './auth/hub-signin'
 import { call, newKey, OWNER, signIn, type TestServer, testServer } from './testing/server'
 
 /**
@@ -486,5 +486,50 @@ describe('the silent try (a page that got 401 before the sign-in screen)', () =>
     // Pressing «Войти через хаб» takes the mark away.
     const pressed = await get('/auth/hub/start?next=%2F', { cookie: 'co_hub_out=1' })
     expect(setCookies(pressed)).toContain('co_hub_out=; Path=/; Max-Age=0; SameSite=Lax')
+  })
+})
+
+// The same table in Hub, TaskIndex, the monitor and ContentOps (ecosystem R9): what is redirected to stays a path of
+// this origin after normalisation.
+describe('where a sign-in may lead (`next`)', () => {
+  it('only to a path of ContentOps', () => {
+    for (const raw of [
+      undefined,
+      '',
+      'https://evil.example/',
+      '//evil.example/',
+      '/.//evil.example/x',
+      '/%2F/evil.example/x',
+      '/%2f%2fevil.example',
+      '/\\evil.example',
+      '/%5Cevil.example',
+      '/./x',
+      '/../x',
+      '/x/../../evil',
+      '/%2e%2e/x',
+      '/\tx',
+      '/auth/hub/start',
+      '/%61uth/hub/start',
+      '/login',
+      'javascript:alert(1)',
+    ]) {
+      expect(ownPath(raw), String(raw)).toBe('/')
+    }
+    expect(ownPath('/lora/library?kind=dm')).toBe('/lora/library?kind=dm')
+    expect(ownPath('/lora/library?kind=dm#top')).toBe('/lora/library?kind=dm#top')
+    expect(ownPath('/lora/library?u=https://x.example//y')).toBe(
+      '/lora/library?u=https://x.example//y',
+    )
+  })
+
+  it('never off ContentOps, whatever the hub echoes as next', async () => {
+    for (const next of ['/.//evil.example/x', '/%2F/evil.example/x', '//evil.example/x']) {
+      const back = await get(`/auth/hub/callback?${new URLSearchParams({ error: 'none', next })}`)
+      expect(back.headers.location, next).toBe('/login')
+    }
+    const kept = await get(
+      `/auth/hub/callback?${new URLSearchParams({ error: 'none', next: '/lora/library?kind=dm' })}`,
+    )
+    expect(kept.headers.location).toBe('/login?from=%2Flora%2Flibrary%3Fkind%3Ddm')
   })
 })
