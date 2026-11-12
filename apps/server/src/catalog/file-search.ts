@@ -1,4 +1,5 @@
 import type { FileMatch, FileSearchResult } from '@contentops/contracts/domain/search'
+import { formatDayMonth } from '@contentops/contracts/format'
 import type { Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { ModelScope } from '../context'
@@ -122,15 +123,13 @@ function unique(matches: readonly FileMatch[]): FileMatch[] {
   })
 }
 
-/** «Этот файл: FYP-0412 версия 2 · Fansly 2 12.08» or «Такого файла нет» (DESIGN §4.7). */
+/** «Этот файл: FYP-0412 версия 2 · Fansly 2 12 авг.» or «Такого файла нет» (DESIGN §4.7). */
 export function phraseOf(match: FileMatch | undefined): string {
   if (!match) return 'Такого файла нет'
   if (!match.item_id) return `Этот файл в «Приехало»: ${match.title}`
   const version = match.version && match.version > 1 ? ` версия ${match.version}` : ''
   const issued = match.issued
-    ? [match.issued.label, `${match.issued.on.slice(8, 10)}.${match.issued.on.slice(5, 7)}`]
-        .filter(Boolean)
-        .join(' ')
+    ? [match.issued.label, formatDayMonth(match.issued.on)].filter(Boolean).join(' ')
     : match.what
   return `Этот файл: ${match.item_id}${version} · ${issued}`
 }

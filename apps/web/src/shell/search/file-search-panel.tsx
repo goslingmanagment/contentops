@@ -1,4 +1,10 @@
-import { type FileMatch, formatNumber, type ItemId, type ModelCode } from '@contentops/contracts'
+import {
+  type FileMatch,
+  formatDayMonth,
+  formatNumber,
+  type ItemId,
+  type ModelCode,
+} from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { XIcon } from 'lucide-react'
 import type { FileSearchState } from './use-file-search'
@@ -18,11 +24,11 @@ export function fileSearchLine(state: FileSearchState): string {
   }
 }
 
-/** «PPV-073 · мастер», «FYP-0412 версия 2 · выданная копия · Fansly 2 12.08». */
+/** «PPV-073 · мастер», «FYP-0412 версия 2 · выданная копия · Fansly 2 12 авг.». */
 function matchLine(match: FileMatch): string {
   const version = match.version && match.version > 1 ? ` версия ${match.version}` : ''
   const issued = match.issued
-    ? ` · ${[match.issued.label, `${match.issued.on.slice(8, 10)}.${match.issued.on.slice(5, 7)}`].filter(Boolean).join(' ')}`
+    ? ` · ${[match.issued.label, formatDayMonth(match.issued.on)].filter(Boolean).join(' ')}`
     : ''
   const head = match.item_id ? `${match.item_id}${version}` : match.title
   return `${head} · ${match.what}${issued}`

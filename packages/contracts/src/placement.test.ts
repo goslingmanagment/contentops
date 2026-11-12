@@ -75,7 +75,7 @@ describe('уровень размещения по строкам таблицы
   it('Запланировано → «в плане»', () => {
     const verdict = evaluatePlacement(facts({ plan: plan() }))
     expect(verdict).toMatchObject({ level: 'planned', sign: null, word: 'в плане' })
-    expect(verdict.reason).toBe('В плане на 20:00 · поставила Диана 19.09 · копия готова')
+    expect(verdict.reason).toBe('В плане на 20:00 · поставила Диана 19 сент. · копия готова')
   })
 
   it('Пропущена → ▲ «пропущено»', () => {
@@ -170,10 +170,10 @@ describe('уровень размещения по строкам таблицы
       sign: 'done',
       detail: 'ранее вручную',
     })
-    expect(verdict.reason).toBe('Тот же файл платформы, подтверждён 12.08')
+    expect(verdict.reason).toBe('Тот же файл платформы, подтверждён 12 авг.')
   })
 
-  it('Нужна новая заливка — выполнена → ✓ «новый файл 22.09»', () => {
+  it('Нужна новая заливка — выполнена → ✓ «новый файл 22 сент.»', () => {
     const verdict = evaluatePlacement(
       facts({
         surface: 'vault',
@@ -184,9 +184,9 @@ describe('уровень размещения по строкам таблицы
     expect(verdict).toMatchObject({
       level: 'confirmed_reupload',
       sign: 'done',
-      detail: 'новый файл 22.09',
+      detail: 'новый файл 22 сент.',
     })
-    expect(verdict.reason).toBe('Файл создан на платформе 22.09, позже строки')
+    expect(verdict.reason).toBe('Файл создан на платформе 22 сент., позже строки')
   })
 
   it('Кандидат → ◆ «сверить · Hub нашёл похожее»', () => {
@@ -344,7 +344,7 @@ describe('уровень размещения по строкам таблицы
       sign: 'turn',
       detail: 'в альбоме нет файла',
     })
-    expect(verdict.reason).toBe('Альбом «SXT-005 Розовые стринги» обойдён 21.09, файла нет')
+    expect(verdict.reason).toBe('Альбом «SXT-005 Розовые стринги» обойдён 21 сент., файла нет')
   })
 
   it('В альбоме только старый файл → ◆ «старый файл в альбоме»', () => {
@@ -372,7 +372,7 @@ describe('уровень размещения по строкам таблицы
       sign: 'turn',
       detail: 'старый файл в альбоме',
     })
-    expect(verdict.reason).toBe('В альбоме файл от 12.08, строка от 20.09')
+    expect(verdict.reason).toBe('В альбоме файл от 12 авг., строка от 20 сент.')
   })
 
   it('Не удалось проверить → «не проверено» с причиной', () => {
@@ -407,7 +407,9 @@ describe('уровень размещения по строкам таблицы
       }),
     )
     expect(verdict).toMatchObject({ level: 'unknown', sign: null, word: 'не видели' })
-    expect(verdict.reason).toBe('Плана, отметок и постов Hub нет. Hub видит Fansly 1 с 19.01.2025')
+    expect(verdict.reason).toBe(
+      'Плана, отметок и постов Hub нет. Hub видит Fansly 1 с 19 янв. 2025 г.',
+    )
   })
 
   it('Не найден при обходе от даты → «не проверено»', () => {
@@ -420,7 +422,7 @@ describe('уровень размещения по строкам таблицы
     expect(verdict).toMatchObject({
       level: 'not_found_in_walk',
       word: 'не проверено',
-      reason: 'Не найден при обходе от 01.09',
+      reason: 'Не найден при обходе от 1 сент.',
     })
   })
 
@@ -440,7 +442,7 @@ describe('уровень размещения по строкам таблицы
       facts({ evidence: [evidence({ kind: 'legacy_claim', label: 'used2', on: '2026-07-31' })] }),
     )
     expect(verdict.level).toBe('unknown')
-    expect(verdict.notes).toEqual(['в старом имени: used2 · 31.07'])
+    expect(verdict.notes).toEqual(['в старом имени: used2 · 31 июл.'])
   })
 
   it('Вне каталога → «не наше»', () => {
@@ -479,7 +481,7 @@ describe('уровень размещения по строкам таблицы
       facts({ plan: plan({ mark: marked('11:30', 'scheduled') }), evidence: [candidate, reject] }),
     )
     expect(verdict.level).toBe('scheduled')
-    expect(describeEvidence(reject, '2026-09-22')).toBe('Не то · Диана 21.09')
+    expect(describeEvidence(reject, '2026-09-22')).toBe('Не то · Диана 21 сент.')
   })
 
   it('Отменена → строка скрыта, «почему» с причиной', () => {

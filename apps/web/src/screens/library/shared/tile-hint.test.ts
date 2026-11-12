@@ -44,15 +44,15 @@ describe('ответ под плиткой (DESIGN §4.2)', () => {
       tileHintText(page, [
         summary({ placed_on: ['vault'], last_on: '2026-08-08', word: 'подтверждено' }),
       ]),
-    ).toBe('Fansly 2 08.08')
+    ).toBe('Fansly 2 8 авг.')
   })
 
   it('дата другого года — с годом; на плитке страница уступает дате, в подсказке — целиком', () => {
     const page = { kind: 'page', account: fansly2, today: TODAY } as const
     const placed = [summary({ placed_on: ['wall'], last_on: '2025-09-22', word: 'подтверждено' })]
-    expect(tileHintText(page, placed)).toBe('22.09.2025')
-    expect(tileHintText(page, placed, true)).toBe('22.09.2025')
-    expect(tileHintTitle(page, placed)).toBe('Fansly 2 22.09.2025')
+    expect(tileHintText(page, placed)).toBe('22 сент. 2025 г.')
+    expect(tileHintText(page, placed, true)).toBe('22 сент. 2025 г.')
+    expect(tileHintTitle(page, placed)).toBe('Fansly 2 22 сент. 2025 г.')
   })
 
   it('«Лучше зашёл на ▾» — число просмотров', () => {
@@ -66,8 +66,8 @@ describe('ответ на малой плитке 120 (DESIGN §4.2)', () => {
   const page = { kind: 'page', account: fansly2, today: TODAY } as const
   it('коротко: дата или «нет», полный ответ со страницей — в подсказке', () => {
     const placed = [summary({ placed_on: ['vault'], last_on: '2026-08-08', word: 'подтверждено' })]
-    expect(tileHintText(page, placed, true)).toBe('08.08')
-    expect(tileHintTitle(page, placed)).toBe('Fansly 2 08.08')
+    expect(tileHintText(page, placed, true)).toBe('8 авг.')
+    expect(tileHintTitle(page, placed)).toBe('Fansly 2 8 авг.')
     expect(tileHintText(page, undefined, true)).toBe('нет')
     expect(tileHintTitle(page, undefined)).toBe('не видели на Fansly 2')
   })

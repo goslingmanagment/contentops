@@ -14,7 +14,7 @@ Agency Hub (`README.md`, `PRD.md`).
   (у последнего папка улик `hub-media-discovery/`; `annotation.md` появится на этапе 8а),
   итоги слепого просмотра `docs/blind-2026-09-06.json.gz`, `tools/`, `design/DESIGN.md`
   (образец интерфейса 1б, принят 28.09.2026; прототип перенесён в корень в 1а, исходный
-  образец — тег `design-1b`) и код продукта в корне: `apps/`, `packages/`, `ops/`, `Dockerfile` с `.dockerignore`, `docker-compose.yml`,
+  образец — тег `design-1b`) и код продукта в корне: `apps/`, `packages/`, `vendor/` (копия вида хаба), `ops/`, `Dockerfile` с `.dockerignore`, `docker-compose.yml`,
   `.env.example`, `.github/` (CI), файлы pnpm workspace (решение владельца 30.09.2026).
   Новых каталогов под процесс (`plans/`, `evidence/`, `decisions/`, брифы, обзоры) не
   заводить; черновики и пробы — в scratchpad, не в репо.
@@ -77,6 +77,13 @@ Agency Hub (`README.md`, `PRD.md`).
   удаляется вместе с томом: `docker rm -fv <контейнер>`; без `-v` том базы, созданной до
   05.11.2026 или своим `docker run` без этих флагов, остаётся висеть — сотни МБ, с бэкапом
   гигабайты. Чужие базы не трогать.
+- **Where this project stands in the system.** The home of the content: files and copies,
+  production (intake, library, the work on an order's files) and the content plan. Never a
+  second copy of what lives elsewhere: people and sign-in, sales, custom orders as a fan's
+  purchase and matters live in Agency Hub, accounting in the ledger; here only links to them.
+  Sign-in is the hub's one-time code (`ops/README.md` «Вход через хаб», SPEC §11.1). The look
+  is Hub's `vendor/hub-look` (re-vendor from a clean hub commit with
+  `node scripts/vendor-look.mjs`). The one map: `~/code/SYSTEM.md` on the owner's machine.
 - **Живой экземпляр:** `https://contentops.gosling-agency.ru` из интернета,
   `http://10.66.66.1:8088` при включённом VPN агентства или `http://contentops.tail1d911a.ts.net`
   в tailnet (`ops/README.md`, «Вход из интернета», «Вход через VPN агентства»).

@@ -1,6 +1,7 @@
 import { weekDates } from '@contentops/contracts/clock'
 import { IsoWeekSchema } from '@contentops/contracts/domain/common'
 import type { BatchResult } from '@contentops/contracts/domain/pagination'
+import { formatDayRange } from '@contentops/contracts/format'
 import { logAction, type Tx } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { modelOf } from '../catalog/ids'
@@ -35,12 +36,11 @@ function weekOf(raw: string) {
   return parsed.data
 }
 
-/** «Fansly 1 · 09.11–15.11» — the subject of the journal line. */
+/** «Fansly 1 · 9–15 нояб.» — the subject of the journal line. */
 function weekLabel(label: string, week: string): string {
   const dates = weekDates(week)
-  const short = (date: string | undefined) =>
-    date ? `${date.slice(8, 10)}.${date.slice(5, 7)}` : ''
-  return `${label} · ${short(dates[0])}–${short(dates[6])}`
+  const [first, last] = [dates[0], dates[6]]
+  return first && last ? `${label} · ${formatDayRange(first, last)}` : label
 }
 
 export function planApprovalHandlers(services: Services): HandlerRegistry {

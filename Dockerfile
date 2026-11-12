@@ -63,7 +63,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY --parents apps/*/package.json packages/*/package.json ./
+COPY --parents apps/*/package.json packages/*/package.json vendor/*/package.json ./
 RUN pnpm install --frozen-lockfile \
  && node -e "const s=require('./packages/media/node_modules/sharp');if(!s.format.heif.input.file)throw new Error('sharp without HEIF input');console.log('sharp',s.versions)"
 
