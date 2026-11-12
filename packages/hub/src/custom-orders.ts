@@ -5,7 +5,8 @@ import { badShape, int, isRecord, str, strArray } from './http.ts'
  * custom-orders.ts`, `agentCustomOrderSchema`; ecosystem plan 12.11.2026, packages I and N).
  * The order's home is the hub: ContentOps reads the open ones with its key (`write:customs`),
  * shows those in production with the files it holds, and tells the hub what a file means —
- * a delivery of a part, or a retraction as a note. It never creates, closes or gives one.
+ * a delivery of a part, or its retraction, each named by ContentOps' own id of it (`eventRef`).
+ * It never creates, closes or gives one.
  */
 
 export const HUB_ORDER_STATES = [
@@ -34,15 +35,22 @@ export type HubOrderMessageKind = (typeof HUB_ORDER_MESSAGE_KINDS)[number]
 export type HubOrderPart = 'video' | 'photos'
 
 export interface HubOrderMessage {
-  telegramRef: string
+  /** The Telegram message: what the hub knows it by, or an event's evidence; null — none. */
+  telegramRef: string | null
+  /** The sender's own id of the event (`contentops:delivery:<id>`); null — a Telegram message. */
+  eventRef: string | null
   ordinal: number
   kind: HubOrderMessageKind
   part: HubOrderPart | null
+  /** A delivery: that part whole; null — not said. */
+  complete: boolean | null
   at: string | null
   author: string | null
   excerpt: string | null
   /** A revision request: when it was fixed. */
   doneAt: string | null
+  /** A delivery taken back. */
+  retractedAt: string | null
 }
 
 /** The fields of the card ContentOps reads (the card is the hub's small document). */
@@ -95,28 +103,49 @@ export interface HubCustomOrderList {
   serverNow: string | null
 }
 
+/** The event a step names, and what the hub did with it: kept now, or had this very one. */
+export interface HubOrderEvent {
+  ref: string
+  result: 'stored' | 'already'
+}
+
 export interface HubCustomOrderAnswer {
   order: HubCustomOrder
   outcome: 'created' | 'changed' | 'unchanged'
+  /** Null — the hub keeps no such event (or is older than events): the report is not in the hub. */
+  event: HubOrderEvent | null
 }
 
-/** A Telegram message of the order as the hub's agent body names it. */
+/** A Telegram message of the order as the hub's agent body names it; with `eventRef` its evidence. */
 export interface HubOrderMessageInput {
-  telegramRef: string
+  telegramRef?: string
   at?: string
   author?: string
   excerpt?: string
 }
 
-/** The two steps ContentOps takes: a delivery of a part, and a note (a retraction). */
+/**
+ * The steps ContentOps takes, each known by ContentOps' own id (`eventRef`): a delivery of a part,
+ * and its retraction (`retracts` — the delivery's eventRef, or the Telegram link an older report
+ * named it by). A note under a link is the old form of a retraction: reports written before
+ * events keep it.
+ */
 export type HubOrderReportBody =
   | {
       action: 'delivery'
+      eventRef?: string
       message: HubOrderMessageInput
       part: HubOrderPart
       complete: boolean
     }
-  | { action: 'message'; kind: 'note'; message: HubOrderMessageInput }
+  | { action: 'message'; kind: 'note'; eventRef?: string; message: HubOrderMessageInput }
+  | {
+      action: 'retract'
+      eventRef: string
+      retracts: string
+      reason: string
+      message?: HubOrderMessageInput
+    }
 
 const CODE = /^K-[1-9]\d{0,15}$/
 const PARTS: readonly string[] = ['video', 'photos']
@@ -130,20 +159,24 @@ function oneOf<T extends string>(list: readonly T[], value: unknown): T | null {
 function parseMessage(raw: unknown, endpoint: string, at: string): HubOrderMessage {
   if (!isRecord(raw)) throw badShape(endpoint, `${at}: a message is not an object`)
   const telegramRef = str(raw.telegramRef)
+  const eventRef = str(raw.eventRef)
   const kind = oneOf(HUB_ORDER_MESSAGE_KINDS, raw.kind)
-  if (telegramRef === null || kind === null) {
-    throw badShape(endpoint, `${at}: a message without its link or kind`)
+  if ((telegramRef === null && eventRef === null) || kind === null) {
+    throw badShape(endpoint, `${at}: a message without its link (or event) or kind`)
   }
   const part = oneOf(['video', 'photos'] as const, raw.part)
   return {
     telegramRef,
+    eventRef,
     ordinal: int(raw.ordinal) ?? 0,
     kind,
     part,
+    complete: typeof raw.complete === 'boolean' ? raw.complete : null,
     at: str(raw.at),
     author: str(raw.author),
     excerpt: str(raw.excerpt),
     doneAt: str(raw.doneAt),
+    retractedAt: str(raw.retractedAt),
   }
 }
 
@@ -224,7 +257,11 @@ export function parseHubOrderAnswer(json: unknown, endpoint: string): HubCustomO
   if (!isRecord(json)) throw badShape(endpoint, 'the answer is not an object')
   const outcome = oneOf(['created', 'changed', 'unchanged'] as const, json.outcome)
   if (outcome === null) throw badShape(endpoint, 'no `outcome`')
-  return { order: parseHubOrder(json.order, endpoint), outcome }
+  const raw = isRecord(json.event) ? json.event : null
+  const ref = raw ? str(raw.ref) : null
+  const result = raw ? oneOf(['stored', 'already'] as const, raw.result) : null
+  const event = ref !== null && result !== null ? { ref, result } : null
+  return { order: parseHubOrder(json.order, endpoint), outcome, event }
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +277,8 @@ export interface HubMatterOpen {
   pageLabels?: string[]
   object?: { type: string; id: string }
   evidence?: Record<string, unknown>
+  /** A path of the hub's console where it is done (`/workboard/customs/K-123`). */
+  link?: string
 }
 
 export interface HubMatterAnswer {

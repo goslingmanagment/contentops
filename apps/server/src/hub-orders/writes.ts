@@ -20,13 +20,18 @@ import { enqueueHubOrders } from './work'
  * part, sealed as `custom_order_deliveries` seals one, and the report the hub must get — in the
  * same transaction, so a delivery never exists here without its way to the hub. The hub derives
  * «сдано частично» and «снято» from the parts; ContentOps never closes an order, never gives one.
+ * Every report names its event by ContentOps' own id (`eventRef`, the delivery's or the
+ * retraction's row): the hub keeps one event per id, a Telegram link is only its evidence.
  */
 
 const PART_WORD: Record<OrderPartKind, string> = { video: 'видео', photos: 'фото' }
 /** The author of ContentOps' lines in the hub's messages of the order. */
 const AUTHOR = 'ContentOps'
-const NO_TELEGRAM =
-  'У заказа в Hub нет сообщения Telegram, а Hub принимает сдачу только под ним: отметьте сдачу в Hub'
+const NOT_IN_HUB = 'Сдача не дошла до Hub — отзывать там нечего'
+
+/** The hub's name of a delivery and of a retraction: ContentOps' own row id. */
+export const deliveryEventRef = (id: string) => `contentops:delivery:${id}`
+export const retractionEventRef = (id: string) => `contentops:retraction:${id}`
 /** Orders past these states take no file: given to the fan, closed or cancelled in the hub. */
 const ENDED: readonly string[] = ['given', 'closed', 'cancelled']
 
@@ -103,24 +108,23 @@ async function addReport(
     code: string
     deliveryId: string
     kind: 'delivery' | 'retraction'
-    body: HubOrderReportBody | null
-    ref: string | null
+    body: HubOrderReportBody
+    /** Nothing for the hub to take: the report is refused at once, in these words. */
+    refusal?: string
   },
 ): Promise<void> {
-  // Without a Telegram message the hub has nowhere to keep the step: refused at once, in words.
-  const refused = input.ref === null || input.body === null
+  const refusal = input.refusal ?? null
   await tx.execute(sql`
     INSERT INTO hub_order_reports (model_id, order_code, delivery_id, kind, body, state, error)
     VALUES (${model.id}::uuid, ${input.code}, ${input.deliveryId}::uuid, ${input.kind},
-            ${JSON.stringify(input.body ?? {})}::jsonb, ${refused ? 'refused' : 'pending'},
-            ${refused ? NO_TELEGRAM : null})`)
+            ${JSON.stringify(input.body)}::jsonb, ${refusal ? 'refused' : 'pending'}, ${refusal})`)
 }
 
 /**
  * «Привязать файл…» of a hub order: per part, a sealed composition of the current versions of
  * the CUS's files and a report `delivery` with the part and whether it is whole now. The hub
- * keeps the delivery under a Telegram message: the one that brought the files, else the order's
- * card (the hub refuses a step without one).
+ * keeps it by its own id; the Telegram message that brought the files, when known, is its
+ * evidence (an order with no card takes it all the same).
  */
 export async function linkHubDelivery(
   tx: Tx,
@@ -167,7 +171,6 @@ export async function linkHubDelivery(
       field: 'message_url',
     })
   }
-  const ref = messageRef ?? order.telegramRefs[0] ?? null
   const linked: string[] = []
   for (const part of parts) {
     const chosen = ofPart(part)
@@ -206,20 +209,18 @@ export async function linkHubDelivery(
       code,
       deliveryId,
       kind: 'delivery',
-      ref,
-      body: ref
-        ? {
-            action: 'delivery',
-            message: {
-              telegramRef: ref,
-              at: deliveredAt,
-              author: AUTHOR,
-              excerpt: deliveryExcerpt(itemId, part, chosen.length),
-            },
-            part,
-            complete,
-          }
-        : null,
+      body: {
+        action: 'delivery',
+        eventRef: deliveryEventRef(deliveryId),
+        message: {
+          ...(messageRef ? { telegramRef: messageRef } : {}),
+          at: deliveredAt,
+          author: AUTHOR,
+          excerpt: deliveryExcerpt(itemId, part, chosen.length),
+        },
+        part,
+        complete,
+      },
     })
     linked.push(`${PART_WORD[part]}${complete ? '' : ' (не вся часть)'}`)
     await logAction(tx, {
@@ -238,7 +239,11 @@ export async function linkHubDelivery(
   if (linked.length > 0) await enqueueHubOrders(tx, model.id, `link:${requestId}`)
 }
 
-/** «Отвязать…»: a new record retracts the delivery; the hub gets a note of the order. */
+/**
+ * «Отвязать…»: a new record retracts the delivery; the hub gets the retraction as an event of
+ * its own, which names the delivery as its report did (its eventRef, or the link of an older
+ * report), and takes the delivery's part back.
+ */
 export async function retractHubDelivery(
   tx: Tx,
   model: ModelScope,
@@ -248,7 +253,7 @@ export async function retractHubDelivery(
   requestId: string,
 ): Promise<void> {
   await lockCode(tx, model, code)
-  const order = await orderOf(tx, model, code)
+  await orderOf(tx, model, code)
   const isUuid = /^[0-9a-f-]{36}$/i.test(deliveryId)
   const { rows } = isUuid
     ? await tx.execute<{
@@ -278,32 +283,26 @@ export async function retractHubDelivery(
   const retractionId = inserted[0]?.id
   if (!retractionId) throw new Error('retraction insert returned nothing')
   const itemId = publicIdOf(delivery.type, delivery.number)
-  // The hub keeps one message per link: a note under a link it has already would be lost, so
-  // the note goes under a link of the order the hub has no message of, when there is one.
-  const used = new Set(order.messages.map((message) => message.telegramRef))
-  const candidates = [
-    ...order.telegramRefs,
-    ...(delivery.message_ref ? [delivery.message_ref] : []),
-  ]
-  const ref = candidates.find((candidate) => !used.has(candidate)) ?? candidates[0] ?? null
+  // The delivery as the hub knows it: by the eventRef of its report, or — a report written
+  // before events — by the Telegram link it went under. A delivery the hub refused is not there.
+  const { rows: reports } = await tx.execute<{ body: HubOrderReportBody; state: string }>(sql`
+    SELECT body, state FROM hub_order_reports
+     WHERE model_id = ${model.id}::uuid AND delivery_id = ${delivery.id}::uuid AND kind = 'delivery'`)
+  const report = reports[0]
+  const retracts = report?.body.eventRef ?? messageRefOf(report?.body.message?.telegramRef) ?? null
   const excerpt = `ContentOps: сдача ${itemId} · ${PART_WORD[delivery.part]} отвязана — ${body.reason}`
   await addReport(tx, model, {
     code,
     deliveryId: retractionId,
     kind: 'retraction',
-    ref,
-    body: ref
-      ? {
-          action: 'message',
-          kind: 'note',
-          message: {
-            telegramRef: ref,
-            at: new Date().toISOString(),
-            author: AUTHOR,
-            excerpt: excerpt.slice(0, 500),
-          },
-        }
-      : null,
+    body: {
+      action: 'retract',
+      eventRef: retractionEventRef(retractionId),
+      retracts: retracts ?? deliveryEventRef(delivery.id),
+      reason: body.reason.slice(0, 500),
+      message: { at: new Date().toISOString(), author: AUTHOR, excerpt: excerpt.slice(0, 500) },
+    },
+    ...(report?.state === 'refused' || retracts === null ? { refusal: NOT_IN_HUB } : {}),
   })
   await logAction(tx, {
     modelId: model.id,
