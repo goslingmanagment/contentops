@@ -484,7 +484,7 @@ describe('handoffs (SPEC §5, §7.1, §9.3)', () => {
     ).json()
     expect(check).toMatchObject({ already: 0, text: null, pending: 3, total: 3 })
     expect(check.pending_text).toMatch(
-      /^3 из 3 уже в PRM-001 \(подготовлена \d\d\.\d\d, «Передано» не нажато\)$/,
+      /^3 из 3 уже в PRM-001 \(подготовлена \d{1,2} [а-я]+\.?, «Передано» не нажато\)$/,
     )
     // The same file in another collection carries it too; another contractor does not.
     const second = (
@@ -573,7 +573,9 @@ describe('handoffs (SPEC §5, §7.1, §9.3)', () => {
     const same = (await check(garanteam.id)).json()
     expect(same.already).toBe(3)
     expect(same).toMatchObject({ pending: 0, pending_text: null })
-    expect(same.text).toMatch(/^3 из 3 уже передавали GaranTTeam Social \(PRM-001, \d\d\.\d\d\)$/)
+    expect(same.text).toMatch(
+      /^3 из 3 уже передавали GaranTTeam Social \(PRM-001, \d{1,2} [а-я]+\.?\)$/,
+    )
     const other = (await check(coraline.id)).json()
     expect(other).toMatchObject({ already: 0, text: null })
     const collection = (await get(manager, '/promo/collections/PRM-001')).json()

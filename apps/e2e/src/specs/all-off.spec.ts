@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { formatDate } from '@contentops/contracts/format'
 import { expect, makeMedia, mskToday, test } from '../fixtures.ts'
 
 /**
@@ -102,8 +103,10 @@ test('«всё выключено»: загрузить, принять, най�
   // The card says the same after a reload: the confirmation is the server's — Fansly 3 has
   // today's date, the other pages are still «не видели».
   await page.goto(`/lora/i/${id}`)
-  const [, month, day] = mskToday().split('-')
+  const today = mskToday()
   const where = page.getByRole('list', { name: 'Где залито' })
-  await expect(where.getByRole('button', { name: /Fansly 3/ })).toContainText(`${day}.${month}`)
+  await expect(where.getByRole('button', { name: /Fansly 3/ })).toContainText(
+    formatDate(today, today),
+  )
   await expect(where.getByRole('button', { name: /Fansly 1/ })).toContainText('не видели')
 })
