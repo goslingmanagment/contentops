@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto'
 import { type HubCapabilities, parseCapabilities } from './capabilities.ts'
 import {
+  type HubCustomOrderAnswer,
+  type HubCustomOrderList,
+  type HubMatterAnswer,
+  type HubMatterOpen,
+  type HubOrderReportBody,
+  parseHubOrderAnswer,
+  parseHubOrderList,
+  parseMatterAnswer,
+} from './custom-orders.ts'
+import {
   type DatasetFilter,
   type DatasetRow,
   type HubDataset,
@@ -135,6 +145,30 @@ export interface HubClient {
   cancel(id: number, signal?: AbortSignal): Promise<HubPublication>
   /** The page's Fansly walls and tiers a draft may name. */
   publicationTargets(page: string, signal?: AbortSignal): Promise<PublicationTargets>
+  /**
+   * The hub's open custom orders of the key's pages and of no known page (`write:customs`):
+   * the order's home is the hub (ecosystem plan 12.11.2026, package N).
+   */
+  customOrders(
+    query?: { state?: 'open' | 'all'; code?: string; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<HubCustomOrderList>
+  /**
+   * A step of an order: a delivery of a part, or a note. Safe to repeat: the hub keeps one row
+   * per message and answers `unchanged` to the same step again.
+   */
+  reportCustomOrder(
+    code: string,
+    body: HubOrderReportBody,
+    signal?: AbortSignal,
+  ): Promise<HubCustomOrderAnswer>
+  /** Opens (or updates, or reopens) a matter by its reason key (`write:matters`). */
+  openMatter(body: HubMatterOpen, signal?: AbortSignal): Promise<HubMatterAnswer>
+  /** Closes a matter by its key: the cause is gone. A closed one answers as it is. */
+  closeMatter(
+    body: { key: string; how: 'resolved' | 'withdrawn' | 'cause_gone'; note?: string },
+    signal?: AbortSignal,
+  ): Promise<HubMatterAnswer>
 }
 
 const enc = encodeURIComponent
@@ -349,6 +383,53 @@ export function createHubClient(options: HubClientOptions): HubClient {
         }),
         endpoint,
         page,
+      )
+    },
+    async customOrders(query = {}, signal) {
+      const endpoint = 'custom-orders'
+      return parseHubOrderList(
+        await json(endpoint, {
+          method: 'GET',
+          path: 'api/v1/agent/custom-orders',
+          query: {
+            state: query.state ?? 'open',
+            code: query.code,
+            limit: String(query.limit ?? 500),
+          },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async reportCustomOrder(code, body, signal) {
+      const endpoint = 'custom-orders.update'
+      return parseHubOrderAnswer(
+        await json(endpoint, {
+          method: 'POST',
+          path: `api/v1/agent/custom-orders/${enc(code)}`,
+          json: body,
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async openMatter(body, signal) {
+      const endpoint = 'matters.open'
+      return parseMatterAnswer(
+        await json(endpoint, { method: 'POST', path: 'api/v1/agent/matters', json: body, signal }),
+        endpoint,
+      )
+    },
+    async closeMatter(body, signal) {
+      const endpoint = 'matters.close'
+      return parseMatterAnswer(
+        await json(endpoint, {
+          method: 'POST',
+          path: 'api/v1/agent/matters/close',
+          json: body,
+          signal,
+        }),
+        endpoint,
       )
     },
   }

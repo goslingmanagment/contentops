@@ -136,6 +136,11 @@ const LISTS: Record<string, readonly string[]> = {
   annotation_suggestions_field_check: v.suggestionFields,
   // 0021_hub_agent_keys
   hub_agent_calls_outcome_check: v.hubAgentCallOutcomes,
+  // 0022_hub_orders
+  hub_order_deliveries_part_check: v.orderParts,
+  hub_order_reports_kind_check: v.hubOrderReportKinds,
+  hub_order_reports_state_check: v.hubOrderReportStates,
+  backup_checkpoints_state_check: v.backupCheckpointStates,
 }
 
 let pool: pg.Pool

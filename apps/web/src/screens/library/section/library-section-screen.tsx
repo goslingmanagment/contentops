@@ -47,7 +47,7 @@ export function CustomsSectionScreen() {
       }),
     [navigate],
   )
-  const tileView = view === 'orders' || view === 'to-ppv' ? undefined : view
+  const tileView = view === 'orders' || view === 'to-ppv' || view === 'archive' ? undefined : view
   return (
     <SectionView
       type="custom"

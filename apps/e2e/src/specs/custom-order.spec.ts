@@ -2,12 +2,15 @@ import type { Locator, Page } from '@playwright/test'
 import { apiAs, expect, makeMedia, test } from '../fixtures.ts'
 
 /**
- * PLAN 4б «сквозной сценарий КМ по заказу, сдаче и правке», DESIGN §6.6 по шагам, SPEC §8.2:
- * Диана заводит заказ из текста карточки; ролик приходит веб-загрузкой «Другое» в «Приехало»,
- * она выбирает заказ и нажимает «Принять как сдачу»; добавляет правку; исправление приходит
- * новой версией мастера того же кастома и становится второй сдачей того же заказа; правка —
- * «Выполнена → новая версия»; заказ закрыт; «Переделка в PPV» → «Сделать PPV» → «в личку»,
- * «Взять мастер как есть» → «Создать PPV». Прежняя версия, сдачи и правка остаются в истории.
+ * PLAN 4б «сквозной сценарий КМ по заказу, сдаче и правке», DESIGN §6.6 по шагам, SPEC §8.2.
+ * С 12.11.2026 дом заказа — Hub (пакет N): заказы ContentOps — архив, экран их только
+ * показывает, а API отвечает по-прежнему (им пишет рутина, пока её не переключили на Hub).
+ * Заказ заводится через API, как его заводит рутина; ролик приходит веб-загрузкой «Другое» в
+ * «Приехало», Диана выбирает заказ и нажимает «Принять как сдачу»; правка — через API;
+ * исправление приходит новой версией мастера того же кастома и становится второй сдачей того
+ * же заказа; правка выполнена и заказ закрыт — через API; архив показывает всё это без
+ * кнопок; «Переделка в PPV» → «Сделать PPV» → «в личку», «Взять мастер как есть» → «Создать
+ * PPV». Прежняя версия, сдачи и правка остаются в истории.
  */
 
 /** The card of this run: its message id is the order's address. */
@@ -59,37 +62,34 @@ test('КМ: заказ → сдача из «Приехало» → правка
   test.setTimeout(300_000)
   const panel = orderPanel(km)
 
-  await test.step('«Новый заказ» из текста карточки', async () => {
+  await test.step('заказ заводит API, как рутина; в архиве он только читается', async () => {
+    const api = await apiAs('km')
+    await api.post('/api/v1/lora/orders', {
+      message_url: `https://t.me/c/${CHAT}/12/${RUN}`,
+      card_text: `📌 Кастом «${TITLE}»\n👤 фан №${RUN} · Fansly 2\n📄 медленно у окна\n⏱ 3-5 минут`,
+      buyer: `фан №${RUN}`,
+      account: 'lora-2',
+      brief: TITLE,
+      duration_raw: '3-5 минут',
+      wants_video: true,
+      wants_photos: 0,
+      deadline: null,
+      // The fan's name does not sound in the video: the PPV can take the master as it is.
+      fan_name: 'no',
+    })
+    await api.context.dispose()
+    // «Заказы» are the hub's now; «Новый заказ» is made there, not here.
     await km.goto('/lora/library/customs?view=orders')
-    await km.getByRole('main').getByRole('button', { name: 'Новый заказ' }).first().click()
-    const dialog = km.getByRole('dialog', { name: 'Новый заказ' })
-    await dialog
-      .getByLabel('Текст карточки')
-      .fill(`📌 Кастом «${TITLE}»\n👤 фан №${RUN} · Fansly 2\n📄 медленно у окна\n⏱ 3-5 минут`)
-    await dialog
-      .getByPlaceholder('Ссылка на карточку в Telegram')
-      .fill(`https://t.me/c/${CHAT}/12/${RUN}`)
-    // The card is parsed into the fields; the person checks them before «Сохранить».
-    await expect(dialog.getByLabel('Покупатель')).toHaveValue(`фан №${RUN}`)
-    await expect(dialog.getByRole('combobox', { name: 'Страница' })).toHaveText('Fansly 2')
-    await expect(dialog.getByRole('checkbox', { name: /видео · 3–5 мин/ })).toBeChecked()
-    // The fan's name does not sound in the video: the PPV can take the master as it is.
-    await dialog
-      .getByRole('radiogroup', { name: 'Имя фана в ролике' })
-      .getByRole('radio', { name: 'нет' })
-      .click()
-    await dialog.getByRole('button', { name: 'Сохранить' }).click()
-    await expect(dialog).toBeHidden()
-    const toast = km.getByRole('status').filter({ hasText: `Заказ заведён · ${TITLE}` })
-    await expect(toast).toBeVisible()
-    await toast.getByRole('button', { name: 'Открыть' }).click()
-    await expect(km).toHaveURL(ORDER_URL)
-    await expect(panel.getByRole('heading', { name: `Кастом «${TITLE}»` })).toBeVisible()
-    await expect(orderStatus(panel)).toHaveText(/^ждём от Лоры/)
-    await expect(panel.getByText('Сдач пока нет')).toBeVisible()
+    await expect(km.getByRole('main').getByRole('button', { name: 'Новый заказ' })).toHaveCount(0)
+    await km.getByRole('main').getByRole('link', { name: 'Архив заказов ContentOps' }).click()
     await expect(
       km.getByRole('listbox', { name: 'Заказы' }).getByRole('option', { name: new RegExp(TITLE) }),
     ).toContainText('ждём от Лоры')
+    await km.goto(ORDER_URL)
+    await expect(panel.getByRole('heading', { name: `Кастом «${TITLE}»` })).toBeVisible()
+    await expect(orderStatus(panel)).toHaveText(/^ждём от Лоры/)
+    await expect(panel.getByRole('button', { name: 'Привязать сдачу…' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Добавить правку' })).toHaveCount(0)
   })
 
   const delivery = `e2e-delivery-${RUN}.mp4`
@@ -133,20 +133,24 @@ test('КМ: заказ → сдача из «Приехало» → правка
     await km.goto(ORDER_URL)
     await expect(orderStatus(panel)).toHaveText(/^сдано/)
     await expect(panel.getByRole('link', { name: custom }).first()).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'Закрыть заказ' })).toBeEnabled()
+    // The archive closes nothing: the hub closes an order after «отдали фану».
+    await expect(panel.getByRole('button', { name: 'Закрыть заказ' })).toHaveCount(0)
   })
 
-  await test.step('правка с требованием и ссылкой на сообщение', async () => {
-    await panel.getByRole('button', { name: 'Добавить правку' }).click()
-    await panel.getByLabel('Что поправить').fill(REVISION)
-    await panel.getByLabel('Ссылка на сообщение').fill(`https://t.me/c/${CHAT}/12/${RUN + 1}`)
-    await panel.getByRole('button', { name: 'Сохранить' }).click()
-    await expect(km.getByRole('status').filter({ hasText: 'Правка добавлена' })).toBeVisible()
+  let revisionId = ''
+  await test.step('правка с требованием и ссылкой на сообщение — через API', async () => {
+    const api = await apiAs('km')
+    const order = await api.post<{ revisions: { id: string; text: string | null }[] }>(
+      `/api/v1/lora/orders/tg-${CHAT}-12-${RUN}/revisions`,
+      { text: REVISION, message_url: `https://t.me/c/${CHAT}/12/${RUN + 1}` },
+    )
+    await api.context.dispose()
+    revisionId = order.revisions.find((revision) => revision.text === REVISION)?.id ?? ''
+    expect(revisionId).not.toBe('')
+    await km.reload()
     await expect(orderStatus(panel)).toHaveText(`правка · «${REVISION}»`)
     const revision = panel.getByRole('listitem').filter({ hasText: `«${REVISION}»` })
     await expect(revision.locator('[data-slot="status-word"]')).toHaveText('открыта')
-    await expect(panel.getByText('Сначала отметьте правку выполненной')).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'Закрыть заказ' })).toHaveCount(0)
   })
 
   const fixed = `e2e-fixed-${RUN}.mp4`
@@ -168,17 +172,15 @@ test('КМ: заказ → сдача из «Приехало» → правка
   })
 
   await test.step('правка выполнена новой версией, заказ закрыт; история на месте', async () => {
-    await panel.getByRole('button', { name: 'Выполнена' }).first().click()
-    await km.getByRole('menuitem', { name: 'новая версия' }).click()
-    await expect(km.getByRole('status').filter({ hasText: 'Правка выполнена' })).toBeVisible()
+    const api = await apiAs('km')
+    await api.post(`/api/v1/lora/orders/tg-${CHAT}-12-${RUN}/revisions/${revisionId}:complete`, {
+      basis: 'new_version',
+    })
+    await api.post(`/api/v1/lora/orders/tg-${CHAT}-12-${RUN}:close`, {})
+    await api.context.dispose()
+    await km.reload()
     const revision = panel.getByRole('listitem').filter({ hasText: `«${REVISION}»` })
     await expect(revision.locator('[data-slot="status-word"]')).toHaveText(/^выполнена/)
-    await expect(orderStatus(panel)).toHaveText(/^сдано/)
-
-    await panel.getByRole('button', { name: 'Закрыть заказ' }).click()
-    await expect(
-      km.getByRole('status').filter({ hasText: `Заказ закрыт · ${TITLE}` }),
-    ).toBeVisible()
     await expect(orderStatus(panel)).toHaveText('закрыт')
     // Closed is read-only, and nothing of the path is lost.
     await expect(panel.getByRole('button', { name: 'Добавить правку' })).toHaveCount(0)

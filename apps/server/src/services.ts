@@ -7,6 +7,8 @@ import type { SpaceOptions } from './space'
 /** Which integrations have their secrets in the environment (SPEC §8: «не настроено»). */
 export interface IntegrationSecrets {
   hub: boolean
+  /** The hub's console (`HUB_BASE_URL`): links to its board «Кастомы». */
+  hubBaseUrl?: string | null
 }
 
 /** What the handlers share: the database, the command pipeline and the outside world. */

@@ -1,7 +1,10 @@
 import { formatDate, type InboxGroup, type OrderCandidate } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
+import { ExternalLinkIcon } from 'lucide-react'
 import { useToday } from '@/data/api-session'
+import { useHubOrderList } from '@/data/hub-orders'
 import { useNewOrderDialog } from '@/shell/dialogs/order-dialog-context'
+import { useCurrentModel } from '@/shell/model/model-context'
 
 interface OrderCandidatesProps {
   group: InboxGroup
@@ -16,6 +19,8 @@ interface OrderCandidatesProps {
  */
 export function OrderCandidates({ group, pending, onChoose }: OrderCandidatesProps) {
   const { openNewOrderDialog } = useNewOrderDialog()
+  // Новый заказ заводят в Hub (пакет N): там его дом; без Hub — по-старому, из карточки.
+  const board = useHubOrderList(useCurrentModel().code).data?.board_url ?? null
   return (
     <div className="flex flex-col gap-2">
       <ul className="flex flex-col gap-2">
@@ -33,13 +38,22 @@ export function OrderCandidates({ group, pending, onChoose }: OrderCandidatesPro
         <Button variant="link" size="inline" disabled={pending} onClick={() => onChoose(null)}>
           Без заказа
         </Button>
-        <Button
-          variant="link"
-          size="inline"
-          onClick={() => openNewOrderDialog({ inboxGroupId: group.id })}
-        >
-          Завести заказ из карточки…
-        </Button>
+        {board ? (
+          <Button variant="link" size="inline" asChild>
+            <a href={board} target="_blank" rel="noreferrer">
+              Новый заказ — на доске Hub
+              <ExternalLinkIcon aria-hidden />
+            </a>
+          </Button>
+        ) : (
+          <Button
+            variant="link"
+            size="inline"
+            onClick={() => openNewOrderDialog({ inboxGroupId: group.id })}
+          >
+            Завести заказ из карточки…
+          </Button>
+        )}
       </div>
     </div>
   )

@@ -215,7 +215,8 @@ test.describe('«Только чтение» на Лоре', () => {
     })
     await km.context.dispose()
 
-    await reader.goto('/lora/library/customs?view=orders')
+    // ContentOps' orders are the archive since the hub keeps them (package N).
+    await reader.goto('/lora/library/customs?view=archive')
     const list = main(reader).getByRole('listbox', { name: 'Заказы' })
     await expect(list.getByRole('option', { name: new RegExp(`чтение ${run}`) })).toBeVisible()
     await expectNoActions(main(reader))

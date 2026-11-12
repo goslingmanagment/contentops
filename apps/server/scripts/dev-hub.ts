@@ -1,7 +1,8 @@
 // A fake Agency Hub for `DEV_FAKE_HUB=1 pnpm dev:server` (SPEC §12.0: external systems are fake
 // servers in development too; nothing here reaches a real Hub or a real page). It answers the
 // agent API of ContentOps — datasets (empty), publication files, drafts with their checks,
-// approve, cancel and the feed of changes — and moves publications the way Hub would:
+// approve, cancel and the feed of changes, custom orders and matters (`dev-hub-orders.ts`) —
+// and moves publications the way Hub would:
 // an approved one is handed to the platform's schedule after a few seconds. «Вышло» and
 // «не вышло» are the developer's: `POST /__dev/publications/<id>/publish` or `/not-publish`.
 // With `DATABASE_URL` it also serves posts made from the dev plan, so matching and «Сверить»
@@ -9,6 +10,7 @@
 // Started by `dev-stack.mjs`; prints `ready <url>` when it listens.
 import type { LoggedRequest, Reply } from '@contentops/hub/testing'
 import { FakeHub } from '@contentops/hub/testing'
+import { DevOrders } from './dev-hub-orders.ts'
 
 const PORT = Number(process.env.DEV_HUB_PORT ?? '54331')
 const KEY = process.env.DEV_HUB_KEY ?? 'dev-hub-key'
@@ -16,12 +18,20 @@ const KEY = process.env.DEV_HUB_KEY ?? 'dev-hub-key'
 const HAND_OFF_MS = Number(process.env.DEV_HUB_HAND_OFF_MS ?? '8000')
 
 class DevHub extends FakeHub {
+  /** The hub's custom orders and matters (package N): `dev-hub-orders.ts`. */
+  readonly customOrders = new DevOrders()
+
   protected override endpointOf(method: string, path: string): string {
     if (method === 'POST' && path.startsWith('/__dev/')) return 'dev'
+    if (path.startsWith('/api/v1/agent/custom-orders') || path.startsWith('/api/v1/agent/matters'))
+      return 'orders'
     return super.endpointOf(method, path)
   }
 
   protected override handle(req: LoggedRequest): Reply {
+    if (req.endpoint === 'orders' || req.path.startsWith('/__dev/custom-orders')) {
+      return this.customOrders.handle(req) ?? { status: 404, body: { error: 'not_found' } }
+    }
     if (req.endpoint !== 'dev') return super.handle(req)
     const match = /^\/__dev\/publications\/(\d+)\/(publish|not-publish|unknown)$/.exec(req.path)
     if (!match) return { status: 404, body: { error: 'not_found' } }

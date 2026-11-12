@@ -4244,6 +4244,422 @@
           "failed"
         ]
       },
+      "HubOrder": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/HubOrderCode"
+          },
+          "state": {
+            "$ref": "#/components/schemas/HubOrderState"
+          },
+          "state_at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusWord"
+          },
+          "title": {
+            "type": "string"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hub_page": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "buyer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "card_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalDate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overdue_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "wants_video": {
+            "type": "boolean"
+          },
+          "wants_photos": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "parts_done": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderPartKind"
+            }
+          },
+          "open_revisions": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HubOrderMessage"
+            }
+          },
+          "card_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hub_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "archive_order": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HubOrderFile"
+            }
+          },
+          "pending_reports": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "code",
+          "state",
+          "state_at",
+          "status",
+          "title",
+          "account",
+          "hub_page",
+          "buyer",
+          "card_text",
+          "duration",
+          "deadline",
+          "overdue_days",
+          "wants_video",
+          "wants_photos",
+          "parts_done",
+          "open_revisions",
+          "messages",
+          "card_url",
+          "hub_url",
+          "archive_order",
+          "files",
+          "pending_reports",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "HubOrderCode": {
+        "type": "string",
+        "pattern": "^K-[1-9]\\d{0,15}$"
+      },
+      "HubOrderFile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "item_id": {
+            "$ref": "#/components/schemas/ItemId"
+          },
+          "part": {
+            "$ref": "#/components/schemas/OrderPartKind"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "files": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "delivered_at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "linked_at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "linked_by": {
+            "$ref": "#/components/schemas/ActorRef"
+          },
+          "message_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retracted": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "$ref": "#/components/schemas/Instant"
+                  },
+                  "by": {
+                    "$ref": "#/components/schemas/ActorRef"
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "at",
+                  "by",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "archive_order": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HubReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retraction_report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HubReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "item_id",
+          "part",
+          "complete",
+          "files",
+          "delivered_at",
+          "linked_at",
+          "linked_by",
+          "message_url",
+          "retracted",
+          "archive_order",
+          "report",
+          "retraction_report"
+        ],
+        "additionalProperties": false
+      },
+      "HubOrderList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HubOrder"
+            }
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "read_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refreshing": {
+            "type": "boolean"
+          },
+          "unassigned": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "board_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "configured",
+          "read_at",
+          "read_error",
+          "refreshing",
+          "unassigned",
+          "board_url"
+        ],
+        "additionalProperties": false
+      },
+      "HubOrderMessage": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "repost",
+              "delivery",
+              "revision",
+              "confirmation",
+              "note"
+            ]
+          },
+          "part": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderPartKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "author": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "part",
+          "at",
+          "author",
+          "excerpt",
+          "url",
+          "done_at"
+        ],
+        "additionalProperties": false
+      },
+      "HubOrderState": {
+        "type": "string",
+        "enum": [
+          "recorded",
+          "paid",
+          "at_model",
+          "partly",
+          "shot",
+          "revision",
+          "refused",
+          "given",
+          "closed",
+          "cancelled"
+        ]
+      },
       "HubPost": {
         "type": "object",
         "properties": {
@@ -4311,6 +4727,45 @@
           "caption",
           "platform_file_name",
           "url"
+        ],
+        "additionalProperties": false
+      },
+      "HubReport": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sent",
+              "refused"
+            ]
+          },
+          "at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unchanged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state",
+          "at",
+          "error",
+          "unchanged"
         ],
         "additionalProperties": false
       },
@@ -6069,6 +6524,49 @@
             "type": [
               "boolean",
               "null"
+            ]
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "LinkHubDeliveryCommandInput": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "$ref": "#/components/schemas/ItemIdInput"
+          },
+          "part": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderPartKindInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "complete": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "message_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstantInput"
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },
@@ -10274,6 +10772,51 @@
           "keys"
         ]
       },
+      "ReportBackupCommandInput": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          },
+          "dump_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "db_snapshot_at": {
+            "$ref": "#/components/schemas/InstantInput"
+          },
+          "dump_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dump_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "repository",
+          "dump_key",
+          "db_snapshot_at"
+        ]
+      },
       "ResolveDisputeCommandInput": {
         "type": "object",
         "properties": {
@@ -10493,6 +11036,18 @@
         "additionalProperties": false
       },
       "RetractDeliveryCommandInput": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "RetractHubDeliveryCommandInput": {
         "type": "object",
         "properties": {
           "reason": {
@@ -11330,12 +11885,38 @@
                     "type": "null"
                   }
                 ]
+              },
+              "dump_where": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "stale_after_hours": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "uncovered_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "text",
               "last_full_at",
-              "last_dump_at"
+              "last_dump_at",
+              "dump_where",
+              "stale_after_hours",
+              "uncovered_bytes"
             ],
             "additionalProperties": false
           },
@@ -13456,6 +14037,46 @@
                     "next_cursor"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/backup-checkpoints": {
+      "post": {
+        "operationId": "admin.reportBackup",
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportBackupCommandInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
                 }
               }
             }
@@ -20341,6 +20962,267 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/hub-orders": {
+      "get": {
+        "operationId": "hubOrders.list",
+        "tags": [
+          "hubOrders"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubOrderList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/hub-orders/{code}": {
+      "get": {
+        "operationId": "hubOrders.get",
+        "tags": [
+          "hubOrders"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubOrder"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/hub-orders:refresh": {
+      "post": {
+        "operationId": "hubOrders.refresh",
+        "tags": [
+          "hubOrders"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubOrderList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/hub-orders/{code}/deliveries": {
+      "post": {
+        "operationId": "hubOrders.linkDelivery",
+        "tags": [
+          "hubOrders"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkHubDeliveryCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubOrder"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/hub-orders/{code}/deliveries/{delivery}:retract": {
+      "post": {
+        "operationId": "hubOrders.retractDelivery",
+        "tags": [
+          "hubOrders"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetractHubDeliveryCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "delivery",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubOrder"
                 }
               }
             }

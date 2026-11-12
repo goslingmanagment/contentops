@@ -253,6 +253,22 @@ const WORDING: Record<string, Wording> = {
   },
   'orders.close': { verb: 'закрыл', rest: 'заказ: {subject}', noun: 'закрытие заказа' },
   'orders.cancel': { verb: 'снял', rest: 'заказ: {subject}', noun: 'снятие заказа' },
+  // The hub's orders (package N, 12.11.2026): `{subject}` is «K-123 · CUS-217».
+  'hubOrders.refresh': {
+    verb: 'запросил',
+    rest: 'заказы из Hub',
+    noun: 'чтение заказов Hub',
+  },
+  'hubOrders.linkDelivery': {
+    verb: 'привязал',
+    rest: 'сдачу к заказу Hub: {subject}',
+    noun: 'сдача по заказу Hub',
+  },
+  'hubOrders.retractDelivery': {
+    verb: 'отвязал',
+    rest: 'сдачу от заказа Hub: {subject}',
+    noun: 'отвязка сдачи',
+  },
   // Legacy import (stage 3): the runs, their inputs and the reserve the pass writes.
   'legacy.parse': { verb: 'запустил', rest: 'разбор старых имён', noun: 'разбор старых имён' },
   'legacy.plan': { verb: 'запустил', rest: 'сухой прогон импорта', noun: 'сухой прогон' },
@@ -486,6 +502,11 @@ const WORDING: Record<string, Wording> = {
   'settings.updateAiBudget': { verb: 'изменил', rest: 'бюджет ИИ {subject}', noun: 'бюджет ИИ' },
   'settings.resumeAi': { verb: 'возобновил', rest: 'ИИ {subject}', noun: 'возобновление ИИ' },
   'admin.verifyBlobs': { verb: 'запустил', rest: 'проверку байтов', noun: 'проверка байтов' },
+  'admin.reportBackup': {
+    verb: 'сообщил',
+    rest: 'о копии базы',
+    noun: 'отчёт о копии базы',
+  },
   'admin.pauseQueue': { verb: 'переключил', rest: 'очередь «{subject}»', noun: 'пауза очереди' },
 }
 
@@ -500,7 +521,7 @@ const AREA_PREFIXES: readonly [JournalArea, readonly string[]][] = [
   ['catalog', ['objects.', 'objectFiles.', 'objectBatch.', 'markup.']],
   ['plan', ['plan.']],
   ['check', ['check.', 'hub.']],
-  ['orders', ['orders.']],
+  ['orders', ['orders.', 'hubOrders.']],
   ['promo', ['promo.']],
   ['settings', ['settings.', 'admin.', 'policy.', 'integration.', 'agent.', 'person.']],
   ['system', ['auth.', 'principal.', 'work.', 'bootstrap', 'repair.', 'smoke.', 'fixtures.']],
@@ -646,6 +667,7 @@ const WORK_KIND: Record<string, string> = {
   hub_sync: 'получение из Hub',
   hub_history: 'проход по истории Hub',
   hub_publish: 'публикация через Hub',
+  hub_orders: 'заказы кастомов из Hub',
   annotate: 'разметка',
   verify_blobs: 'проверка байтов',
   backup: 'бэкап',

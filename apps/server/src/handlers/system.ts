@@ -1,7 +1,7 @@
 import type { ModelCounters, Queue, SystemState } from '@contentops/contracts/domain/system'
 import { type Db, logAction, pausedQueues, setQueuePaused, values } from '@contentops/db'
 import { sql } from 'drizzle-orm'
-import { requireActor } from '../commands'
+import { instant, requireActor } from '../commands'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
@@ -74,17 +74,53 @@ async function queueViews(db: Db): Promise<Queue[]> {
   })
 }
 
+/** A copy of the database older than this is a warning (ecosystem plan 12.11.2026, item 5). */
+const COPY_STALE_HOURS = 36
+
+const REPOSITORY_WORD: Record<string, string> = { mac: 'на маке' }
+
+/**
+ * «Место и бэкап»: the newest copy of the database (the nightly copy to the owner's Mac reports
+ * itself, `admin.reportBackup`) and the masters, which no copy covers yet (SPEC §12.3).
+ */
+async function backupState(db: Db): Promise<SystemState['backup']> {
+  const { rows } = await db.execute<{
+    dump_at: string | null
+    full_at: string | null
+    repository: string | null
+    masters: string | null
+  }>(sql`
+    SELECT (SELECT max(db_snapshot_at)::text FROM backup_checkpoints
+             WHERE state IN ('db_only', 'complete')) AS dump_at,
+           (SELECT max(db_snapshot_at)::text FROM backup_checkpoints
+             WHERE state = 'complete') AS full_at,
+           (SELECT repository FROM backup_checkpoints WHERE state IN ('db_only', 'complete')
+             ORDER BY db_snapshot_at DESC LIMIT 1) AS repository,
+           (SELECT sum(byte_size)::text FROM blobs WHERE state = 'present') AS masters`)
+  const row = rows[0]
+  const full = row?.full_at ? instant(row.full_at) : null
+  return {
+    text: 'Копии базы нет',
+    last_full_at: full,
+    last_dump_at: row?.dump_at ? instant(row.dump_at) : null,
+    dump_where: row?.repository ? (REPOSITORY_WORD[row.repository] ?? row.repository) : null,
+    stale_after_hours: COPY_STALE_HOURS,
+    // Until a full point exists, the bytes of the masters and uploads have no copy.
+    uncovered_bytes: full ? null : Number(row?.masters ?? 0),
+  }
+}
+
 async function systemState(db: Db, space: SpaceOptions): Promise<SystemState> {
-  const [queues, report, latency] = await Promise.all([
+  const [queues, report, latency, backup] = await Promise.all([
     queueViews(db),
     readHostSpace(space.file),
     hubLatency(db),
+    backupState(db),
   ])
   return {
     queues,
     disks: diskViews(report, space, new Date()),
-    // No backup on the pilot (SPEC §12.3, decision 12.09.2026).
-    backup: { text: 'Бэкапа нет (пилот)', last_full_at: null, last_dump_at: null },
+    backup,
     // Storage checks, AI and duplicates come with their stages.
     hub_latency: latency,
     storage_findings: [],
@@ -140,6 +176,31 @@ export function systemHandlers({ db, command, space }: Services): HandlerRegistr
   return {
     admin: {
       state: () => systemState(db, space),
+      // The copy to the owner's Mac reports itself after its checks (an agent token, staff).
+      reportBackup: ({ body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          const { rows } = await tx.execute<{ id: string }>(sql`
+            INSERT INTO backup_checkpoints (db_snapshot_at, dump_key, dump_sha256, dump_bytes,
+                                            state, repository, reported_by)
+            VALUES (${body.db_snapshot_at}::timestamptz, ${body.dump_key},
+                    ${body.dump_sha256 ?? null}, ${body.dump_bytes ?? null}, 'db_only',
+                    ${body.repository}, ${actor.id}::uuid)
+            ON CONFLICT ON CONSTRAINT backup_checkpoints_dump DO NOTHING
+            RETURNING id`)
+          if (rows[0]) {
+            await logAction(tx, {
+              modelId: null,
+              subjectKind: 'backup_checkpoints',
+              subjectId: rows[0].id,
+              subjectLabel: 'Копия базы',
+              after: {
+                Где: REPOSITORY_WORD[body.repository] ?? body.repository,
+                Снимок: body.db_snapshot_at,
+              },
+            })
+          }
+          return { ok: true as const }
+        }),
       counters: async ({ ctx }) => {
         const actor = requireActor(ctx)
         const report = await readHostSpace(space.file)

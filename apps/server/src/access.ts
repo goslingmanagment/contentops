@@ -29,6 +29,8 @@ const ROUTE_ACCESS: Record<string, Access> = {
   // «Интеграции» — КМ только смотрит; пороги нужны его экранам.
   'admin.integrations': 'staff',
   'admin.thresholds': 'staff',
+  // The nightly copy of the database reports itself with an agent token (SPEC §12.3).
+  'admin.reportBackup': 'staff',
   // «Только чтение» видит превью, но не скачивает (SPEC §11.1).
   'media.download': 'staff',
   // «Приехало» и разбор старых имён — разделы КМ и владельца; «Только чтение» видит

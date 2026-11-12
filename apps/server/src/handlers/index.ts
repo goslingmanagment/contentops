@@ -5,6 +5,7 @@ import { authHandlers } from './auth'
 import { catalogHandlers } from './catalog'
 import { catalogEditHandlers } from './catalog-edits'
 import { checkHandlers } from './check'
+import { hubOrderHandlers } from './hub-orders'
 import { inboxHandlers } from './inbox'
 import { inboxAlertHandlers } from './inbox-alerts'
 import { integrationHandlers } from './integrations'
@@ -66,5 +67,6 @@ export function createHandlers(services: Services): HandlerRegistry {
     legacyHandlers(services),
     promoHandlers(services),
     orderHandlers(services),
+    hubOrderHandlers(services),
   )
 }

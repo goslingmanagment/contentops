@@ -479,7 +479,7 @@ export async function markPart(
   })
 }
 
-interface PartFile extends Record<string, unknown> {
+export interface PartFile extends Record<string, unknown> {
   membership_id: string
   asset_id: string
   version_id: string
@@ -488,7 +488,7 @@ interface PartFile extends Record<string, unknown> {
 }
 
 /** Current versions of the CUS's own files: what a delivery seals. */
-async function itemFiles(tx: Tx, model: ModelScope, itemId: string): Promise<PartFile[]> {
+export async function itemFiles(tx: Tx, model: ModelScope, itemId: string): Promise<PartFile[]> {
   const { rows } = await tx.execute<PartFile>(sql`
     SELECT im.id AS membership_id, a.id AS asset_id,
            coalesce(im.pinned_version_id, a.current_version_id) AS version_id,
@@ -527,7 +527,7 @@ export async function deliveryMessageAt(
   return rows.find((row) => names.some((name) => sameLine(name, row.excerpt)))?.at ?? null
 }
 
-async function sourceTimeOf(
+export async function sourceTimeOf(
   tx: Tx,
   model: ModelScope,
   itemId: string,
