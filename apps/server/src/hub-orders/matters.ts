@@ -1,18 +1,22 @@
 import { mskDate } from '@contentops/contracts/clock'
 import { formatDate } from '@contentops/contracts/format'
+import { orderAddress, parseTelegramRef } from '@contentops/contracts/order-link'
 import type { Db } from '@contentops/db'
 import { type HubClient, type HubMatterOpen, isHubError } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import { fromCustom } from '../catalog/from-custom'
 import { customRefusal } from '../plan/checks'
 import type { DbSurface } from '../plan/records'
+import { readHubOrders } from './view'
 
 /**
- * ContentOps' findings as matters of the hub (ecosystem plan 12.11.2026, package N, item 6): a
- * copy of a custom outside the customs folder (`review_cases` `custom_copy`, SPEC §6.2) and a
- * row of the plan whose object is made from a custom where a custom never goes (SPEC §7). Each
- * opens a matter by its reason key for the owner, who closes the signal; it closes when the
- * cause is gone here. ContentOps is the one writer of its kinds (`write:matters`).
+ * ContentOps' findings as matters of the hub (ecosystem plan 12.11.2026, package N, item 6): the
+ * copies of a custom outside the customs folder (`review_cases` `custom_copy`, SPEC §6.2) — one
+ * matter per order, named by the hub's K-code when the custom is linked to a hub order, else by
+ * the custom's own code — and a row of the plan whose object is made from a custom where a
+ * custom never goes (SPEC §7). Each opens a matter by its reason key for the owner, who closes
+ * the signal; it closes when the cause is gone here (a matter of the older key per file closes
+ * on the next pass). ContentOps is the one writer of its kinds (`write:matters`).
  */
 
 export const CONTENTOPS_MATTER_KINDS = [
@@ -32,35 +36,118 @@ interface Finding extends HubMatterOpen {
   how: 'resolved' | 'cause_gone'
 }
 
+/**
+ * The hub order of each custom: the order a live delivery of it went to, else the hub order its
+ * old ContentOps order became (the import's `contentopsRef`, or the order's card) in the last
+ * read. A custom of neither is known by its own code.
+ */
+async function hubCodesOf(
+  db: Db,
+  model: { id: string; code: string },
+  itemIds: readonly string[],
+): Promise<Map<string, string>> {
+  const found = new Map<string, string>()
+  if (itemIds.length === 0) return found
+  const { rows: live } = await db.execute<{ item_id: string; order_code: string }>(sql`
+    SELECT DISTINCT ON (d.item_id) d.item_id, d.order_code
+      FROM hub_order_deliveries d
+     WHERE d.model_id = ${model.id}::uuid AND d.item_id = ANY(${sql.param([...itemIds])}::uuid[])
+       AND d.retracts_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM hub_order_deliveries r WHERE r.retracts_id = d.id)
+     ORDER BY d.item_id, d.linked_at DESC`)
+  for (const row of live) found.set(row.item_id, row.order_code)
+  const rest = itemIds.filter((id) => !found.has(id))
+  if (rest.length === 0) return found
+  const { rows: old } = await db.execute<{ item_id: string; address: string }>(sql`
+    SELECT DISTINCT ON (d.item_id) d.item_id,
+           'tg-' || o.tg_chat || coalesce('-' || o.tg_topic::text, '') || '-' || o.tg_message_id::text
+             AS address
+      FROM custom_order_deliveries d
+      JOIN custom_orders o ON o.model_id = d.model_id AND o.id = d.order_id
+     WHERE d.model_id = ${model.id}::uuid AND d.item_id = ANY(${sql.param(rest)}::uuid[])
+       AND d.retracts_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM custom_order_deliveries r
+                        WHERE r.model_id = d.model_id AND r.retracts_id = d.id)
+     ORDER BY d.item_id, d.linked_at DESC`)
+  if (old.length === 0) return found
+  const byAddress = new Map<string, string>()
+  for (const order of (await readHubOrders(db, model.id)).orders) {
+    for (const card of order.telegramRefs) {
+      const parsed = parseTelegramRef(card)
+      if (parsed && !byAddress.has(orderAddress(parsed)))
+        byAddress.set(orderAddress(parsed), order.code)
+    }
+    if (order.contentopsRef?.startsWith(`${model.code}/`)) {
+      byAddress.set(order.contentopsRef.slice(model.code.length + 1), order.code)
+    }
+  }
+  for (const row of old) {
+    const code = byAddress.get(row.address)
+    if (code) found.set(row.item_id, code)
+  }
+  return found
+}
+
+/** The key of a copies' matter of the older form: one per file (a review case's id). */
+const PER_FILE_KEY =
+  /^contentops\.custom_copy:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
 async function customCopies(db: Db, modelId: string, model: string): Promise<Finding[]> {
   const { rows } = await db.execute<{
     id: string
+    item_id: string
     custom: string
     details: { relative?: string; path?: string; source?: string } | null
     created_at: string
   }>(sql`
-    SELECT rc.id, public_item_id(c.type, c.number) AS custom, rc.details,
+    SELECT rc.id, rc.item_id, public_item_id(c.type, c.number) AS custom, rc.details,
            rc.created_at::text AS created_at
       FROM review_cases rc
       JOIN content_items c ON c.model_id = rc.model_id AND c.id = rc.item_id
-     WHERE rc.model_id = ${modelId}::uuid AND rc.kind = 'custom_copy' AND rc.state = 'open'`)
-  return rows.map((row) => {
-    const path = row.details?.relative ?? row.details?.path ?? ''
+     WHERE rc.model_id = ${modelId}::uuid AND rc.kind = 'custom_copy' AND rc.state = 'open'
+     ORDER BY rc.created_at, rc.id`)
+  const codes = await hubCodesOf(db, { id: modelId, code: model }, [
+    ...new Set(rows.map((row) => row.item_id)),
+  ])
+  // One matter per order: the hub's K-code when the custom is linked to one, else the custom.
+  const groups = new Map<string, { order: string | null; rows: typeof rows }>()
+  for (const row of rows) {
+    const order = codes.get(row.item_id) ?? null
+    const ref = order ?? `${model}/${row.custom}`
+    const group = groups.get(ref) ?? { order, rows: [] }
+    group.rows.push(row)
+    groups.set(ref, group)
+  }
+  return [...groups.entries()].map(([ref, group]): Finding => {
+    const first = group.rows[0] as (typeof rows)[number]
+    const customs = [...new Set(group.rows.map((row) => row.custom))]
+    const paths = group.rows
+      .map((row) => row.details?.relative ?? row.details?.path ?? '')
+      .filter(Boolean)
+    const name = group.order ?? first.custom
+    const title =
+      group.rows.length === 1
+        ? `Копия кастома ${name} лежит вне папки кастомов${paths[0] ? `: ${paths[0]}` : ''}`
+        : `Копии кастома ${name} лежат вне папки кастомов (${group.rows.length}): ${paths.join(', ')}`
     return {
-      key: `contentops.custom_copy:${row.id}`,
+      key: `contentops.custom_copy:${ref}`,
       kind: 'contentops.custom_copy',
-      title: `Копия кастома ${row.custom} лежит вне папки кастомов${path ? `: ${path}` : ''}`.slice(
-        0,
-        300,
-      ),
+      title: title.slice(0, 300),
       owner: { role: 'owner' },
-      object: { type: 'contentops_case', id: row.id },
+      object: group.order
+        ? { type: 'custom_order', id: group.order.slice(2) }
+        : { type: 'contentops_item', id: first.item_id },
+      ...(group.order ? { link: `/workboard/customs/${group.order}` } : {}),
       evidence: {
         model,
-        custom: row.custom,
-        path: path.slice(0, 500),
-        source: row.details?.source ?? null,
-        seenAt: row.created_at,
+        order: group.order,
+        customs,
+        // The hub keeps at most 4 KB of evidence: the first files, and how many there are.
+        files: group.rows.length,
+        paths: paths.slice(0, 8).map((path) => path.slice(0, 150)),
+        cases: group.rows.slice(0, 10).map((row) => row.id),
+        source: first.details?.source ?? null,
+        seenAt: first.created_at,
         rule: 'кастом и всё, что из него сделано, не ставится в фуп, сториз и на стену без цены',
       },
       how: 'resolved',
@@ -184,7 +271,11 @@ export async function keepMatters(
   }
   for (const row of open) {
     if (wanted.has(row.key)) continue
-    const how = row.kind === 'contentops.custom_copy' ? 'resolved' : 'cause_gone'
+    // A copies' matter per file is replaced by the order's: its cause is not resolved, it moved.
+    const how =
+      row.kind === 'contentops.custom_copy' && !PER_FILE_KEY.test(row.key)
+        ? 'resolved'
+        : 'cause_gone'
     try {
       await client.closeMatter({ key: row.key, how }, signal)
     } catch (error) {

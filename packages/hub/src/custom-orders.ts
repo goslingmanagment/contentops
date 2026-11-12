@@ -277,6 +277,8 @@ export interface HubMatterOpen {
   pageLabels?: string[]
   object?: { type: string; id: string }
   evidence?: Record<string, unknown>
+  /** A path of the hub's console where it is done (`/workboard/customs/K-123`). */
+  link?: string
 }
 
 export interface HubMatterAnswer {

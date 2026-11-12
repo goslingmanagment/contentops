@@ -88,6 +88,7 @@ class FakeHub {
   orders = new Map<string, HubCustomOrder>()
   reports: { code: string; body: HubOrderReportBody }[] = []
   matters = new Map<string, 'open' | 'closed'>()
+  titles = new Map<string, string>()
   down = false
 
   static wanted(order: HubCustomOrder): ('video' | 'photos')[] {
@@ -187,9 +188,10 @@ class FakeHub {
         order.version++
         return answer('changed', message, 'stored')
       },
-      openMatter: async (body: { key: string }) => {
+      openMatter: async (body: { key: string; title: string }) => {
         away()
         this.matters.set(body.key, 'open')
+        this.titles.set(body.key, body.title)
         return { key: body.key, state: 'open' as const, transition: 'opened' as const }
       },
       closeMatter: async (body: { key: string }) => {
@@ -506,5 +508,45 @@ describe('the hub orders of a model', () => {
     })
     await run()
     expect(key && hub.matters.get(key)).toBe('closed')
+  })
+
+  it('copies of one custom are one matter, named by the hub order the custom is linked to', async () => {
+    const lora = await modelId('lora')
+    hub.orders.set('K-9', hubOrder(9))
+    await run()
+    const item = await custom({ video: true })
+    expect((await link('K-9', { item_id: item })).statusCode).toBe(201)
+    const { rows } = await server.db.execute<{ id: string }>(sql`
+      SELECT id FROM content_items WHERE model_id = ${lora}::uuid
+         AND public_item_id(type, number) = ${item}`)
+    const itemId = rows[0]?.id ?? ''
+    const cases: string[] = []
+    await server.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT set_config('app.actor_type', 'system', true),
+        set_config('app.actor_label', 'test', true), set_config('app.action', 'test', true),
+        set_config('app.request_id', ${randomUUID()}, true)`)
+      for (const name of ['a.mov', 'b.mov', 'c.mov']) {
+        const { rows: made } = await tx.execute<{ id: string }>(sql`
+          INSERT INTO review_cases (model_id, kind, dedup_key, item_id, details)
+          VALUES (${lora}::uuid, 'custom_copy', ${`copy:${itemId}:${name}`}, ${itemId}::uuid,
+                  ${JSON.stringify({ relative: `/8. Other/${name}`, source: 'dropbox' })}::jsonb)
+          RETURNING id`)
+        cases.push(made[0]?.id ?? '')
+      }
+    })
+    // A matter per file, as the earlier passes opened them.
+    const perFile = `contentops.custom_copy:${cases[0]}`
+    hub.matters.set(perFile, 'open')
+    await server.db.execute(sql`
+      INSERT INTO hub_matters (model_id, key, kind, title)
+      VALUES (${lora}::uuid, ${perFile}, 'contentops.custom_copy', 'Копия кастома')`)
+    await run()
+    const mine = [...hub.matters.entries()].filter(
+      ([key, state]) => state === 'open' && cases.some((id) => key.endsWith(id)),
+    )
+    expect(mine).toEqual([])
+    expect(hub.matters.get(perFile)).toBe('closed')
+    expect(hub.matters.get('contentops.custom_copy:K-9')).toBe('open')
+    expect(hub.titles.get('contentops.custom_copy:K-9')).toMatch(/^Копии кастома K-9 /)
   })
 })
