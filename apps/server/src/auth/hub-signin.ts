@@ -99,12 +99,37 @@ interface Remembered {
 
 const MAX_REMEMBERED = 10_000
 
+/** The origin `ownPath` parses against: never a real host. */
+const OWN_PATH_BASE = 'http://contentops.invalid'
+
 /** A path of ours for after the sign-in; anything else is the start page. */
 export function ownPath(raw: unknown): string {
+  // What is redirected to is always a path of this origin AFTER a URL parser's own normalisation (`/.//host` folds
+  // into `//host`, a protocol-relative address): the value is parsed against a stand-in origin and must stay on it,
+  // and its path — as written and decoded — has no backslash, control character or whitespace, no empty segment
+  // (`//`, `/%2F/`) and no dot segment (`/./`, `/../`). The same table as Hub, TaskIndex and the monitor.
   if (typeof raw !== 'string' || raw.length > 2048) return '/'
-  if (!raw.startsWith('/') || raw.startsWith('//') || /[\\\s\p{Cc}]/u.test(raw)) return '/'
-  if (raw.startsWith('/auth/') || raw === '/login' || raw.startsWith('/login?')) return '/'
-  return raw
+  if (!raw.startsWith('/') || /[\\\s\p{Cc}]/u.test(raw)) return '/'
+  const path = raw.split(/[?#]/, 1)[0] ?? ''
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(path)
+  } catch {
+    return '/'
+  }
+  for (const form of [path, decoded]) {
+    if (/[\\\s\p{Cc}]/u.test(form) || form.includes('//') || /(^|\/)\.{1,2}(\/|$)/.test(form))
+      return '/'
+    if (form.startsWith('/auth/') || form === '/login') return '/'
+  }
+  let url: URL
+  try {
+    url = new URL(raw, OWN_PATH_BASE)
+  } catch {
+    return '/'
+  }
+  const next = `${url.pathname}${url.search}${url.hash}`
+  return url.origin !== OWN_PATH_BASE || next.startsWith('//') ? '/' : next
 }
 
 export function loginAddress(next: string, refusal?: HubSigninRefusal): string {
