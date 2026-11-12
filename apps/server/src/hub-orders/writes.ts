@@ -177,7 +177,7 @@ export async function linkHubDelivery(
     const versionIds = chosen.map((file) => file.version_id)
     if (await sameLive(tx, model, code, item.id, part, versionIds)) continue
     const deliveredAt = instant(
-      body.delivered_at ?? (await sourceTimeOf(tx, model, item.id, versionIds)),
+      body.delivered_at ?? (await sourceTimeOf(tx, model, item.id, versionIds, 'newest')),
     )
     const complete =
       body.complete ??
