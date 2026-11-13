@@ -67,7 +67,7 @@ export function momentLabel(moment: CaseMoment, today: LocalDate): string {
  */
 export function subjectTitle(subject: CaseSubject): string {
   if (subject.item_id) {
-    return subject.title
+    return subject.title.trim() || subject.item_id
   }
   const { post } = subject
   if (post?.caption) {

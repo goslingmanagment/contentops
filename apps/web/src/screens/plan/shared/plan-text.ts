@@ -51,10 +51,10 @@ export function slotText(date: LocalDate, time: LocalTime | null): string {
   return time ? `${day},${NBSP}${time}` : day
 }
 
-/** Название строки: объект или «ждёт монтаж из RAW-0214». */
+/** Название строки: объект (без названия — его ID) или «ждёт монтаж из RAW-0214». */
 export function rowTitle(row: PlanRow): string {
   if (row.manifest) {
-    return row.manifest.title
+    return row.manifest.title.trim() || row.manifest.item_id
   }
   return row.awaiting_montage ? `ждёт монтаж из ${row.awaiting_montage.from_item}` : 'без объекта'
 }

@@ -557,7 +557,7 @@ describe('одна публикация — одно размещение', () =
   })
 })
 
-describe('совпало k из n, A→B→A, показатели', () => {
+describe('совпало k из n, пост увиденный снова, показатели', () => {
   it('часть файлов по имени — «совпало k из n», не точное', async () => {
     const [row] = await putRows(server, diana.session, [
       { item_id: 'SET-076', surface: 'wall', date: YESTERDAY, time: '17:00' },
@@ -594,36 +594,50 @@ describe('совпало k из n, A→B→A, показатели', () => {
     expect(view.verdict.detail).toBe('совпало 2 из 3')
   })
 
-  it('подпись A→B→A — три улики-кандидата, повтор без изменений — ни одной', async () => {
+  it('пост, увиденный снова (подпись A→B→A и дальше), — один кандидат; изменилось суждение — новая улика, читается она', async () => {
     const [row] = await putRows(server, diana.session, [
       { item_id: 'FYP-0802', surface: 'fyp', date: YESTERDAY, time: '23:30' },
     ])
     const post = (caption: string) => hubPost('p-aba', at('23:31'), { caption })
+    const file = (durationMs: number) =>
+      hubFiles('p-aba', at('23:31'), [{ media: 'm-aba', durationMs }])
     hub.setNow(new Date())
     hub.put('posts', 'page-a', [post('A')])
-    hub.put(
-      'post_attachments',
-      'page-a',
-      hubFiles('p-aba', at('23:31'), [{ media: 'm-aba', durationMs: 12_000 }]),
-    )
-    const keys = async () =>
+    hub.put('post_attachments', 'page-a', file(12_000))
+    const candidates = async () =>
       (
         await evidenceOf(
           db,
           (await placementsOf(db, lora1)).filter((p) => p.plan_row_id === row?.id).map((p) => p.id),
         )
-      ).map((e) => e.dedup_key)
+      ).filter((e) => e.kind === 'observed' && e.strength === 'candidate')
     await poll(lora1)
-    hub.setNow(new Date(Date.now() + 1000))
-    hub.put('posts', 'page-a', [post('B')])
+    // Hub observes the post again and again (its caption, its likes): the same candidate.
+    let step = 1
+    for (const caption of ['B', 'A', 'C', 'A']) {
+      hub.setNow(new Date(Date.now() + step++ * 1000))
+      hub.put('posts', 'page-a', [post(caption)])
+      await poll(lora1)
+    }
+    const once = await candidates()
+    expect(once.map((e) => e.dedup_key)).toEqual([
+      `cand:${row?.id}:${once[0]?.payload.manifest_id}:p-aba`,
+    ])
+    const view = await rowView(row?.id as string)
+    expect(view.verdict.level).toBe('candidate')
+    expect(view.verdict.detail).not.toContain('вариант')
+
+    // The length Hub reports changes: a new judgement after the first, the newest one is read.
+    hub.setNow(new Date(Date.now() + step++ * 1000))
+    hub.put('post_attachments', 'page-a', file(14_000))
     await poll(lora1)
-    hub.setNow(new Date(Date.now() + 2000))
-    hub.put('posts', 'page-a', [post('A')])
     await poll(lora1)
-    const three = await keys()
-    expect(new Set(three).size).toBe(3)
-    await poll(lora1)
-    expect(await keys()).toHaveLength(3)
+    const twice = await candidates()
+    expect(twice).toHaveLength(2)
+    expect(twice[1]?.dedup_key).toBe(`${twice[0]?.dedup_key}:1`)
+    const changed = await rowView(row?.id as string)
+    expect(changed.verdict.level).toBe('mismatch')
+    expect(changed.verdict.detail).toBe('длительность 0:12 и 0:14')
   })
 
   it('показатели: нет строк — «нет данных» (null), нулевые просмотры — 0', async () => {

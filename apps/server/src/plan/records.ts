@@ -304,14 +304,38 @@ export async function loadEvidence(
 }
 
 /**
+ * One candidate of a plan row for one publication (a post or a vault file) on one placement:
+ * the key that makes several stored rows of it one. Matching once wrote a row per Hub
+ * observation, so a post Hub saw again (likes, stats) stood as many candidates; the history
+ * pass keeps its own per file and is left out.
+ */
+export function candidateGroup(row: {
+  kind: string
+  strength?: string | null
+  placement_id?: string
+  external_ref?: string | null
+  payload?: Record<string, unknown>
+}): string | null {
+  if (row.kind !== 'observed' || row.strength !== 'candidate') return null
+  if (!row.placement_id || !row.external_ref || row.payload?.kind === 'history') return null
+  const planRow = typeof row.payload?.plan_row_id === 'string' ? row.payload.plan_row_id : ''
+  return `${row.placement_id}|${planRow}|${row.external_ref}`
+}
+
+/**
  * Evidence that still stands: a retraction takes back the row it corrects, and itself; a «Не
  * то» takes back the candidate it answers while it is not retracted itself («Отменить»).
+ * Several rows of one candidate (`candidateGroup`) stand as the newest of them — the input is in
+ * the order of `recorded_at` — and an answer to any of them answers them all.
  */
 export function standingEvidence<
   T extends {
     id: string
     kind: string
     corrects_id: string | null
+    strength?: string | null
+    placement_id?: string
+    external_ref?: string | null
     payload?: Record<string, unknown>
   },
 >(evidence: readonly T[]): T[] {
@@ -328,7 +352,19 @@ export function standingEvidence<
       ]
     }),
   )
-  return effective.filter((row) => !corrected.has(row.id))
+  const newest = new Map<string, string>()
+  const answered = new Set<string>()
+  for (const row of effective) {
+    const group = candidateGroup(row)
+    if (!group) continue
+    newest.set(group, row.id)
+    if (corrected.has(row.id)) answered.add(group)
+  }
+  return effective.filter((row) => {
+    if (corrected.has(row.id)) return false
+    const group = candidateGroup(row)
+    return !group || (!answered.has(group) && newest.get(group) === row.id)
+  })
 }
 
 // ---------------------------------------------------------------------------
