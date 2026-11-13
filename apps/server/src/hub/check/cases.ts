@@ -161,10 +161,20 @@ export async function loosePosts(
                     AND NOT EXISTS (SELECT 1 FROM placement_evidence t
                                      WHERE t.model_id = f.model_id AND t.corrects_id = f.id
                                        AND t.kind = 'retract'))
-               AND NOT EXISTS (SELECT 1 FROM placement_evidence r
-                                WHERE r.model_id = e.model_id
-                                  AND (r.corrects_id = e.id
-                                       OR (r.kind = 'manual_reject' AND r.payload ->> 'rejects' = e.id::text))
+               -- An answer to any stored row of the same candidate answers it (standingEvidence).
+               AND NOT EXISTS (SELECT 1 FROM placement_evidence c
+                                 JOIN placement_evidence r
+                                   ON r.model_id = c.model_id
+                                  AND (r.corrects_id = c.id
+                                       OR (r.kind = 'manual_reject' AND r.payload ->> 'rejects' = c.id::text))
+                                WHERE c.model_id = e.model_id AND c.placement_id = e.placement_id
+                                  AND (c.id = e.id
+                                       OR (c.kind = 'observed' AND c.strength = 'candidate'
+                                           AND e.payload ->> 'kind' IS DISTINCT FROM 'history'
+                                           AND c.payload ->> 'kind' IS DISTINCT FROM 'history'
+                                           AND c.external_ref = e.external_ref
+                                           AND c.payload ->> 'plan_row_id'
+                                               IS NOT DISTINCT FROM e.payload ->> 'plan_row_id'))
                                   AND NOT EXISTS (SELECT 1 FROM placement_evidence t
                                                    WHERE t.model_id = r.model_id
                                                      AND t.corrects_id = r.id)))`,

@@ -252,6 +252,9 @@ export async function matchPage(tx: Tx, page: Page, options: MatchOptions): Prom
       occurredAt: null,
       origin: 'hub',
     })
+    const payload = candidatePayload(pair, shown, byRow, byPost, settings, page)
+    const dedupKey = candidateKey(placements, placementId, row, post.ref, payload)
+    if (!dedupKey) continue
     added(
       await addEvidence(tx, page, {
         placementId,
@@ -260,9 +263,9 @@ export async function matchPage(tx: Tx, page: Page, options: MatchOptions): Prom
         strength: 'candidate',
         observationId: post.observationId,
         externalRef: post.ref,
-        payload: candidatePayload(pair, shown, byRow, byPost, settings, page),
+        payload,
         eventAt: post.publishedAt,
-        dedupKey: `cand:${row.id}:${row.manifestId}:${post.observationId}`,
+        dedupKey,
       }),
     )
   }
@@ -552,6 +555,52 @@ async function certainEvidence(
     })
   }
   await bindAssets(tx, page, placementId, bound, null)
+}
+
+/** A payload as jsonb keeps it: keys sorted, `undefined` dropped; the caption left out. */
+function judgementOf(payload: Record<string, unknown>): string {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical)
+    if (value === null || typeof value !== 'object') return value
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key, one]) => one !== undefined && key !== 'caption' && key !== 'standing')
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, one]) => [key, canonical(one)]),
+    )
+  }
+  return JSON.stringify(canonical(payload))
+}
+
+/**
+ * The key of a row's candidate for a post or a vault file: one per row, manifest and
+ * publication, not per Hub observation — Hub observes a post again whenever its likes or stats
+ * change. `null` when the newest candidate of the pair already says the same; a changed
+ * judgement (length, count, kind) is written after it as `<key>:<n>`, and the readers show the
+ * newest (`standingEvidence`).
+ */
+function candidateKey(
+  placements: readonly PlacementFact[],
+  placementId: string,
+  row: Pick<RowFacts, 'id' | 'manifestId'>,
+  ref: string,
+  payload: Record<string, unknown>,
+): string | null {
+  const base = `cand:${row.id}:${row.manifestId}:${ref}`
+  const evidence = placements.find((placement) => placement.id === placementId)?.evidence ?? []
+  const prior = evidence.filter(
+    (entry) =>
+      entry.kind === 'observed' &&
+      entry.strength === 'candidate' &&
+      entry.externalRef === ref &&
+      entry.payload.plan_row_id === row.id,
+  )
+  const last = prior.at(-1)
+  if (last && judgementOf(last.payload) === judgementOf(payload)) return null
+  const same = evidence.filter(
+    (entry) => entry.dedupKey === base || entry.dedupKey.startsWith(`${base}:`),
+  ).length
+  return same === 0 ? base : `${base}:${same}`
 }
 
 function candidatePayload(
@@ -908,6 +957,9 @@ async function matchVault(
       } else {
         if (stale) report.vault.stale += 1
         else report.vault.candidate += 1
+        const candidate = { ...payload, kind: stale ? 'stale' : 'vault' }
+        const dedupKey = candidateKey(placements, placementId, row, member.mediaRef, candidate)
+        if (!dedupKey) continue
         added(
           await addEvidence(tx, page, {
             placementId,
@@ -916,9 +968,9 @@ async function matchVault(
             strength: 'candidate',
             observationId: member.observationId,
             externalRef: member.mediaRef,
-            payload: { ...payload, kind: stale ? 'stale' : 'vault' },
+            payload: candidate,
             eventAt: member.membershipAt,
-            dedupKey: `cand:${row.id}:${row.manifestId}:${member.observationId}`,
+            dedupKey,
           }),
         )
       }

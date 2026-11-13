@@ -43,7 +43,7 @@ import {
  * The history pass of a Fansly page (SPEC §7, PLAN 5): Hub's posts and vault files from before
  * the start of matching are matched with the catalog without a plan, by the name of the file
  * (`history-rules.ts`). A single match is a candidate without plan
- * (`cand:hist:<asset>:<observation>`): it takes the object out of «ещё не залито» and gives a
+ * (`cand:hist:<asset>`): it takes the object out of «ещё не залито» and gives a
  * date for «слишком рано»; disputed ones wait until the object is planned again; the rest stay
  * «неизвестно», their count is in the report. It runs when «Автосверка» is first switched on and
  * again after each batch of the library, and every run reviews the pass's own earlier
@@ -270,7 +270,11 @@ interface Wanted {
 
 const placementOf = (wanted: Wanted) => wanted.claimId ?? wanted.existingId
 
-/** The key of the candidate; a retracted one of the same key is followed by `:1`, `:2`… */
+/**
+ * The key of the candidate, one per placement and catalog file (`cand:hist:<asset>`; earlier
+ * keys also named the Hub observation): a standing one of the file is kept, a retracted one is
+ * followed by `:1`, `:2`…
+ */
 function freshKey(base: string, keys: readonly { key: string; standing: boolean }[]) {
   const same = keys.filter((entry) => entry.key === base || entry.key.startsWith(`${base}:`))
   if (same.some((entry) => entry.standing)) return null
@@ -464,13 +468,12 @@ export async function historyPass(
     })
   }
 
-  // The pass's own earlier candidates the rules no longer give are taken back.
+  // The pass's own earlier candidates the rules no longer give are taken back; a file Hub only
+  // observed again (likes, stats) is the same candidate.
   const kept = new Set(
     wanted.flatMap((one) => {
       const id = placementOf(one)
-      return id
-        ? one.evidence.map((entry) => `${id}|${entry.asset.assetId}|${entry.observationId}`)
-        : []
+      return id ? one.evidence.map((entry) => `${id}|${entry.asset.assetId}`) : []
     }),
   )
   const retracted = new Set<string>()
@@ -479,7 +482,7 @@ export async function historyPass(
     if (!placement || !own.has(placement.id) || !considered.has(prior.subject)) continue
     const standing = placement.evidence.find((entry) => entry.id === prior.id)?.payload.standing
     if (standing !== true) continue
-    if (kept.has(`${prior.placementId}|${prior.assetId}|${prior.observationId}`)) continue
+    if (kept.has(`${prior.placementId}|${prior.assetId}`)) continue
     await addEvidence(tx, page, {
       placementId: prior.placementId,
       source: 'manual',
@@ -516,7 +519,7 @@ export async function historyPass(
       standing: entry.payload.standing === true && !retracted.has(entry.id),
     }))
     for (const entry of one.evidence) {
-      const dedupKey = freshKey(`${HISTORY_KEY}${entry.asset.assetId}:${entry.observationId}`, keys)
+      const dedupKey = freshKey(`${HISTORY_KEY}${entry.asset.assetId}`, keys)
       if (!dedupKey) continue
       await addEvidence(tx, page, {
         placementId,

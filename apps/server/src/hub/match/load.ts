@@ -155,6 +155,7 @@ export interface EvidenceFact {
   strength: string | null
   dedupKey: string
   correctsId: string | null
+  externalRef: string | null
   payload: Record<string, unknown>
   recordedAt: string
   recordedBy: string | null
@@ -640,12 +641,13 @@ export async function loadPlacements(q: Queryable, page: Page): Promise<Placemen
     strength: string | null
     dedup_key: string
     corrects_id: string | null
+    external_ref: string | null
     payload: Record<string, unknown>
     recorded_at: string
     recorded_by: string | null
   }>(sql`
     SELECT e.id, e.placement_id, e.source, e.kind, e.strength, e.dedup_key, e.corrects_id,
-           e.payload, e.recorded_at::text AS recorded_at, e.recorded_by
+           e.external_ref, e.payload, e.recorded_at::text AS recorded_at, e.recorded_by
       FROM placement_evidence e
      WHERE e.model_id = ${page.modelId}::uuid
        AND e.placement_id = ANY (${sql.param(rows.map((row) => row.id))}::uuid[])
@@ -661,6 +663,7 @@ export async function loadPlacements(q: Queryable, page: Page): Promise<Placemen
       strength: row.strength,
       dedupKey: row.dedup_key,
       correctsId: row.corrects_id,
+      externalRef: row.external_ref,
       payload: row.payload,
       recordedAt: iso(row.recorded_at) as string,
       recordedBy: row.recorded_by,

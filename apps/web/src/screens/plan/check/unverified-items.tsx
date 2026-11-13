@@ -81,7 +81,12 @@ export function UnverifiedRowView({ row, pageLabel, today }: UnverifiedRowViewPr
       <CaseThumb itemId={row.item_id} surface={row.surface} size="mini" dimmed />
       <div className="min-w-0 flex-1 text-muted-foreground">
         <p className="truncate text-sm">
-          {row.item_id ? <span className="tabular-nums">{row.item_id} · </span> : null}
+          {row.item_id ? (
+            <span className="tabular-nums">
+              {row.item_id}
+              {row.title.trim() ? ' · ' : ''}
+            </span>
+          ) : null}
           {row.title}
         </p>
         <p className="truncate text-ink-3 text-xs tabular-nums">{subtitle}</p>

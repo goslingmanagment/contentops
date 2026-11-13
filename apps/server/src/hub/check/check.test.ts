@@ -529,3 +529,100 @@ describe('со сторон экрана (перенос проверок заг
     }
   })
 })
+
+describe('один пост — один кандидат', () => {
+  it('копии кандидата одного поста, уже лежащие в базе, читаются одним; «Не то» и «Это оно» закрывают их все', async () => {
+    const [rejected, confirmed] = await putRows(server, diana.session, [
+      { item_id: 'FYP-0805', surface: 'fyp', date: YESTERDAY, time: '21:00' },
+      { item_id: 'FYP-0805', surface: 'fyp', date: YESTERDAY, time: '23:00' },
+    ])
+    const posts = (caption: string) => [
+      hubPost('p-dup-a', at('21:03'), { caption }),
+      hubPost('p-dup-b', at('23:04'), { caption }),
+    ]
+    const sync = async (caption: string) => {
+      hub.setNow(new Date(Date.now() + Math.random() * 1000))
+      hub.put('posts', 'page-a', posts(caption))
+      const outcome = await syncOnce(db, lora1, 'posts', { client: () => fakeClient(hub).client })
+      expect(outcome.state).toBe('succeeded')
+    }
+    hub.put('post_attachments', 'page-a', [
+      ...hubFiles('p-dup-a', at('21:03'), [{ media: 'm-dup-a', durationMs: 21_000 }]),
+      ...hubFiles('p-dup-b', at('23:04'), [{ media: 'm-dup-b', durationMs: 21_000 }]),
+    ])
+    await sync('one')
+    // What matching wrote before the fix: a candidate per Hub observation of the same post.
+    const placements = (await placementsOf(db, lora1)).filter(
+      (p) => p.plan_row_id === rejected?.id || p.plan_row_id === confirmed?.id,
+    )
+    const written = (
+      await evidenceOf(
+        db,
+        placements.map((p) => p.id),
+      )
+    ).filter((e) => e.kind === 'observed' && e.strength === 'candidate')
+    expect(written).toHaveLength(2)
+    await withActorTx(
+      db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test', requestId: randomUUID() },
+      async (tx) => {
+        for (const one of written) {
+          for (const n of [1, 2, 3]) {
+            await tx.execute(sql`
+              INSERT INTO placement_evidence (model_id, placement_id, source, kind, strength,
+                                              hub_observation_id, external_ref, payload, event_at,
+                                              recorded_at, dedup_key)
+              SELECT model_id, placement_id, source, kind, strength, hub_observation_id,
+                     external_ref, payload, event_at, recorded_at + make_interval(mins => ${n}),
+                     ${`cand:${one.payload.plan_row_id}:${one.payload.manifest_id}:${randomUUID()}`}
+                FROM placement_evidence WHERE id = ${one.id}::uuid`)
+          }
+        }
+      },
+    )
+
+    const view = await list()
+    for (const row of [rejected, confirmed]) {
+      const found = view.items.find((item) => item.id === `r-${row?.id}`)
+      expect(found?.kind).toBe('candidate')
+      expect(found?.posts).toHaveLength(1)
+      expect(found?.verdict.detail ?? '').not.toContain('вариант')
+    }
+    expect(view.unambiguous_ids).toContain(`r-${confirmed?.id}`)
+
+    // «Не то» on the one shown answers every copy: the case is gone for good, the post is loose.
+    const shown = (await caseOf(`r-${rejected?.id}`)).posts[0]?.evidence_id as string
+    const no = await decide(diana.session, `r-${rejected?.id}`, 'reject', { evidence_id: shown })
+    expect(no.statusCode, no.body).toBe(200)
+    // «Это оно» through «Подтвердить однозначные».
+    const yes = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/reconcile:confirm-unambiguous',
+      as: diana.session,
+      key: newKey(),
+      body: { case_ids: [`r-${confirmed?.id}`] },
+    })
+    expect(yes.statusCode, yes.body).toBe(200)
+    expect(yes.json().results[0]).toMatchObject({ ok: true, code: null })
+    await sync('two')
+    const after = await list()
+    const ids = after.items.map((item) => item.id)
+    expect(ids).not.toContain(`r-${rejected?.id}`)
+    expect(ids).not.toContain(`r-${confirmed?.id}`)
+    expect(
+      after.items.filter((item) => item.kind === 'unplanned').map((item) => item.posts[0]?.url),
+    ).toContain('https://fansly.com/post/p-dup-a')
+    const levels = await Promise.all(
+      [rejected, confirmed].map(async (row) => {
+        const response = await call(server.app, {
+          method: 'GET',
+          url: `/api/v1/lora/plan/rows/${row?.id}`,
+          as: owner,
+        })
+        return (response.json() as PlanRow).verdict.level
+      }),
+    )
+    expect(levels[0]).not.toMatch(/candidate/)
+    expect(levels[1]).toBe('confirmed_manual')
+  })
+})

@@ -3,7 +3,7 @@ import { Button } from '@contentops/ui/components/button'
 import { cn } from '@contentops/ui/lib/utils'
 import { CheckIcon } from 'lucide-react'
 import { useMarkActions } from '../shared/actions/use-mark-actions'
-import { isDoneRow, pagesLabel } from '../shared/plan-text'
+import { isDoneRow, pagesLabel, rowTitle } from '../shared/plan-text'
 import { rememberedMarkKind } from '../shared/row-action'
 import { RowStatus } from '../shared/row-status'
 import { RowThumb } from '../shared/row-thumb'
@@ -45,7 +45,7 @@ export function MergedRow({ rows, accounts, selected, canAct }: MergedRowProps) 
       <RowTime time={first.time} />
       <RowThumb row={first} />
       <div className={cn('flex flex-col', TITLE_COLUMN)}>
-        <span className="truncate text-base">{first.manifest.title}</span>
+        <span className="truncate text-base">{rowTitle(first)}</span>
         <span className="truncate text-ink-3 text-sm">
           {first.manifest.item_id} · {SURFACE_LABEL[first.surface]} {first.time} · {pages}
         </span>

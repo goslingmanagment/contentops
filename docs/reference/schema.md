@@ -874,7 +874,9 @@ manual_confirm | reused_pair | manual_reject | legacy_claim | outside_catalog | 
 `matched_version_id?`, `legacy_claim_id?`, `payload jsonb`, `event_at?`,
 `recorded_at`, `recorded_by?`, `corrects_id?`, `dedup_key`.
 UNIQUE `(model_id, placement_id, source, dedup_key)` — то же наблюдение второй раз
-строки не даёт, изменённое (другая подпись) — даёт; UNIQUE `(corrects_id)` — у
+строки не даёт, изменённое (другая подпись) — даёт; кандидат строки плана — один на строку,
+состав и публикацию (ключ по посту или файлу vault, не по наблюдению, SPEC §7): новая
+строка — только при изменённом суждении, читается самая новая, ответ на любую — ответ на все; UNIQUE `(corrects_id)` — у
 исправления один преемник; CHECK `source = 'import' → strength = 'claim'`,
 `source = 'manual' → strength = 'exact'`, `source = 'hub' → hub_observation_id
 IS NOT NULL`. Уникальности по `external_ref` внутри размещения нет: два кандидата

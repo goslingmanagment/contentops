@@ -391,6 +391,15 @@ describe('проход по истории', () => {
     expect(object.statusCode, object.body).toBe(200)
     expect(JSON.stringify(object.json().pages)).toContain('похоже, выходило')
 
+    // Hub observes a file again (a length refined by 10 ms): the same file, the same candidate.
+    hub.setNow(new Date(Date.now() + 60_000))
+    const [, lossyAt, lossy] = posts.find(([ref]) => ref === 'h-lossy') as (typeof posts)[number]
+    hub.put(
+      'post_attachments',
+      'page-a',
+      hubFiles('h-lossy', lossyAt, [{ ...lossy, durationMs: 6_060 }]),
+    )
+    expect((await syncOnce(db, lora1, 'posts', options())).state).toBe('succeeded')
     // The pass again after a batch: the same rules give the same answer, nothing is written.
     const again = await withActorTx(
       db,
