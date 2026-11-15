@@ -7426,6 +7426,11 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "inbox_decision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
           "plan": {
             "type": "integer",
             "minimum": 0,

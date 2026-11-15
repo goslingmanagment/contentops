@@ -2,13 +2,13 @@ import type { ModelCode, Role } from '@contentops/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { useApi } from './api-session'
 import { useCheckList } from './check'
-import { useInboxList } from './inbox'
+import { useModelCounters } from './counters'
 import { queryKeys } from './query-keys'
 
 /**
  * «Ждут вас» (план продуктов §2.4, §4.4): дела человека из Hub (через его вход через Hub, сервер
  * держит ответ минуту) и свои строки ContentOps — те же чтения, что у шапки Плана («Сверить 8») и
- * у «Приехало» («Нужно решение 1»): одно число в одном месте.
+ * у счётчиков колонки («Нужно решение 1»): одно число в одном месте.
  */
 const EVERY_MS = 60_000
 
@@ -33,11 +33,12 @@ export function useWaiting(model: ModelCode, role: Role | null) {
   const staff = role === 'owner' || role === 'manager'
   const hub = useHubWaiting(model)
   const check = useCheckList(model, staff)
-  const inbox = useInboxList(model, 'active', staff)
+  // «Нужно решение» — из счётчиков колонки, а не второго чтения списка «Приехало».
+  const counters = useModelCounters(model)
   const own: OwnLine[] = []
   const checks = check.data?.items.length ?? 0
   if (staff && checks > 0) own.push({ key: 'check', label: 'Сверить', count: checks, to: 'check' })
-  const decisions = inbox.data?.sections?.decision ?? 0
+  const decisions = counters?.inbox_decision ?? 0
   if (staff && decisions > 0) {
     own.push({ key: 'inbox', label: 'Приехало: нужно решение', count: decisions, to: 'inbox' })
   }

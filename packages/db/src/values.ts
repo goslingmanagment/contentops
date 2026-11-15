@@ -31,7 +31,7 @@ export type UniqLevel = (typeof uniqLevels)[number]
 export const principalKinds = ['human', 'agent'] as const
 export type PrincipalKind = (typeof principalKinds)[number]
 
-export const principalRoles = ['owner', 'manager', 'reader'] as const
+export const principalRoles = ['owner', 'manager', 'reader', 'customs'] as const
 export type PrincipalRole = (typeof principalRoles)[number]
 
 /** A call with an agent's hub key: acted as the linked agent, or no link for the code (SPEC §11.1). */

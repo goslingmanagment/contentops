@@ -7,6 +7,8 @@ export const ModelCountersSchema = z.object({
   model: ModelCodeSchema,
   /** Groups of «Приехало» that need a person: ◆, ▲ and «готово». */
   inbox: z.int().nonnegative(),
+  /** Of them ◆ «Нужно решение»: the line of «Ждут вас». */
+  inbox_decision: z.int().nonnegative().optional(),
   /** My rows for today that need a step, «сверить» included. */
   plan: z.int().nonnegative(),
   /** The plan number turns red only when there is ▲ «пропущено». */

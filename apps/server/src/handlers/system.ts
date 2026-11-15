@@ -157,6 +157,7 @@ async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelC
   return {
     model: code,
     inbox: inbox.count,
+    inbox_decision: inbox.decision,
     plan: steps.length + earlier.length,
     plan_missed: earlier.length > 0 || steps.some((verdict) => verdict.level === 'missed'),
     attention:
