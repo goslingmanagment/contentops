@@ -1,14 +1,16 @@
-import type { CatalogEntry, ItemId } from '@contentops/contracts'
+import type { CatalogEntry, CheckSuggestion, ItemId } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@contentops/ui/components/input-group'
 import { PanelMain } from '@contentops/ui/components/panel-pin'
 import { ListRowSkeleton } from '@contentops/ui/components/skeletons'
 import { cn } from '@contentops/ui/lib/utils'
 import { SearchIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useCatalogIndex } from '@/data/catalog'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { compareComposition, compositionOf } from '../case-text'
 import { CaseThumb } from '../case-thumb'
+import { matchedLabel } from '../suggestion-hint'
 import type { CaseBodyProps } from './case-body'
 import { OurSide, PairSides, PostSide } from './pair-sides'
 import { useBindSuggestions } from './use-bind-suggestions'
@@ -17,9 +19,11 @@ interface SuggestionProps {
   entry: CatalogEntry
   picked: boolean
   onPick: () => void
+  /** «15 из 15» у подсказки по именам файлов. */
+  matched?: CheckSuggestion
 }
 
-function Suggestion({ entry, picked, onPick }: SuggestionProps) {
+function Suggestion({ entry, picked, onPick, matched }: SuggestionProps) {
   return (
     <li>
       <button
@@ -37,7 +41,11 @@ function Suggestion({ entry, picked, onPick }: SuggestionProps) {
             <span className="text-ink-3 tabular-nums">{entry.id} · </span>
             {entry.title}
           </span>
-          <span className="truncate text-ink-3 text-sm tabular-nums">{compositionOf(entry)}</span>
+          <span className="truncate text-ink-3 text-sm tabular-nums">
+            {[matched ? matchedLabel(matched) : null, compositionOf(entry)]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
         </span>
       </button>
     </li>
@@ -57,6 +65,7 @@ function NothingPicked() {
  * Пост без плана (DESIGN §4.15): справа то, что видел Hub, слева выбор из каталога —
  * подсказки «Ещё не залито на Fansly 1 · по времени» и поиск; «Привязать» и «Не наше».
  * Выбранное сразу сравнивается с постом: «≠ видео 0:10 и 0:07 — не совпадает» красным.
+ * Подсказки по именам файлов (SPEC §7) идут первыми, и первая уже выбрана.
  */
 export function UnplannedBody({
   entry,
@@ -69,9 +78,20 @@ export function UnplannedBody({
   const model = useCurrentModel()
   const post = entry.posts[0]
   const [query, setQuery] = useState('')
-  const [picked, setPicked] = useState<CatalogEntry | null>(null)
+  const [chosen, setPicked] = useState<CatalogEntry | null>(null)
   const suggestions = useBindSuggestions(model.code, account, post, query)
+  const index = useCatalogIndex(model.code).data
+  const byNames = useMemo(
+    () =>
+      entry.suggestions.flatMap((suggestion) => {
+        const found = index?.items.find((item) => item.id === suggestion.item_id)
+        return found ? [{ entry: found, suggestion }] : []
+      }),
+    [entry.suggestions, index],
+  )
+  const picked = chosen ?? byNames[0]?.entry ?? null
   const busy = pending !== null
+  const binding = pending === 'bind' || pending === 'bind-suggested'
   const bind = (itemId: ItemId) => onDecide({ action: 'bind', entry, itemId })
   // Выбранное против поста: при расхождении «Привязать» теряет синий цвет — сначала глазами.
   const match = picked && post ? compareComposition(picked, post) : null
@@ -88,8 +108,8 @@ export function UnplannedBody({
           <PanelMain>
             <Button
               variant={match?.matches === false ? 'outline' : 'default'}
-              disabled={!picked || (busy && pending !== 'bind')}
-              pending={pending === 'bind'}
+              disabled={!picked || (busy && !binding)}
+              pending={binding}
               onClick={() => (picked ? bind(picked.id) : undefined)}
             >
               {picked ? `Привязать ${picked.id}` : 'Привязать'}
@@ -122,6 +142,22 @@ export function UnplannedBody({
                 aria-label="Найти в каталоге"
               />
             </InputGroup>
+            {byNames.length > 0 && !query.trim() ? (
+              <>
+                <h3 className="px-2 text-ink-3 text-sm">По именам файлов</h3>
+                <ul className="flex flex-col">
+                  {byNames.map((one) => (
+                    <Suggestion
+                      key={one.entry.id}
+                      entry={one.entry}
+                      matched={one.suggestion}
+                      picked={picked?.id === one.entry.id}
+                      onPick={() => setPicked(one.entry)}
+                    />
+                  ))}
+                </ul>
+              </>
+            ) : null}
             {suggestions.title ? (
               <h3 className="px-2 text-ink-3 text-sm">{suggestions.title}</h3>
             ) : null}

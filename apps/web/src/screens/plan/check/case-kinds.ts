@@ -5,7 +5,14 @@ import type { CheckCase, CheckCaseKind, Platform } from '@contentops/contracts'
  * и клавиши `1` `2` `3`. Одна таблица по виду случая вместо развилок по экрану.
  */
 
-export type CaseAction = 'confirm' | 'reject' | 'review' | 'bind' | 'outside' | 'reject-all'
+export type CaseAction =
+  | 'confirm'
+  | 'reject'
+  | 'review'
+  | 'bind'
+  | 'bind-suggested'
+  | 'outside'
+  | 'reject-all'
 
 /** Подписи кнопок строки и меню (DESIGN §4.15). */
 export const ACTION_LABEL: Record<CaseAction, string> = {
@@ -13,6 +20,7 @@ export const ACTION_LABEL: Record<CaseAction, string> = {
   reject: 'Не то',
   review: 'Разобрать',
   bind: 'Привязать…',
+  'bind-suggested': 'Привязать к',
   outside: 'Не наше',
   'reject-all': 'Ни один',
 }
@@ -42,13 +50,23 @@ export function isSinglePair(entry: CheckCase): boolean {
   return (entry.kind === 'candidate' || entry.kind === 'mismatch') && entry.posts.length === 1
 }
 
+/** «Привязать к SET-046»: первая подсказка по именам файлов (SPEC §7). */
+export function actionLabel(entry: CheckCase, action: CaseAction): string {
+  const top = entry.suggestions[0]
+  return action === 'bind-suggested' && top
+    ? `${ACTION_LABEL[action]} ${top.item_id}`
+    : ACTION_LABEL[action]
+}
+
 /**
  * Кнопки строки справа. Пара Fansly решается в строке; OnlyFans — только глядя на весь
- * состав поста, поэтому «Разобрать»; пост без плана — «Привязать…» и «Не наше».
+ * состав поста, поэтому «Разобрать»; пост без плана — «Привязать…» и «Не наше», а с
+ * подсказкой по именам файлов — «Привязать к SET-046» одним нажатием и «Привязать…» для
+ * другого объекта («Не наше» — в меню и панели).
  */
 export function rowActions(entry: CheckCase, platform: Platform): readonly CaseAction[] {
   if (entry.kind === 'unplanned') {
-    return ['bind', 'outside']
+    return entry.suggestions.length > 0 ? ['bind-suggested', 'bind'] : ['bind', 'outside']
   }
   if (isSinglePair(entry) && platform === 'fansly') {
     return ['confirm', 'reject']

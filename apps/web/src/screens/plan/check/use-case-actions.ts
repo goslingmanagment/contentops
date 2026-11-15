@@ -28,6 +28,10 @@ export function useCaseActions({ accounts, canDecide, decisions, select }: CaseA
       'reject-all': (entry) => decisions.decide({ action: 'reject', entry, evidenceId: null }),
       review: (entry) => select(entry.id),
       bind: (entry) => select(entry.id, true),
+      'bind-suggested': (entry) => {
+        const top = entry.suggestions[0]
+        if (top) decisions.decide({ action: 'bind', entry, itemId: top.item_id })
+      },
       outside: (entry) => decisions.decide({ action: 'outside', entry }),
     }
   }, [decisions, select])

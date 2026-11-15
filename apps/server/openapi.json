@@ -1715,6 +1715,12 @@
               "string",
               "null"
             ]
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckSuggestion"
+            }
           }
         },
         "required": [
@@ -1736,7 +1742,8 @@
           "album",
           "unambiguous",
           "details",
-          "hint"
+          "hint",
+          "suggestions"
         ],
         "additionalProperties": false
       },
@@ -1796,6 +1803,34 @@
           "resolved_count",
           "not_ours_count",
           "unambiguous_ids"
+        ],
+        "additionalProperties": false
+      },
+      "CheckSuggestion": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "$ref": "#/components/schemas/ItemId"
+          },
+          "title": {
+            "type": "string"
+          },
+          "matched": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "total": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "item_id",
+          "title",
+          "matched",
+          "total"
         ],
         "additionalProperties": false
       },

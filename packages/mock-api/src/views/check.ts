@@ -183,6 +183,7 @@ export function checkCase(context: FactsContext, track: PlacementTrack): CheckCa
       how_checked: track.evidence.map((item) => describeEvidence(item, mskDate(context.now))),
     },
     hint: track.extras?.hint ?? null,
+    suggestions: kind === 'unplanned' ? (track.extras?.suggestions ?? []) : [],
   }
 }
 
