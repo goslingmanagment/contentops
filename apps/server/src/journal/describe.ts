@@ -751,6 +751,12 @@ const SYSTEM_PHRASE: Record<string, (row: LogRow, after: Map<string, string>) =>
     `Вход через хаб: ${row.subject_label} — это «${after.get('Хаб') ?? '?'}» в хабе`,
   'auth.hubSessionEnded': (row, after) =>
     `Сессия через хаб закрыта: ${row.subject_label}${after.get('Причина') ? ` · ${after.get('Причина')}` : ''}`,
+  'auth.hubPersonMade': (row, after) =>
+    `Из Hub: ${row.subject_label} · ${after.get('Роль') ?? ''} · ${after.get('Модели') ?? ''}`,
+  'auth.hubPersonUpdated': (row, after) =>
+    `Hub изменил доступ: ${row.subject_label} · ${after.get('Роль') ?? ''} · ${after.get('Модели') ?? ''}`,
+  'auth.hubPersonClosed': (row, after) =>
+    `Hub закрыл доступ: ${row.subject_label}${after.get('Причина') ? ` · ${after.get('Причина')}` : ''}`,
   'policy.ops': (row) => `Из консоли ВМ задано: ${row.subject_label}`,
   'integration.ops': (row) => `Из консоли ВМ переключено: ${row.subject_label}`,
   'agent.ops': (row, after) =>

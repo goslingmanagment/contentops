@@ -164,6 +164,15 @@ const EnvSchema = z.object({
     .string()
     .regex(/^[a-z0-9][a-z0-9._-]*$/)
     .optional(),
+  /**
+   * Hub's model slugs that are another model here (products plan §4.1): `test=smoke` — Hub's test
+   * model is ContentOps' `smoke`, so a test person never sees a real model. Unnamed slugs are the
+   * same code here (`lora` → `lora`).
+   */
+  HUB_MODEL_MAP: z
+    .string()
+    .regex(/^([a-z0-9-]+=[a-z0-9-]+)(,[a-z0-9-]+=[a-z0-9-]+)*$/)
+    .optional(),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   /**

@@ -64,7 +64,9 @@ interface AddPersonFormProps {
   onCreated: (created: PersonCreated) => void
 }
 
-const ROLE_CHOICES = RoleSchema.options.map((role) => ({ value: role, label: ROLE_LABEL[role] }))
+const ROLE_CHOICES = RoleSchema.options
+  .filter((role) => role !== 'customs')
+  .map((role) => ({ value: role, label: ROLE_LABEL[role] }))
 
 function AddPersonForm({ models, onCancel, onCreated }: AddPersonFormProps) {
   const api = useApi()

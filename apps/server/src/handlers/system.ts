@@ -140,7 +140,7 @@ const NEEDS_STEP: ReadonlySet<string> = new Set(['planned', 'missed', 'blocked_s
  */
 async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelCounters> {
   const scope = await modelScopeOf(db, code)
-  if (!scope || actor.role === 'reader') {
+  if (!scope || actor.role === 'reader' || actor.role === 'customs') {
     return { model: code, inbox: 0, plan: 0, plan_missed: false, attention: false }
   }
   const state = await loadState(db, scope)
@@ -157,6 +157,7 @@ async function modelCounters(db: Db, actor: Actor, code: string): Promise<ModelC
   return {
     model: code,
     inbox: inbox.count,
+    inbox_decision: inbox.decision,
     plan: steps.length + earlier.length,
     plan_missed: earlier.length > 0 || steps.some((verdict) => verdict.level === 'missed'),
     attention:

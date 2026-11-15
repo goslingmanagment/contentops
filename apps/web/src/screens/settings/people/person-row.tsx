@@ -52,6 +52,7 @@ export function PersonRow({ person, models, isMe }: PersonRowProps) {
   const [revoking, setRevoking] = useState(false)
   const rights = usePersonRights(person)
   const roleLabelId = useId()
+  const fromHub = Boolean(person.hub_code)
 
   const revokeSessions = useIntentMutation<void, unknown>({
     failed: 'Сессии не отозваны',
@@ -62,7 +63,7 @@ export function PersonRow({ person, models, isMe }: PersonRowProps) {
   })
 
   const changeRole = (value: string) => {
-    const role = RoleSchema.safeParse(value)
+    const role = RoleSchema.exclude(['customs']).safeParse(value)
     if (role.success && role.data !== person.role) {
       rights.save({ role: role.data }, person.version)
     }
@@ -80,27 +81,45 @@ export function PersonRow({ person, models, isMe }: PersonRowProps) {
             <span className="font-medium">{person.name}</span>
             <span className="ml-2 font-mono text-ink-3 text-xs">{person.login}</span>
             {isMe ? <span className="ml-2 text-ink-3 text-sm">это вы</span> : null}
+            {fromHub ? <span className="ml-2 text-ink-3 text-sm">из Hub</span> : null}
           </p>
-          <ModelChecks
-            holder={person}
-            models={models}
-            disabled={rights.isPending}
-            onToggle={toggleModel}
-          />
+          {fromHub ? (
+            // Роль и модели этого человека задаёт Hub (план продуктов §4.1): здесь только видно.
+            <p className="text-muted-foreground text-sm">
+              {models
+                .filter((model) => person.models.includes(model.code))
+                .map((model) => model.name)
+                .join(', ') || 'моделей нет'}
+              {' · роль и модели задаёт Hub'}
+            </p>
+          ) : (
+            <ModelChecks
+              holder={person}
+              models={models}
+              disabled={rights.isPending}
+              onToggle={toggleModel}
+            />
+          )}
         </div>
         <span id={roleLabelId} className="sr-only">
           Роль: {person.name}
         </span>
-        <Select value={person.role} onValueChange={changeRole} disabled={isMe || rights.isPending}>
+        <Select
+          value={person.role}
+          onValueChange={changeRole}
+          disabled={isMe || fromHub || rights.isPending}
+        >
           <SelectTrigger aria-labelledby={roleLabelId} className="w-48">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {RoleSchema.options.map((role: Role) => (
-              <SelectItem key={role} value={role}>
-                {ROLE_LABEL[role]}
-              </SelectItem>
-            ))}
+            {RoleSchema.options
+              .filter((role) => role !== 'customs' || person.role === 'customs')
+              .map((role: Role) => (
+                <SelectItem key={role} value={role}>
+                  {ROLE_LABEL[role]}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
         <span className="flex w-44 items-center justify-end gap-2 text-muted-foreground text-sm">

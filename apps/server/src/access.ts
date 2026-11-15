@@ -23,6 +23,7 @@ const ROUTE_ACCESS: Record<string, Access> = {
   'settings.revokeMySession': 'human',
   'settings.updateProfile': 'human',
   'settings.changePassword': 'human',
+  'settings.closeFirstDay': 'human',
   'admin.counters': 'signed',
   'admin.models': 'signed',
   'admin.tags': 'signed',
@@ -50,6 +51,26 @@ export function accessOf(key: string, route: Route): Access | 'model' {
 }
 
 const STAFF = new Set(['owner', 'manager'])
+
+/**
+ * «Только кастомы» (`customs`, products plan §2.4): a person who leads customs in Hub sees the custom
+ * orders of their models and «Ждут вас», and changes nothing but their own profile and sessions. THIS
+ * TABLE and nothing else: a route added later stays closed to the role until it is written here.
+ */
+export const CUSTOMS_ROUTES: ReadonlySet<string> = new Set([
+  'auth.signOutEverywhere',
+  'admin.me',
+  'admin.counters',
+  'admin.models',
+  'settings.mySessions',
+  'settings.revokeMySession',
+  'settings.updateProfile',
+  'settings.changePassword',
+  'settings.closeFirstDay',
+  'hubOrders.list',
+  'hubOrders.get',
+  'waiting.list',
+])
 
 function forbidden(message: string): ApiProblem {
   return new ApiProblem('forbidden', message)
@@ -100,6 +121,9 @@ export function createAuthorize(db: Db): Authorize {
       throw forbidden('Агенты выключены владельцем')
     }
     if (access === 'human' && actor.type !== 'person') throw forbidden('Только для людей')
+    if (actor.role === 'customs' && !CUSTOMS_ROUTES.has(key)) {
+      throw forbidden('Роль «Только кастомы» видит заказы и «Ждут вас»')
+    }
     if (access === 'staff' && !STAFF.has(actor.role)) throw forbidden('Недостаточно прав')
     if (access === 'owner' && actor.role !== 'owner') throw forbidden('Это может только владелец')
     // «Только чтение» не меняет ничего, кроме своего профиля и сессий (DESIGN §2.3).

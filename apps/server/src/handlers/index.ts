@@ -24,6 +24,7 @@ import { promoHandlers } from './promo'
 import { systemHandlers } from './system'
 import { tagHandlers } from './tags'
 import { thresholdHandlers } from './thresholds'
+import { waitingHandlers } from './waiting'
 
 /** Several registries into one; a route answered twice is a mistake caught at start. */
 export function mergeHandlers(...registries: HandlerRegistry[]): HandlerRegistry {
@@ -68,5 +69,6 @@ export function createHandlers(services: Services): HandlerRegistry {
     promoHandlers(services),
     orderHandlers(services),
     hubOrderHandlers(services),
+    waitingHandlers(services),
   )
 }

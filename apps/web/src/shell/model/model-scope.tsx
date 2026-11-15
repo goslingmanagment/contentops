@@ -2,7 +2,7 @@ import { ErrorLine } from '@contentops/ui/components/state-lines'
 import { getRouteApi, Outlet, useLocation, useParams } from '@tanstack/react-router'
 import { useEffect } from 'react'
 import { useCatalogIndex, usePageSummaries } from '@/data/catalog'
-import { useModels } from '@/data/session'
+import { useModels, useRole } from '@/data/session'
 import { ForbiddenState, NotFoundState } from '@/screens/errors'
 import { FieldSkeleton } from '../field/field-skeleton'
 import { rememberSection } from '../last-section'
@@ -19,8 +19,11 @@ const routeApi = getRouteApi('/_shell/$model')
  */
 export function useModelIndexPrefetch(code: string | undefined) {
   const model = code ?? ''
-  useCatalogIndex(model, code !== undefined)
-  usePageSummaries(model, code !== undefined)
+  // «Только кастомы» каталога не видит: индекс ему не запрашивается.
+  const role = useRole()
+  const wanted = code !== undefined && role !== 'customs'
+  useCatalogIndex(model, wanted)
+  usePageSummaries(model, wanted)
 }
 
 /**

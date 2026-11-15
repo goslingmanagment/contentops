@@ -19,6 +19,7 @@ import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import type { Services } from '../services'
 import { personById } from './people-view'
+import { productLinks } from './products'
 
 /** Sign-in, sign-out, the profile and own sessions (DESIGN §4.19 «Профиль и сессии», §4.21). */
 
@@ -216,12 +217,22 @@ export function authHandlers(services: Services): HandlerRegistry {
     admin: {
       me: async ({ ctx }) => {
         const actor = requireActor(ctx)
-        const { rows } = await db.execute<{ ui_skin: 'blue' | 'focus' }>(sql`
-          SELECT ui_skin FROM principals WHERE id = ${actor.id}::uuid`)
+        const { rows } = await db.execute<{
+          ui_skin: 'blue' | 'focus'
+          hub_products: string[] | null
+          first_day: boolean
+        }>(sql`
+          SELECT ui_skin, hub_products,
+                 (role = 'manager' AND first_day_closed_at IS NULL) AS first_day
+            FROM principals WHERE id = ${actor.id}::uuid`)
+        const row = rows[0]
         return {
           person: await personById(db, actor.id),
           models: [...actor.models],
-          ui_skin: rows[0]?.ui_skin ?? 'blue',
+          ui_skin: row?.ui_skin ?? 'blue',
+          // The switcher: Hub's list for a person signed in through Hub (products plan §2.1).
+          products: productLinks(row?.hub_products ?? null, services.secrets.hubBaseUrl),
+          first_day: actor.type === 'person' && row?.first_day === true,
         }
       },
     },
@@ -257,6 +268,14 @@ export function authHandlers(services: Services): HandlerRegistry {
         })
         return { items: await liveSessions(services, ctx), next_cursor: null }
       },
+
+      closeFirstDay: ({ body, ctx }) =>
+        command({ ctx, body }, async (tx, actor) => {
+          await tx.execute(sql`
+            UPDATE principals SET first_day_closed_at = now()
+             WHERE id = ${actor.id}::uuid AND first_day_closed_at IS NULL`)
+          return { ok: true as const }
+        }),
 
       updateProfile: ({ body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {

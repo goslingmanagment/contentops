@@ -1053,10 +1053,11 @@ const COUNTED: ReadonlySet<DraftState['kind']> = new Set(['decision', 'error', '
 export async function inboxCount(
   q: Queryable,
   modelId: string,
-): Promise<{ count: number; attention: boolean }> {
+): Promise<{ count: number; decision: number; attention: boolean }> {
   const groups = await activeGroups(q, modelId, new Date())
   return {
     count: groups.filter((item) => COUNTED.has(item.state.kind)).length,
+    decision: groups.filter((item) => item.state.kind === 'decision').length,
     attention: groups.some((item) => item.state.kind === 'decision' || item.state.kind === 'error'),
   }
 }

@@ -51,9 +51,10 @@ function mergePages(data: InboxPages): InboxList {
   }
 }
 
-export function useInboxList(model: ModelCode, view: InboxView = 'active') {
+export function useInboxList(model: ModelCode, view: InboxView = 'active', enabled = true) {
   const api = useApi()
   return useInfiniteQuery({
+    enabled,
     queryKey: queryKeys.inbox(model, view),
     queryFn: ({ pageParam, signal }) =>
       api.inbox.list({

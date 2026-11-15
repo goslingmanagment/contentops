@@ -286,7 +286,8 @@ const roleEnv = (role) => ({
   ...aiEnv,
   ROLE: role,
   DATABASE_URL: url('contentops_app', 'dev-app'),
-  PUBLIC_URL: 'http://localhost:5173',
+  // `DEV_PUBLIC_URL`: Vite on another port (a stand beside another one).
+  PUBLIC_URL: process.env.DEV_PUBLIC_URL ?? 'http://localhost:5173',
   // No nginx in development: web streams previews and downloads itself.
   FILES_DIRECT: '1',
   LOG_LEVEL: process.env.LOG_LEVEL ?? 'info',

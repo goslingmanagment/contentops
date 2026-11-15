@@ -36,12 +36,13 @@ function keepList(list: CheckList): CheckList {
   return list
 }
 
-function useOpenList(model: ModelCode, select: (list: CheckList) => CheckList) {
+function useOpenList(model: ModelCode, select: (list: CheckList) => CheckList, enabled = true) {
   const api = useApi()
   return useQuery({
     queryKey: queryKeys.checkCases(model, 'open'),
     queryFn: ({ signal }) => api.check.list({ params: { model }, signal }),
     select,
+    enabled,
   })
 }
 
@@ -50,8 +51,8 @@ function useOpenList(model: ModelCode, select: (list: CheckList) => CheckList) {
  * (`items.length`) и ◆ пары в панели дня. Решённый случай выпадает отсюда сразу, ещё до
  * перечитывания списка, поэтому число одно и то же в Дне, Неделе и самой «Сверить».
  */
-export function useCheckList(model: ModelCode) {
-  return useOpenList(model, openCases)
+export function useCheckList(model: ModelCode, enabled = true) {
+  return useOpenList(model, openCases, enabled)
 }
 
 /**

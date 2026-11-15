@@ -41,6 +41,7 @@ const VISIBLE_TABS: Record<Role, readonly SettingsTab[]> = {
   owner: SETTINGS_TABS,
   manager: ['models', 'integrations', 'state', 'profile'],
   reader: ['state', 'profile'],
+  customs: ['profile'],
 }
 
 /** Можно ли открыть раздел по адресу. «Сервис ИИ» открывается и до подключения — чтобы подключить. */

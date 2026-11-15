@@ -5,6 +5,8 @@ import type { SectionKey } from './last-section'
  * второму сегменту (`/lora/plan/…` → План). Поиск и настройки к разделам не относятся.
  */
 const SECTION_BY_SEGMENT: Readonly<Record<string, SectionKey>> = {
+  today: 'today',
+  waiting: 'waiting',
   library: 'library',
   i: 'library',
   a: 'library',

@@ -75,7 +75,7 @@ export function DayRow({
         )}
       >
         <RowTime time={row.time} />
-        <RowThumb row={row} />
+        <RowThumb row={row} className="max-sm:hidden" />
         <RowTitle row={row} accountLabel={accountLabel} />
         <RowStatus row={row} canAct={canAct} onCheck={onCheck} className={STATUS_COLUMN} />
         <RowActions>
@@ -102,8 +102,9 @@ export function DayRow({
  * широком — причина «Hub видит не все посты этой страницы». Колонка действий — по самой
  * широкой кнопке дня (`row-actions-width.ts`), остальное место уходит названию.
  */
-export const TITLE_COLUMN = 'min-w-0 flex-[3_1_0%]'
-export const STATUS_COLUMN = 'min-w-34 max-w-70 flex-[2_1_0%]'
+// На телефоне (уже 640) строка — время, состояние и действие: название и превью прячутся.
+export const TITLE_COLUMN = 'min-w-0 flex-[3_1_0%] max-sm:hidden'
+export const STATUS_COLUMN = 'min-w-0 sm:min-w-34 max-w-70 flex-[2_1_0%]'
 
 /** Время 14 табличное; у строки без времени — «весь день», у места нормы без времени — пусто. */
 export function RowTime({ time, allDay = true }: { time: string | null; allDay?: boolean }) {
@@ -142,7 +143,7 @@ export function RowActions({ children }: { children: ReactNode }) {
     // biome-ignore lint/a11y/noStaticElementInteractions: только гасит всплытие нажатия к строке-варианту списка
     // biome-ignore lint/a11y/useKeyWithClickEvents: клавиши строки обрабатывает список-владелец
     <div
-      className="flex w-(--row-actions,15rem) shrink-0 items-center justify-end gap-1"
+      className="flex w-auto shrink-0 items-center justify-end gap-1 sm:w-(--row-actions,15rem)"
       onClick={stopRowClick}
       onDoubleClick={stopRowClick}
     >
@@ -160,6 +161,7 @@ function RowDownload({ row, onDownload }: { row: PlanRow; onDownload: () => void
         <Button
           variant="ghost"
           size="icon-sm"
+          className="max-sm:hidden"
           aria-label="Скачать для заливки"
           onClick={onDownload}
         >

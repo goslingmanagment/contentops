@@ -11,22 +11,6 @@ const tsvector = customType<{ data: string; driverData: string }>({ dataType: ()
 
 
 
-export const models = pgTable("models", {
-	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
-	code: text().notNull(),
-	title: text().notNull(),
-	titleGenitive: text("title_genitive").notNull(),
-	timezone: text().default('Europe/Moscow').notNull(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
-}, (table): PgTableExtraConfigValue[] => [
-	unique("models_code_key").on(table.code),
-	check("models_code_format", sql`code ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'::text`),
-	check("models_code_reserved", sql`code <> ALL (ARRAY['admin'::text, 'auth'::text])`),
-]);
-
 export const principals = pgTable("principals", {
 	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
 	kind: text().notNull(),
@@ -44,14 +28,17 @@ export const principals = pgTable("principals", {
 	hubUserId: bigint("hub_user_id", { mode: "number" }),
 	hubLogin: text("hub_login"),
 	hubAgentCode: text("hub_agent_code"),
+	hubPersonCode: text("hub_person_code"),
+	hubProducts: text("hub_products").array(),
+	firstDayClosedAt: timestamp("first_day_closed_at", { withTimezone: true, mode: 'string' }),
 }, (table): PgTableExtraConfigValue[] => [
 	unique("principals_login_key").on(table.login),
 	unique("principals_hub_user_id_key").on(table.hubUserId),
 	unique("principals_hub_agent_code_key").on(table.hubAgentCode),
+	unique("principals_hub_person_code_key").on(table.hubPersonCode),
 	check("principals_kind_check", sql`kind = ANY (ARRAY['human'::text, 'agent'::text])`),
 	check("principals_login_format", sql`login ~ '^[a-z0-9][a-z0-9._-]*$'::text`),
 	check("principals_gender_check", sql`gender = ANY (ARRAY['f'::text, 'm'::text])`),
-	check("principals_role_check", sql`role = ANY (ARRAY['owner'::text, 'manager'::text, 'reader'::text])`),
 	check("principals_ui_skin_check", sql`ui_skin = ANY (ARRAY['blue'::text, 'focus'::text])`),
 	check("principals_password_humans_only", sql`(password_hash IS NULL) OR (kind = 'human'::text)`),
 	check("principals_gender_of_humans", sql`(gender IS NOT NULL) OR (kind = 'agent'::text)`),
@@ -60,6 +47,25 @@ export const principals = pgTable("principals", {
 	check("principals_hub_login_with_link", sql`(hub_login IS NULL) OR (hub_user_id IS NOT NULL)`),
 	check("principals_hub_agent_code_format", sql`hub_agent_code ~ '^[a-z0-9][a-z0-9-]{0,62}$'::text`),
 	check("principals_hub_agent_code_agents_only", sql`(hub_agent_code IS NULL) OR (kind = 'agent'::text)`),
+	check("principals_hub_person_code_format", sql`hub_person_code ~ '^[a-z0-9][a-z0-9-]{0,62}$'::text`),
+	check("principals_hub_person_with_link", sql`(hub_person_code IS NULL) OR (hub_user_id IS NOT NULL)`),
+	check("principals_role_check", sql`role = ANY (ARRAY['owner'::text, 'manager'::text, 'reader'::text, 'customs'::text])`),
+]);
+
+export const models = pgTable("models", {
+	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
+	code: text().notNull(),
+	title: text().notNull(),
+	titleGenitive: text("title_genitive").notNull(),
+	timezone: text().default('Europe/Moscow').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	archivedAt: timestamp("archived_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	rowVersion: bigint("row_version", { mode: "number" }).default(1).notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	unique("models_code_key").on(table.code),
+	check("models_code_format", sql`code ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'::text`),
+	check("models_code_reserved", sql`code <> ALL (ARRAY['admin'::text, 'auth'::text])`),
 ]);
 
 export const apiTokens = pgTable("api_tokens", {

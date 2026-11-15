@@ -1060,9 +1060,9 @@ describe('«Утвердить неделю» (decision of the owner 11.11.2026)
     expect(response.statusCode, response.body).toBe(200)
   }
 
-  it('only the owner, a person: a manager and an agent of any role are refused', async () => {
+  it('the owner or the content manager of the model, a person: an agent of any role is refused', async () => {
     const row = await put({ item_id: 'SET-074', date: on(0), time: '19:00' })
-    expect((await approveWeek([row], diana.session)).statusCode).toBe(403)
+    expect((await approveWeek([row], diana.session)).statusCode).toBe(200)
     expect((await approveWeek([row], agent)).statusCode).toBe(403)
     // An agent with the owner's role (the API never gives one; the database could hold it).
     const added = await call(server.app, {
@@ -1088,9 +1088,10 @@ describe('«Утвердить неделю» (decision of the owner 11.11.2026)
     const ownerAgent = `Bearer ${IssuedTokenSchema.parse(token.json()).secret}`
     const refused = await approveWeek([row], ownerAgent)
     expect(refused.statusCode).toBe(403)
-    expect(refused.json().message).toContain('только владелец')
+    expect(refused.json().message).toContain('Утверждает неделю владелец')
     expect((await revoke(ownerAgent)).statusCode).toBe(403)
-    expect((await revoke(diana.session)).statusCode).toBe(403)
+    // The content manager takes her approval back as she gave it.
+    expect((await revoke(diana.session)).statusCode).toBe(200)
     expect((await rowOf(row.id)).approval).toBeNull()
   })
 

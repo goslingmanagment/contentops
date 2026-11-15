@@ -15,12 +15,14 @@ interface PersonRow extends Record<string, unknown> {
   last_seen_at: string | null
   posts_on: Person['posts_on']
   models: string[]
+  hub_person_code: string | null
 }
 
 /** «Люди и доступ»: people, not agents; a person whose access was revoked is gone. */
 function peopleQuery(where: SQL) {
   return sql<PersonRow>`
     SELECT p.id, p.display_name AS name, p.login, p.gender, p.role, p.row_version AS version,
+           p.hub_person_code,
            (SELECT count(*)::int FROM sessions s
              WHERE s.principal_id = p.id AND s.revoked_at IS NULL AND s.expires_at > now()) AS sessions,
            (SELECT max(coalesce(s.last_seen_at, s.created_at)) FROM sessions s
@@ -52,6 +54,7 @@ function personOf(row: PersonRow): Person {
     sessions: row.sessions,
     last_seen_at: instantOrNull(row.last_seen_at),
     version: Number(row.version),
+    hub_code: row.hub_person_code,
   }
 }
 

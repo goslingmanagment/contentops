@@ -36,13 +36,14 @@ export function DateStrip({ model, date, today, dots, search }: DateStripProps) 
     search,
   })
   return (
-    <nav aria-label="Дни недели" className="flex h-10 shrink-0 items-center gap-1">
+    <nav aria-label="Дни недели" className="flex h-10 min-w-0 shrink-0 items-center gap-1">
       <Button variant="ghost" size="icon-sm" asChild>
         <Link {...linkProps(addDays(date, -1))} aria-label="Предыдущий день">
           <ChevronLeftIcon />
         </Link>
       </Button>
-      <ol className="flex items-center gap-1">
+      {/* На телефоне неделя прокручивается в своей строке, а не уходит за правый край. */}
+      <ol className="flex min-w-0 items-center gap-1 overflow-x-auto">
         {days.map((day) => {
           const sign = dots.find((dot) => dot.date === day)?.sign ?? null
           return (
@@ -51,7 +52,7 @@ export function DateStrip({ model, date, today, dots, search }: DateStripProps) 
                 {...linkProps(day)}
                 aria-current={day === date ? 'date' : undefined}
                 data-selected={day === date}
-                className="relative flex h-9 w-16 items-center justify-center gap-1 rounded-lg text-base transition-colors duration-120 hover:bg-accent data-[selected=true]:bg-primary-tint data-[selected=true]:text-primary-ink"
+                className="relative flex h-9 w-12 shrink-0 items-center sm:w-16 justify-center gap-1 rounded-lg text-base transition-colors duration-120 hover:bg-accent data-[selected=true]:bg-primary-tint data-[selected=true]:text-primary-ink"
               >
                 <span className="text-muted-foreground">{capitalize(formatWeekdayShort(day))}</span>
                 <span

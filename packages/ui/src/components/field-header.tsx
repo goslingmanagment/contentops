@@ -185,7 +185,10 @@ export function FieldHeader({
       ref={headerRef}
       data-slot="field-header"
       data-fit={fit}
-      className={cn('group/field-header flex h-18 shrink-0 items-center', className)}
+      className={cn(
+        'group/field-header flex h-18 shrink-0 items-center max-sm:h-auto max-sm:min-h-18 max-sm:py-2',
+        className,
+      )}
     >
       {/* Полоса выделения встаёт на место шапки, только если она что-то нарисовала: полоса
           без действий возвращает null, и шапка остаётся (§3.3). */}
@@ -197,7 +200,7 @@ export function FieldHeader({
       <FieldHeaderFitContext value={fit}>
         <div
           ref={rowRef}
-          className="flex min-w-0 flex-1 items-center gap-4 duration-120 animate-in fade-in-0 group-has-[[data-slot=selection-bar-slot]:not(:empty)]/field-header:hidden"
+          className="flex min-w-0 flex-1 items-center gap-4 duration-120 max-sm:flex-wrap max-sm:gap-2 animate-in fade-in-0 group-has-[[data-slot=selection-bar-slot]:not(:empty)]/field-header:hidden"
         >
           <div className={cn('flex min-w-0 flex-col', nav || !note ? 'flex-initial' : 'flex-1')}>
             {crumbs && crumbs.length > 0 ? <FieldCrumbs crumbs={crumbs} /> : null}

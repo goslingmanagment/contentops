@@ -3,6 +3,7 @@ import { cn } from '@contentops/ui/lib/utils'
 import { useRole } from '@/data/session'
 import { useShellModel } from '../model/use-shell-model'
 import { ModelSwitcher } from './model-switcher'
+import { PersonMenu } from './person-menu'
 import { SectionNav } from './section-nav'
 import { SpaceCardSlot } from './space-card-slot'
 import { UploadButton } from './upload-button'
@@ -27,13 +28,16 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           {collapsed ? null : <Skeleton className="h-4 w-24 rounded-sm" />}
         </div>
       )}
-      {role === 'reader' ? (
+      {role === 'reader' || role === 'customs' ? (
         <div className="h-3" />
       ) : (
         <div className="h-16 pt-2">{role ? <UploadButton collapsed={collapsed} /> : null}</div>
       )}
       {model ? <SectionNav model={model} collapsed={collapsed} /> : null}
-      <div className="mt-auto">{collapsed ? null : <SpaceCardSlot />}</div>
+      <div className="mt-auto flex flex-col gap-2">
+        {collapsed || role === 'customs' ? null : <SpaceCardSlot />}
+        <PersonMenu collapsed={collapsed} />
+      </div>
     </aside>
   )
 }

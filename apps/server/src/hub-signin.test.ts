@@ -87,6 +87,10 @@ class FakeHub implements HubSignin {
         }
       : { active: false as const }
   }
+
+  async waiting(grant: string) {
+    return this.live.has(grant) ? [] : null
+  }
 }
 
 let server: TestServer
