@@ -331,6 +331,70 @@ describe('a person from Hub', () => {
       'Неделя тестовой страницы',
     ])
   })
+  it('opens ContentOps’ own screen for a matter about its things, and hides one of a product she has not', async () => {
+    hub.people.set(111, person('rita', { displayName: 'Рита' }))
+    const at = new Date()
+    hub.waits.set(111, [
+      {
+        id: 3,
+        kind: 'publication.draft',
+        title: 'Пост на утверждение',
+        link: '/contentops/publications',
+        pageLabels: ['lora-1'],
+        models: ['lora'],
+        object: { type: 'publication', id: '49' },
+        openedAt: at,
+      },
+      {
+        id: 4,
+        kind: 'custom.checked_not_at_model',
+        title: 'Кастом K-7',
+        link: '/workboard/customs/K-7',
+        pageLabels: ['lora-1'],
+        models: ['lora'],
+        object: { type: 'custom_order', id: '7' },
+        openedAt: at,
+      },
+      {
+        id: 5,
+        kind: 'people.no_pages',
+        title: 'Дело Hub',
+        link: '/people',
+        pageLabels: [],
+        models: [],
+        object: null,
+        openedAt: at,
+      },
+    ])
+    const { session = '' } = await throughHub({
+      id: 111,
+      username: 'rita',
+      role: 'content_manager',
+    })
+    const waiting = (
+      await call(server.app, { method: 'GET', url: '/api/v1/lora/waiting', as: session })
+    ).json()
+    expect(waiting.matters.map((matter: { href: string }) => matter.href)).toEqual([
+      '/lora/publications?window=all&page=lora-1&publication=49',
+      '/lora/shooting?order=K-7',
+    ])
+  })
+
+  it('sends a browser already signed in here straight on from «Войти через хаб»', async () => {
+    hub.people.set(112, person('zoya', { displayName: 'Зоя' }))
+    const { session = '' } = await throughHub({
+      id: 112,
+      username: 'zoya',
+      role: 'content_manager',
+    })
+    const start = await server.app.inject({
+      method: 'GET',
+      url: '/auth/hub/start?next=%2Flora%2Fpublications',
+      headers: { host: PUBLIC, cookie: `co_session=${session}` },
+    })
+    expect(start.statusCode).toBe(302)
+    expect(start.headers.location).toBe('/lora/publications')
+  })
 })
 
 let owner: string | null = null

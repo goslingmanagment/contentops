@@ -40,6 +40,8 @@ export interface HubWaitingMatter {
   pageLabels: string[]
   /** The models of those pages (Hub's slugs); none — a matter of no page; undefined — an older Hub that does not say. */
   models?: string[]
+  /** What the matter is about (`publication`, `custom_order`, …): ContentOps opens its own screen; null — nothing. */
+  object?: { type: string; id: string } | null
   openedAt: Date
 }
 
@@ -388,6 +390,9 @@ export function createHubSignin(options: HubSigninOptions): HubSignin {
         }
         const models = raw.models === undefined ? undefined : strings(raw.models)
         if (models === null) throw badShape(endpoint, 'a matter has bad models')
+        const object = isRecord(raw.object)
+          ? { type: str(raw.object.type) ?? '', id: str(raw.object.id) ?? '' }
+          : null
         return {
           id,
           kind,
@@ -395,6 +400,7 @@ export function createHubSignin(options: HubSigninOptions): HubSignin {
           link,
           pageLabels,
           ...(models === undefined ? {} : { models }),
+          object,
           openedAt: new Date(opened),
         }
       })
