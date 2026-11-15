@@ -11,6 +11,7 @@ import {
   type PersonDoor,
   type PersonShootingStep,
 } from '@contentops/hub'
+import { sql } from 'drizzle-orm'
 import type { LightMyRequestResponse } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { setHubPage } from './hub/testing'
@@ -73,6 +74,8 @@ class FakeHub implements HubSignin, PersonDoor {
   /** Hub's models of a login's person (its slugs): Лора unless said otherwise. */
   readonly modelsOf = new Map<string, string[]>()
   away = false
+  /** The door refuses the person's read (Hub: «Это действие вашей роли не открыто»). */
+  refuseRead = false
   /** The step is written in Hub, then its answer is lost on the way back (a timeout). */
   loseAnswer = false
 
@@ -206,6 +209,13 @@ class FakeHub implements HubSignin, PersonDoor {
   }
   async customOrders(grant: string) {
     const user = this.who(grant)
+    if (this.refuseRead) {
+      throw new HubError('refused', 'HTTP 403 forbidden', {
+        endpoint: 'person',
+        status: 403,
+        code: 'forbidden',
+      })
+    }
     return {
       orders: structuredClone(this.ordersOf.get(user.username) ?? []),
       serverNow: new Date().toISOString(),
@@ -388,7 +398,36 @@ describe('«Съёмка» as the signed-in person', () => {
     )
   })
 
-  it('Hub away: the person reads the last background read, and a step is «неизвестно, записан ли»', async () => {
+  it("the person's read refused or failed: said in words, never the background read in its place", async () => {
+    // Another key's background read of this model, from hours ago: it must not stand in for hers.
+    await server.db.execute(sql`
+      INSERT INTO hub_order_reads (model_id, read_at, orders, unassigned, tried_at)
+      SELECT id, now() - interval '5 hours', ${JSON.stringify([order(261)])}::jsonb, 0, now() - interval '5 hours'
+        FROM models WHERE code = 'lora'
+      ON CONFLICT (model_id) DO UPDATE SET read_at = EXCLUDED.read_at, orders = EXCLUDED.orders`)
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    hub.refuseRead = true
+    try {
+      const refused = await list(kira)
+      expect(refused.items).toEqual([])
+      expect(refused.read_at).toBeNull()
+      expect(refused.read_error).toBe(
+        'Hub не показал заказы: съёмка этой учётной записи не открыта, спросите владельца',
+      )
+    } finally {
+      hub.refuseRead = false
+    }
+    hub.away = true
+    try {
+      const away = await list(kira)
+      expect(away.items).toEqual([])
+      expect(away.read_error).toBe('Hub не показал заказы: Hub не ответил, обновите чуть позже')
+    } finally {
+      hub.away = false
+    }
+  })
+
+  it('Hub away: the person reads nothing and is told so, and a step is «неизвестно, записан ли»', async () => {
     const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
     hub.away = true
     try {

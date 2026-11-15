@@ -93,7 +93,21 @@ export function hubOrderHandlers({
           () => context(db, ctx),
           async (tx, order, prepared) => {
             await storeHubOrder(tx, model, order)
-            return hubOrderView(tx, prepared, code)
+            // The read after the step failed: the step's answer is the order as Hub answered it.
+            const now = new Date().toISOString()
+            const answered = prepared.read?.error
+              ? {
+                  ...prepared,
+                  read: {
+                    read_at: now,
+                    orders: [order],
+                    unassigned: 0,
+                    tried_at: now,
+                    error: null,
+                  },
+                }
+              : prepared
+            return hubOrderView(tx, answered, code)
           },
         )
       },
