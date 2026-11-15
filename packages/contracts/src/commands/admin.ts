@@ -110,6 +110,16 @@ export const UpdateProfileCommandSchema = z
   })
 export type UpdateProfileCommand = z.infer<typeof UpdateProfileCommandSchema>
 
+/**
+ * «Придумайте пароль» (package C4): the invitation or the new password's link of a person of Hub's registry,
+ * opened on ContentOps' page; the password is set in Hub. The secret is the link's fragment (`/join#…`).
+ */
+export const JoinCommandSchema = z.object({
+  token: z.string().min(1).max(256),
+  password: z.string().min(12, 'Не короче 12 знаков').max(256),
+})
+export type JoinCommand = z.infer<typeof JoinCommandSchema>
+
 export const ChangePasswordCommandSchema = z.object({
   current: z.string().min(1, 'Введите нынешний пароль'),
   next: z.string().min(8, 'Не короче 8 знаков'),

@@ -1,6 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { IssuedTokenSchema } from '@contentops/contracts/domain/agents'
-import { HubError, type HubRedeemed, type HubSignin, type HubSigninUser } from '@contentops/hub'
+import {
+  HubError,
+  type HubRedeemed,
+  type HubSignedIn,
+  type HubSignin,
+  type HubSigninUser,
+} from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import type { LightMyRequestResponse } from 'fastify'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -90,6 +96,21 @@ class FakeHub implements HubSignin {
 
   async waiting(grant: string) {
     return this.live.has(grant) ? [] : null
+  }
+  async signIn(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'wrong', message: null }
+  }
+
+  async setPasswordByLink(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'link_unknown', message: null }
+  }
+
+  async changePassword(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'wrong', message: null }
+  }
+
+  async signOut() {
+    return false
   }
 }
 

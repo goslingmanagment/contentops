@@ -11,6 +11,7 @@
 import type { LoggedRequest, Reply } from '@contentops/hub/testing'
 import { FakeHub } from '@contentops/hub/testing'
 import { DevOrders } from './dev-hub-orders.ts'
+import { DevSignin } from './dev-hub-signin.ts'
 
 const PORT = Number(process.env.DEV_HUB_PORT ?? '54331')
 const KEY = process.env.DEV_HUB_KEY ?? 'dev-hub-key'
@@ -20,15 +21,19 @@ const HAND_OFF_MS = Number(process.env.DEV_HUB_HAND_OFF_MS ?? '8000')
 class DevHub extends FakeHub {
   /** The hub's custom orders and matters (package N): `dev-hub-orders.ts`. */
   readonly customOrders = new DevOrders()
+  /** ContentOps' own entrance asks Hub's sign-in (package C4): `dev-hub-signin.ts`. */
+  readonly signin = new DevSignin()
 
   protected override endpointOf(method: string, path: string): string {
     if (method === 'POST' && path.startsWith('/__dev/')) return 'dev'
+    if (method === 'POST' && path.startsWith('/api/v1/auth/sso/')) return 'signin'
     if (path.startsWith('/api/v1/agent/custom-orders') || path.startsWith('/api/v1/agent/matters'))
       return 'orders'
     return super.endpointOf(method, path)
   }
 
   protected override handle(req: LoggedRequest): Reply {
+    if (req.endpoint === 'signin') return this.signin.handle(req) ?? { status: 404, body: { error: 'not_found' } }
     if (req.endpoint === 'orders' || req.path.startsWith('/__dev/custom-orders')) {
       return this.customOrders.handle(req) ?? { status: 404, body: { error: 'not_found' } }
     }

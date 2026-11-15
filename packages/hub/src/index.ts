@@ -124,9 +124,12 @@ export { backoffDelay, DEFAULT_RETRY, type RetryPolicy, withRetry } from './retr
 export {
   createHubSignin,
   type HubCheck,
+  type HubClientOrigin,
   type HubPerson,
   type HubRedeemed,
+  type HubRefusal,
   type HubRole,
+  type HubSignedIn,
   type HubSignin,
   type HubSigninOptions,
   type HubSigninPerson,
