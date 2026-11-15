@@ -3,6 +3,7 @@ import {
   formatDateWords,
   isApiError,
   mskDate,
+  type PublicationAlbumRun,
   type PublicationRow,
 } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
@@ -26,7 +27,7 @@ import { accountLabel } from '@/lib/words'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { postRefOf } from './post-ref'
 import type { PublicationActions } from './use-publication-actions'
-import { findingWord, formatMills, hubStateWords, KIND_WORDS, statusWord } from './words'
+import { formatMills, hubStateWords, KIND_WORDS, statusWord } from './words'
 
 interface PublicationPanelProps {
   id: number
@@ -86,7 +87,11 @@ export function PublicationPanel({
       </PanelFrame>
     )
   }
-  const status = statusWord(row.status, row.status_reason)
+  const status = statusWord(row.status, row.status_reason, row.status_reason_parts)
+  // Hub's words; an older Hub without them: its reason when it is already Russian, never a code.
+  const reasonWords =
+    row.status_reason_words ??
+    (row.status_reason && /[а-яё]/i.test(row.status_reason) ? row.status_reason : null)
   const media = row.files
     .filter((file) => file.role === 'media')
     .sort((a, b) => a.position - b.position)
@@ -145,12 +150,9 @@ export function PublicationPanel({
           {row.platform_post_ref ? (
             <Line term="Пост на площадке">№ {row.platform_post_ref}</Line>
           ) : null}
-          {/* Hub's words for the people only; its codes stay behind. */}
-          {row.status_reason && /[а-яё ]/i.test(row.status_reason) ? (
-            <Line term="Ответ">{row.status_reason}</Line>
-          ) : null}
-          {row.withdrawal ? <Line term="Снятие">{row.withdrawal}</Line> : null}
-          {row.deletion ? <Line term="Удаление">{row.deletion}</Line> : null}
+          {/* Hub's words of the reason (its one table); the code stays behind. */}
+          {reasonWords ? <Line term="Почему">{reasonWords}</Line> : null}
+          {row.command_note ? <Line term="Команда">{row.command_note}</Line> : null}
           {row.plan_row ? (
             <Line term="План">
               <UiLink
@@ -165,26 +167,44 @@ export function PublicationPanel({
             </Line>
           ) : null}
         </dl>
-        <InfoSection title="Текст">
+        <InfoSection title={row.kind === 'vault_album' ? 'Название' : 'Текст'}>
           <p className="whitespace-pre-wrap text-sm">{row.text || 'Без текста'}</p>
         </InfoSection>
-        <InfoSection title="Файлы">
-          {media.length === 0 ? (
-            <p className="text-muted-foreground text-sm">Без файлов</p>
-          ) : (
-            <ol className="flex flex-col gap-1 text-sm">
-              {media.map((file) => (
-                <li key={`m${file.position}`}>
-                  {file.position + 1}.{' '}
-                  {file.name ?? (file.source === 'vault' ? 'из медиатеки' : 'загруженный файл')}
+        {/* An album's files are its run's, each with its outcome (below). */}
+        {card.album ? null : (
+          <InfoSection title="Файлы">
+            {media.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Без файлов</p>
+            ) : (
+              <ol className="flex flex-col gap-1 text-sm">
+                {media.map((file) => (
+                  <li key={`m${file.position}`}>
+                    {file.position + 1}.{' '}
+                    {file.name ?? (file.source === 'vault' ? 'из медиатеки' : 'загруженный файл')}
+                  </li>
+                ))}
+              </ol>
+            )}
+            {previews.length > 0 ? (
+              <p className="pt-1 text-muted-foreground text-sm">Превью: {previews.length}</p>
+            ) : null}
+          </InfoSection>
+        )}
+        {row.status_reason_parts && row.status_reason_parts.length > 1 ? (
+          <InfoSection title="Что с альбомом">
+            <ul className="flex flex-col gap-1 text-sm">
+              {row.status_reason_parts.map((part, index) => (
+                <li key={`${part.text}-${index}`}>
+                  {part.text}
+                  {part.names.length > 0 ? (
+                    <span className="text-muted-foreground"> · {part.names.join(', ')}</span>
+                  ) : null}
                 </li>
               ))}
-            </ol>
-          )}
-          {previews.length > 0 ? (
-            <p className="pt-1 text-muted-foreground text-sm">Превью: {previews.length}</p>
-          ) : null}
-        </InfoSection>
+            </ul>
+          </InfoSection>
+        ) : null}
+        {card.album ? <AlbumRun album={card.album} /> : null}
         {row.findings.length > 0 ? (
           <InfoSection title="Замечания">
             <ul className="flex flex-col gap-1 text-sm">
@@ -194,7 +214,7 @@ export function PublicationPanel({
                   className={finding.severity === 'blocking' ? 'text-destructive' : ''}
                 >
                   {finding.severity === 'blocking' ? 'Нельзя утвердить: ' : ''}
-                  {findingWord(finding.code)}
+                  {finding.words ?? 'замечание Hub'}
                 </li>
               ))}
             </ul>
@@ -211,6 +231,9 @@ export function PublicationPanel({
                   <span>
                     {statusWord(event.to, event.reason).word} ·{' '}
                     {event.actor_name ?? ACTOR_WORDS[event.actor]}
+                    {event.reason_words ? (
+                      <span className="text-muted-foreground"> · {event.reason_words}</span>
+                    ) : null}
                   </span>
                 </li>
               ))}
@@ -443,5 +466,33 @@ function WentOutForm({
         </Button>
       </div>
     </form>
+  )
+}
+
+/** A vault album's run in Hub's words: how many files are in, the one going up, what was left out, the price. */
+function AlbumRun({ album }: { album: PublicationAlbumRun }) {
+  return (
+    <InfoSection title="Альбом">
+      <dl className="grid grid-cols-[9rem_1fr] gap-x-3 gap-y-1.5 text-sm">
+        <Line term="Файлы">{album.landed}</Line>
+        {album.current ? <Line term="Сейчас заливается">{album.current}</Line> : null}
+        {album.missing ? <Line term="Не легли">{album.missing}</Line> : null}
+        {album.stop ? <Line term="Загрузки остановлены">{album.stop}</Line> : null}
+        <Line term="Цена">{album.price}</Line>
+        {album.ceiling ? <Line term="Потолок в сутки">{album.ceiling}</Line> : null}
+      </dl>
+      {album.files.length > 0 ? (
+        <ol className="flex flex-col gap-0.5 pt-2 text-sm">
+          {album.files.map((file, index) => (
+            <li key={`${file.name}-${index}`} className="flex gap-2">
+              <span className="w-6 shrink-0 text-muted-foreground tabular-nums">{index + 1}</span>
+              <span className="min-w-0 flex-1 truncate">{file.name}</span>
+              <span className="shrink-0 text-muted-foreground tabular-nums">{file.size}</span>
+              {file.state ? <span className="w-28 shrink-0 text-right">{file.state}</span> : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </InfoSection>
   )
 }

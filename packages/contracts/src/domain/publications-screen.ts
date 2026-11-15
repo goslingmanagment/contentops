@@ -34,6 +34,8 @@ export const PublicationFileSchema = z.object({
 export const PublicationFindingSchema = z.object({
   code: z.string(),
   severity: z.string(),
+  /** Hub's words of it (one table, Hub's); null — an older Hub. */
+  words: z.string().nullable(),
 })
 
 export const PublicationRowSchema = z.object({
@@ -56,9 +58,17 @@ export const PublicationRowSchema = z.object({
   author: z.enum(['human', 'agent', 'hub']),
   platform_post_ref: z.string().nullable(),
   status_reason: z.string().nullable(),
-  /** A withdrawal or a deletion Hub sent, as its command stands (`confirmed`, `rejected`, …). */
+  /** The reason in Hub's words (never the code); null — none, or an older Hub. */
+  status_reason_words: z.string().nullable(),
+  /** A vault album's reason part by part, with the files each names. */
+  status_reason_parts: z
+    .array(z.object({ text: z.string(), names: z.array(z.string()) }))
+    .nullable(),
+  /** A withdrawal or a deletion Hub sent, as its command stands (`confirmed`, `rejected`, …): codes, not for a person. */
   withdrawal: z.string().nullable(),
   deletion: z.string().nullable(),
+  /** What happened to that command, in Hub's words, when the status does not say it. */
+  command_note: z.string().nullable(),
   status_changed_at: InstantSchema,
   /** The plan's row this post was prepared from here («подготовлено и отправлено в Hub»). */
   plan_row: z.object({ id: z.string(), date: LocalDateSchema }).nullable(),
@@ -81,6 +91,8 @@ export const PublicationPageSchema = z.object({
   /** The page's publishing: on, off, or stopped by Hub itself (`autostop`). */
   enabled: z.boolean(),
   stopped: z.string().nullable(),
+  /** Why Hub stopped it, in Hub's words. */
+  stopped_words: z.string().nullable(),
   paid_price_min_mills: z.int().nullable(),
   paid_price_max_mills: z.int().nullable(),
   repost_threshold_days: z.int(),
@@ -128,7 +140,21 @@ export const PublicationEventSchema = z.object({
   /** Who, by name (a person's registry name, an agent's name): null — Hub did it, or did not say. */
   actor_name: z.string().nullable(),
   reason: z.string().nullable(),
+  /** The reason in Hub's words. */
+  reason_words: z.string().nullable(),
 })
+
+/** A vault album's run in Hub's words: progress, the file going up, files left out, the price and the day's ceiling. */
+export const PublicationAlbumRunSchema = z.object({
+  landed: z.string(),
+  current: z.string().nullable(),
+  missing: z.string().nullable(),
+  stop: z.string().nullable(),
+  price: z.string(),
+  ceiling: z.string().nullable(),
+  files: z.array(z.object({ name: z.string(), size: z.string(), state: z.string() })),
+})
+export type PublicationAlbumRun = z.infer<typeof PublicationAlbumRunSchema>
 
 /**
  * Where a Fansly post goes, in names: its wall (none named — the page's default wall), the walls it is pinned on, its
@@ -150,6 +176,7 @@ export const PublicationCardSchema = z.object({
   author_name: z.string().nullable(),
   approved_by_name: z.string().nullable(),
   targets: PublicationTargetsSchema.nullable(),
+  album: PublicationAlbumRunSchema.nullable(),
 })
 export type PublicationCard = z.infer<typeof PublicationCardSchema>
 
@@ -162,6 +189,27 @@ export const PublicationActionAnswerSchema = z.object({
 export type PublicationActionAnswer = z.infer<typeof PublicationActionAnswerSchema>
 
 export const PublicationApproveCommandSchema = z.object({ version: z.int().positive() })
+
+/** «Утвердить выбранные»: the drafts with the versions the person saw, in the feed's order. */
+export const PublicationApproveManyCommandSchema = z.object({
+  items: z
+    .array(z.object({ id: z.int().positive(), version: z.int().positive() }))
+    .min(1)
+    .max(200),
+})
+export type PublicationApproveManyCommand = z.infer<typeof PublicationApproveManyCommandSchema>
+
+/** Each draft's outcome, a refusal in Hub's words. */
+export const PublicationApproveManyAnswerSchema = z.object({
+  results: z.array(
+    z.object({
+      id: z.int().positive(),
+      outcome: z.enum(['approved', 'refused']),
+      words: z.string().nullable(),
+    }),
+  ),
+})
+export type PublicationApproveManyAnswer = z.infer<typeof PublicationApproveManyAnswerSchema>
 
 /** «Проверить»: it went out (the post's number on the platform and where it is; a vault album: neither), or it did not. */
 export const PublicationResolveCommandSchema = z.discriminatedUnion('outcome', [

@@ -1,5 +1,6 @@
 import type {
   PublicationActionAnswer,
+  PublicationApproveManyAnswer,
   PublicationPageSettingsCommand,
   PublicationResolveCommand,
 } from '@contentops/contracts'
@@ -129,7 +130,32 @@ export function usePublicationActions(onOpen?: (id: number) => void) {
     invalidates: () => [...invalidates(), ['model', model, 'publication-switches'] as const],
   })
 
-  return { approve, post, resolve, page, settings, switchSet }
+  /** «Утвердить выбранные»: each draft's outcome goes to `onAnswered` (the feed lists the refusals in Hub's words). */
+  const approveMany = useIntentMutation<
+    {
+      items: { id: number; version: number }[]
+      onAnswered: (answer: PublicationApproveManyAnswer) => void
+    },
+    PublicationApproveManyAnswer
+  >({
+    failed: 'Не утвердилось',
+    run: ({ items }, key) =>
+      api.publications.approveMany({ params: { model }, body: { items }, idempotencyKey: key }),
+    onSuccess: (answer, { onAnswered }) => {
+      const approved = answer.results.filter((one) => one.outcome === 'approved').length
+      const refused = answer.results.length - approved
+      toast.show({
+        message:
+          refused === 0
+            ? `Утверждено ${approved}: Hub поставит их сам`
+            : `Утверждено ${approved}, не утверждено ${refused}`,
+      })
+      onAnswered(answer)
+    },
+    invalidates,
+  })
+
+  return { approve, approveMany, post, resolve, page, settings, switchSet }
 }
 
 export type PublicationActions = ReturnType<typeof usePublicationActions>

@@ -9,13 +9,14 @@ import {
   type PublicationWindow,
 } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
+import { Checkbox } from '@contentops/ui/components/checkbox'
 import { ChoiceChips } from '@contentops/ui/components/choice-chips'
 import { FieldHeader } from '@contentops/ui/components/field-header'
 import { EmptyState } from '@contentops/ui/components/state-lines'
 import { StatusWord } from '@contentops/ui/components/status-word'
 import { cn } from '@contentops/ui/lib/utils'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useToday } from '@/data/api-session'
 import { usePublicationsFeed } from '@/data/publications'
 import { useKeyboardShortcut } from '@/lib/use-keyboard-shortcut'
@@ -70,6 +71,11 @@ export function PublicationsScreen() {
       replace,
     })
   const actions = usePublicationActions((id) => go({ post: id }))
+  // «Утвердить выбранные»: the drafts Hub may approve as they stand (no blocking check), picked in the feed.
+  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set())
+  const [refusals, setRefusals] = useState<readonly { id: number; text: string; words: string }[]>(
+    [],
+  )
   useKeyboardShortcut({ code: 'Escape', enabled: open !== null }, () =>
     go({ post: undefined }, true),
   )
@@ -79,6 +85,10 @@ export function PublicationsScreen() {
     search.status === undefined
       ? 'all'
       : (SEGMENTS.find((one) => one.status === search.status)?.value ?? null)
+  const approvable = useMemo(
+    () => (data?.publications ?? []).filter((row) => row.status === 'draft' && !row.blocked),
+    [data],
+  )
   const days = useMemo(
     () => byDay(data?.publications ?? [], data?.pages ?? [], search.page),
     [data, search.page],
@@ -177,6 +187,66 @@ export function PublicationsScreen() {
           </p>
         ) : null}
       </div>
+      {approvable.length > 0 ? (
+        <BatchBar
+          approvable={approvable}
+          picked={picked}
+          busy={actions.approveMany.isPending}
+          onPick={setPicked}
+          onApprove={() => {
+            const items = approvable
+              .filter((row) => picked.has(row.id))
+              .map((row) => ({ id: row.id, version: row.version }))
+            actions.approveMany.start({
+              items,
+              onAnswered: (answer) => {
+                setPicked(new Set())
+                setRefusals(
+                  answer.results.flatMap((one) =>
+                    one.outcome === 'refused'
+                      ? [
+                          {
+                            id: one.id,
+                            text: approvable.find((row) => row.id === one.id)?.text || 'Без текста',
+                            words: one.words ?? 'Hub не утвердил',
+                          },
+                        ]
+                      : [],
+                  ),
+                )
+              },
+            })
+          }}
+        />
+      ) : null}
+      {refusals.length > 0 ? (
+        <div className="flex flex-col gap-1 rounded-lg bg-attention-bg px-3 py-2 text-sm">
+          <span className="flex items-baseline justify-between gap-2">
+            <span>Не утверждены:</span>
+            <button
+              type="button"
+              className="text-muted-foreground underline"
+              onClick={() => setRefusals([])}
+            >
+              Скрыть
+            </button>
+          </span>
+          <ul className="flex flex-col gap-0.5">
+            {refusals.map((one) => (
+              <li key={one.id}>
+                <button
+                  type="button"
+                  className="text-left underline-offset-2 hover:underline"
+                  onClick={() => go({ post: one.id })}
+                >
+                  {one.text}
+                </button>
+                <span className="text-muted-foreground"> — {one.words}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <RefreshStrip active={feed.isFetching && data !== undefined} />
       <div className="@container -mx-7 flex min-h-0 flex-1 flex-col overflow-y-auto px-7 pt-2 pb-8">
         <QueryErrorLine query={feed} hasData={data !== undefined} />
@@ -195,7 +265,21 @@ export function PublicationsScreen() {
           </p>
         ) : null}
         {days.map((day) => (
-          <DaySection key={day.date} day={day} openId={open} onOpen={(id) => go({ post: id })} />
+          <DaySection
+            key={day.date}
+            day={day}
+            openId={open}
+            onOpen={(id) => go({ post: id })}
+            picked={picked}
+            onToggle={(id) =>
+              setPicked((now) => {
+                const next = new Set(now)
+                if (next.has(id)) next.delete(id)
+                else next.add(id)
+                return next
+              })
+            }
+          />
         ))}
       </div>
     </FieldLayout>
@@ -251,10 +335,14 @@ function DaySection({
   day,
   openId,
   onOpen,
+  picked,
+  onToggle,
 }: {
   day: Day
   openId: number | null
   onOpen: (id: number) => void
+  picked: ReadonlySet<number>
+  onToggle: (id: number) => void
 }) {
   const today = useToday()
   return (
@@ -269,7 +357,15 @@ function DaySection({
       </div>
       <ul className="-mx-2 flex flex-col">
         {day.entries.map(({ key, at, row, manual }) => (
-          <li key={key}>
+          <li key={key} className="flex items-center gap-1">
+            {row && row.status === 'draft' && !row.blocked ? (
+              <Checkbox
+                checked={picked.has(row.id)}
+                onCheckedChange={() => onToggle(row.id)}
+                aria-label={`Выбрать для утверждения: ${row.text || 'без текста'}`}
+                className="ml-2 shrink-0"
+              />
+            ) : null}
             {row ? (
               <PublicationLine
                 row={row}
@@ -296,7 +392,7 @@ function PublicationLine({
   onOpen: () => void
 }) {
   const model = useCurrentModel()
-  const status = statusWord(row.status, row.status_reason)
+  const status = statusWord(row.status, row.status_reason, row.status_reason_parts)
   const files = row.files.filter((file) => file.role === 'media').length
   return (
     <button
@@ -414,6 +510,42 @@ function FeedSkeleton() {
       {[0, 1, 2, 3, 4].map((index) => (
         <div key={index} className="h-14 animate-pulse rounded-lg bg-muted" />
       ))}
+    </div>
+  )
+}
+
+/** «Выбрать все черновики, которые можно утвердить» and «Утвердить выбранные», as Hub's screen had them. */
+function BatchBar({
+  approvable,
+  picked,
+  busy,
+  onPick,
+  onApprove,
+}: {
+  approvable: readonly PublicationRow[]
+  picked: ReadonlySet<number>
+  busy: boolean
+  onPick: (next: ReadonlySet<number>) => void
+  onApprove: () => void
+}) {
+  const chosen = approvable.filter((row) => picked.has(row.id)).length
+  const all = chosen === approvable.length
+  return (
+    <div className="flex flex-wrap items-center gap-2 pb-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPick(all ? new Set() : new Set(approvable.map((row) => row.id)))}
+      >
+        {all
+          ? 'Снять выбор'
+          : `Выбрать все, которые можно утвердить (${formatNumber(approvable.length)})`}
+      </Button>
+      {chosen > 0 ? (
+        <Button size="sm" disabled={busy} onClick={onApprove}>
+          Утвердить выбранные ({formatNumber(chosen)})
+        </Button>
+      ) : null}
     </div>
   )
 }

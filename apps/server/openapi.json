@@ -10707,6 +10707,74 @@
         ],
         "additionalProperties": false
       },
+      "PublicationAlbumRun": {
+        "type": "object",
+        "properties": {
+          "landed": {
+            "type": "string"
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "missing": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stop": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price": {
+            "type": "string"
+          },
+          "ceiling": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "size",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "landed",
+          "current",
+          "missing",
+          "stop",
+          "price",
+          "ceiling",
+          "files"
+        ],
+        "additionalProperties": false
+      },
       "PublicationApproveCommandInput": {
         "type": "object",
         "properties": {
@@ -10718,6 +10786,79 @@
         },
         "required": [
           "version"
+        ]
+      },
+      "PublicationApproveManyAnswer": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "approved",
+                    "refused"
+                  ]
+                },
+                "words": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "outcome",
+                "words"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationApproveManyCommandInput": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "version": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "version"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "PublicationCard": {
@@ -10773,6 +10914,16 @@
                 "type": "null"
               }
             ]
+          },
+          "album": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicationAlbumRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -10782,7 +10933,8 @@
           "approved_at",
           "author_name",
           "approved_by_name",
-          "targets"
+          "targets",
+          "album"
         ],
         "additionalProperties": false
       },
@@ -10845,6 +10997,12 @@
               "string",
               "null"
             ]
+          },
+          "reason_words": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -10853,7 +11011,8 @@
           "to",
           "actor",
           "actor_name",
-          "reason"
+          "reason",
+          "reason_words"
         ],
         "additionalProperties": false
       },
@@ -10902,11 +11061,18 @@
           },
           "severity": {
             "type": "string"
+          },
+          "words": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "code",
-          "severity"
+          "severity",
+          "words"
         ],
         "additionalProperties": false
       },
@@ -10946,6 +11112,12 @@
             "type": "boolean"
           },
           "stopped": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stopped_words": {
             "type": [
               "string",
               "null"
@@ -11059,6 +11231,7 @@
           "platform",
           "enabled",
           "stopped",
+          "stopped_words",
           "paid_price_min_mills",
           "paid_price_max_mills",
           "repost_threshold_days",
@@ -11260,6 +11433,41 @@
               "null"
             ]
           },
+          "status_reason_words": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status_reason_parts": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "names": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "names"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "withdrawal": {
             "type": [
               "string",
@@ -11267,6 +11475,12 @@
             ]
           },
           "deletion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command_note": {
             "type": [
               "string",
               "null"
@@ -11317,8 +11531,11 @@
           "author",
           "platform_post_ref",
           "status_reason",
+          "status_reason_words",
+          "status_reason_parts",
           "withdrawal",
           "deletion",
+          "command_note",
           "status_changed_at",
           "plan_row"
         ],
@@ -23598,6 +23815,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PublicationActionAnswer"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/publications:approve-many": {
+      "post": {
+        "operationId": "publications.approveMany",
+        "tags": [
+          "publications"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicationApproveManyCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationApproveManyAnswer"
                 }
               }
             }

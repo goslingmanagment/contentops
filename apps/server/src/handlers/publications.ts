@@ -1,5 +1,6 @@
 import type {
   PublicationActionAnswer,
+  PublicationApproveManyAnswer,
   PublicationCard,
   PublicationPage,
   PublicationRow,
@@ -14,6 +15,7 @@ import {
   type HubPublicationTargets,
   isHubError,
   type PersonDoor,
+  wordsOfPublication,
 } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import { modelOf } from '../catalog/ids'
@@ -105,6 +107,7 @@ export function rowOf(
   plan: ReadonlyMap<number, { id: string; date: string }>,
 ): PublicationRow {
   const raw = publication.raw
+  const words = wordsOfPublication(raw)
   const media = Array.isArray(raw.media) ? raw.media : []
   const author =
     typeof raw.author === 'object' && raw.author !== null
@@ -139,14 +142,18 @@ export function rowOf(
         },
       ]
     }),
-    findings: publication.findings.map((finding) => ({
+    findings: publication.findings.map((finding, index) => ({
       code: finding.code,
       severity: finding.severity,
+      words: words.findings[index] ?? null,
     })),
     blocked: publication.blocked,
     author: author === 'human' || author === 'agent' ? author : 'hub',
     platform_post_ref: publication.platformPostRef,
     status_reason: publication.statusReason,
+    status_reason_words: words.statusReason,
+    command_note: words.command,
+    status_reason_parts: words.statusReasonParts,
     withdrawal: command(raw.withdrawal),
     deletion: command(raw.deletion),
     status_changed_at: publication.statusChangedAt ?? publication.updatedAt,
@@ -173,6 +180,12 @@ export async function personOf(services: Services, actor: ReturnType<typeof requ
 /** Hub's words for a person, or a plain sentence when it answered with a code. */
 function wordsOf(reason: string | null, fallback: string): string {
   return reason && /[а-яё]/i.test(reason) ? reason : fallback
+}
+
+/** An approval's refusal: Hub's words (its one table), an older Hub's Russian reason, else a plain sentence. */
+function refusalWords(words: string | null, reason: string | null): string {
+  const said = words ?? wordsOf(reason, 'Пост не утвердился')
+  return said.charAt(0).toUpperCase() + said.slice(1)
 }
 
 /** Hub's refusal of an action, said; a grant that is over ends the session. */
@@ -215,6 +228,7 @@ const NO_CARD: Omit<PublicationCard, 'hub'> = {
   author_name: null,
   approved_by_name: null,
   targets: null,
+  album: null,
 }
 
 function refsOf(value: unknown): string[] {
@@ -316,12 +330,17 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
   })
   /** A withdrawal's or a deletion's outcome: a refusal is said in Hub's words. */
   const withdrawn = (
-    results: readonly { outcome: string; reason: string | null }[],
+    results: readonly { outcome: string; reason: string | null; words?: string | null }[],
     fallback: string,
   ): PublicationActionAnswer => {
     const refused = results.find((one) => ['refused', 'rejected', 'not_sent'].includes(one.outcome))
+    // Hub's words of the outcome (its one table); an older Hub's Russian reason as written, else ours.
     return refused
-      ? { outcome: 'refused', words: wordsOf(refused.reason, fallback), publication_id: null }
+      ? {
+          outcome: 'refused',
+          words: refused.words ?? wordsOf(refused.reason, fallback),
+          publication_id: null,
+        }
       : done()
   }
 
@@ -388,6 +407,7 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
               platform: set.platform,
               enabled: set.enabled,
               stopped: set.autostopReason,
+              stopped_words: set.autostopReasonWords ?? null,
               paid_price_min_mills: set.paidPriceMinMills,
               paid_price_max_mills: set.paidPriceMaxMills,
               repost_threshold_days: set.repostThresholdDays,
@@ -464,11 +484,13 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
               actor: event.actorKind,
               actor_name: event.actorName,
               reason: event.reason,
+              reason_words: event.reasonWords,
             })),
             approved_at: detail.approvedAt,
             author_name: detail.authorName,
             approved_by_name: detail.approvedByName,
             targets: targets ? targetsOf(detail.publication.raw, targets) : null,
+            album: detail.album,
           }
         } catch (error) {
           if (error instanceof ApiProblem) throw error
@@ -487,14 +509,40 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
           .publicationApprove(grant, [{ id, version: body.version }])
           .catch((error: unknown) => actionProblem(error, 'Пост не утвердился'))
         if (result?.approved) return done(id)
-        const why: Record<string, string> = {
-          blocking_findings: 'Есть замечания, которые не дают утвердить',
-          version_conflict: 'Пост изменился, пока вы смотрели: откройте его снова',
-        }
         return {
           outcome: 'refused',
-          words: why[result?.reason ?? ''] ?? wordsOf(result?.reason ?? null, 'Пост не утвердился'),
+          words: refusalWords(result?.words ?? null, result?.reason ?? null),
           publication_id: id,
+        }
+      },
+      approveMany: async ({ ctx, body }): Promise<PublicationApproveManyAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        const model = modelOf(ctx.model)
+        // Only this model's drafts, as Hub cuts them for the person; another's is «нет такой» without asking Hub.
+        const drafts = await door
+          .publicationList(grant, { modelSlug: slugOf(model), status: 'draft', limit: 1000 })
+          .catch((error: unknown) => readProblem(error))
+        const ours = new Set(drafts.map((one) => one.id))
+        const asked = body.items.filter((item) => ours.has(item.id))
+        const results = asked.length
+          ? await door
+              .publicationApprove(grant, asked)
+              .catch((error: unknown) => actionProblem(error, 'Посты не утвердились'))
+          : []
+        const byId = new Map(results.map((result) => [result.id, result]))
+        return {
+          results: body.items.map((item) => {
+            if (!ours.has(item.id))
+              return { id: item.id, outcome: 'refused' as const, words: 'Такого черновика нет' }
+            const result = byId.get(item.id)
+            return result?.approved
+              ? { id: item.id, outcome: 'approved' as const, words: null }
+              : {
+                  id: item.id,
+                  outcome: 'refused' as const,
+                  words: refusalWords(result?.words ?? null, result?.reason ?? null),
+                }
+          }),
         }
       },
       cancel: async ({ ctx, params }): Promise<PublicationActionAnswer> => {
