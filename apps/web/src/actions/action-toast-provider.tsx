@@ -24,7 +24,7 @@ export function ActionToastProvider({ children }: { children: ReactNode }) {
     () => ({
       show: (options) => showActionToast(options),
       dismiss: () => dismissActionToast(),
-      showFailure: (error, { failed, retry, intentKey }) => {
+      showFailure: (error, { failed, retry, refresh, intentKey }) => {
         const failure = describeFailure(error, failed)
         if (!failure) {
           return
@@ -35,6 +35,16 @@ export function ActionToastProvider({ children }: { children: ReactNode }) {
         }
         if (failure.autoRetryMs !== null && retry) {
           retryTimers.current.schedule(intentKey, failure.autoRetryMs, retry)
+        }
+        if (failure.refresh) {
+          // Итог неизвестен: слова сервера и «Обновить», дольше обычного — ни повтора, ни автоповтора.
+          showActionToast({
+            message: failure.message,
+            tone: 'error',
+            action: refresh ? { label: 'Обновить', onSelect: refresh } : undefined,
+            durationMs: 30_000,
+          })
+          return
         }
         showActionToast({
           message: failure.message,

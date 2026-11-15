@@ -3634,6 +3634,7 @@
           "internal",
           "not_implemented",
           "unavailable",
+          "outcome_unknown",
           "accept_blocked",
           "order_closed",
           "order_not_complete",

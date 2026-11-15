@@ -282,9 +282,14 @@ class FakeHub implements HubSignin, PersonDoor {
     found.status = 'cancelled'
     return found
   }
+  /** What Hub's door does with the next «Убрать из расписания» instead of answering (the client's real errors). */
+  withdrawFails: HubError | null = null
   async publicationWithdraw(grant: string, id: number) {
     const user = this.who(grant)
     this.actions.push(`${user.username} withdraw ${id}`)
+    const fails = this.withdrawFails
+    this.withdrawFails = null
+    if (fails) throw fails
     return [
       {
         id,
@@ -729,6 +734,52 @@ describe('«Вышел» on an unknown outcome', () => {
     expect(hub.resolved.at(-1)).toEqual({
       id: 801,
       answer: { outcome: 'went_out', state: 'scheduled', platformPostRef: '851203394123456789' },
+    })
+  })
+})
+
+describe("Hub's answers to an action, as a person reads them", () => {
+  const withdraw = (as: string) =>
+    call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/publications/901:withdraw',
+      as,
+      body: {},
+    })
+
+  it("says Hub's refusal in Hub's own sentence, without the operation or the status", async () => {
+    hub.publicationsOf.set('kira', [publication(901, 'lora-1', 'scheduled')])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    // As the client builds it from Hub's 409 (packages/hub/src/http.ts).
+    hub.withdrawFails = new HubError(
+      'refused',
+      'person.publications.withdraw: HTTP 409 publication_not_editable — Пост уже снят с расписания',
+      {
+        endpoint: 'person.publications.withdraw',
+        status: 409,
+        code: 'publication_not_editable',
+        hubMessage: 'Пост уже снят с расписания',
+      },
+    )
+    const answer = await withdraw(kira)
+    expect(answer.statusCode, answer.body).toBe(422)
+    expect(answer.json().message).toBe('Пост уже снят с расписания')
+  })
+
+  it('says an action whose outcome is unknown is unknown — never «no connection» to retry', async () => {
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    hub.withdrawFails = new HubError(
+      'transient',
+      'person.publications.withdraw: network: socket hang up',
+      {
+        endpoint: 'person.publications.withdraw',
+      },
+    )
+    const answer = await withdraw(kira)
+    expect(answer.statusCode, answer.body).toBe(502)
+    expect(answer.json()).toMatchObject({
+      code: 'outcome_unknown',
+      message: 'Ответа нет: неизвестно, сделано ли. Обновите и посмотрите',
     })
   })
 })

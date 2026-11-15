@@ -60,6 +60,12 @@ export function intentAttempt<Variables, Result>({
           toast.showFailure(error, {
             failed,
             retry: () => void attempt(variables, key),
+            // When nobody knows whether it was done: re-read what the action touches, never send it again.
+            refresh: () => {
+              for (const queryKey of invalidates?.(variables) ?? []) {
+                void queryClient.invalidateQueries({ queryKey })
+              }
+            },
             intentKey: key,
           })
         }

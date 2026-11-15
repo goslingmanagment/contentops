@@ -12,6 +12,11 @@ export interface FailureDescription {
    * самое, поэтому «Повторить» нет, а сама ошибка пишется в консоль.
    */
   unexpected?: boolean
+  /**
+   * Действие ушло, ответа нет: сделано ли — неизвестно (`outcome_unknown`). «Повторить» нет — второй раз
+   * ушло бы на площадку; вместо него «Обновить»: перечитать, что вышло.
+   */
+  refresh?: boolean
 }
 
 const DEFAULT_RETRY_AFTER_S = 5
@@ -43,6 +48,9 @@ export function describeFailure(error: unknown, failed: string): FailureDescript
   }
   if (!isApiError(error)) {
     return { message: `${failed}: сбой`, retryable: false, autoRetryMs: null, unexpected: true }
+  }
+  if (error.code === 'outcome_unknown') {
+    return { message: error.message, retryable: false, autoRetryMs: null, refresh: true }
   }
   switch (error.status) {
     case 429:

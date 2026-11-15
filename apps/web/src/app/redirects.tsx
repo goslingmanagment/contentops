@@ -1,8 +1,8 @@
 import { mskDate } from '@contentops/contracts'
-import { getRouteApi, Navigate } from '@tanstack/react-router'
+import { getRouteApi, Link, Navigate } from '@tanstack/react-router'
 import { useClock } from '@/data/api-session'
-import { useSession } from '@/data/session'
-import { publicationsSearchOf, statsSearchOf } from '@/screens/hub-entry-search'
+import { useModels, useSession } from '@/data/session'
+import { hubEntryTarget, publicationsSearchOf, statsSearchOf } from '@/screens/hub-entry-search'
 import { defaultSettingsTab } from '@/screens/settings/settings-tabs'
 import { readLastSection, type SectionKey } from '@/shell/last-section'
 import { useModelIndexPrefetch } from '@/shell/model/model-scope'
@@ -93,25 +93,79 @@ export function HubEntryRedirect() {
   const search = hubEntryApi.useSearch()
   const session = useSession()
   if (!session.data) return null
-  const models = session.data.models
-  const asked = search.model?.toLowerCase()
-  const mapped = asked ? (session.data.hub_models?.[asked] ?? asked) : undefined
-  const last = readLastSection()
-  const model =
-    (mapped && models.includes(mapped) ? mapped : undefined) ??
-    (last && models.includes(last.model) ? last.model : undefined) ??
-    models[0]
-  if (!model) return <Navigate to="/login" replace />
+  const target = hubEntryTarget({
+    asked: search.model,
+    hubModels: session.data.hub_models,
+    models: session.data.models,
+    last: readLastSection()?.model ?? null,
+  })
+  if (target.kind === 'none') return <Navigate to="/login" replace />
+  if (target.kind === 'missing') {
+    return <HubModelMissing asked={target.asked} screen={screen} models={session.data.models} />
+  }
   const { model: _hubModel, ...rest } = search
   if (screen === 'stats') {
-    return <Navigate to="/$model/stats" params={{ model }} search={statsSearchOf(rest)} replace />
+    return (
+      <Navigate
+        to="/$model/stats"
+        params={{ model: target.model }}
+        search={statsSearchOf(rest)}
+        replace
+      />
+    )
   }
   return (
     <Navigate
       to="/$model/publications"
-      params={{ model }}
+      params={{ model: target.model }}
       search={publicationsSearchOf(rest)}
       replace
     />
+  )
+}
+
+/**
+ * Hub named a model the person has no access to here (or ContentOps does not have): said plainly, with the person's
+ * own models — never another model's posts under its name.
+ */
+function HubModelMissing({
+  asked,
+  screen,
+  models,
+}: {
+  asked: string
+  screen: string
+  models: readonly string[]
+}) {
+  const named = useModels().data
+  const name = asked.charAt(0).toUpperCase() + asked.slice(1)
+  const stats = screen === 'stats'
+  return (
+    <div className="min-h-dvh bg-background text-foreground">
+      <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center gap-4 px-4 py-16">
+        <h1 className="font-medium text-lg">
+          Модели {name} в ContentOps нет:{' '}
+          {stats ? 'её статистика здесь не показывается' : 'её публикации здесь не показываются'}
+        </h1>
+        {models.length > 0 ? (
+          <>
+            <p className="text-muted-foreground text-sm">Ваши модели здесь:</p>
+            <ul className="flex flex-wrap gap-2">
+              {models.map((code) => (
+                <li key={code}>
+                  <Link
+                    to={stats ? '/$model/stats' : '/$model/publications'}
+                    params={{ model: code }}
+                    className="inline-flex h-9 items-center rounded-full border border-input px-3 text-sm hover:bg-accent"
+                  >
+                    {named?.find((one) => one.code === code)?.name ?? code}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </main>
+    </div>
   )
 }

@@ -18,6 +18,11 @@ export const ERROR_CODES = [
   /** The route is in the table, the server has no handler for it yet. */
   'not_implemented',
   'unavailable',
+  /**
+   * An action went to Hub and no answer came back (a network cut, Hub's 5xx, a timeout): it may or may not be done.
+   * Never retried by itself: the screen says so and offers to re-read.
+   */
+  'outcome_unknown',
   'accept_blocked',
   'order_closed',
   'order_not_complete',
@@ -64,6 +69,7 @@ export const HTTP_STATUS_BY_CODE: Record<ErrorCode, number> = {
   internal: 500,
   not_implemented: 501,
   unavailable: 503,
+  outcome_unknown: 502,
   accept_blocked: 422,
   order_closed: 422,
   order_not_complete: 422,
