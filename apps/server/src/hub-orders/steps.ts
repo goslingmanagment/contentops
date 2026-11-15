@@ -23,14 +23,29 @@ export async function grantOf(q: Queryable, actor: Actor): Promise<string | null
   return rows[0]?.hub_grant ?? null
 }
 
-function doorProblem(error: unknown, words: { refused: string; away: string }): never {
+/**
+ * The step's answer was lost (a timeout, a cut, Hub's 5xx): Hub may have written it. Its own state,
+ * never a refusal and never resent by itself: the person refreshes the order and sees.
+ */
+export const STEP_OUTCOME_UNKNOWN = 'Ответа нет: неизвестно, записан ли шаг. Обновите заказ'
+
+export function outcomeUnknown(): ApiProblem {
+  return new ApiProblem('unavailable', STEP_OUTCOME_UNKNOWN, { outcome: 'unknown' })
+}
+
+export function isOutcomeUnknown(error: unknown): boolean {
+  return error instanceof ApiProblem && error.details?.outcome === 'unknown'
+}
+
+function doorProblem(error: unknown, words: { refused: string }): never {
   if (!isHubError(error)) throw error
   if (error.status === 401)
     throw new ApiProblem('unauthenticated', 'Вход закончился: войдите снова')
   if (error.status === 404) throw new ApiProblem('not_found', 'Такого заказа нет')
   if (error.status === 409 || error.status === 403) throw new ApiProblem('forbidden', words.refused)
   if (error.status === 400) throw new ApiProblem('invalid_request', 'Шаг не принят')
-  throw new ApiProblem('unavailable', words.away)
+  // No answer that says what became of it: the step may be written.
+  throw outcomeUnknown()
 }
 
 /** Hub's slug of a model of ContentOps: the reverse of `HUB_MODEL_MAP` (`smoke` → `test`), else its code. */
@@ -116,7 +131,6 @@ export async function sendHubStep(
     doorProblem(error, {
       refused:
         'Шаг не принят: его ведёт другой человек, или заказ уже на другом шаге. Обновите заказ',
-      away: 'Не удалось записать шаг, попробуйте ещё раз',
     })
   }
 }

@@ -58,7 +58,7 @@ interface StoredAnswer {
 }
 
 /** Same key, same request: model, method, address, body and the version condition. */
-function digestOf(ctx: RequestContext, body: unknown): Buffer {
+export function digestOf(ctx: RequestContext, body: unknown): Buffer {
   const request = [ctx.model?.code ?? null, ctx.method, ctx.url, body ?? null, ctx.ifMatch]
   return createHash('sha256').update(JSON.stringify(request)).digest()
 }

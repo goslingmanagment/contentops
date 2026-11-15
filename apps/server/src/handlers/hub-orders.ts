@@ -5,6 +5,7 @@ import { requireActor } from '../commands'
 import type { RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { stepOnce } from '../hub-orders/step-once'
 import { grantOf, personRead, sendHubStep, storeHubOrder } from '../hub-orders/steps'
 import { type HubOrderContext, hubOrderList, hubOrderView } from '../hub-orders/view'
 import { enqueueHubOrders } from '../hub-orders/work'
@@ -79,12 +80,22 @@ export function hubOrderHandlers({
       step: async ({ params, body, ctx }) => {
         const code = codeOf(params.code)
         const model = modelOf(ctx.model)
-        // The hub first, as the person: it says yes or no; then the order as it answered, journaled.
-        const order = await sendHubStep(db, personDoor ?? null, code, body, requireActor(ctx))
-        return command({ ctx, body }, async (tx) => {
-          await storeHubOrder(tx, model, order)
-          return hubOrderView(tx, await context(tx, ctx), code)
-        })
+        const actor = requireActor(ctx)
+        // The repeat key first, then Hub as the person (outside any transaction), then the order as
+        // it answered, journaled; a lost answer is «неизвестно, записан ли шаг» (step-once.ts).
+        return stepOnce(
+          db,
+          ctx,
+          actor,
+          body,
+          () => sendHubStep(db, personDoor ?? null, code, body, actor),
+          // The person's fresh read after the step, outside any transaction.
+          () => context(db, ctx),
+          async (tx, order, prepared) => {
+            await storeHubOrder(tx, model, order)
+            return hubOrderView(tx, prepared, code)
+          },
+        )
       },
 
       linkDelivery: ({ params, body, ctx }) =>
