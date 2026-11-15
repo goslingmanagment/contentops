@@ -12,6 +12,7 @@ import {
   HubError,
   type HubOrderMessage,
   type HubOrderReportBody,
+  parseHubOrderList,
 } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -54,6 +55,7 @@ function hubOrder(id: number, fields: Partial<HubCustomOrder> = {}): HubCustomOr
     what: 'в красном',
     deadlineOn: null,
     state: 'at_model',
+    stateWord: null,
     stateAt: new Date().toISOString(),
     stateNote: null,
     stateRef: null,
@@ -108,7 +110,9 @@ class FakeHub {
     return {
       customOrders: async () => {
         away()
-        return { orders: [...this.orders.values()], serverNow: new Date().toISOString() }
+        // Through the wire and its parser: what ContentOps keeps is what it read.
+        const wire = { orders: [...this.orders.values()], serverNow: new Date().toISOString() }
+        return parseHubOrderList(JSON.parse(JSON.stringify(wire)))
       },
       reportCustomOrder: async (code: string, body: HubOrderReportBody) => {
         away()
@@ -317,6 +321,49 @@ describe('the hub orders of a model', () => {
     // «Только чтение» sees no buyer, card or link.
     const hidden = (await list(reader)).items.find((order) => order.code === 'K-1')
     expect(hidden).toMatchObject({ buyer: null, card_text: null, card_url: null })
+  })
+
+  it('a state and a message kind the hub gained later: shown by the word, the read still comes back', async () => {
+    const later = {
+      kind: 'handover',
+      telegramRef: `tg:${CHAT}/3/9120`,
+      eventRef: null,
+      ordinal: 0,
+      part: null,
+      complete: null,
+      at: null,
+      author: null,
+      excerpt: 'a kind of message this release does not know',
+      doneAt: null,
+      retractedAt: null,
+    } as unknown as HubOrderMessage
+    hub.orders.set(
+      'K-20',
+      hubOrder(20, { state: 'checked', stateWord: 'Проверен', messages: [later] }),
+    )
+    hub.orders.set('K-21', hubOrder(21, { state: 'with_lead' }))
+    try {
+      await run()
+      const read = await list()
+      expect(read.read_error).toBeNull()
+      expect(read.items.map((order) => order.code)).toEqual(
+        expect.arrayContaining(['K-1', 'K-20', 'K-21']),
+      )
+      expect(read.items.find((order) => order.code === 'K-20')).toMatchObject({
+        state: 'checked',
+        status: { word: 'в Hub: Проверен' },
+        messages: [],
+      })
+      // No word from the hub: its state as it is.
+      expect(read.items.find((order) => order.code === 'K-21')?.status.word).toBe(
+        'в Hub: with_lead',
+      )
+      expect((await card('K-20')).status.word).toBe('в Hub: Проверен')
+    } finally {
+      hub.orders.delete('K-20')
+      hub.orders.delete('K-21')
+      await run()
+    }
   })
 
   it('a linked file reaches the hub through the outbox; until then the card says so', async () => {

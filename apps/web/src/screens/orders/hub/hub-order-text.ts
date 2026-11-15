@@ -7,12 +7,16 @@ import {
   type HubOrderList,
   type HubReport,
   type Instant,
+  isKnownHubState,
   type LocalDate,
 } from '@contentops/contracts'
 import { accountLabel } from '@/lib/words'
 
-/** Группы «Заказов» (пакет N): правка и просрочка наверху, снятое — внизу, до отдачи фану. */
-export type HubOrderGroup = 'revision' | 'overdue' | 'at_model' | 'partly' | 'shot'
+/**
+ * Группы «Заказов» (пакет N): правка и просрочка наверху, снятое — внизу, до отдачи фану;
+ * шаг, которого эта версия не знает (Hub добавил его позже), — отдельной группой в конце.
+ */
+export type HubOrderGroup = 'revision' | 'overdue' | 'at_model' | 'partly' | 'shot' | 'other'
 
 export const HUB_GROUP_ORDER: readonly HubOrderGroup[] = [
   'revision',
@@ -20,9 +24,11 @@ export const HUB_GROUP_ORDER: readonly HubOrderGroup[] = [
   'at_model',
   'partly',
   'shot',
+  'other',
 ]
 
 export function hubGroupOf(order: HubOrder): HubOrderGroup {
+  if (!isKnownHubState(order.state)) return 'other'
   if (order.state === 'revision') return 'revision'
   if (order.overdue_days !== null) return 'overdue'
   if (order.state === 'partly') return 'partly'
@@ -37,6 +43,7 @@ export function hubGroupLabel(group: HubOrderGroup, modelGenitive: string): stri
     at_model: `У ${modelGenitive}`,
     partly: 'Сдано частично',
     shot: 'Снято — отдать фану в Hub',
+    other: 'Другие шаги в Hub',
   }
   return labels[group]
 }
