@@ -143,7 +143,7 @@ describe('the form on ContentOps’ page', () => {
     // Hub down and no own account: the words say Hub, not «не подходят».
     const silent = await signIn('somebody', 'whatever-password')
     expect(silent.statusCode).toBe(503)
-    expect(silent.json().message).toMatch(/^Hub не отвечает/)
+    expect(silent.json().message).toMatch(/^Вход сейчас недоступен/)
   })
 
   it('says each refusal of Hub in words: the owner, no access, locked', async () => {
