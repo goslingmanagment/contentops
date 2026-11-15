@@ -170,20 +170,6 @@ export type HubOrderReportBody =
       message?: HubOrderMessageInput
     }
 
-/**
- * A step a PERSON takes in «Съёмка» (products plan §4.5, package C3): the key only carries it; the
- * hub checks that `onBehalfOf` (the person's hub login) leads that step of the order, else 409
- * `not_allowed`, and writes it as theirs. Never through the outbox: the person waits for it.
- */
-export interface HubPersonStepBody {
-  action: 'person_step'
-  step: HubShootingStep
-  onBehalfOf: string
-  deadlineOn?: string
-  note?: string
-  part?: HubOrderPart
-}
-
 const CODE = /^K-[1-9]\d{0,15}$/
 const PARTS: readonly string[] = ['video', 'photos']
 

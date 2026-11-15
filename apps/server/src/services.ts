@@ -1,7 +1,7 @@
 import type { Db } from '@contentops/db'
+import type { PersonDoor } from '@contentops/hub'
 import type { HubSigninService } from './auth/hub-signin'
 import type { RunCommand } from './commands'
-import type { HubOrdersClientFactory } from './hub-orders/work'
 import type { BlobStore } from './media/storage'
 import type { SpaceOptions } from './space'
 
@@ -30,6 +30,9 @@ export interface Services {
   store: BlobStore
   /** «Войти через хаб» (SPEC §11.1); absent — not configured. */
   hubSignin?: HubSigninService | null
-  /** The hub's custom orders, for a person's step of «Съёмка» (package C3); absent — none. */
-  hubOrders?: HubOrdersClientFactory
+  /**
+   * Hub's person's door (package C3): «Съёмка» reads and moves custom orders AS THE SIGNED-IN
+   * PERSON (their session's grant); absent — Hub's sign-in is not configured.
+   */
+  personDoor?: PersonDoor | null
 }

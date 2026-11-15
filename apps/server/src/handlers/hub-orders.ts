@@ -5,7 +5,7 @@ import { requireActor } from '../commands'
 import type { RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
-import { sendHubStep, storeHubOrder } from '../hub-orders/steps'
+import { grantOf, personRead, sendHubStep, storeHubOrder } from '../hub-orders/steps'
 import { type HubOrderContext, hubOrderList, hubOrderView } from '../hub-orders/view'
 import { enqueueHubOrders } from '../hub-orders/work'
 import { linkHubDelivery, retractHubDelivery } from '../hub-orders/writes'
@@ -24,19 +24,34 @@ function codeOf(raw: string): string {
   return parsed.data
 }
 
-export function hubOrderHandlers({ db, command, secrets, hubOrders }: Services): HandlerRegistry {
+export function hubOrderHandlers({ db, command, secrets, personDoor }: Services): HandlerRegistry {
   // A registry built without services (the route tests) has no secrets: nothing configured.
   const configured = secrets?.hub === true
   const hubBase = secrets?.hubBaseUrl ?? null
 
-  async function context(q: Queryable, ctx: RequestContext): Promise<HubOrderContext> {
+  /**
+   * The screen's context: a person signed in over Hub's grant reads their own orders through the door
+   * (fresh, their realm) and is offered steps; an own account with no grant reads the last background
+   * read and the words instead of the steps (package C3).
+   */
+  async function context(
+    q: Queryable,
+    ctx: RequestContext,
+    options: { fresh?: boolean } = {},
+  ): Promise<HubOrderContext> {
     const model = modelOf(ctx.model)
     const actor = requireActor(ctx)
     const [view] = await modelViews(q, [model.code])
+    const grant = await grantOf(q, actor)
+    const read =
+      options.fresh === false ? null : await personRead(db, personDoor ?? null, model, grant)
     return {
       model: { ...model, genitive: view?.name_genitive ?? model.name },
       role: actor.role,
       hubBase,
+      ...(read ? { read } : {}),
+      steps:
+        actor.type !== 'person' || actor.role === 'reader' ? 'none' : grant ? 'person' : 'no_grant',
     }
   }
 
@@ -57,14 +72,7 @@ export function hubOrderHandlers({ db, command, secrets, hubOrders }: Services):
         const code = codeOf(params.code)
         const model = modelOf(ctx.model)
         // The hub first, as the person: it says yes or no; then the order as it answered, journaled.
-        const order = await sendHubStep(
-          db,
-          hubOrders?.() ?? null,
-          model,
-          code,
-          body,
-          requireActor(ctx),
-        )
+        const order = await sendHubStep(db, personDoor ?? null, code, body, requireActor(ctx))
         return command({ ctx, body }, async (tx) => {
           await storeHubOrder(tx, model, order)
           return hubOrderView(tx, await context(tx, ctx), code)

@@ -54,7 +54,6 @@ export {
   type HubOrderReportBody,
   type HubOrderState,
   type HubOrderStateWire,
-  type HubPersonStepBody,
   type HubShootingStep,
   parseHubOrder,
   parseHubOrderList,
@@ -82,6 +81,12 @@ export {
   type HubRefusalCode,
   isHubError,
 } from './errors.ts'
+export {
+  createPersonDoor,
+  type PersonDoor,
+  type PersonDoorOptions,
+  type PersonShootingStep,
+} from './person-door.ts'
 export {
   afterPoll,
   DAILY_OVERLAP_MS,

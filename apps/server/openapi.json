@@ -4522,6 +4522,12 @@
               ]
             }
           },
+          "steps_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "pending_reports": {
             "type": "integer",
             "minimum": 0,
@@ -4557,6 +4563,7 @@
           "files",
           "leader",
           "steps",
+          "steps_note",
           "pending_reports",
           "version"
         ],

@@ -154,6 +154,11 @@ export const HubOrderSchema = z.object({
   leader: z.object({ name: z.string().nullable(), shooting: z.boolean() }).nullable(),
   /** The content side's steps the screen offers in this state (the hub decides whose they are). */
   steps: z.array(z.enum(['at_model', 'partly', 'shot', 'revision', 'refused'])),
+  /**
+   * Instead of the steps: a person on an own account with no grant of Hub's registry takes none
+   * («шаги доступны с учётной записью из реестра: попросите владельца»); `null` — nothing to say.
+   */
+  steps_note: z.string().nullable(),
   /** Reports of its files the hub has not taken yet. */
   pending_reports: z.int().nonnegative(),
   version: z.int().positive(),
