@@ -42,24 +42,24 @@ export function FirstDayCard({
       to: href({ to: '/$model/plan/$date', params: { model, date: today } }),
     },
     {
-      title: 'Сверить',
+      title: 'Сверить и утвердить неделю',
       where: 'План',
-      text: 'что вышло на площадке с тем, что стояло в плане',
-      to: href({ to: '/$model/plan/check', params }),
-    },
-    {
-      title: 'Утвердить неделю',
-      where: 'План, неделя',
       text: canApprove
-        ? 'бесплатные посты недели, чтобы агент их отправил'
-        : 'это делает владелец или КМ модели',
+        ? 'что вышло с тем, что стояло в плане; бесплатные посты недели — агенту'
+        : 'что вышло с тем, что стояло в плане; неделю утверждает владелец или КМ модели',
       to: href({ to: '/$model/plan/w/$week', params: { model, week: isoWeekOf(today) } }),
     },
     {
+      title: 'Публикации',
+      where: 'Публикации',
+      text: 'что ждёт утверждения и что вышло',
+      to: href({ to: '/$model/publications', params }),
+    },
+    {
       title: 'Съёмка',
-      where: 'Заказы',
+      where: 'Съёмка',
       text: 'кастомы у модели: сроки и файлы',
-      to: href({ to: '/$model/library/customs', params, search: { view: 'orders' } }),
+      to: href({ to: '/$model/shooting', params }),
     },
   ]
   return (

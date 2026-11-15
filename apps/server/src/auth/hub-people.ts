@@ -170,11 +170,15 @@ export async function applyHubPerson(
   // The person entered here by hand before Hub knew them: their login is Hub's code.
   const { rows: byCode } = await tx.execute<PrincipalRow>(sql`
     UPDATE principals SET hub_user_id = ${input.hubUserId}, hub_login = ${input.hubLogin},
-           hub_person_code = ${person.code}, row_version = row_version + 1
+           hub_person_code = ${person.code}, password_hash = NULL, row_version = row_version + 1
      WHERE login = ${person.code} AND kind = 'human' AND role <> 'owner'
        AND hub_user_id IS NULL AND disabled_at IS NULL
     RETURNING ${COLUMNS}`)
   if (byCode[0]) {
+    // From now on the registry is her way in: the password made here is gone, and so are its sessions.
+    await tx.execute(sql`
+      UPDATE sessions SET revoked_at = now()
+       WHERE principal_id = ${byCode[0].id}::uuid AND hub_grant IS NULL AND revoked_at IS NULL`)
     await logAction(tx, {
       action: 'auth.hubLink',
       modelId: null,

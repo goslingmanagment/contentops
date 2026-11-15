@@ -133,7 +133,9 @@ async function personBySession(db: Db, token: string): Promise<SessionRow | unde
       FROM sessions s JOIN principals p ON p.id = s.principal_id
      WHERE s.token_hash = ${sessionDigest(token)}
        AND s.revoked_at IS NULL AND s.expires_at > now()
-       AND p.kind = 'human' AND p.disabled_at IS NULL`)
+       AND p.kind = 'human' AND p.disabled_at IS NULL
+       -- A person of the registry comes in through Hub only: a password session of hers is no session (package C4).
+       AND (s.hub_grant IS NOT NULL OR p.hub_person_code IS NULL)`)
   const row = rows[0]
   if (row) {
     await db.execute(sql`UPDATE sessions SET last_seen_at = now()

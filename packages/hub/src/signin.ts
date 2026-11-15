@@ -38,6 +38,8 @@ export interface HubWaitingMatter {
   /** A path of Hub or Workboard, or an address; null — Hub's list. */
   link: string | null
   pageLabels: string[]
+  /** The models of those pages (Hub's slugs); none — a matter of no page; undefined — an older Hub that does not say. */
+  models?: string[]
   openedAt: Date
 }
 
@@ -384,7 +386,17 @@ export function createHubSignin(options: HubSigninOptions): HubSignin {
         ) {
           throw badShape(endpoint, 'a matter lacks a field')
         }
-        return { id, kind, title, link, pageLabels, openedAt: new Date(opened) }
+        const models = raw.models === undefined ? undefined : strings(raw.models)
+        if (models === null) throw badShape(endpoint, 'a matter has bad models')
+        return {
+          id,
+          kind,
+          title,
+          link,
+          pageLabels,
+          ...(models === undefined ? {} : { models }),
+          openedAt: new Date(opened),
+        }
       })
     },
   }
