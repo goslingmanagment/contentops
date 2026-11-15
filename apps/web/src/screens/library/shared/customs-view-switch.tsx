@@ -25,13 +25,17 @@ const SEARCH_VIEW: Record<CustomsView, 'orders' | 'to-ppv' | undefined> = {
 export function CustomsViewSwitch({ value }: { value: CustomsView }) {
   const model = useCurrentModel().code
   const href = useHref()
+  // «Заказы» с пакета C3 — «Съёмка»: заказы Hub со стороны съёмки живут там.
   const tabs = VIEWS.map((view) => ({
     ...view,
-    href: href({
-      to: '/$model/library/customs',
-      params: { model },
-      search: { view: SEARCH_VIEW[view.value] },
-    }),
+    href:
+      view.value === 'orders'
+        ? href({ to: '/$model/shooting', params: { model } })
+        : href({
+            to: '/$model/library/customs',
+            params: { model },
+            search: { view: SEARCH_VIEW[view.value] },
+          }),
   }))
   return <SectionTabs tabs={tabs} value={value} label="Вид Кастомов" />
 }

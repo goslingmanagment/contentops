@@ -39,6 +39,7 @@ export {
 } from './client.ts'
 export {
   HUB_ORDER_STATES,
+  HUB_SHOOTING_STEPS,
   type HubCustomOrder,
   type HubCustomOrderAnswer,
   type HubCustomOrderList,
@@ -46,12 +47,15 @@ export {
   type HubMatterOpen,
   type HubOrderCard,
   type HubOrderEvent,
+  type HubOrderLeader,
   type HubOrderMessage,
   type HubOrderMessageInput,
   type HubOrderPart,
   type HubOrderReportBody,
   type HubOrderState,
   type HubOrderStateWire,
+  type HubPersonStepBody,
+  type HubShootingStep,
   parseHubOrder,
   parseHubOrderList,
 } from './custom-orders.ts'

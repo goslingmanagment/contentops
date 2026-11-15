@@ -12,6 +12,7 @@ import {
   HubError,
   type HubOrderMessage,
   type HubOrderReportBody,
+  type HubPersonStepBody,
   parseHubOrderList,
 } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
@@ -56,6 +57,7 @@ function hubOrder(id: number, fields: Partial<HubCustomOrder> = {}): HubCustomOr
     deadlineOn: null,
     state: 'at_model',
     stateWord: null,
+    leader: null,
     stateAt: new Date().toISOString(),
     stateNote: null,
     stateRef: null,
@@ -89,6 +91,7 @@ const MOVES_FROM: readonly string[] = ['recorded', 'paid', 'at_model', 'partly',
 class FakeHub {
   orders = new Map<string, HubCustomOrder>()
   reports: { code: string; body: HubOrderReportBody }[] = []
+  steps: { code: string; body: HubPersonStepBody }[] = []
   matters = new Map<string, 'open' | 'closed'>()
   titles = new Map<string, string>()
   down = false
@@ -114,10 +117,24 @@ class FakeHub {
         const wire = { orders: [...this.orders.values()], serverNow: new Date().toISOString() }
         return parseHubOrderList(JSON.parse(JSON.stringify(wire)))
       },
-      reportCustomOrder: async (code: string, body: HubOrderReportBody) => {
+      reportCustomOrder: async (code: string, step: HubOrderReportBody | HubPersonStepBody) => {
         away()
         const order = this.orders.get(code)
         if (!order) throw refused(404, 'not_found')
+        if (step.action === 'person_step') {
+          // The hub's rule in short: the step's leader here is «lead-login»; anyone else is refused.
+          this.steps.push({ code, body: step })
+          if (step.onBehalfOf !== 'lead-login') throw refused(409, 'not_allowed')
+          const to = step.step === 'partly' ? 'partly' : step.step
+          Object.assign(order, {
+            state: to,
+            stateWord: null,
+            stateAt: new Date().toISOString(),
+            ...(step.deadlineOn ? { deadlineOn: step.deadlineOn } : {}),
+          })
+          return { order: structuredClone(order), outcome: 'changed' as const, event: null }
+        }
+        const body = step
         this.reports.push({ code, body })
         const link = normalRef(body.message?.telegramRef)
         const ref = body.eventRef ?? link
@@ -270,7 +287,10 @@ function link(code: string, body: Record<string, unknown>) {
 }
 
 beforeAll(async () => {
-  server = await testServer({ secrets: { hub: true, hubBaseUrl: 'https://hub.example' } })
+  server = await testServer({
+    secrets: { hub: true, hubBaseUrl: 'https://hub.example' },
+    hubOrders: () => hub.client(),
+  })
   owner = await signIn(server.app, OWNER.login, OWNER.password)
   await setHubPage(server.db, 'lora-1', 'lora-1')
   await setHubPage(server.db, 'ari-1', 'ari-1')
@@ -306,7 +326,7 @@ describe('the hub orders of a model', () => {
     expect(read.read_error).toBeNull()
     expect(read.items.map((order) => order.code).sort()).toEqual(['K-1', 'K-2', 'K-4'])
     expect(read.unassigned).toBe(1)
-    expect(read.board_url).toBe('https://hub.example/workboard/customs')
+    expect(read.board_url).toBe('https://hub.example/workboard/customs?record=1')
     const first = read.items.find((order) => order.code === 'K-1')
     expect(first).toMatchObject({
       account: 'lora-1',
@@ -339,9 +359,9 @@ describe('the hub orders of a model', () => {
     } as unknown as HubOrderMessage
     hub.orders.set(
       'K-20',
-      hubOrder(20, { state: 'checked', stateWord: 'Проверен', messages: [later] }),
+      hubOrder(20, { state: 'with_lead', stateWord: 'У ведущего', messages: [later] }),
     )
-    hub.orders.set('K-21', hubOrder(21, { state: 'with_lead' }))
+    hub.orders.set('K-21', hubOrder(21, { state: 'handed_over' }))
     try {
       await run()
       const read = await list()
@@ -350,20 +370,114 @@ describe('the hub orders of a model', () => {
         expect.arrayContaining(['K-1', 'K-20', 'K-21']),
       )
       expect(read.items.find((order) => order.code === 'K-20')).toMatchObject({
-        state: 'checked',
-        status: { word: 'в Hub: Проверен' },
+        state: 'with_lead',
+        status: { word: 'в Hub: У ведущего' },
         messages: [],
       })
       // No word from the hub: its state as it is.
       expect(read.items.find((order) => order.code === 'K-21')?.status.word).toBe(
-        'в Hub: with_lead',
+        'в Hub: handed_over',
       )
-      expect((await card('K-20')).status.word).toBe('в Hub: Проверен')
+      expect((await card('K-20')).status.word).toBe('в Hub: У ведущего')
     } finally {
       hub.orders.delete('K-20')
       hub.orders.delete('K-21')
       await run()
     }
+  })
+
+  it('«Съёмка»: a step goes to the hub as the signed-in person; the hub refuses whoever does not lead it', async () => {
+    hub.orders.set('K-30', hubOrder(30, { state: 'checked', stateWord: 'Проверен' }))
+    await run()
+    const step = (body: Record<string, unknown>, as = owner) =>
+      call(server.app, {
+        method: 'POST',
+        url: '/api/v1/lora/hub-orders/K-30/steps',
+        as,
+        key: newKey(),
+        body,
+      })
+    expect((await card('K-30')).steps).toEqual(['at_model'])
+    // No hub login: nobody to write it as.
+    expect((await step({ step: 'at_model' })).statusCode).toBe(403)
+    const login = (value: string) =>
+      server.db.execute(sql`
+        UPDATE principals SET hub_user_id = 900, hub_login = ${value} WHERE login = ${OWNER.login}`)
+    await login('someone-else')
+    const refusedStep = await step({ step: 'at_model', deadline: '2030-01-10' })
+    expect(refusedStep.statusCode).toBe(403)
+    expect(refusedStep.json().message).toMatch(/^Hub не принял шаг/)
+    expect(hub.steps.at(-1)?.body).toMatchObject({ onBehalfOf: 'someone-else', step: 'at_model' })
+    await login('lead-login')
+    const taken = await step({ step: 'at_model', deadline: '2030-01-10' })
+    expect(taken.statusCode, taken.body).toBe(200)
+    expect(HubOrderSchema.parse(taken.json())).toMatchObject({
+      state: 'at_model',
+      deadline: '2030-01-10',
+      steps: ['partly', 'shot', 'refused'],
+    })
+    // A refusal names its reason; «Только чтение» takes no step at all.
+    expect((await step({ step: 'refused' })).statusCode).toBe(400)
+    expect((await step({ step: 'shot' }, reader)).statusCode).toBe(403)
+    await server.db.execute(sql`
+      UPDATE principals SET hub_user_id = NULL, hub_login = NULL WHERE login = ${OWNER.login}`)
+    hub.orders.delete('K-30')
+    await run()
+  })
+
+  it('«Только кастомы» takes a step of «Съёмка» but no ТЗ; «Только чтение» reads the ТЗ and makes none', async () => {
+    const customs = (
+      await addPerson(server.app, owner, {
+        name: 'Lead',
+        login: 'customs-lead',
+        role: 'reader',
+        models: ['lora'],
+      })
+    ).session
+    // «Только кастомы» comes from Hub alone (package C1): made here as Hub's sign-in makes it.
+    await server.db.execute(
+      sql`UPDATE principals SET role = 'customs' WHERE login = 'customs-lead'`,
+    )
+    hub.orders.set('K-31', hubOrder(31, { state: 'checked' }))
+    await run()
+    const stepAs = (as: string) =>
+      call(server.app, {
+        method: 'POST',
+        url: '/api/v1/lora/hub-orders/K-31/steps',
+        as,
+        key: newKey(),
+        body: { step: 'at_model' },
+      })
+    // Let through to the hub's own check; refused here only for want of a hub login.
+    expect((await stepAs(customs)).json().message).toMatch(/войдите через Hub/)
+    const task = (as: string) =>
+      call(server.app, {
+        method: 'POST',
+        url: '/api/v1/lora/shooting-tasks',
+        as,
+        key: newKey(),
+        body: { title: 'Сет у окна', kind: 'set', deadline: '2030-01-10' },
+      })
+    expect((await task(customs)).statusCode).toBe(403)
+    expect((await task(reader)).statusCode).toBe(403)
+    const made = await task(owner)
+    expect(made.statusCode, made.body).toBe(201)
+    const listed = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/shooting-tasks',
+      as: reader,
+    })
+    expect(listed.json().open.map((one: { title: string }) => one.title)).toEqual(['Сет у окна'])
+    const handed = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/lora/shooting-tasks/${made.json().id}:hand-in`,
+      as: owner,
+      key: newKey(),
+    })
+    expect(handed.statusCode, handed.body).toBe(200)
+    expect(handed.json().handed_in).not.toBeNull()
+    hub.orders.delete('K-31')
+    await run()
   })
 
   it('a linked file reaches the hub through the outbox; until then the card says so', async () => {

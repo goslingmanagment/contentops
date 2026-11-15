@@ -2322,6 +2322,44 @@
           "cells"
         ]
       },
+      "CreateShootingTaskCommandInput": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ShootingTaskKindInput"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalDateInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "kind"
+        ]
+      },
       "CreateUploadCommandInput": {
         "type": "object",
         "properties": {
@@ -4445,6 +4483,45 @@
               "$ref": "#/components/schemas/HubOrderFile"
             }
           },
+          "leader": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "shooting": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "shooting"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "at_model",
+                "partly",
+                "shot",
+                "revision",
+                "refused"
+              ]
+            }
+          },
           "pending_reports": {
             "type": "integer",
             "minimum": 0,
@@ -4478,6 +4555,8 @@
           "hub_url",
           "archive_order",
           "files",
+          "leader",
+          "steps",
           "pending_reports",
           "version"
         ],
@@ -4727,6 +4806,48 @@
         "type": "string",
         "minLength": 1
       },
+      "HubOrderStepCommandInput": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "$ref": "#/components/schemas/HubShootingStepInput"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalDateInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "part": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderPartKindInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "step"
+        ]
+      },
       "HubPost": {
         "type": "object",
         "properties": {
@@ -4835,6 +4956,16 @@
           "unchanged"
         ],
         "additionalProperties": false
+      },
+      "HubShootingStepInput": {
+        "type": "string",
+        "enum": [
+          "at_model",
+          "partly",
+          "shot",
+          "revision",
+          "refused"
+        ]
       },
       "InboxAlert": {
         "type": "object",
@@ -11749,6 +11880,129 @@
       "Sha256HexInput": {
         "type": "string",
         "pattern": "^[0-9a-f]{64}$"
+      },
+      "ShootingTask": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ShootingTaskKind"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalDate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overdue_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/ActorRef"
+          },
+          "handed_in": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "$ref": "#/components/schemas/Instant"
+                  },
+                  "by": {
+                    "$ref": "#/components/schemas/ActorRef"
+                  }
+                },
+                "required": [
+                  "at",
+                  "by"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "note",
+          "deadline",
+          "overdue_days",
+          "created_at",
+          "created_by",
+          "handed_in"
+        ],
+        "additionalProperties": false
+      },
+      "ShootingTaskKind": {
+        "type": "string",
+        "enum": [
+          "set",
+          "fyp",
+          "other"
+        ]
+      },
+      "ShootingTaskKindInput": {
+        "type": "string",
+        "enum": [
+          "set",
+          "fyp",
+          "other"
+        ]
+      },
+      "ShootingTaskList": {
+        "type": "object",
+        "properties": {
+          "open": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShootingTask"
+            }
+          },
+          "done": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShootingTask"
+            }
+          }
+        },
+        "required": [
+          "open",
+          "done"
+        ],
+        "additionalProperties": false
       },
       "Sign": {
         "type": "string",
@@ -21282,6 +21536,66 @@
         }
       }
     },
+    "/api/v1/{model}/hub-orders/{code}/steps": {
+      "post": {
+        "operationId": "hubOrders.step",
+        "tags": [
+          "hubOrders"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HubOrderStepCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "code",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubOrder"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/{model}/hub-orders/{code}/deliveries": {
       "post": {
         "operationId": "hubOrders.linkDelivery",
@@ -21394,6 +21708,196 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HubOrder"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/shooting-tasks": {
+      "get": {
+        "operationId": "shootingTasks.list",
+        "tags": [
+          "shootingTasks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShootingTaskList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "shootingTasks.create",
+        "tags": [
+          "shootingTasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShootingTaskCommandInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShootingTask"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/shooting-tasks/{task}:hand-in": {
+      "post": {
+        "operationId": "shootingTasks.handIn",
+        "tags": [
+          "shootingTasks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "task",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShootingTask"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/shooting-tasks/{task}:cancel": {
+      "post": {
+        "operationId": "shootingTasks.cancel",
+        "tags": [
+          "shootingTasks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "task",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShootingTask"
                 }
               }
             }

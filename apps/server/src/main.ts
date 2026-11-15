@@ -154,6 +154,8 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     filesDirect: config.FILES_DIRECT,
     ...(hubSignin ? { hubSignin } : {}),
     ...(hubAgentKeys ? { hubAgentKeys } : {}),
+    // «Съёмка»: a person's step goes to the hub with the same key as the orders' read.
+    hubOrders: envHubOrdersClient(config),
   })
   app.addHook('onClose', () => pool.end())
   onStop(logger, () => app.close())

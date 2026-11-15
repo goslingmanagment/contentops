@@ -18,6 +18,8 @@ function SectionRedirect({ model, section }: { model: string; section: SectionKe
       return <Navigate to="/$model/today" params={{ model }} replace />
     case 'waiting':
       return <Navigate to="/$model/waiting" params={{ model }} replace />
+    case 'shooting':
+      return <Navigate to="/$model/shooting" params={{ model }} replace />
     case 'inbox':
       return <Navigate to="/$model/inbox" params={{ model }} replace />
     case 'plan':

@@ -33,6 +33,7 @@ export const queryKeys = {
     ['model', model, 'orders', tab] as const,
   order: (model: ModelCode, id: string) => ['model', model, 'order', id] as const,
   hubOrders: (model: ModelCode) => ['model', model, 'hub-orders'] as const,
+  shootingTasks: (model: ModelCode) => ['model', model, 'shooting-tasks'] as const,
   waiting: (model: ModelCode) => ['model', model, 'waiting'] as const,
   hubOrder: (model: ModelCode, code: string) => ['model', model, 'hub-order', code] as const,
   inbox: (model: ModelCode, view: string) => ['model', model, 'inbox', view] as const,

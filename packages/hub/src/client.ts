@@ -6,6 +6,7 @@ import {
   type HubMatterAnswer,
   type HubMatterOpen,
   type HubOrderReportBody,
+  type HubPersonStepBody,
   parseHubOrderAnswer,
   parseHubOrderList,
   parseMatterAnswer,
@@ -159,7 +160,7 @@ export interface HubClient {
    */
   reportCustomOrder(
     code: string,
-    body: HubOrderReportBody,
+    body: HubOrderReportBody | HubPersonStepBody,
     signal?: AbortSignal,
   ): Promise<HubCustomOrderAnswer>
   /** Opens (or updates, or reopens) a matter by its reason key (`write:matters`). */

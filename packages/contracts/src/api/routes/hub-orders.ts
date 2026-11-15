@@ -1,6 +1,7 @@
 import {
   HubOrderListSchema,
   HubOrderSchema,
+  HubOrderStepCommandSchema,
   LinkHubDeliveryCommandSchema,
   RetractHubDeliveryCommandSchema,
 } from '../../domain/hub-orders'
@@ -29,6 +30,16 @@ export const hubOrderRoutes = {
     path: '/api/v1/{model}/hub-orders:refresh',
     response: HubOrderListSchema,
     success: 202,
+  }),
+  /**
+   * «Съёмка» (package C3): a step of the content side, written to the hub now as the signed-in
+   * person; the hub refuses it to whoever does not lead it. Answers the order as the hub has it.
+   */
+  step: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/hub-orders/{code}/steps',
+    body: HubOrderStepCommandSchema,
+    response: HubOrderSchema,
   }),
   /** «Привязать файл…»: a CUS as a delivery of the order; the hub learns it (`delivery`). */
   linkDelivery: defineRoute({

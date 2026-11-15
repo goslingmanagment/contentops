@@ -1161,6 +1161,49 @@ export const contractors = pgTable("contractors", {
 	check("contractors_format_check", sql`format = ANY (ARRAY['upload'::text, 'master'::text, 'compat'::text])`),
 ]);
 
+export const shootingTasks = pgTable("shooting_tasks", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	title: text().notNull(),
+	kind: text().notNull(),
+	note: text(),
+	deadlineOn: date("deadline_on"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	createdBy: uuid("created_by").notNull(),
+	handedInAt: timestamp("handed_in_at", { withTimezone: true, mode: 'string' }),
+	handedInBy: uuid("handed_in_by"),
+	cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: 'string' }),
+	cancelledBy: uuid("cancelled_by"),
+}, (table): PgTableExtraConfigValue[] => [
+	index("shooting_tasks_open").using("btree", table.modelId.asc().nullsLast().op("date_ops"), table.deadlineOn.asc().nullsLast().op("date_ops")).where(sql`((handed_in_at IS NULL) AND (cancelled_at IS NULL))`),
+	foreignKey({
+			columns: [table.modelId],
+			foreignColumns: [models.id],
+			name: "shooting_tasks_model_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.createdBy],
+			foreignColumns: [principals.id],
+			name: "shooting_tasks_created_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.handedInBy],
+			foreignColumns: [principals.id],
+			name: "shooting_tasks_handed_in_by_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.cancelledBy],
+			foreignColumns: [principals.id],
+			name: "shooting_tasks_cancelled_by_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "shooting_tasks_pkey"}),
+	check("shooting_tasks_title_check", sql`(length(title) >= 1) AND (length(title) <= 200)`),
+	check("shooting_tasks_kind_check", sql`kind = ANY (ARRAY['set'::text, 'fyp'::text, 'other'::text])`),
+	check("shooting_tasks_note_check", sql`(note IS NULL) OR ((length(note) >= 1) AND (length(note) <= 2000))`),
+	check("shooting_tasks_handed_in", sql`(handed_in_at IS NULL) = (handed_in_by IS NULL)`),
+	check("shooting_tasks_cancelled", sql`(cancelled_at IS NULL) = (cancelled_by IS NULL)`),
+]);
+
 export const chronologyEntries = pgTable("chronology_entries", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),

@@ -57,13 +57,14 @@ export function HubOrderRow({ order, accounts, selected, onOpen }: HubOrderRowPr
           {hubOrderMeta(order, accounts)}
         </span>
       </span>
-      <span className="min-w-20 shrink-0 whitespace-nowrap text-muted-foreground text-sm tabular-nums">
+      {/* На телефоне срок — в слове состояния («у модели · до 17 нояб.»): колонки нет. */}
+      <span className="hidden min-w-20 shrink-0 whitespace-nowrap text-muted-foreground text-sm tabular-nums @xl:inline">
         {hubDeadlineText(order, today)}
       </span>
       <span className="hidden w-20 shrink-0 text-muted-foreground text-sm tabular-nums @3xl:inline">
         {live > 0 ? `файлов ${live}` : 'файлов нет'}
       </span>
-      <span className="flex w-44 shrink-0 @3xl:w-64 @4xl:w-80">
+      <span className="flex w-28 shrink-0 @xl:w-44 @3xl:w-64 @4xl:w-80">
         <StatusWord
           sign={order.status.sign ?? undefined}
           detail={order.status.detail}

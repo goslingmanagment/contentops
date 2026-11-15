@@ -141,6 +141,7 @@ const LISTS: Record<string, readonly string[]> = {
   hub_order_reports_kind_check: v.hubOrderReportKinds,
   hub_order_reports_state_check: v.hubOrderReportStates,
   backup_checkpoints_state_check: v.backupCheckpointStates,
+  shooting_tasks_kind_check: v.shootingTaskKinds,
 }
 
 let pool: pg.Pool

@@ -8,6 +8,7 @@ import type { HubAgentKeyService } from './auth/hub-agent-keys'
 import { createHubSigninService, type HubSigninSetup, registerHubSignin } from './auth/hub-signin'
 import { createCommands, createFailureRecorder } from './commands'
 import { createHandlers } from './handlers/index'
+import type { HubOrdersClientFactory } from './hub-orders/work'
 import { envSourceFactory } from './intake/source-client'
 import { registerSourceThumbs } from './intake/source-thumbs'
 import { registerTus } from './intake/tus'
@@ -36,6 +37,8 @@ export interface ServerOptions {
   hubSignin?: HubSigninSetup
   /** An agent's hub key (`HUB_INTROSPECT_KEY`); absent — such keys are not accepted. */
   hubAgentKeys?: HubAgentKeyService
+  /** The hub's custom orders, for a person's step of «Съёмка» (package C3). */
+  hubOrders?: HubOrdersClientFactory
 }
 
 /** The `web` role: the table routes on the database, sessions, rights and the journal. */
@@ -46,6 +49,7 @@ export function buildServer(options: ServerOptions) {
     db,
     command: createCommands(db),
     hubSignin,
+    ...(options.hubOrders ? { hubOrders: options.hubOrders } : {}),
     secureCookies: options.publicUrl.startsWith('https:'),
     secrets: options.secrets,
     sourceEnv: options.sourceEnv ?? process.env,

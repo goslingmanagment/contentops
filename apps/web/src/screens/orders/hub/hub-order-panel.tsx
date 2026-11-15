@@ -35,6 +35,7 @@ import { useCurrentModel } from '@/shell/model/model-context'
 import { FieldRow } from '../panel/field-editors'
 import { LinkDeliveryPopover } from '../panel/link-delivery-popover'
 import { ReasonForm } from '../panel/reason-form'
+import { HubOrderSteps } from './hub-order-steps'
 import { hubWantsText, reportWords } from './hub-order-text'
 import type { HubOrderActions } from './use-hub-order-actions'
 
@@ -136,6 +137,7 @@ function LoadedPanel({ order, accounts, width, actions, onClose }: LoadedPanelPr
       width={width}
       onClose={onClose}
     >
+      <HubOrderSteps order={order} actions={actions} />
       <OrderFacts order={order} accounts={accounts} />
       {openRevisions.length > 0 ? (
         <InfoSection title="Правки из Hub">

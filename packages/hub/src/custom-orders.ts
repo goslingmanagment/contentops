@@ -41,6 +41,18 @@ export type HubOrderMessageKind = (typeof HUB_ORDER_MESSAGE_KINDS)[number]
 
 export type HubOrderPart = 'video' | 'photos'
 
+/** The content side's steps of an order, taken by a person in «Съёмка». */
+export const HUB_SHOOTING_STEPS = ['at_model', 'partly', 'shot', 'revision', 'refused'] as const
+export type HubShootingStep = (typeof HUB_SHOOTING_STEPS)[number]
+
+/** «У кого сейчас»: who leads the order's current step in the hub, and where it is done. */
+export interface HubOrderLeader {
+  /** Null — the owner (nobody leads it). */
+  name: string | null
+  phase: 'check' | 'shoot' | 'give'
+  product: 'workboard' | 'contentops'
+}
+
 export interface HubOrderMessage {
   /** The Telegram message: what the hub knows it by, or an event's evidence; null — none. */
   telegramRef: string | null
@@ -89,6 +101,8 @@ export interface HubCustomOrder {
   state: HubOrderStateWire
   /** The hub's word of the state («Проверен»), when it sends one; null — an older hub. */
   stateWord: string | null
+  /** Who leads the current step; null — an older hub, or an ended order. */
+  leader: HubOrderLeader | null
   stateAt: string
   stateNote: string | null
   stateRef: string | null
@@ -156,6 +170,20 @@ export type HubOrderReportBody =
       message?: HubOrderMessageInput
     }
 
+/**
+ * A step a PERSON takes in «Съёмка» (products plan §4.5, package C3): the key only carries it; the
+ * hub checks that `onBehalfOf` (the person's hub login) leads that step of the order, else 409
+ * `not_allowed`, and writes it as theirs. Never through the outbox: the person waits for it.
+ */
+export interface HubPersonStepBody {
+  action: 'person_step'
+  step: HubShootingStep
+  onBehalfOf: string
+  deadlineOn?: string
+  note?: string
+  part?: HubOrderPart
+}
+
 const CODE = /^K-[1-9]\d{0,15}$/
 const PARTS: readonly string[] = ['video', 'photos']
 
@@ -210,6 +238,14 @@ function parseCard(raw: unknown): HubOrderCard {
   return card
 }
 
+function leaderOf(raw: unknown): HubOrderLeader | null {
+  if (!isRecord(raw)) return null
+  const phase = oneOf(['check', 'shoot', 'give'] as const, raw.phase)
+  const product = oneOf(['workboard', 'contentops'] as const, raw.product)
+  if (phase === null || product === null) return null
+  return { name: str(raw.name), phase, product }
+}
+
 /**
  * One order of the agent read. The fields ContentOps uses must be there and of their kind;
  * the rest of the hub's order passes untouched (a field the hub adds breaks nothing).
@@ -241,6 +277,7 @@ export function parseHubOrder(raw: unknown, endpoint = 'custom-orders'): HubCust
     deadlineOn: str(raw.deadlineOn),
     state,
     stateWord: str(raw.stateWord),
+    leader: leaderOf(raw.leader),
     stateAt: str(raw.stateAt) ?? str(raw.updatedAt) ?? '',
     stateNote: str(raw.stateNote),
     stateRef: str(raw.stateRef),

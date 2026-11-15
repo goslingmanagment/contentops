@@ -20,6 +20,7 @@ import { OrderPartKindSchema } from './orders'
 export const HubKnownOrderStateSchema = z.enum([
   'recorded',
   'paid',
+  'checked',
   'at_model',
   'partly',
   'shot',
@@ -48,6 +49,9 @@ export function isKnownHubState(state: string): state is HubKnownOrderState {
  * given; and any state this release does not know (`isKnownHubState`), by its word.
  */
 export const HUB_PRODUCTION_STATES: readonly HubKnownOrderState[] = [
+  // «Проверен» (package C3): given to shooting, not at the model yet; and the model's refusal.
+  'checked',
+  'refused',
   'at_model',
   'partly',
   'revision',
@@ -142,6 +146,14 @@ export const HubOrderSchema = z.object({
   /** ContentOps' old order of the same card (`tg-…`), in the archive. */
   archive_order: z.string().nullable(),
   files: z.array(HubOrderFileSchema),
+  /**
+   * «Ведёт»: who leads the order's current step in the hub (package C3) — its name (`null` — the
+   * owner), and whether the step is the shooting's (here) or the chat's (Workboard); `null` — the
+   * hub did not say.
+   */
+  leader: z.object({ name: z.string().nullable(), shooting: z.boolean() }).nullable(),
+  /** The content side's steps the screen offers in this state (the hub decides whose they are). */
+  steps: z.array(z.enum(['at_model', 'partly', 'shot', 'revision', 'refused'])),
   /** Reports of its files the hub has not taken yet. */
   pending_reports: z.int().nonnegative(),
   version: z.int().positive(),
@@ -161,7 +173,7 @@ export const HubOrderListSchema = z.object({
   refreshing: z.boolean(),
   /** Open hub orders no model could be told for: they are on the hub's board. */
   unassigned: z.int().nonnegative(),
-  /** The hub's board «Кастомы»: «Новый заказ» is made there. */
+  /** Workboard's «Записать кастом» on the board «Кастомы»: a new order is recorded there. */
   board_url: z.string().nullable(),
 })
 export type HubOrderList = z.infer<typeof HubOrderListSchema>
@@ -187,3 +199,19 @@ export const RetractHubDeliveryCommandSchema = z.object({
   reason: z.string().trim().min(1, 'Нужна причина'),
 })
 export type RetractHubDeliveryCommand = z.infer<typeof RetractHubDeliveryCommandSchema>
+
+/** The content side's steps (package C3): «Передать модели», «Сдан частично», «Снят», «Правка», «Отказ». */
+export const HubShootingStepSchema = z.enum(['at_model', 'partly', 'shot', 'revision', 'refused'])
+export type HubShootingStep = z.infer<typeof HubShootingStepSchema>
+
+/** A step of «Съёмка», written to the hub as the signed-in person (their hub login). */
+export const HubOrderStepCommandSchema = z.object({
+  step: HubShootingStepSchema,
+  /** «Передать модели»: until when; omitted — the deadline stays. */
+  deadline: LocalDateSchema.nullable().optional(),
+  /** What came and what is still awaited; a revision's words; a refusal's reason (required). */
+  note: z.string().trim().max(500).nullable().optional(),
+  /** A revision about one part; omitted — the whole order. */
+  part: OrderPartKindSchema.nullable().optional(),
+})
+export type HubOrderStepCommand = z.infer<typeof HubOrderStepCommandSchema>
