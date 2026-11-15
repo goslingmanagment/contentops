@@ -86,9 +86,10 @@ export function useSignOut() {
 
 /** Адрес входа через хаб: сервер уводит в хаб и возвращает туда, откуда пришли. */
 export function hubSignInHref(from: string | undefined): string {
+  // `prompt=1`: asked openly — Hub shows its sign-in page when nobody is signed in there.
   return from && from !== '/'
-    ? `/auth/hub/start?${new URLSearchParams({ next: from })}`
-    : '/auth/hub/start'
+    ? `/auth/hub/start?${new URLSearchParams({ next: from, prompt: '1' })}`
+    : '/auth/hub/start?prompt=1'
 }
 
 /** Что сказать, когда вход через хаб не открыл сессию. */

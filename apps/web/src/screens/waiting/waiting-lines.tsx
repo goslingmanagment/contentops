@@ -1,8 +1,10 @@
-import { formatDate, mskDate } from '@contentops/contracts'
+import { mskDate } from '@contentops/contracts'
 import { ChevronRightIcon, ExternalLinkIcon } from 'lucide-react'
 import { useHref } from '@/app/use-href'
 import { useClock } from '@/data/api-session'
+import { useSession } from '@/data/session'
 import type { useWaiting } from '@/data/waiting'
+import { matterNote } from './matter-note'
 
 type WaitingState = ReturnType<typeof useWaiting>
 
@@ -23,6 +25,8 @@ export function WaitingLines({
   const clock = useClock()
   const today = mskDate(clock.now())
   const params = { model }
+  // Hub is named only to whoever has it among her products (the owner).
+  const hasHub = useSession().data?.products?.some((product) => product.id === 'hub') === true
   const own = waiting.own.map((line) => ({
     key: line.key,
     title: `${line.label} ${line.count}`,
@@ -36,7 +40,7 @@ export function WaitingLines({
   const hub = waiting.matters.map((matter) => ({
     key: `hub-${matter.id}`,
     title: matter.title,
-    note: `Hub · ждёт с ${formatDate(mskDate(matter.opened_at), today)}`,
+    note: matterNote(matter.opened_at, today, hasHub),
     href: matter.href,
     outside: !matter.href.startsWith('/'),
   }))

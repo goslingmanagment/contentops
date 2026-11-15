@@ -2522,7 +2522,9 @@ CREATE TABLE public.sessions (
     replaced_by_id uuid,
     hub_grant text,
     hub_checked_at timestamp with time zone,
+    opened_via text,
     CONSTRAINT sessions_hub_checked_with_grant CHECK (((hub_checked_at IS NULL) OR (hub_grant IS NOT NULL))),
+    CONSTRAINT sessions_opened_via_check CHECK ((opened_via = ANY (ARRAY['hub'::text, 'form'::text, 'link'::text]))),
     CONSTRAINT sessions_token_hash_sha256 CHECK ((octet_length(token_hash) = 32))
 );
 

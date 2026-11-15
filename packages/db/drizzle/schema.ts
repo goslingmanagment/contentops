@@ -512,34 +512,6 @@ export const tags = pgTable("tags", {
 	check("tags_tag_group_check", sql`tag_group = ANY (ARRAY['action'::text, 'attribute'::text, 'mood'::text])`),
 ]);
 
-export const sessions = pgTable("sessions", {
-	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
-	principalId: uuid("principal_id").notNull(),
-	tokenHash: bytea("token_hash").notNull(),
-	userAgent: text("user_agent"),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
-	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }),
-	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
-	replacedById: uuid("replaced_by_id"),
-	hubGrant: text("hub_grant"),
-	hubCheckedAt: timestamp("hub_checked_at", { withTimezone: true, mode: 'string' }),
-}, (table): PgTableExtraConfigValue[] => [
-	foreignKey({
-			columns: [table.principalId],
-			foreignColumns: [principals.id],
-			name: "sessions_principal_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.replacedById],
-			foreignColumns: [table.id],
-			name: "sessions_replaced_by_id_fkey"
-		}).onDelete("restrict"),
-	unique("sessions_token_hash_key").on(table.tokenHash),
-	check("sessions_token_hash_sha256", sql`octet_length(token_hash) = 32`),
-	check("sessions_hub_checked_with_grant", sql`(hub_checked_at IS NULL) OR (hub_grant IS NOT NULL)`),
-]);
-
 export const hubAgentCalls = pgTable("hub_agent_calls", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "hub_agent_calls_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -561,6 +533,36 @@ export const hubAgentCalls = pgTable("hub_agent_calls", {
 		}).onDelete("restrict"),
 	check("hub_agent_calls_outcome_check", sql`outcome = ANY (ARRAY['ok'::text, 'not_linked'::text])`),
 	check("hub_agent_calls_principal_when_ok", sql`(outcome <> 'ok'::text) OR (principal_id IS NOT NULL)`),
+]);
+
+export const sessions = pgTable("sessions", {
+	id: uuid().default(sql`uuidv7()`).primaryKey().notNull(),
+	principalId: uuid("principal_id").notNull(),
+	tokenHash: bytea("token_hash").notNull(),
+	userAgent: text("user_agent"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	replacedById: uuid("replaced_by_id"),
+	hubGrant: text("hub_grant"),
+	hubCheckedAt: timestamp("hub_checked_at", { withTimezone: true, mode: 'string' }),
+	openedVia: text("opened_via"),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.principalId],
+			foreignColumns: [principals.id],
+			name: "sessions_principal_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.replacedById],
+			foreignColumns: [table.id],
+			name: "sessions_replaced_by_id_fkey"
+		}).onDelete("restrict"),
+	unique("sessions_token_hash_key").on(table.tokenHash),
+	check("sessions_token_hash_sha256", sql`octet_length(token_hash) = 32`),
+	check("sessions_hub_checked_with_grant", sql`(hub_checked_at IS NULL) OR (hub_grant IS NOT NULL)`),
+	check("sessions_opened_via_check", sql`opened_via = ANY (ARRAY['hub'::text, 'form'::text, 'link'::text])`),
 ]);
 
 export const hubOrderReads = pgTable("hub_order_reads", {
