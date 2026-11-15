@@ -1,4 +1,11 @@
-import { formatClock, formatDateWords, isApiError, mskDate } from '@contentops/contracts'
+import {
+  formatClock,
+  formatDateWords,
+  isApiError,
+  mskDate,
+  type PublicationRow,
+} from '@contentops/contracts'
+import { Button } from '@contentops/ui/components/button'
 import { InfoSection } from '@contentops/ui/components/info-panel'
 import {
   PanelFrame,
@@ -9,29 +16,38 @@ import { Skeleton } from '@contentops/ui/components/skeleton'
 import { ErrorLine } from '@contentops/ui/components/state-lines'
 import { StatusWord } from '@contentops/ui/components/status-word'
 import { UiLink } from '@contentops/ui/components/ui-link'
-import type { ReactNode } from 'react'
+import { type ReactNode, useState } from 'react'
 import { useHref } from '@/app/use-href'
 import { useToday } from '@/data/api-session'
 import { usePublicationCard } from '@/data/publications'
+import { useRole } from '@/data/session'
 import { accountLabel } from '@/lib/words'
 import { useCurrentModel } from '@/shell/model/model-context'
+import type { PublicationActions } from './use-publication-actions'
 import { findingWord, formatMills, hubStateWords, KIND_WORDS, statusWord } from './words'
 
 interface PublicationPanelProps {
   id: number
+  actions: PublicationActions
   width: PanelFrameWidth
   onClose: () => void
   /** На телефоне карточка занимает всё поле. */
   className?: string
 }
 
-const ACTOR_WORDS = { human: 'человек', agent: 'агент', hub: 'Hub' } as const
+const ACTOR_WORDS = { human: 'человек', agent: 'агент', hub: 'система' } as const
 
 /**
  * Карточка поста (пакет C2): что, где, когда, файлы, проверки Hub, ответ площадки и журнал статусов. Пост
  * подготовлен в плане — ссылка на его день плана. Действия появятся следующим шагом пакета.
  */
-export function PublicationPanel({ id, width, onClose, className }: PublicationPanelProps) {
+export function PublicationPanel({
+  id,
+  width,
+  onClose,
+  className,
+  actions,
+}: PublicationPanelProps) {
   const model = useCurrentModel()
   const query = usePublicationCard(model.code, id)
   const today = useToday()
@@ -88,6 +104,7 @@ export function PublicationPanel({ id, width, onClose, className }: PublicationP
       width={width}
       onClose={onClose}
       className={className}
+      actions={<PostActions row={row} actions={actions} />}
     >
       <div className="flex flex-col gap-5 pb-6">
         {row.blocked ? (
@@ -201,4 +218,120 @@ function Line({ term, children }: { term: string; children: ReactNode }) {
       <dd className="min-w-0">{children}</dd>
     </>
   )
+}
+
+/** What may be done with a post now, by its state; Hub decides the rest and says so. */
+function PostActions({ row, actions }: { row: PublicationRow; actions: PublicationActions }) {
+  const role = useRole()
+  const [confirm, setConfirm] = useState<'withdraw' | 'deletePost' | null>(null)
+  const busy = actions.approve.isPending || actions.post.isPending || actions.resolve.isPending
+  const buttons: ReactNode[] = []
+  if (row.status === 'draft') {
+    buttons.push(
+      <Button
+        key="approve"
+        disabled={busy || row.blocked}
+        title={row.blocked ? 'Есть замечания, которые не дают утвердить' : undefined}
+        onClick={() => actions.approve.start({ id: row.id, version: row.version })}
+      >
+        Утвердить
+      </Button>,
+    )
+  }
+  if (row.status === 'draft' || row.status === 'approved') {
+    buttons.push(
+      <Button
+        key="cancel"
+        variant="outline"
+        disabled={busy}
+        onClick={() => actions.post.start({ id: row.id, verb: 'cancel' })}
+      >
+        Отменить публикацию
+      </Button>,
+    )
+  }
+  if (['submitting', 'scheduled', 'processing'].includes(row.status)) {
+    buttons.push(
+      <Button
+        key="withdraw"
+        variant="outline"
+        disabled={busy}
+        onClick={() => setConfirm('withdraw')}
+      >
+        Убрать из расписания
+      </Button>,
+    )
+  }
+  if (row.status === 'unknown') {
+    buttons.push(
+      <Button
+        key="went"
+        disabled={busy}
+        onClick={() => actions.resolve.start({ id: row.id, answer: { outcome: 'went_out' } })}
+      >
+        Вышел
+      </Button>,
+      <Button
+        key="not"
+        variant="outline"
+        disabled={busy}
+        onClick={() => actions.resolve.start({ id: row.id, answer: { outcome: 'did_not_go_out' } })}
+      >
+        Не вышел
+      </Button>,
+    )
+  }
+  if (row.status === 'withdrawn' && row.status_reason !== 'deleted_after_publish') {
+    buttons.push(
+      <Button
+        key="replace"
+        variant="outline"
+        disabled={busy}
+        onClick={() => actions.post.start({ id: row.id, verb: 'replace' })}
+      >
+        Заменить
+      </Button>,
+    )
+  }
+  // Deleting a live post from the wall is the owner's alone (Hub refuses anyone else).
+  if (role === 'owner' && row.status === 'published' && row.platform === 'fansly') {
+    buttons.push(
+      <Button
+        key="delete"
+        variant="outline"
+        disabled={busy}
+        onClick={() => setConfirm('deletePost')}
+      >
+        Удалить со стены
+      </Button>,
+    )
+  }
+  if (confirm) {
+    return (
+      <div className="flex flex-col gap-2 pb-3">
+        <p className="text-sm">
+          {confirm === 'withdraw'
+            ? 'Пост уйдёт из расписания площадки. Команда уходит один раз.'
+            : 'Пост будет удалён со стены. Его увидят только те, кто уже открыл.'}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="destructive"
+            disabled={busy}
+            onClick={() => {
+              actions.post.start({ id: row.id, verb: confirm })
+              setConfirm(null)
+            }}
+          >
+            {confirm === 'withdraw' ? 'Убрать' : 'Удалить'}
+          </Button>
+          <Button variant="outline" onClick={() => setConfirm(null)}>
+            Не надо
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  if (buttons.length === 0) return null
+  return <div className="flex flex-wrap gap-2 pb-3">{buttons}</div>
 }

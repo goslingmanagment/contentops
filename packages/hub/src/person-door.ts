@@ -88,6 +88,38 @@ export interface HubPublicationQueue {
   }[]
 }
 
+/** One withdrawal's or deletion's outcome, as Hub answers it. */
+export interface HubWithdrawResult {
+  id: number
+  outcome: string
+  reason: string | null
+  publication: HubPublication | null
+}
+
+/** One switch or limit of publishing: its value as Hub holds it, and the version to set it by. */
+export interface HubSwitch {
+  key: string
+  value: string | number | boolean | null
+  version: number | null
+  /** A secret (the OnlyFans API key): only whether it is set. */
+  isSet: boolean | null
+}
+
+function parseWithdraw(json: unknown, endpoint: string): HubWithdrawResult[] {
+  if (!isRecord(json) || !Array.isArray(json.results)) throw badShape(endpoint, 'no results')
+  return json.results.flatMap((one) => {
+    if (!isRecord(one) || typeof one.id !== 'number' || typeof one.outcome !== 'string') return []
+    return [
+      {
+        id: one.id,
+        outcome: one.outcome,
+        reason: typeof one.reason === 'string' ? one.reason : null,
+        publication: one.publication == null ? null : parsePublication(one.publication, endpoint),
+      },
+    ]
+  })
+}
+
 export interface PublicationListQuery {
   pageLabel?: string
   modelSlug?: string
@@ -132,6 +164,52 @@ export interface PersonDoor {
     items: { id: number; version: number }[],
     signal?: AbortSignal,
   ): Promise<ApproveResult[]>
+  /** «Отменить публикацию» before Hub hands it to the platform. */
+  publicationCancel(grant: string, id: number, signal?: AbortSignal): Promise<HubPublication>
+  /** «Убрать из расписания»: sent once by Hub; its own outcome (`refused` with Hub's words, too). */
+  publicationWithdraw(grant: string, id: number, signal?: AbortSignal): Promise<HubWithdrawResult[]>
+  /** «Заменить»: a new draft of a withdrawn post. */
+  publicationReplace(grant: string, id: number, signal?: AbortSignal): Promise<HubPublication>
+  /** «Проверить»: the person's answer to an unknown outcome. */
+  publicationResolve(
+    grant: string,
+    id: number,
+    answer:
+      | { outcome: 'went_out'; state?: 'scheduled' | 'published'; platformPostRef?: string }
+      | { outcome: 'did_not_go_out' },
+    signal?: AbortSignal,
+  ): Promise<{ publication: HubPublication; replacementId: number | null }>
+  /** «Прочитать расписание заново» of a page. */
+  publicationQueueRefresh(grant: string, pageLabel: string, signal?: AbortSignal): Promise<void>
+  /** The owner's: a page's publishing settings. */
+  publicationSettingsUpdate(
+    grant: string,
+    pageLabel: string,
+    settings: Omit<HubPublicationSettings, 'pageLabel' | 'platform' | 'autostopReason'>,
+    signal?: AbortSignal,
+  ): Promise<void>
+  /** The owner's: «Удалить со стены». */
+  publicationDeletePost(
+    grant: string,
+    id: number,
+    signal?: AbortSignal,
+  ): Promise<HubWithdrawResult[]>
+  /** The owner's: «Убрать из расписания всё, что поставил Hub». */
+  publicationWithdrawPage(
+    grant: string,
+    pageLabel: string,
+    signal?: AbortSignal,
+  ): Promise<HubWithdrawResult[]>
+  /** The publishing switches and limits (read: the owner and a content manager). */
+  publicationSwitches(grant: string, signal?: AbortSignal): Promise<HubSwitch[]>
+  /** The owner's: set switches and limits of publishing. */
+  publicationSwitchSet(
+    grant: string,
+    patches: { key: string; value: string | number | boolean; expectedVersion?: number }[],
+    signal?: AbortSignal,
+  ): Promise<void>
+  /** The owner's: the Fansly pages that need a login. */
+  fanslyLoginPages(grant: string, signal?: AbortSignal): Promise<string[]>
 }
 
 export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
@@ -285,6 +363,169 @@ export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
           },
         ]
       })
+    },
+    async publicationCancel(grant, id, signal) {
+      const endpoint = 'person.publications.cancel'
+      return parsePublication(
+        await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/publications/cancel',
+          json: { client, grant, id },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async publicationWithdraw(grant, id, signal) {
+      const endpoint = 'person.publications.withdraw'
+      return parseWithdraw(
+        await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/publications/withdraw',
+          json: { client, grant, id },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async publicationReplace(grant, id, signal) {
+      const endpoint = 'person.publications.replace'
+      return parsePublication(
+        await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/publications/replace',
+          json: { client, grant, id },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async publicationResolve(grant, id, answer, signal) {
+      const endpoint = 'person.publications.resolve'
+      const json = await callJson(ctx, endpoint, {
+        method: 'POST',
+        path: 'api/v1/person/publications/resolve',
+        json: { client, grant, id, answer },
+        signal,
+      })
+      if (!isRecord(json)) throw badShape(endpoint, 'not an object')
+      const replacement =
+        isRecord(json.replacement) && typeof json.replacement.id === 'number'
+          ? json.replacement.id
+          : null
+      return {
+        publication: parsePublication(json.publication, endpoint),
+        replacementId: replacement,
+      }
+    },
+    async publicationQueueRefresh(grant, pageLabel, signal) {
+      await callJson(ctx, 'person.publications.queue.refresh', {
+        method: 'POST',
+        path: 'api/v1/person/publications/queue/refresh',
+        json: { client, grant, pageLabel },
+        signal,
+      })
+    },
+    async publicationSettingsUpdate(grant, pageLabel, settings, signal) {
+      await callJson(ctx, 'person.publications.settings.update', {
+        method: 'POST',
+        path: 'api/v1/person/publications/settings/update',
+        json: { client, grant, pageLabel, settings },
+        signal,
+      })
+    },
+    async publicationDeletePost(grant, id, signal) {
+      const endpoint = 'person.publications.delete-post'
+      return parseWithdraw(
+        await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/publications/delete-post',
+          json: { client, grant, id },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async publicationWithdrawPage(grant, pageLabel, signal) {
+      const endpoint = 'person.publications.withdraw-page'
+      return parseWithdraw(
+        await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/publications/withdraw-page',
+          json: { client, grant, pageLabel },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async publicationSwitches(grant, signal) {
+      const endpoint = 'person.publications.switches'
+      const json = await callJson(ctx, endpoint, {
+        method: 'POST',
+        path: 'api/v1/person/publications/switches',
+        json: { client, grant },
+        signal,
+      })
+      if (!isRecord(json) || !Array.isArray(json.subsystems))
+        throw badShape(endpoint, 'no subsystems')
+      return json.subsystems.flatMap((subsystem) =>
+        isRecord(subsystem) && Array.isArray(subsystem.items)
+          ? subsystem.items.flatMap((item): HubSwitch[] => {
+              if (!isRecord(item) || typeof item.key !== 'string') return []
+              // Hub's view of a key (its config screen's rule `seedValue`): the override, else a running value,
+              // else the default; a secret says only whether it is set.
+              const running = Array.isArray(item.running)
+                ? item.running.find(
+                    (one) => isRecord(one) && one.state !== 'unknown' && one.masked !== true,
+                  )
+                : undefined
+              const raw =
+                item.desired ??
+                (isRecord(running) ? running.value : undefined) ??
+                item.default ??
+                null
+              const secret = item.secret === true
+              const states = Array.isArray(item.running)
+                ? item.running.flatMap((one) =>
+                    isRecord(one) && typeof one.state === 'string' ? [one.state] : [],
+                  )
+                : []
+              return [
+                {
+                  key: item.key,
+                  value: secret
+                    ? null
+                    : typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean'
+                      ? raw
+                      : null,
+                  version: typeof item.overrideVersion === 'number' ? item.overrideVersion : null,
+                  isSet: secret
+                    ? states.length > 0 && states.every((state) => state === 'set')
+                    : null,
+                },
+              ]
+            })
+          : [],
+      )
+    },
+    async publicationSwitchSet(grant, patches, signal) {
+      await callJson(ctx, 'person.publications.switches.set', {
+        method: 'POST',
+        path: 'api/v1/person/publications/switches/set',
+        json: { client, grant, patches },
+        signal,
+      })
+    },
+    async fanslyLoginPages(grant, signal) {
+      const endpoint = 'person.fansly.login-pages'
+      const json = await callJson(ctx, endpoint, {
+        method: 'POST',
+        path: 'api/v1/person/fansly/login-pages',
+        json: { client, grant },
+        signal,
+      })
+      if (!isRecord(json) || !Array.isArray(json.pages)) throw badShape(endpoint, 'no pages')
+      return json.pages.filter((one): one is string => typeof one === 'string')
     },
     async publicationApprove(grant, items, signal) {
       const endpoint = 'person.publications.approve'

@@ -108,6 +108,8 @@ export const PublicationsFeedSchema = z.object({
   publications: z.array(PublicationRowSchema),
   /** The list stopped at its limit: narrow the filter. */
   capped: z.boolean(),
+  /** The owner's: Hub's Fansly pages of this model that need a login («Нужен вход в Fansly»). */
+  login_needed: z.array(z.string()),
 })
 export type PublicationsFeed = z.infer<typeof PublicationsFeedSchema>
 
@@ -133,3 +135,62 @@ export const PublicationCardSchema = z.object({
   approved_at: InstantSchema.nullable(),
 })
 export type PublicationCard = z.infer<typeof PublicationCardSchema>
+
+/** What an action did: `done`, or `refused` by Hub with its words; `publication_id` — the post to open next. */
+export const PublicationActionAnswerSchema = z.object({
+  outcome: z.enum(['done', 'refused']),
+  words: z.string().nullable(),
+  publication_id: z.int().positive().nullable(),
+})
+export type PublicationActionAnswer = z.infer<typeof PublicationActionAnswerSchema>
+
+export const PublicationApproveCommandSchema = z.object({ version: z.int().positive() })
+
+/** «Проверить»: it went out (with the platform's post, when the person knows it), or it did not. */
+export const PublicationResolveCommandSchema = z.discriminatedUnion('outcome', [
+  z.object({
+    outcome: z.literal('went_out'),
+    platform_post_ref: z
+      .string()
+      .regex(/^[0-9A-Za-z_-]{1,64}$/)
+      .optional(),
+  }),
+  z.object({ outcome: z.literal('did_not_go_out') }),
+])
+export type PublicationResolveCommand = z.infer<typeof PublicationResolveCommandSchema>
+
+/** A page's publishing, as the owner sets it (the paid price range in mills). */
+export const PublicationPageSettingsCommandSchema = z.object({
+  enabled: z.boolean(),
+  paid_price_min_mills: z.int().nonnegative().nullable(),
+  paid_price_max_mills: z.int().nonnegative().nullable(),
+  repost_threshold_days: z.int().nonnegative(),
+  daily_limit: z.int().positive().nullable(),
+})
+export type PublicationPageSettingsCommand = z.infer<typeof PublicationPageSettingsCommandSchema>
+
+/** The switches and limits of publishing, as Hub holds them; `ofapi` — whether the OnlyFans API key is set. */
+export const PublicationSwitchSchema = z.object({
+  key: z.string(),
+  value: z.union([z.string(), z.number(), z.boolean()]).nullable(),
+  version: z.int().nullable(),
+})
+export const PublicationSwitchesSchema = z.object({
+  hub: PublicationsHubStateSchema,
+  switches: z.array(PublicationSwitchSchema),
+  ofapi: z.boolean().nullable(),
+})
+export type PublicationSwitches = z.infer<typeof PublicationSwitchesSchema>
+
+export const PublicationSwitchSetCommandSchema = z.object({
+  patches: z
+    .array(
+      z.object({
+        key: z.string().max(80),
+        value: z.union([z.string(), z.number(), z.boolean()]),
+        expected_version: z.int().nonnegative().optional(),
+      }),
+    )
+    .min(1)
+    .max(8),
+})

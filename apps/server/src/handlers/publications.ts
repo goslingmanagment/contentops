@@ -1,7 +1,9 @@
 import type {
+  PublicationActionAnswer,
   PublicationCard,
   PublicationPage,
   PublicationRow,
+  PublicationSwitches,
   PublicationsFeed,
   PublicationWindow,
 } from '@contentops/contracts/domain/publications-screen'
@@ -162,9 +164,91 @@ async function personOf(services: Services, actor: ReturnType<typeof requireActo
   return { door, grant, state: 'ok' as const }
 }
 
+/** Hub's words for a person, or a plain sentence when it answered with a code. */
+function wordsOf(reason: string | null, fallback: string): string {
+  return reason && /[а-яё]/i.test(reason) ? reason : fallback
+}
+
+/** Hub's refusal of an action, said; a grant that is over ends the session. */
+function actionProblem(error: unknown, fallback: string): never {
+  if (!isHubError(error)) throw error
+  if (error.status === 401)
+    throw new ApiProblem('unauthenticated', 'Вход закончился: войдите снова')
+  if (error.status === 403) throw new ApiProblem('forbidden', 'Это действие вашей роли не открыто')
+  if (error.status === 404) throw new ApiProblem('not_found', 'Такой публикации нет')
+  if (error.status === 409 || error.status === 400) {
+    throw new ApiProblem('publication_refused', wordsOf(hubWords(error), fallback))
+  }
+  throw new ApiProblem('unavailable', 'Ответа нет: неизвестно, сделано ли. Обновите и посмотрите')
+}
+
+/** What Hub said in its refusal (its message without the status line). */
+function hubWords(error: { message: string }): string {
+  return error.message.replace(/^HTTP \d+\s*/, '')
+}
+
 export function publicationsHandlers(services: Services): HandlerRegistry {
   const { db } = services
   const slugOf = (model: ModelScope) => hubSlugOf(services.hubSignin?.setup.modelMap, model)
+  type Ctx = Parameters<typeof requireActor>[0]
+
+  /** The person's door and grant for an action; without a grant nothing is done. */
+  async function actorDoor(ctx: Ctx) {
+    const person = await personOf(services, requireActor(ctx))
+    if (person.state === 'no_hub')
+      throw new ApiProblem('unavailable', 'Публикации ещё не подключены')
+    if (person.state === 'no_grant') {
+      throw new ApiProblem(
+        'forbidden',
+        'Публикации меняет человек с учётной записью из реестра людей. Попросите владельца',
+      )
+    }
+    return { door: person.door, grant: person.grant }
+  }
+
+  /** The post must be on a page of this model (Hub's cut for the person), else it is not here. */
+  async function ofModel(ctx: Ctx, door: PersonDoor, grant: string, id: number) {
+    const model = modelOf(ctx.model)
+    const [detail, settings] = await Promise.all([
+      door.publicationGet(grant, id),
+      door.publicationSettings(grant, slugOf(model)),
+    ]).catch((error: unknown) => actionProblem(error, 'Пост не нашёлся'))
+    if (!settings.pages.some((page) => page.pageLabel === detail.publication.pageLabel)) {
+      throw new ApiProblem('not_found', 'Такой публикации нет')
+    }
+    return detail.publication
+  }
+
+  async function pageOfModel(ctx: Ctx, door: PersonDoor, grant: string, page: string) {
+    const settings = await door
+      .publicationSettings(grant, slugOf(modelOf(ctx.model)))
+      .catch((error: unknown) => actionProblem(error, 'Ответа нет: обновите чуть позже'))
+    const found = settings.pages.find((one) => one.pageLabel === page)
+    if (!found) throw new ApiProblem('not_found', 'Такой страницы нет')
+    return found
+  }
+
+  const idOf = (raw: string) => {
+    const id = Number(raw)
+    if (!Number.isInteger(id) || id <= 0) throw new ApiProblem('not_found', 'Такой публикации нет')
+    return id
+  }
+  const done = (publicationId: number | null = null): PublicationActionAnswer => ({
+    outcome: 'done',
+    words: null,
+    publication_id: publicationId,
+  })
+  /** A withdrawal's or a deletion's outcome: a refusal is said in Hub's words. */
+  const withdrawn = (
+    results: readonly { outcome: string; reason: string | null }[],
+    fallback: string,
+  ): PublicationActionAnswer => {
+    const refused = results.find((one) => ['refused', 'rejected', 'not_sent'].includes(one.outcome))
+    return refused
+      ? { outcome: 'refused', words: wordsOf(refused.reason, fallback), publication_id: null }
+      : done()
+  }
+
   return {
     publications: {
       feed: async ({ ctx, query }): Promise<PublicationsFeed> => {
@@ -178,6 +262,7 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
           pages: [],
           publications: [],
           capped: false,
+          login_needed: [],
         })
         const person = await personOf(services, actor)
         if (person.state !== 'ok') return empty(person.state)
@@ -190,6 +275,11 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
             person.door.publicationSettings(person.grant, slug),
             person.door.publicationQueues(person.grant, slug),
           ])
+          // «Нужен вход в Fansly» is the owner's to see (Hub refuses it to anyone else).
+          const login =
+            actor.role === 'owner'
+              ? await person.door.fanslyLoginPages(person.grant).catch(() => [] as string[])
+              : []
           const ours = new Set(settings.pages.map((page) => page.pageLabel))
           const page = query.page && ours.has(query.page) ? query.page : undefined
           const base = {
@@ -252,6 +342,7 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
             pages: shown,
             publications: publications.map((one) => rowOf(one, accountOf, plan)),
             capped: lists.some((list) => list.length >= LIST_LIMIT),
+            login_needed: login.filter((label) => ours.has(label)),
           }
         } catch (error) {
           return empty(failed(error))
@@ -297,6 +388,154 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
             throw new ApiProblem('not_found', 'Такой публикации нет')
           return { hub: failed(error), publication: null, events: [], approved_at: null }
         }
+      },
+
+      // The actions, each done by Hub as the signed-in person (package C2, PR 3): Hub says yes or no.
+      approve: async ({ ctx, params, body }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        const id = idOf(params.publication)
+        await ofModel(ctx, door, grant, id)
+        const [result] = await door
+          .publicationApprove(grant, [{ id, version: body.version }])
+          .catch((error: unknown) => actionProblem(error, 'Пост не утвердился'))
+        if (result?.approved) return done(id)
+        const why: Record<string, string> = {
+          blocking_findings: 'Есть замечания, которые не дают утвердить',
+          version_conflict: 'Пост изменился, пока вы смотрели: откройте его снова',
+        }
+        return {
+          outcome: 'refused',
+          words: why[result?.reason ?? ''] ?? wordsOf(result?.reason ?? null, 'Пост не утвердился'),
+          publication_id: id,
+        }
+      },
+      cancel: async ({ ctx, params }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        const id = idOf(params.publication)
+        await ofModel(ctx, door, grant, id)
+        await door
+          .publicationCancel(grant, id)
+          .catch((error: unknown) =>
+            actionProblem(
+              error,
+              'Пост уже отдан площадке: отменить нельзя, можно убрать из расписания',
+            ),
+          )
+        return done(id)
+      },
+      withdraw: async ({ ctx, params }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        const id = idOf(params.publication)
+        await ofModel(ctx, door, grant, id)
+        const results = await door
+          .publicationWithdraw(grant, id)
+          .catch((error: unknown) => actionProblem(error, 'Пост не убрался из расписания'))
+        return withdrawn(results, 'Пост не убрался из расписания')
+      },
+      replace: async ({ ctx, params }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        const id = idOf(params.publication)
+        await ofModel(ctx, door, grant, id)
+        const draft = await door
+          .publicationReplace(grant, id)
+          .catch((error: unknown) => actionProblem(error, 'Заменить можно только убранный пост'))
+        return done(draft.id)
+      },
+      resolve: async ({ ctx, params, body }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        const id = idOf(params.publication)
+        await ofModel(ctx, door, grant, id)
+        const answer =
+          body.outcome === 'went_out'
+            ? {
+                outcome: 'went_out' as const,
+                ...(body.platform_post_ref ? { platformPostRef: body.platform_post_ref } : {}),
+              }
+            : { outcome: 'did_not_go_out' as const }
+        const resolved = await door
+          .publicationResolve(grant, id, answer)
+          .catch((error: unknown) => actionProblem(error, 'Ответ не принят'))
+        return done(resolved.replacementId ?? id)
+      },
+      deletePost: async ({ ctx, params }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        const id = idOf(params.publication)
+        await ofModel(ctx, door, grant, id)
+        const results = await door
+          .publicationDeletePost(grant, id)
+          .catch((error: unknown) => actionProblem(error, 'Пост не удалился со стены'))
+        return withdrawn(results, 'Пост не удалился со стены')
+      },
+      refreshPage: async ({ ctx, params }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        await pageOfModel(ctx, door, grant, params.page)
+        try {
+          await door.publicationQueueRefresh(grant, params.page)
+        } catch (error) {
+          if (isHubError(error) && error.status === 409) {
+            return {
+              outcome: 'refused',
+              words: wordsOf(hubWords(error), 'Расписание этой страницы сейчас не читается'),
+              publication_id: null,
+            }
+          }
+          actionProblem(error, 'Расписание этой страницы сейчас не читается')
+        }
+        return done()
+      },
+      withdrawPage: async ({ ctx, params }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        await pageOfModel(ctx, door, grant, params.page)
+        const results = await door
+          .publicationWithdrawPage(grant, params.page)
+          .catch((error: unknown) => actionProblem(error, 'Посты не убрались из расписания'))
+        return withdrawn(results, 'Из расписания убраны не все посты')
+      },
+      pageSettings: async ({ ctx, params, body }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        await pageOfModel(ctx, door, grant, params.page)
+        await door
+          .publicationSettingsUpdate(grant, params.page, {
+            enabled: body.enabled,
+            paidPriceMinMills: body.paid_price_min_mills,
+            paidPriceMaxMills: body.paid_price_max_mills,
+            repostThresholdDays: body.repost_threshold_days,
+            dailyLimit: body.daily_limit,
+          })
+          .catch((error: unknown) => actionProblem(error, 'Настройки не сохранились'))
+        return done()
+      },
+      switches: async ({ ctx }): Promise<PublicationSwitches> => {
+        const person = await personOf(services, requireActor(ctx))
+        if (person.state !== 'ok') return { hub: person.state, switches: [], ofapi: null }
+        try {
+          const all = await person.door.publicationSwitches(person.grant)
+          return {
+            hub: 'ok',
+            switches: all
+              .filter((one) => one.key !== 'ofapiApiKey')
+              .map((one) => ({ key: one.key, value: one.value, version: one.version })),
+            ofapi: all.find((one) => one.key === 'ofapiApiKey')?.isSet ?? null,
+          }
+        } catch (error) {
+          return { hub: failed(error), switches: [], ofapi: null }
+        }
+      },
+      setSwitches: async ({ ctx, body }): Promise<PublicationActionAnswer> => {
+        const { door, grant } = await actorDoor(ctx)
+        await door
+          .publicationSwitchSet(
+            grant,
+            body.patches.map((patch) => ({
+              key: patch.key,
+              value: patch.value,
+              ...(patch.expected_version === undefined
+                ? {}
+                : { expectedVersion: patch.expected_version }),
+            })),
+          )
+          .catch((error: unknown) => actionProblem(error, 'Выключатель не сохранился'))
+        return done()
       },
     },
   }
