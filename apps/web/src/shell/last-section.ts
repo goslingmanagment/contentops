@@ -14,6 +14,7 @@ export const SectionKeySchema = z.enum([
   'inbox',
   'library',
   'plan',
+  'publications',
   'journal',
 ])
 export type SectionKey = z.infer<typeof SectionKeySchema>

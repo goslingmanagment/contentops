@@ -6963,6 +6963,46 @@
           }
         ]
       },
+      "ManualQueueEntry": {
+        "type": "object",
+        "properties": {
+          "queue_id": {
+            "type": "string"
+          },
+          "publish_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "media_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "queue_id",
+          "publish_at",
+          "text",
+          "media_count"
+        ],
+        "additionalProperties": false
+      },
       "MarkConfirmRowCommandInput": {
         "type": "object",
         "properties": {
@@ -10630,6 +10670,47 @@
           "frame_from"
         ]
       },
+      "PublicationCard": {
+        "type": "object",
+        "properties": {
+          "hub": {
+            "$ref": "#/components/schemas/PublicationsHubState"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicationRow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicationEvent"
+            }
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "hub",
+          "publication",
+          "events",
+          "approved_at"
+        ],
+        "additionalProperties": false
+      },
       "PublicationCheck": {
         "type": "object",
         "properties": {
@@ -10655,6 +10736,98 @@
         ],
         "additionalProperties": false
       },
+      "PublicationEvent": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent",
+              "hub"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "at",
+          "from",
+          "to",
+          "actor",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationFile": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "media",
+              "preview"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "vault",
+              "file"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "position",
+          "role",
+          "source",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationFinding": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity"
+        ],
+        "additionalProperties": false
+      },
       "PublicationKind": {
         "type": "string",
         "enum": [
@@ -10664,6 +10837,315 @@
           "story",
           "vault_album"
         ]
+      },
+      "PublicationPage": {
+        "type": "object",
+        "properties": {
+          "hub_page": {
+            "type": "string"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "stopped": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paid_price_min_mills": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paid_price_max_mills": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repost_threshold_days": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "daily_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "queue": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "read_at": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Instant"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "complete": {
+                    "type": "boolean"
+                  },
+                  "stale": {
+                    "type": "boolean"
+                  },
+                  "refresh_requested_at": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Instant"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "last_failure": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "manual": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ManualQueueEntry"
+                    }
+                  }
+                },
+                "required": [
+                  "read_at",
+                  "complete",
+                  "stale",
+                  "refresh_requested_at",
+                  "last_failure",
+                  "manual"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "hub_page",
+          "account",
+          "label",
+          "platform",
+          "enabled",
+          "stopped",
+          "paid_price_min_mills",
+          "paid_price_max_mills",
+          "repost_threshold_days",
+          "daily_limit",
+          "queue"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "hub_page": {
+            "type": "string"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "text": {
+            "type": "string"
+          },
+          "publish_at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price_mills": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicationFile"
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicationFinding"
+            }
+          },
+          "blocked": {
+            "type": "boolean"
+          },
+          "author": {
+            "type": "string",
+            "enum": [
+              "human",
+              "agent",
+              "hub"
+            ]
+          },
+          "platform_post_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "withdrawal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deletion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status_changed_at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "plan_row": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "$ref": "#/components/schemas/LocalDate"
+                  }
+                },
+                "required": [
+                  "id",
+                  "date"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "hub_page",
+          "account",
+          "platform",
+          "kind",
+          "status",
+          "version",
+          "text",
+          "publish_at",
+          "expires_at",
+          "price_mills",
+          "files",
+          "findings",
+          "blocked",
+          "author",
+          "platform_post_ref",
+          "status_reason",
+          "withdrawal",
+          "deletion",
+          "status_changed_at",
+          "plan_row"
+        ],
+        "additionalProperties": false
       },
       "PublicationState": {
         "type": "string",
@@ -10675,6 +11157,67 @@
           "not_published",
           "unverified",
           "cancelled"
+        ]
+      },
+      "PublicationWindowInput": {
+        "type": "string",
+        "enum": [
+          "next7",
+          "next30",
+          "last7",
+          "last30",
+          "all"
+        ]
+      },
+      "PublicationsFeed": {
+        "type": "object",
+        "properties": {
+          "hub": {
+            "$ref": "#/components/schemas/PublicationsHubState"
+          },
+          "read_at": {
+            "$ref": "#/components/schemas/Instant"
+          },
+          "global_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicationPage"
+            }
+          },
+          "publications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicationRow"
+            }
+          },
+          "capped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hub",
+          "read_at",
+          "global_enabled",
+          "pages",
+          "publications",
+          "capped"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationsHubState": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "unreachable",
+          "no_grant",
+          "no_hub",
+          "refused"
         ]
       },
       "QueryFlagInput": {
@@ -21965,6 +22508,123 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Waiting"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/publications": {
+      "get": {
+        "operationId": "publications.feed",
+        "tags": [
+          "publications"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/PublicationWindowInput"
+            },
+            "in": "query",
+            "name": "window",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationsFeed"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/publications/{publication}": {
+      "get": {
+        "operationId": "publications.card",
+        "tags": [
+          "publications"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "publication",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationCard"
                 }
               }
             }

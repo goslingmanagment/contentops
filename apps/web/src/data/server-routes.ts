@@ -111,6 +111,7 @@ export const SERVER_ROUTES: ServerRoutes = {
   hubOrders: 'all',
   shootingTasks: 'all',
   waiting: 'all',
+  publications: 'all',
   inbox: [
     'list',
     'get',

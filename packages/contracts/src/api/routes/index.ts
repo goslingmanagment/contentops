@@ -10,6 +10,7 @@ import { objectRoutes } from './objects'
 import { orderRoutes } from './orders'
 import { planRoutes } from './plan'
 import { promoRoutes } from './promo'
+import { publicationRoutes } from './publications'
 import { authRoutes, settingsRoutes } from './settings'
 import { shootingTaskRoutes } from './shooting'
 import { waitingRoutes } from './waiting'
@@ -29,6 +30,7 @@ export const apiRoutes = {
   hubOrders: hubOrderRoutes,
   shootingTasks: shootingTaskRoutes,
   waiting: waitingRoutes,
+  publications: publicationRoutes,
   promo: promoRoutes,
   journal: journalRoutes,
   operations: operationRoutes,

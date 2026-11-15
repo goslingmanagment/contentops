@@ -83,9 +83,14 @@ export {
 } from './errors.ts'
 export {
   createPersonDoor,
+  type HubPublicationDetail,
+  type HubPublicationEvent,
+  type HubPublicationQueue,
+  type HubPublicationSettings,
   type PersonDoor,
   type PersonDoorOptions,
   type PersonShootingStep,
+  type PublicationListQuery,
 } from './person-door.ts'
 export {
   afterPoll,

@@ -1,0 +1,367 @@
+import { randomBytes } from 'node:crypto'
+import {
+  PublicationCardSchema,
+  PublicationsFeedSchema,
+} from '@contentops/contracts/domain/publications-screen'
+import {
+  type HubCheck,
+  HubError,
+  type HubPublication,
+  type HubRedeemed,
+  type HubSignedIn,
+  type HubSignin,
+  type HubSigninUser,
+  type PersonDoor,
+  type PublicationListQuery,
+} from '@contentops/hub'
+import type { LightMyRequestResponse } from 'fastify'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { setHubPage } from './hub/testing'
+import { call, OWNER, signIn, type TestServer, testServer } from './testing/server'
+
+/**
+ * «Публикации» AS THE SIGNED-IN PERSON (products plan §2.4, package C2): ContentOps reads Hub's publications only
+ * through the person's door with the person's own grant — never with its own key — and shows the model's pages alone.
+ * An own account (no grant) is told so in words and Hub is not asked; a refusal, an outage and a grant that is over
+ * are each said. The screen asks Hub for the MODEL by Hub's slug (`HUB_MODEL_MAP` reversed), never through a page's
+ * binding here: a model whose pages bind nothing and whose slug differs from its code (the test model) shows Hub's
+ * pages and posts. Hub, its sign-in and its door are fakes; every name is made up.
+ */
+
+/** Hub's models of its pages. */
+const MODEL_OF: Record<string, string> = { 'lora-1': 'lora', 'zoe-1': 'zoe', 'test-1': 'test' }
+const ofModel = (pageLabel: string | null, modelSlug: string | undefined) =>
+  modelSlug === undefined || MODEL_OF[pageLabel ?? ''] === modelSlug
+
+const PUBLIC = 'contentops.example.test'
+
+function publication(id: number, pageLabel: string, status = 'draft'): HubPublication {
+  const now = new Date().toISOString()
+  const raw = {
+    id,
+    pageLabel,
+    platform: 'fansly',
+    kind: 'subscriber_post',
+    status,
+    version: 1,
+    text: `пост ${id}`,
+    publishAt: now,
+    expiresAt: null,
+    priceMills: null,
+    media: [
+      {
+        role: 'media',
+        position: 0,
+        source: 'vault',
+        mediaRef: `m${id}`,
+        fileId: null,
+        attachment: 0,
+        name: null,
+      },
+    ],
+    findings: [],
+    blocked: false,
+    author: { kind: 'agent', userId: null, agentKeyId: 9 },
+    platformPostRef: null,
+    statusReason: null,
+    withdrawal: null,
+    deletion: null,
+    updatedAt: now,
+    statusChangedAt: now,
+    events: [
+      {
+        fromStatus: null,
+        toStatus: status,
+        actorKind: 'agent',
+        actorUserId: null,
+        actorAgentKeyId: 9,
+        reason: null,
+        at: now,
+      },
+    ],
+    revision: null,
+  }
+  return {
+    id,
+    pageLabel,
+    platform: 'fansly',
+    kind: 'subscriber_post',
+    status,
+    version: 1,
+    publishAt: now,
+    statusReason: null,
+    platformPostRef: null,
+    vaultAlbumRef: null,
+    blocked: false,
+    findings: [],
+    updatedAt: now,
+    statusChangedAt: now,
+    raw,
+  }
+}
+
+/** Hub: the sign-in of the people, and their door — each grant reads its own publications. */
+class FakeHub implements HubSignin, PersonDoor {
+  private readonly live = new Map<string, HubSigninUser>()
+  private readonly codes = new Map<string, HubRedeemed>()
+  readonly publicationsOf = new Map<string, HubPublication[]>()
+  readonly grantsAsked: string[] = []
+  refuse = false
+  away = false
+
+  mint(user: HubSigninUser): string {
+    const code = randomBytes(32).toString('base64url')
+    const grant = randomBytes(32).toString('base64url')
+    this.codes.set(code, {
+      user,
+      owner: user.role === 'owner',
+      expiresAt: new Date(Date.now() + 86_400_000),
+      grant,
+    })
+    this.live.set(grant, user)
+    return code
+  }
+  endAll() {
+    this.live.clear()
+  }
+  startUrl({ state, next }: { state: string; next: string }): string {
+    return `https://hub.example.test/api/v1/auth/sso?${new URLSearchParams({ to: 'contentops', state, next })}`
+  }
+  async answers() {
+    return true
+  }
+  async redeem(code: string): Promise<HubRedeemed> {
+    const found = this.codes.get(code)
+    if (!found)
+      throw new HubError('refused', 'HTTP 409', { endpoint: 'signin.redeem', status: 409 })
+    return {
+      ...found,
+      person: {
+        code: found.user.username,
+        displayName: found.user.username,
+        role: found.user.role,
+        state: 'working',
+        models: found.user.username === 'tkm' ? ['test'] : ['lora'],
+        customsModels: [],
+        products: ['contentops'],
+      },
+    }
+  }
+  async check(grant: string): Promise<HubCheck> {
+    const user = this.live.get(grant)
+    if (!user) return { active: false }
+    return { active: true, user, owner: false, expiresAt: new Date(Date.now() + 86_400_000) }
+  }
+  async waiting() {
+    return []
+  }
+  async signIn(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'wrong', message: null }
+  }
+  async setPasswordByLink(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'link_unknown', message: null }
+  }
+  async changePassword(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'wrong', message: null }
+  }
+  async signOut() {
+    return false
+  }
+
+  private who(grant: string): HubSigninUser {
+    this.grantsAsked.push(grant)
+    const user = this.live.get(grant)
+    if (!user) throw new HubError('refused', 'HTTP 401', { endpoint: 'person', status: 401 })
+    if (this.away)
+      throw new HubError('transient', 'network: connect ECONNREFUSED', { endpoint: 'person' })
+    if (this.refuse) throw new HubError('refused', 'HTTP 403', { endpoint: 'person', status: 403 })
+    return user
+  }
+  async customOrders(): Promise<never> {
+    throw new Error('not this test')
+  }
+  async customOrderStep(): Promise<never> {
+    throw new Error('not this test')
+  }
+  async publicationList(grant: string, query: PublicationListQuery) {
+    const user = this.who(grant)
+    return (this.publicationsOf.get(user.username) ?? []).filter(
+      (one) =>
+        (query.pageLabel === undefined || one.pageLabel === query.pageLabel) &&
+        ofModel(one.pageLabel, query.modelSlug),
+    )
+  }
+  async publicationGet(grant: string, id: number) {
+    const user = this.who(grant)
+    const found = (this.publicationsOf.get(user.username) ?? []).find((one) => one.id === id)
+    if (!found) throw new HubError('refused', 'HTTP 404', { endpoint: 'person', status: 404 })
+    return { publication: found, events: [], approvedAt: null }
+  }
+  async publicationSettings(grant: string, modelSlug?: string) {
+    const user = this.who(grant)
+    const scope = user.username === 'tkm' ? ['test-1'] : ['lora-1', 'zoe-1']
+    return {
+      globalEnabled: true,
+      pages: scope
+        .filter((pageLabel) => ofModel(pageLabel, modelSlug))
+        .map((pageLabel) => ({
+          pageLabel,
+          platform: 'fansly',
+          enabled: true,
+          autostopReason: null,
+          paidPriceMinMills: 5000,
+          paidPriceMaxMills: 40000,
+          repostThresholdDays: 30,
+          dailyLimit: null,
+        })),
+    }
+  }
+  async publicationQueues(grant: string) {
+    this.who(grant)
+    return []
+  }
+  async publicationApprove(): Promise<never> {
+    throw new Error('not this test')
+  }
+}
+
+const hub = new FakeHub()
+let server: TestServer
+
+function cookieOf(response: LightMyRequestResponse, name: string): string | undefined {
+  const header = response.headers['set-cookie']
+  for (const line of Array.isArray(header) ? header : header ? [header] : []) {
+    const match = new RegExp(`^${name}=([^;]*)`).exec(line)
+    if (match) return match[1]
+  }
+  return undefined
+}
+
+async function throughHub(user: HubSigninUser): Promise<string> {
+  const start = await server.app.inject({
+    method: 'GET',
+    url: '/auth/hub/start?next=%2F',
+    headers: { host: PUBLIC },
+  })
+  const state = cookieOf(start, 'co_hub_state') ?? ''
+  const back = await server.app.inject({
+    method: 'GET',
+    url: `/auth/hub/callback?${new URLSearchParams({ code: hub.mint(user), state, next: '/' })}`,
+    headers: { host: PUBLIC, cookie: `co_hub_state=${state}` },
+  })
+  const session = cookieOf(back, 'co_session')
+  if (!session) throw new Error(`no session: ${back.statusCode} ${String(back.headers.location)}`)
+  return session
+}
+
+const feed = async (as: string) => {
+  const response = await call(server.app, {
+    method: 'GET',
+    url: '/api/v1/lora/publications?window=all',
+    as,
+  })
+  expect(response.statusCode, response.body).toBe(200)
+  return PublicationsFeedSchema.parse(response.json())
+}
+
+beforeAll(async () => {
+  server = await testServer({
+    secrets: { hub: true, hubBaseUrl: 'https://hub.example' },
+    hubSignin: {
+      hub,
+      origin: `https://${PUBLIC}`,
+      ownerLogin: OWNER.login,
+      modelMap: { test: 'ari' },
+    },
+    personDoor: hub,
+  })
+  await setHubPage(server.db, 'lora-1', 'lora-1')
+})
+afterAll(() => server.close())
+
+describe('«Публикации» as the signed-in person', () => {
+  it("reads the person's publications with her own grant and shows the model's pages alone", async () => {
+    hub.publicationsOf.set('kira', [publication(301, 'lora-1'), publication(302, 'zoe-1')])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const read = await feed(kira)
+    expect(read.hub).toBe('ok')
+    expect(read.publications.map((one) => one.id)).toEqual([301])
+    expect(read.publications[0]).toMatchObject({
+      hub_page: 'lora-1',
+      account: 'lora-1',
+      files: [{ name: 'm301' }],
+    })
+    expect(read.pages.map((page) => page.hub_page)).toEqual(['lora-1'])
+    const card = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/publications/301',
+      as: kira,
+    })
+    expect(PublicationCardSchema.parse(card.json())).toMatchObject({
+      hub: 'ok',
+      publication: { id: 301 },
+    })
+    // Another model's post is not this model's: 404, as one that does not exist.
+    const other = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/publications/302',
+      as: kira,
+    })
+    expect(other.statusCode).toBe(404)
+  })
+
+  it("asks Hub for the model by Hub's slug: a model whose pages bind nothing shows Hub's pages and posts", async () => {
+    // `ari` here is Hub's `test` (HUB_MODEL_MAP), and its page `ari-1` is bound to no Hub page.
+    hub.publicationsOf.set('tkm', [
+      publication(401, 'test-1'),
+      publication(402, 'test-1', 'published'),
+    ])
+    const tkm = await throughHub({ id: 601, username: 'tkm', role: 'content_manager' })
+    const response = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/ari/publications?window=all',
+      as: tkm,
+    })
+    expect(response.statusCode, response.body).toBe(200)
+    const read = PublicationsFeedSchema.parse(response.json())
+    expect(read.hub).toBe('ok')
+    expect(read.pages).toMatchObject([{ hub_page: 'test-1', account: null, label: 'test-1' }])
+    expect(read.publications.map((one) => [one.id, one.account])).toEqual([
+      [401, null],
+      [402, null],
+    ])
+    const card = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/ari/publications/402',
+      as: tkm,
+    })
+    expect(PublicationCardSchema.parse(card.json())).toMatchObject({
+      publication: { id: 402, status: 'published' },
+    })
+  })
+
+  it('asks Hub nothing for an own account without a grant, and says why', async () => {
+    const asked = hub.grantsAsked.length
+    const owner = await signIn(server.app, OWNER.login, OWNER.password)
+    const read = await feed(owner)
+    expect(read).toMatchObject({ hub: 'no_grant', publications: [], pages: [] })
+    expect(hub.grantsAsked.length).toBe(asked)
+  })
+
+  it("says Hub's refusal and Hub's outage in words, and ends the session when the grant is over", async () => {
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    hub.refuse = true
+    expect((await feed(kira)).hub).toBe('refused')
+    hub.refuse = false
+    hub.away = true
+    expect((await feed(kira)).hub).toBe('unreachable')
+    hub.away = false
+    hub.endAll()
+    const over = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/publications',
+      as: kira,
+    })
+    expect(over.statusCode).toBe(401)
+  })
+})

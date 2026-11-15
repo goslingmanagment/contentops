@@ -21,6 +21,7 @@ import { planApprovalHandlers } from './plan-approval'
 import { planObjectHandlers } from './plan-objects'
 import { planPublishHandlers } from './plan-publish'
 import { promoHandlers } from './promo'
+import { publicationsHandlers } from './publications'
 import { shootingTaskHandlers } from './shooting'
 import { systemHandlers } from './system'
 import { tagHandlers } from './tags'
@@ -72,5 +73,6 @@ export function createHandlers(services: Services): HandlerRegistry {
     hubOrderHandlers(services),
     shootingTaskHandlers(services),
     waitingHandlers(services),
+    publicationsHandlers(services),
   )
 }
