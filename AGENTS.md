@@ -86,16 +86,26 @@ Agency Hub (`README.md`, `PRD.md`).
   production (intake, library, the work on an order's files) and the content plan. Never a
   second copy of what lives elsewhere: people and sign-in, sales, custom orders as a fan's
   purchase and matters live in Agency Hub, accounting in the ledger; here only links to them.
-  Sign-in is the hub's one-time code (`ops/README.md` «Вход через хаб», SPEC §11.1). The look
+  Sign-in: ContentOps' own form (since 15.11.2026, C4) — its server asks Hub by login and password
+  (`sso/password`, key `signin:contentops`), else its own accounts; the owner enters from Hub by the
+  one-time code; a content manager's invitation lands on `/join#…` here (`ops/README.md` «Вход через
+  хаб»). The look
   is Hub's `vendor/hub-look` (re-vendor from a clean hub commit with
   `node scripts/vendor-look.mjs`). The one map: `~/code/SYSTEM.md` on the owner's machine.
-- **Продукт КМ** (с 15.11.2026, `v0.3.36`): своя рамка и меню «Сегодня · Ждут вас · План · Съёмка · Приехало ·
+- **Продукт КМ** (с 15.11.2026, `v0.3.37`): своя рамка и меню «Сегодня · Ждут вас · План · Съёмка · Приехало ·
   Библиотека · Журнал», у роли «Только кастомы» — «Съёмка · Ждут вас». Люди и роли входа («Контент-менеджер»,
   «Только кастомы») приходят из реестра Hub в ответе входа; учётка КМ в Hub открывает только ContentOps. «Съёмка»
   (вкладки «Кастомы» и «ТЗ») пишет шаги заказа кастома в Hub ключом ContentOps от имени вошедшего человека
   (`person_step`, `onBehalfOf`); кто ведёт шаг, решает Hub. Тестовая модель Hub `test` сопоставлена с моделью
   `smoke` через `HUB_MODEL_MAP` в `.env` ВМ: переменная должна доходить до сервиса `web` в `docker-compose.yml`, иначе
   тестовая КМ видит «У вас нет доступа».
+- **Как ContentOps ходит в Hub.** Двумя путями, и их не путать. (1) **От имени вошедшего человека** — дверь
+  Hub `/api/v1/person/…` (`services/person-door.ts` в hub): ключ ContentOps с `signin:contentops` плюс живой вход
+  этого человека; права и журнал — человека. Сейчас в ней операции публикаций и статистики контента; своих экранов
+  «Публикации» и «Статистика» в ContentOps на проде ещё нет. (2) **Ключом агента ContentOps** (`/api/v1/agent/…`,
+  права ключа): чтение заказов кастомов, шаг «Съёмки» (`person_step` с `onBehalfOf`), черновики публикаций из плана,
+  дела; вход (`sso/redeem|check|password|link|password-change|logout|waiting`). Новое действие человека — строка в
+  таблице двери человека в hub, а не новое право ключа.
 - **Живой экземпляр:** `https://contentops.gosling-agency.ru` из интернета,
   `http://10.66.66.1:8088` при включённом VPN агентства или `http://contentops.tail1d911a.ts.net`
   в tailnet (`ops/README.md`, «Вход из интернета», «Вход через VPN агентства»).
