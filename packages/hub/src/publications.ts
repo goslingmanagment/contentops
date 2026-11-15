@@ -251,6 +251,8 @@ export interface ApproveResult {
   outcome: 'approved' | 'refused'
   /** Why it was refused: `blocking_findings`, `version_conflict`, `status_<status>`, `not_found`… */
   reason: string | null
+  /** The refusal in Hub's words (the person's door); null — none, or an older Hub. */
+  words?: string | null
   /**
    * The publication is approved now: by this call, or already by an earlier one whose
    * answer was lost (a repeat answers `refused` with `status_approved` or a later status).
@@ -288,7 +290,7 @@ export function parseApproveResults(json: unknown, endpoint: string): ApproveRes
       (publication !== null &&
         reason === `status_${publication.status}` &&
         APPROVED_OR_LATER.has(publication.status))
-    return { id, outcome, reason, approved, publication }
+    return { id, outcome, reason, approved, publication, words: str(r.words) }
   })
 }
 

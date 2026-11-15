@@ -203,6 +203,7 @@ class FakeHub implements HubSignin, PersonDoor {
       approvedAt: null,
       authorName: this.withNames ? 'Генгар' : null,
       approvedByName: this.withNames ? 'Диана' : null,
+      album: null,
     }
   }
   /** The page's walls and tiers; null — a Hub without the row. */
@@ -256,6 +257,7 @@ class FakeHub implements HubSignin, PersonDoor {
           reason: 'blocking_findings',
           approved: false,
           publication: found,
+          words: 'есть замечания, которые не дают утвердить',
         }
       }
       found.status = 'approved'
@@ -295,6 +297,7 @@ class FakeHub implements HubSignin, PersonDoor {
         id,
         outcome: 'refused',
         reason: 'тестовая страница: на площадку не отправляется',
+        words: 'Не убран: тестовая страница: на площадку не отправляется',
         publication: null,
       },
     ]
@@ -547,7 +550,7 @@ describe('«Публикации» as the signed-in person', () => {
     expect(handed.statusCode).toBe(422)
     expect((await act(313, 'withdraw')).json()).toMatchObject({
       outcome: 'refused',
-      words: 'тестовая страница: на площадку не отправляется',
+      words: 'Не убран: тестовая страница: на площадку не отправляется',
     })
     // A post of another model is not this model's: nothing is asked of Hub for it.
     const before = hub.actions.length
@@ -780,6 +783,63 @@ describe("Hub's answers to an action, as a person reads them", () => {
     expect(answer.json()).toMatchObject({
       code: 'outcome_unknown',
       message: 'Ответа нет: неизвестно, сделано ли. Обновите и посмотрите',
+    })
+  })
+})
+
+describe("«Утвердить выбранные» and Hub's words", () => {
+  it("approves the model's drafts in one press; a refusal is Hub's words; another model's draft is not there", async () => {
+    const ok = publication(1101, 'lora-1')
+    const blocked = { ...publication(1102, 'lora-1'), blocked: true }
+    const other = publication(1103, 'zoe-1')
+    hub.publicationsOf.set('kira', [ok, blocked, other])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const answer = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/publications:approve-many',
+      as: kira,
+      body: { items: [1101, 1102, 1103].map((id) => ({ id, version: 1 })) },
+    })
+    expect(answer.statusCode, answer.body).toBe(200)
+    expect(answer.json().results).toEqual([
+      { id: 1101, outcome: 'approved', words: null },
+      { id: 1102, outcome: 'refused', words: 'Есть замечания, которые не дают утвердить' },
+      { id: 1103, outcome: 'refused', words: 'Такого черновика нет' },
+    ])
+    // Hub was asked about this model's drafts only.
+    expect(hub.actions.at(-1)).toBe('kira approve 1101,1102')
+  })
+
+  it("shows a post's reason and checks in Hub's words, never the code", async () => {
+    const post = publication(1201, 'lora-1', 'not_published')
+    post.raw.statusReason = 'not_sent:upload_part_unknown'
+    post.raw.findings = [{ code: 'media_not_on_page', severity: 'blocking' }]
+    post.raw.words = {
+      statusReason: 'запрос поста не уходил',
+      statusReasonParts: null,
+      findings: ['Файл 1 из медиатеки: его нет среди файлов этой страницы'],
+    }
+    const withCode = {
+      ...post,
+      statusReason: 'not_sent:upload_part_unknown',
+      findings: [{ code: 'media_not_on_page', severity: 'blocking' }],
+    }
+    hub.publicationsOf.set('kira', [withCode as never])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const card = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/publications/1201',
+      as: kira,
+    })
+    expect(PublicationCardSchema.parse(card.json()).publication).toMatchObject({
+      status_reason: 'not_sent:upload_part_unknown',
+      status_reason_words: 'запрос поста не уходил',
+      findings: [
+        {
+          code: 'media_not_on_page',
+          words: 'Файл 1 из медиатеки: его нет среди файлов этой страницы',
+        },
+      ],
     })
   })
 })

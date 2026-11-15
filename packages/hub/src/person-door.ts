@@ -59,6 +59,8 @@ export interface HubPublicationEvent {
   fromStatus: string | null
   toStatus: string
   actorKind: 'human' | 'agent' | 'hub'
+  /** Its reason in Hub's words; null — none, or an older Hub. */
+  reasonWords: string | null
   /** Who moved it, by name (a person's registry name, an agent key's name); null when Hub did or did not say. */
   actorName: string | null
   reason: string | null
@@ -71,6 +73,75 @@ export interface HubPublicationDetail {
   /** Who drafted it and who approved it, by name; null when Hub does not say (an older Hub, a login with no person). */
   authorName: string | null
   approvedByName: string | null
+  /** A vault album's run in Hub's words; null — not an album, not started, or an older Hub. */
+  album: HubAlbumRunWords | null
+}
+
+/** A vault album's run as Hub says it (the door's `words.album`). */
+export interface HubAlbumRunWords {
+  landed: string
+  current: string | null
+  missing: string | null
+  stop: string | null
+  price: string
+  ceiling: string | null
+  files: { name: string; size: string; state: string }[]
+}
+
+/** Hub's words of a publication's codes (the door's `words`); empty on an older Hub. */
+export interface HubPublicationWords {
+  statusReason: string | null
+  statusReasonParts: { text: string; names: string[] }[] | null
+  findings: string[]
+  /** What happened to the withdrawal or the deletion Hub sent, when the status does not say it. */
+  command: string | null
+}
+
+export function wordsOfPublication(raw: Record<string, unknown>): HubPublicationWords {
+  const words = isRecord(raw.words) ? raw.words : {}
+  const text = (value: unknown) => (typeof value === 'string' ? value : null)
+  return {
+    statusReason: text(words.statusReason),
+    statusReasonParts: Array.isArray(words.statusReasonParts)
+      ? words.statusReasonParts.flatMap((part) =>
+          isRecord(part) && typeof part.text === 'string'
+            ? [
+                {
+                  text: part.text,
+                  names: Array.isArray(part.names)
+                    ? part.names.filter((name): name is string => typeof name === 'string')
+                    : [],
+                },
+              ]
+            : [],
+        )
+      : null,
+    findings: Array.isArray(words.findings)
+      ? words.findings.filter((one): one is string => typeof one === 'string')
+      : [],
+    command: text(words.command),
+  }
+}
+
+function albumWordsOf(value: unknown): HubAlbumRunWords | null {
+  if (!isRecord(value) || typeof value.landed !== 'string' || typeof value.price !== 'string')
+    return null
+  const text = (one: unknown) => (typeof one === 'string' ? one : null)
+  return {
+    landed: value.landed,
+    current: text(value.current),
+    missing: text(value.missing),
+    stop: text(value.stop),
+    price: value.price,
+    ceiling: text(value.ceiling),
+    files: Array.isArray(value.files)
+      ? value.files.flatMap((file) =>
+          isRecord(file) && typeof file.name === 'string'
+            ? [{ name: file.name, size: text(file.size) ?? '', state: text(file.state) ?? '' }]
+            : [],
+        )
+      : [],
+  }
 }
 
 /** Where a post of a page goes: its Fansly walls and subscription tiers by name, no prices. */
@@ -85,6 +156,8 @@ export interface HubPublicationSettings {
   platform: string
   enabled: boolean
   autostopReason: string | null
+  /** Why Hub stopped the page, in Hub's words; null — not stopped, or an older Hub. */
+  autostopReasonWords?: string | null
   paidPriceMinMills: number | null
   paidPriceMaxMills: number | null
   repostThresholdDays: number
@@ -114,6 +187,8 @@ export interface HubWithdrawResult {
   id: number
   outcome: string
   reason: string | null
+  /** The outcome in Hub's words (the person's door); null on an older Hub. */
+  words: string | null
   publication: HubPublication | null
 }
 
@@ -135,6 +210,7 @@ function parseWithdraw(json: unknown, endpoint: string): HubWithdrawResult[] {
         id: one.id,
         outcome: one.outcome,
         reason: typeof one.reason === 'string' ? one.reason : null,
+        words: typeof one.words === 'string' ? one.words : null,
         publication: one.publication == null ? null : parsePublication(one.publication, endpoint),
       },
     ]
@@ -212,7 +288,10 @@ export interface PersonDoor {
   publicationSettingsUpdate(
     grant: string,
     pageLabel: string,
-    settings: Omit<HubPublicationSettings, 'pageLabel' | 'platform' | 'autostopReason'>,
+    settings: Omit<
+      HubPublicationSettings,
+      'pageLabel' | 'platform' | 'autostopReason' | 'autostopReasonWords'
+    >,
     signal?: AbortSignal,
   ): Promise<void>
   /** The owner's: «Удалить со стены». */
@@ -333,8 +412,10 @@ export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
         (typeof userId === 'number' ? users.get(userId) : undefined) ??
         (typeof agentKeyId === 'number' ? agentKeys.get(agentKeyId) : undefined) ??
         null
+      const words = isRecord(raw.words) ? raw.words : {}
+      const eventWords = Array.isArray(words.events) ? words.events : []
       const events: HubPublicationEvent[] = Array.isArray(raw.events)
-        ? raw.events.flatMap((event) => {
+        ? raw.events.flatMap((event, index) => {
             if (
               !isRecord(event) ||
               typeof event.toStatus !== 'string' ||
@@ -349,6 +430,7 @@ export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
                 toStatus: event.toStatus,
                 actorKind: actor === 'human' || actor === 'agent' ? actor : 'hub',
                 actorName: nameOf(event.actorUserId, event.actorAgentKeyId),
+                reasonWords: typeof eventWords[index] === 'string' ? eventWords[index] : null,
                 reason: typeof event.reason === 'string' ? event.reason : null,
               },
             ]
@@ -363,6 +445,7 @@ export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
           revision && typeof revision.approvedAt === 'string' ? revision.approvedAt : null,
         authorName: nameOf(author.userId, author.agentKeyId),
         approvedByName: revision ? nameOf(revision.approvedByUserId, null) : null,
+        album: albumWordsOf(words.album),
       }
     },
     async publicationTargets(grant, pageLabel, signal) {
@@ -421,6 +504,8 @@ export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
               platform: typeof page.platform === 'string' ? page.platform : '',
               enabled: page.enabled === true,
               autostopReason: typeof page.autostopReason === 'string' ? page.autostopReason : null,
+              autostopReasonWords:
+                typeof page.autostopReasonWords === 'string' ? page.autostopReasonWords : null,
               paidPriceMinMills: num(page.paidPriceMinMills),
               paidPriceMaxMills: num(page.paidPriceMaxMills),
               repostThresholdDays: num(page.repostThresholdDays) ?? 0,

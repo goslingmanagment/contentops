@@ -95,15 +95,18 @@ export {
 } from './errors.ts'
 export {
   createPersonDoor,
+  type HubAlbumRunWords,
   type HubPublicationDetail,
   type HubPublicationEvent,
   type HubPublicationQueue,
   type HubPublicationSettings,
   type HubPublicationTargets,
+  type HubPublicationWords,
   type PersonDoor,
   type PersonDoorOptions,
   type PersonShootingStep,
   type PublicationListQuery,
+  wordsOfPublication,
 } from './person-door.ts'
 export {
   afterPoll,

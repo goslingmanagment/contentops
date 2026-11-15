@@ -152,6 +152,11 @@ function PageRow({
           : `не больше ${page.daily_limit} в сутки`}{' '}
         · повтор файла через {page.repost_threshold_days} дн.
       </span>
+      {page.stopped ? (
+        <span className="text-destructive text-sm">
+          Hub остановил: {page.stopped_words ?? 'причина записана кодом'}
+        </span>
+      ) : null}
       {page.queue ? (
         <span className="text-muted-foreground text-sm">
           {page.queue.read_at ? 'Расписание прочитано' : 'Расписание ещё не прочитано'}

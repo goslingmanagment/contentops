@@ -22,9 +22,13 @@ export const STATUS_WORDS: Readonly<Record<string, { word: string; sign?: Status
 export function statusWord(
   status: string,
   reason: string | null,
+  /** A vault album's reason parts (Hub's words): out with files left out is «Вышел не весь». */
+  albumParts?: readonly unknown[] | null,
 ): { word: string; sign?: StatusKind } {
   if (status === 'withdrawn' && reason === 'deleted_after_publish')
     return { word: 'Удалён со стены' }
+  if (status === 'published' && albumParts && albumParts.length > 0)
+    return { word: 'Вышел не весь', sign: 'trouble' }
   return STATUS_WORDS[status] ?? { word: `статус: ${status}` }
 }
 
@@ -51,21 +55,6 @@ export const SEGMENTS = [
   { value: 'unknown', label: 'Исход неизвестен', status: 'unknown', window: 'all' },
   { value: 'not_out', label: 'Не вышли за 7 дней', status: 'not_out', window: 'last7' },
 ] as const
-
-/** Проверки поста в Hub обычными словами; незнакомую говорим, как её написал Hub. */
-const FINDING_WORDS: Readonly<Record<string, string>> = {
-  media_not_on_page: 'файла нет в медиатеке страницы',
-  wall_default_unknown: 'у страницы не известна стена',
-  repost_within_threshold: 'файл уже выходил недавно',
-  price_outside_range: 'цена вне вилки страницы',
-  price_range_not_set: 'у страницы не задана вилка цен',
-  file_deleted: 'файл удалён с сервера, загрузите снова',
-  file_of_another_model: 'файл другой модели',
-}
-
-export function findingWord(code: string): string {
-  return FINDING_WORDS[code] ?? code
-}
 
 /** Сумма в миллях долларами: «$19.99». */
 export function formatMills(mills: number): string {

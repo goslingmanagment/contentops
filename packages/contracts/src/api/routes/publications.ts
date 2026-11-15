@@ -2,6 +2,8 @@ import { z } from 'zod'
 import {
   PublicationActionAnswerSchema,
   PublicationApproveCommandSchema,
+  PublicationApproveManyAnswerSchema,
+  PublicationApproveManyCommandSchema,
   PublicationCardSchema,
   PublicationPageSettingsCommandSchema,
   PublicationResolveCommandSchema,
@@ -31,6 +33,12 @@ export const publicationRoutes = {
     path: '/api/v1/{model}/publications/{publication}:approve',
     body: PublicationApproveCommandSchema,
     response: PublicationActionAnswerSchema,
+  }),
+  approveMany: defineRoute({
+    method: 'POST',
+    path: '/api/v1/{model}/publications:approve-many',
+    body: PublicationApproveManyCommandSchema,
+    response: PublicationApproveManyAnswerSchema,
   }),
   cancel: defineRoute({
     method: 'POST',
