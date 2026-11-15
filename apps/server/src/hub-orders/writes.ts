@@ -137,7 +137,7 @@ export async function linkHubDelivery(
   await lockCode(tx, model, code)
   const order = await orderOf(tx, model, code)
   if (ENDED.includes(order.state)) {
-    throw new ApiProblem('order_closed', `Не выполнено: заказ ${code} в Hub уже отдан или закрыт`)
+    throw new ApiProblem('order_closed', `Не выполнено: заказ ${code} уже отдан или закрыт`)
   }
   const item = await findItem(tx, model, body.item_id)
   if (item.type !== 'CUS') {

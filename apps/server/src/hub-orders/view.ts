@@ -112,7 +112,7 @@ function statusOf(order: HubCustomOrder, pending: number, now: Instant): StatusW
       }
       break
     case 'shot':
-      status = { sign: 'done', word: 'снято', detail: 'отдать фану в Workboard' }
+      status = { sign: 'done', word: 'снято', detail: 'отдаёт чаттер' }
       break
     case 'partly':
       status = late
@@ -130,7 +130,7 @@ function statusOf(order: HubCustomOrder, pending: number, now: Instant): StatusW
   }
   if (pending > 0) {
     // The hub is the home: until it has the delivery, nothing here says it is delivered.
-    const note = 'сдача ещё не в Hub'
+    const note = 'сдача ещё не записана'
     status = { ...status, detail: status.detail ? `${status.detail} · ${note}` : note }
   }
   return status

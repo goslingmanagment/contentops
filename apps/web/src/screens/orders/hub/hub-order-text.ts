@@ -44,7 +44,7 @@ export function hubGroupLabel(group: HubOrderGroup, modelGenitive: string): stri
     revision: 'Правка',
     overdue: 'Просрочено',
     shot: 'Снято: отдать фану',
-    other: 'Другие шаги в Hub',
+    other: 'Другие шаги',
   }
   return labels[group]
 }
@@ -83,15 +83,15 @@ export function reportWords(
   if (report.state === 'sent') {
     const at = report.at ? ` ${formatWhen(report.at, now)}` : ''
     return {
-      text: report.unchanged ? `Hub уже знал это${at}` : `в Hub${at}`,
+      text: report.unchanged ? `уже было записано${at}` : `записано${at}`,
       tone: 'ok',
     }
   }
   if (report.state === 'refused') {
-    return { text: report.error ?? 'Hub отказал', tone: 'refused' }
+    return { text: report.error ?? 'не записано', tone: 'refused' }
   }
   return {
-    text: report.error ? `ждёт отправки в Hub · ${report.error}` : 'ждёт отправки в Hub',
+    text: report.error ? `ждёт записи · ${report.error}` : 'ждёт записи',
     tone: 'wait',
   }
 }
@@ -102,17 +102,17 @@ export function readLine(
   now: Instant,
 ): { state: 'ok' | 'down' | 'unset' | 'catching-up'; text: string } {
   const unassigned =
-    list.unassigned > 0 ? ` · ещё ${list.unassigned} без страницы — на доске Hub` : ''
-  if (!list.configured) return { state: 'unset', text: 'Hub не настроен: заказы не читаются' }
+    list.unassigned > 0 ? ` · ещё ${list.unassigned} без страницы: они в Workboard` : ''
+  if (!list.configured) return { state: 'unset', text: 'Заказы не подключены' }
   if (list.read_error) {
     const last = list.read_at ? `, показано чтение ${formatWhen(list.read_at, now)}` : ''
     return { state: 'down', text: `${list.read_error}${last}` }
   }
   if (!list.read_at) {
-    return { state: 'catching-up', text: 'Читаю заказы Hub…' }
+    return { state: 'catching-up', text: 'Обновляю заказы…' }
   }
   return {
     state: list.refreshing ? 'catching-up' : 'ok',
-    text: `Hub прочитан ${formatAgo(list.read_at, now)}${unassigned}`,
+    text: `Обновлено ${formatAgo(list.read_at, now)}${unassigned}`,
   }
 }
