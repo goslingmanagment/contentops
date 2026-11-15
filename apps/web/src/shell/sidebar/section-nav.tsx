@@ -4,16 +4,18 @@ import { useLocation } from '@tanstack/react-router'
 import {
   BellIcon,
   CalendarDaysIcon,
+  ChartColumnIcon,
   ClapperboardIcon,
   FolderIcon,
   HistoryIcon,
   InboxIcon,
+  NewspaperIcon,
   SunIcon,
 } from 'lucide-react'
 import { useHref } from '@/app/use-href'
 import { useClock } from '@/data/api-session'
 import { useModelCounters } from '@/data/counters'
-import { useRole } from '@/data/session'
+import { useRole, useSession } from '@/data/session'
 import { useWaiting } from '@/data/waiting'
 import { sectionOfPath } from '../section-of-path'
 
@@ -28,13 +30,15 @@ function countOrNothing(value: number | undefined): number | undefined {
 }
 
 /**
- * Меню продукта (план продуктов §2.4): Сегодня · Ждут вас · План · Приехало · Библиотека · Журнал.
- * «Публикации», «Статистика» и «Съёмка» добавят их пакеты: пункта, который никуда не ведёт, нет.
+ * Меню продукта (план продуктов §2.4): Сегодня · Ждут вас · План · Публикации · Приехало · Библиотека ·
+ * Статистика · Журнал. «Публикации» и «Статистика» — экраны Hub в поле ContentOps: у владельца и
+ * контент-менеджера, когда Hub настроен (`hub_screens` сессии). «Съёмку» добавит её пакет.
  * «Только чтение» не видит «Приехало» (DESIGN §2.3); «Только кастомы» — «Ждут вас» и «Заказы».
  */
 export function SectionNav({ model, collapsed }: SectionNavProps) {
   const href = useHref()
   const role = useRole()
+  const hubScreens = useSession().data?.hub_screens !== undefined
   const counters = useModelCounters(model.code)
   const waiting = useWaiting(model.code, role)
   const today = mskDate(useClock().now())
@@ -88,6 +92,15 @@ export function SectionNav({ model, collapsed }: SectionNavProps) {
         active={active === 'plan'}
         collapsed={collapsed}
       />
+      {hubScreens ? (
+        <NavItem
+          href={href({ to: '/$model/publications', params })}
+          icon={NewspaperIcon}
+          label="Публикации"
+          active={active === 'publications'}
+          collapsed={collapsed}
+        />
+      ) : null}
       {role === 'reader' ? null : (
         <NavItem
           href={href({ to: '/$model/inbox', params })}
@@ -105,6 +118,15 @@ export function SectionNav({ model, collapsed }: SectionNavProps) {
         active={active === 'library'}
         collapsed={collapsed}
       />
+      {hubScreens ? (
+        <NavItem
+          href={href({ to: '/$model/stats', params })}
+          icon={ChartColumnIcon}
+          label="Статистика"
+          active={active === 'stats'}
+          collapsed={collapsed}
+        />
+      ) : null}
       <NavItem
         href={href({ to: '/$model/journal', params })}
         icon={HistoryIcon}

@@ -9,6 +9,11 @@ export interface IntegrationSecrets {
   hub: boolean
   /** The hub's console (`HUB_BASE_URL`): links to its board «Кастомы». */
   hubBaseUrl?: string | null
+  /**
+   * Where Hub draws «Публикации» and «Статистика» for this frame (products plan §2.4): Hub's console
+   * (`HUB_SCREENS_URL`, else `HUB_BASE_URL`). A stand names its own Hub here.
+   */
+  hubScreensUrl?: string | null
 }
 
 /** What the handlers share: the database, the command pipeline and the outside world. */

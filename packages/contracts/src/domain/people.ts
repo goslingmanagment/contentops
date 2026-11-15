@@ -63,5 +63,19 @@ export const SessionPrincipalSchema = z.object({
   products: z.array(ProductLinkSchema).optional(),
   /** «Первый день» on «Сегодня» is shown until the person closes it. */
   first_day: z.boolean().optional(),
+  /**
+   * «Публикации» and «Статистика» are drawn by Hub inside this frame (products plan §2.4): where Hub draws
+   * them, whether this session shows them here (it came through Hub, on the public name Hub lets frame
+   * them), the sign-in through Hub that makes it so, and each model's slug in Hub. Absent: Hub is not set
+   * up for it, or the role has no such screens.
+   */
+  hub_screens: z
+    .object({
+      origin: z.string(),
+      framed: z.boolean(),
+      signin: z.string(),
+      models: z.record(z.string(), z.string()),
+    })
+    .optional(),
 })
 export type SessionPrincipal = z.infer<typeof SessionPrincipalSchema>

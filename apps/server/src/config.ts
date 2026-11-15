@@ -137,6 +137,12 @@ const EnvSchema = z.object({
   HUB_BASE_URL: z.url().optional(),
   HUB_API_KEY: z.string().optional(),
   /**
+   * Where Hub draws «Публикации» and «Статистика» inside ContentOps' frame (products plan §2.4): Hub's
+   * console, whose `/frame/publications` and `/frame/content-stats` let this public name frame them.
+   * Empty — `HUB_BASE_URL`. A stand points it at its own Hub demo.
+   */
+  HUB_SCREENS_URL: z.url({ protocol: /^https?$/ }).optional(),
+  /**
    * «Войти через хаб» (SPEC §11.1): the address of ContentOps where the sign-in screen offers
    * it — the public name, whose `/auth/hub/callback` Hub knows for `HUB_SIGNIN_CLIENT`. Other
    * names (the VPN, the tailnet) keep the password only. Empty — no hub sign-in anywhere.

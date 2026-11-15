@@ -12,10 +12,20 @@ import type { Services } from '../services'
  * model's. A matter opens where it is decided: Hub's or Workboard's address, or a path here.
  */
 
-function hrefOf(link: string | null, hubBaseUrl: string | null | undefined): string {
+export function hrefOf(
+  link: string | null,
+  hubBaseUrl: string | null | undefined,
+  ownOrigin: string | null = null,
+): string {
   const hub = hubBaseUrl ? new URL(hubBaseUrl).origin : ''
   if (link === null) return `${hub}/matters`
-  if (/^https?:\/\//.test(link)) return link
+  if (/^https?:\/\//.test(link)) {
+    // A link to here (a publication's matter opens «Публикации», products plan §2.4): a path of ours.
+    const url = new URL(link)
+    return ownOrigin !== null && url.origin === ownOrigin
+      ? `${url.pathname}${url.search}${url.hash}`
+      : link
+  }
   return `${hub}${link.startsWith('/') ? link : `/${link}`}`
 }
 
@@ -46,7 +56,7 @@ export function waitingHandlers({ db, secrets, hubSignin }: Services): HandlerRe
             id: matter.id,
             kind: matter.kind,
             title: matter.title,
-            href: hrefOf(matter.link, secrets.hubBaseUrl),
+            href: hrefOf(matter.link, secrets.hubBaseUrl, new URL(hubSignin.setup.origin).origin),
             pages: matter.pageLabels,
             opened_at: matter.openedAt.toISOString(),
           }))

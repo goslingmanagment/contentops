@@ -11689,6 +11689,36 @@
           },
           "first_day": {
             "type": "boolean"
+          },
+          "hub_screens": {
+            "type": "object",
+            "properties": {
+              "origin": {
+                "type": "string"
+              },
+              "framed": {
+                "type": "boolean"
+              },
+              "signin": {
+                "type": "string"
+              },
+              "models": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "origin",
+              "framed",
+              "signin",
+              "models"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

@@ -12,6 +12,8 @@ const SECTION_BY_SEGMENT: Readonly<Record<string, SectionKey>> = {
   a: 'library',
   inbox: 'inbox',
   plan: 'plan',
+  publications: 'publications',
+  stats: 'stats',
   journal: 'journal',
 }
 

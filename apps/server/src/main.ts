@@ -140,6 +140,7 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     secrets: {
       hub: config.HUB_API_KEY !== undefined && config.HUB_BASE_URL !== undefined,
       hubBaseUrl: config.HUB_BASE_URL ?? null,
+      hubScreensUrl: config.HUB_SCREENS_URL ?? config.HUB_BASE_URL ?? null,
     },
     space: {
       file: config.HOST_SPACE_FILE,

@@ -4,6 +4,7 @@ import {
   lazyRouteComponent,
   retainSearchParams,
 } from '@tanstack/react-router'
+import { hubScreenSearchSchema } from '@/screens/hub-screen/search'
 import { inboxDoneSearchSchema, inboxSearchSchema } from '@/screens/inbox/search'
 import { journalSearchSchema } from '@/screens/journal/search'
 import {
@@ -56,6 +57,23 @@ const entryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: EntryRedirect,
+})
+
+/**
+ * Hub's addresses of «Публикации» and «Статистика» (its old ones, its matters): the model of the page
+ * named, then the screen there (план продуктов §2.4).
+ */
+const hubEntryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'hub/$screen',
+  params: {
+    parse: ({ screen }) => ({
+      screen: screen === 'stats' ? ('stats' as const) : ('publications' as const),
+    }),
+    stringify: ({ screen }) => ({ screen }),
+  },
+  validateSearch: hubScreenSearchSchema,
+  component: lazyRouteComponent(() => import('@/screens/hub-screen'), 'HubEntryRedirect'),
 })
 
 const loginRoute = createRoute({
@@ -311,6 +329,21 @@ const todayRoute = createRoute({
   component: lazyRouteComponent(() => import('@/screens/today'), 'TodayScreen'),
 })
 
+/** «Публикации» и «Статистика»: экраны Hub на всём поле (план продуктов §2.4). */
+const publicationsRoute = createRoute({
+  getParentRoute: () => modelRoute,
+  path: 'publications',
+  validateSearch: hubScreenSearchSchema,
+  component: lazyRouteComponent(() => import('@/screens/hub-screen'), 'PublicationsScreen'),
+})
+
+const statsRoute = createRoute({
+  getParentRoute: () => modelRoute,
+  path: 'stats',
+  validateSearch: hubScreenSearchSchema,
+  component: lazyRouteComponent(() => import('@/screens/hub-screen'), 'StatsScreen'),
+})
+
 /** «Ждут вас»: дела человека из Hub и свои строки ContentOps. */
 const waitingRoute = createRoute({
   getParentRoute: () => modelRoute,
@@ -337,6 +370,7 @@ const modelPagesRoute = createRoute({
 
 export const routeTree = rootRoute.addChildren([
   entryRoute,
+  hubEntryRoute,
   loginRoute,
   shellRoute.addChildren([
     settingsIndexRoute,
@@ -345,6 +379,8 @@ export const routeTree = rootRoute.addChildren([
       modelIndexRoute,
       todayRoute,
       waitingRoute,
+      publicationsRoute,
+      statsRoute,
       libraryRootRoute,
       librarySectionRoute,
       customsRoute,

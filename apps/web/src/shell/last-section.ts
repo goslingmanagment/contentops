@@ -7,7 +7,16 @@ import { readStored, writeStored } from '@/lib/browser-storage'
  */
 const LAST_SECTION_KEY = 'contentops:last-section'
 
-export const SectionKeySchema = z.enum(['today', 'waiting', 'inbox', 'library', 'plan', 'journal'])
+export const SectionKeySchema = z.enum([
+  'today',
+  'waiting',
+  'inbox',
+  'library',
+  'plan',
+  'publications',
+  'stats',
+  'journal',
+])
 export type SectionKey = z.infer<typeof SectionKeySchema>
 
 const LastSectionSchema = z.object({ model: z.string(), section: SectionKeySchema })

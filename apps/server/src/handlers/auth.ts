@@ -1,4 +1,5 @@
 import type { Session } from '@contentops/contracts/domain/admin'
+import type { SessionPrincipal } from '@contentops/contracts/domain/people'
 import { logAction, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { hash, verify } from '@node-rs/argon2'
 import { sql } from 'drizzle-orm'
@@ -14,12 +15,14 @@ import {
 } from '../auth/secrets'
 import { ADDRESS_RULE, LOGIN_RULE, Throttle } from '../auth/throttle'
 import { instant, requireActor } from '../commands'
-import type { RequestContext } from '../context'
+import type { Actor, RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import type { Services } from '../services'
 import { personById } from './people-view'
 import { productLinks } from './products'
+
+type HubScreens = NonNullable<SessionPrincipal['hub_screens']>
 
 /** Sign-in, sign-out, the profile and own sessions (DESIGN §4.19 «Профиль и сессии», §4.21). */
 
@@ -82,6 +85,46 @@ export function authHandlers(services: Services): HandlerRegistry {
   const cookieOptions = (ctx: RequestContext) => ({ secure: services.secureCookies || ctx.https })
   const byLogin = new Throttle(LOGIN_RULE)
   const byAddress = new Throttle(ADDRESS_RULE)
+
+  /**
+   * «Публикации» and «Статистика» drawn by Hub inside the frame (products plan §2.4): for the owner and a
+   * content manager, when Hub's sign-in is set up. They show here only for a session opened through Hub on
+   * the public name — the one name Hub lets frame them, and the one whose browser holds a Hub session;
+   * otherwise the screen says «Войдите через Hub» with that sign-in.
+   */
+  async function hubScreensOf(
+    ctx: RequestContext,
+    actor: Actor,
+  ): Promise<{ hub_screens?: HubScreens }> {
+    const hub = services.hubSignin
+    const origin = services.secrets.hubScreensUrl
+    if (
+      !hub ||
+      !origin ||
+      actor.type !== 'person' ||
+      (actor.role !== 'owner' && actor.role !== 'manager')
+    ) {
+      return {}
+    }
+    const viaHub =
+      actor.sessionId !== null &&
+      (
+        await db.execute<{ via_hub: boolean }>(sql`
+          SELECT hub_grant IS NOT NULL AS via_hub FROM sessions WHERE id = ${actor.sessionId}::uuid`)
+      ).rows[0]?.via_hub === true
+    // ContentOps' model → Hub's slug: the reverse of `HUB_MODEL_MAP`, the same code where it is not named.
+    const toHub = new Map(
+      Object.entries(hub.setup.modelMap ?? {}).map(([slug, code]) => [code, slug]),
+    )
+    return {
+      hub_screens: {
+        origin: new URL(origin).origin,
+        framed: viaHub && hub.offeredAt(ctx.host),
+        signin: `${new URL(hub.setup.origin).origin}/auth/hub/start`,
+        models: Object.fromEntries(actor.models.map((code) => [code, toHub.get(code) ?? code])),
+      },
+    }
+  }
 
   return {
     auth: {
@@ -233,6 +276,7 @@ export function authHandlers(services: Services): HandlerRegistry {
           // The switcher: Hub's list for a person signed in through Hub (products plan §2.1).
           products: productLinks(row?.hub_products ?? null, services.secrets.hubBaseUrl),
           first_day: actor.type === 'person' && row?.first_day === true,
+          ...(await hubScreensOf(ctx, actor)),
         }
       },
     },
