@@ -36,6 +36,10 @@ export const queryKeys = {
   publications: (model: ModelCode, search: Record<string, string | undefined>) =>
     ['model', model, 'publications', search] as const,
   publicationsAll: (model: ModelCode) => ['model', model, 'publications'] as const,
+  stats: (model: ModelCode, page: string | null, days: number) =>
+    ['model', model, 'stats', page, days] as const,
+  statsMedia: (model: ModelCode, media: string, page: string, days: number) =>
+    ['model', model, 'stats-media', media, page, days] as const,
   publication: (model: ModelCode, id: number) => ['model', model, 'publication', id] as const,
   shootingTasks: (model: ModelCode) => ['model', model, 'shooting-tasks'] as const,
   waiting: (model: ModelCode) => ['model', model, 'waiting'] as const,

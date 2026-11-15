@@ -112,6 +112,7 @@ export const SERVER_ROUTES: ServerRoutes = {
   shootingTasks: 'all',
   waiting: 'all',
   publications: 'all',
+  stats: 'all',
   inbox: [
     'list',
     'get',

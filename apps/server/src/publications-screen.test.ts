@@ -3,6 +3,7 @@ import {
   PublicationCardSchema,
   PublicationsFeedSchema,
 } from '@contentops/contracts/domain/publications-screen'
+import { StatsMediaCardSchema, StatsScreenSchema } from '@contentops/contracts/domain/stats-screen'
 import {
   type HubCheck,
   HubError,
@@ -303,6 +304,80 @@ class FakeHub implements HubSignin, PersonDoor {
   publicationSwitchSet(): never {
     throw new Error('not this test')
   }
+  readonly statsAsked: string[] = []
+  async statsContent(grant: string, pageLabel: string, days: number) {
+    this.who(grant)
+    this.statsAsked.push(`content ${pageLabel} ${days}`)
+    const head = {
+      mediaOfferId: `${pageLabel}-m1`.replace(/\D/g, '') || '1',
+      mediaType: 2,
+      durationMs: 61_000,
+      postId: '77',
+      postedAt: '2026-11-10T12:00:00.000Z',
+      deletedAt: null,
+      caption: `видео ${pageLabel}`,
+    }
+    return {
+      window: { fromDay: '2026-10-16', toDay: '2026-11-14', days },
+      walk: { visited: 3, queued: 4 },
+      media: [
+        {
+          ...head,
+          views: 120,
+          forYouViews: 80,
+          timelineViews: 40,
+          otherViews: 0,
+          videoViews: 100,
+          completedViews: 25,
+          watchMs: 1_000_000,
+          watchPctSum: 400_000,
+          likes: 9,
+          allTimeViews: 300,
+        },
+      ],
+      topSales: [
+        {
+          ...head,
+          priceMills: 19_990,
+          salesCount: 3,
+          netMills: 47_976,
+          grossMills: 59_970,
+          windowViews: 120,
+        },
+      ],
+      topSalesTotal: 1,
+    }
+  }
+  async statsMedia(grant: string, pageLabel: string, mediaOfferId: string, days: number) {
+    this.who(grant)
+    this.statsAsked.push(`media ${pageLabel} ${mediaOfferId}`)
+    return {
+      mediaOfferId,
+      window: { fromDay: '2026-10-16', toDay: '2026-11-14', days },
+      daily: [{ day: '2026-11-10', source: 0, views: 80 }],
+      hourly: [],
+      retention: [{ source: 0, sampleSize: 40, points: [{ percent: 0, stillWatching: 1 }] }],
+      tags: [{ tag: 'pool', source: 0, views: 12 }],
+    }
+  }
+  async contentComments(grant: string, pageLabel: string, window: { from: string; to: string }) {
+    this.who(grant)
+    this.statsAsked.push(`comments ${pageLabel} ${window.from} ${window.to}`)
+    return {
+      perPost: [
+        {
+          postRef: '77',
+          commentCount: 5,
+          possiblyTruncatedCount: 0,
+          missingCount: 1,
+          caption: null,
+          publishedAt: '2026-11-10T12:00:00.000Z',
+        },
+      ],
+      repliesCoverage: [{ status: 'complete', newestCapturedAt: null }],
+      mediaUpdatedAt: '2026-11-14T09:00:00.000Z',
+    }
+  }
   fanslyLoginPages(): never {
     throw new Error('not this test')
   }
@@ -493,5 +568,77 @@ describe('«Публикации» as the signed-in person', () => {
       as: kira,
     })
     expect(over.statusCode).toBe(401)
+  })
+})
+
+describe('«Статистика» as the signed-in person', () => {
+  it("reads one Fansly page of the model by Hub's slug, the comments over the same UTC days", async () => {
+    const tkm = await throughHub({ id: 601, username: 'tkm', role: 'content_manager' })
+    hub.statsAsked.length = 0
+    const response = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/ari/stats?days=30',
+      as: tkm,
+    })
+    expect(response.statusCode, response.body).toBe(200)
+    const read = StatsScreenSchema.parse(response.json())
+    expect(read).toMatchObject({
+      hub: 'ok',
+      pages: [{ hub_page: 'test-1', label: 'test-1' }],
+      page: 'test-1',
+      walk: { visited: 3, queued: 4 },
+      top_sales_total: 1,
+      comments: { state: 'ok', posts: [{ post_ref: '77', comment_count: 5, missing_count: 1 }] },
+      updated_at: '2026-11-14T09:00:00.000Z',
+    })
+    expect(read.media[0]).toMatchObject({ views: 120, for_you_views: 80, watch_pct_sum: 400_000 })
+    expect(read.top_sales[0]).toMatchObject({ net_mills: 47_976, gross_mills: 59_970 })
+    expect(hub.statsAsked).toEqual([
+      'content test-1 30',
+      'comments test-1 2026-10-16T00:00:00.000Z 2026-11-15T00:00:00.000Z',
+    ])
+    // A page of another model is not asked: the first page of this model is shown instead.
+    hub.statsAsked.length = 0
+    const other = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/ari/stats?page=lora-1',
+      as: tkm,
+    })
+    expect(StatsScreenSchema.parse(other.json()).page).toBe('test-1')
+    expect(hub.statsAsked[0]).toBe('content test-1 30')
+  })
+
+  it("opens a media's card on the model's page only", async () => {
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const card = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/stats/media/1?page=lora-1&days=7',
+      as: kira,
+    })
+    expect(card.statusCode, card.body).toBe(200)
+    expect(StatsMediaCardSchema.parse(card.json())).toMatchObject({
+      media_offer_id: '1',
+      retention: [{ sample_size: 40, points: [{ percent: 0, still_watching: 1 }] }],
+    })
+    const foreign = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/stats/media/1?page=zoe-1',
+      as: kira,
+    })
+    expect(foreign.statusCode).toBe(404)
+  })
+
+  it('an own account without a grant is told so, and Hub is not asked', async () => {
+    hub.statsAsked.length = 0
+    const owner = await signIn(server.app, OWNER.login, OWNER.password)
+    const response = await call(server.app, { method: 'GET', url: '/api/v1/lora/stats', as: owner })
+    expect(StatsScreenSchema.parse(response.json()).hub).toBe('no_grant')
+    const card = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/stats/media/1?page=lora-1',
+      as: owner,
+    })
+    expect(card.statusCode).toBe(403)
+    expect(hub.statsAsked).toEqual([])
   })
 })

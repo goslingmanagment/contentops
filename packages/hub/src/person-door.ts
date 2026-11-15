@@ -1,4 +1,13 @@
 import {
+  type HubContentComments,
+  type HubStatsContent,
+  type HubStatsMediaCard,
+  parseContentComments,
+  parseStatsContent,
+  parseStatsMedia,
+  type StatsDays,
+} from './creator-stats.ts'
+import {
   type HubCustomOrderAnswer,
   type HubCustomOrderList,
   type HubOrderPart,
@@ -210,6 +219,28 @@ export interface PersonDoor {
   ): Promise<void>
   /** The owner's: the Fansly pages that need a login. */
   fanslyLoginPages(grant: string, signal?: AbortSignal): Promise<string[]>
+  /** «Статистика»: the page's media over the last `days` UTC days and what sells (all time). */
+  statsContent(
+    grant: string,
+    pageLabel: string,
+    days: StatsDays,
+    signal?: AbortSignal,
+  ): Promise<HubStatsContent>
+  /** «Статистика»: one media's days by surface, first hours, retention and tags. */
+  statsMedia(
+    grant: string,
+    pageLabel: string,
+    mediaOfferId: string,
+    days: StatsDays,
+    signal?: AbortSignal,
+  ): Promise<HubStatsMediaCard>
+  /** «Статистика»: the comments of the page's posts between two instants, by post. */
+  contentComments(
+    grant: string,
+    pageLabel: string,
+    window: { from: string; to: string },
+    signal?: AbortSignal,
+  ): Promise<HubContentComments>
 }
 
 export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
@@ -534,6 +565,42 @@ export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
           method: 'POST',
           path: 'api/v1/person/publications/approve',
           json: { client, grant, items },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async statsContent(grant, pageLabel, days, signal) {
+      const endpoint = 'person.stats.content'
+      return parseStatsContent(
+        await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/stats/content',
+          json: { client, grant, pageLabel, days },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async statsMedia(grant, pageLabel, mediaOfferId, days, signal) {
+      const endpoint = 'person.stats.media'
+      return parseStatsMedia(
+        await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/stats/media',
+          json: { client, grant, pageLabel, mediaOfferId, days },
+          signal,
+        }),
+        endpoint,
+      )
+    },
+    async contentComments(grant, pageLabel, window, signal) {
+      const endpoint = 'person.stats.comments'
+      return parseContentComments(
+        await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/stats/comments',
+          json: { client, grant, pageLabel, from: window.from, to: window.to },
           signal,
         }),
         endpoint,

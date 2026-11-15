@@ -12941,6 +12941,596 @@
           "file_keys"
         ]
       },
+      "StatsCommentPost": {
+        "type": "object",
+        "properties": {
+          "post_ref": {
+            "type": "string"
+          },
+          "comment_count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "possibly_truncated_count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "missing_count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "post_ref",
+          "comment_count",
+          "possibly_truncated_count",
+          "missing_count",
+          "caption",
+          "published_at"
+        ],
+        "additionalProperties": false
+      },
+      "StatsMediaCard": {
+        "type": "object",
+        "properties": {
+          "media_offer_id": {
+            "type": "string"
+          },
+          "window": {
+            "$ref": "#/components/schemas/StatsWindow"
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "views": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "day",
+                "source",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "hourly": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hour": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "views": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "hour",
+                "source",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "retention": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "sample_size": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "percent": {
+                        "type": "number"
+                      },
+                      "still_watching": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "percent",
+                      "still_watching"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "source",
+                "sample_size",
+                "points"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tag": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "views": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "tag",
+                "source",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "media_offer_id",
+          "window",
+          "daily",
+          "hourly",
+          "retention",
+          "tags"
+        ],
+        "additionalProperties": false
+      },
+      "StatsMediaRow": {
+        "type": "object",
+        "properties": {
+          "media_offer_id": {
+            "type": "string"
+          },
+          "media_type": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "post_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "views": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "for_you_views": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "timeline_views": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "other_views": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "video_views": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "completed_views": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "watch_pct_sum": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "likes": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "all_time_views": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "media_offer_id",
+          "media_type",
+          "duration_ms",
+          "post_id",
+          "posted_at",
+          "deleted_at",
+          "caption",
+          "views",
+          "for_you_views",
+          "timeline_views",
+          "other_views",
+          "video_views",
+          "completed_views",
+          "watch_pct_sum",
+          "likes",
+          "all_time_views"
+        ],
+        "additionalProperties": false
+      },
+      "StatsPage": {
+        "type": "object",
+        "properties": {
+          "hub_page": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hub_page",
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      "StatsScreen": {
+        "type": "object",
+        "properties": {
+          "hub": {
+            "$ref": "#/components/schemas/PublicationsHubState"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsPage"
+            }
+          },
+          "page": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatsWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "walk": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "visited": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "queued": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "visited",
+                  "queued"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsMediaRow"
+            }
+          },
+          "top_sales": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatsSoldRow"
+            }
+          },
+          "top_sales_total": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "comments": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "in_progress",
+                  "never_read",
+                  "failed"
+                ]
+              },
+              "posts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/StatsCommentPost"
+                }
+              }
+            },
+            "required": [
+              "state",
+              "posts"
+            ],
+            "additionalProperties": false
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "hub",
+          "pages",
+          "page",
+          "window",
+          "walk",
+          "media",
+          "top_sales",
+          "top_sales_total",
+          "comments",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "StatsSoldRow": {
+        "type": "object",
+        "properties": {
+          "media_offer_id": {
+            "type": "string"
+          },
+          "media_type": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "post_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "caption": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "price_mills": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "sales_count": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "net_mills": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "gross_mills": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "window_views": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "media_offer_id",
+          "media_type",
+          "duration_ms",
+          "post_id",
+          "posted_at",
+          "deleted_at",
+          "caption",
+          "price_mills",
+          "sales_count",
+          "net_mills",
+          "gross_mills",
+          "window_views"
+        ],
+        "additionalProperties": false
+      },
+      "StatsWindow": {
+        "type": "object",
+        "properties": {
+          "from_day": {
+            "type": "string"
+          },
+          "to_day": {
+            "type": "string"
+          },
+          "days": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "from_day",
+          "to_day",
+          "days"
+        ],
+        "additionalProperties": false
+      },
       "StatusWord": {
         "type": "object",
         "properties": {
@@ -23503,6 +24093,139 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PublicationActionAnswer"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/stats": {
+      "get": {
+        "operationId": "stats.screen",
+        "tags": [
+          "stats"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "days",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsScreen"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{model}/stats/media/{media}": {
+      "get": {
+        "operationId": "stats.media",
+        "tags": [
+          "stats"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": 30,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "days",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "media",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsMediaCard"
                 }
               }
             }

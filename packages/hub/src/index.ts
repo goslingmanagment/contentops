@@ -38,6 +38,18 @@ export {
   type UploadInput,
 } from './client.ts'
 export {
+  type HubCommentPost,
+  type HubContentComments,
+  type HubMediaHead,
+  type HubStatsContent,
+  type HubStatsMedia,
+  type HubStatsMediaCard,
+  type HubStatsSold,
+  type HubStatsWindow,
+  STATS_DAYS,
+  type StatsDays,
+} from './creator-stats.ts'
+export {
   HUB_ORDER_STATES,
   HUB_SHOOTING_STEPS,
   type HubCustomOrder,

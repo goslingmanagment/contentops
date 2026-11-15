@@ -13,6 +13,7 @@ import { promoRoutes } from './promo'
 import { publicationRoutes } from './publications'
 import { authRoutes, settingsRoutes } from './settings'
 import { shootingTaskRoutes } from './shooting'
+import { statsRoutes } from './stats'
 import { waitingRoutes } from './waiting'
 
 /** Every route of API v1 by area; the client and the mock read from here. */
@@ -31,6 +32,7 @@ export const apiRoutes = {
   shootingTasks: shootingTaskRoutes,
   waiting: waitingRoutes,
   publications: publicationRoutes,
+  stats: statsRoutes,
   promo: promoRoutes,
   journal: journalRoutes,
   operations: operationRoutes,

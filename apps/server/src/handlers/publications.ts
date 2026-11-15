@@ -62,7 +62,7 @@ export function hubSlugOf(
 }
 
 /** The model's pages bound to Hub pages here, for their names only: Hub's answer decides what is shown. */
-async function boundNames(
+export async function boundNames(
   q: Queryable,
   model: ModelScope,
 ): Promise<Map<string, { code: string; title: string }>> {
@@ -149,14 +149,14 @@ export function rowOf(
 }
 
 /** Why there is no answer, as the screen says it; a door that refused the person is `refused`. */
-function failed(error: unknown): 'unreachable' | 'refused' {
+export function failed(error: unknown): 'unreachable' | 'refused' {
   if (!isHubError(error)) throw error
   if (error.status === 401)
     throw new ApiProblem('unauthenticated', 'Вход закончился: войдите снова')
   return error.status === 403 ? 'refused' : 'unreachable'
 }
 
-async function personOf(services: Services, actor: ReturnType<typeof requireActor>) {
+export async function personOf(services: Services, actor: ReturnType<typeof requireActor>) {
   const door: PersonDoor | null = services.personDoor ?? null
   if (!door) return { door: null, grant: null, state: 'no_hub' as const }
   const grant = await grantOf(services.db, actor)
