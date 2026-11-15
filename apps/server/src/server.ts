@@ -50,6 +50,7 @@ export function buildServer(options: ServerOptions) {
     command: createCommands(db),
     hubSignin,
     ...(options.personDoor ? { personDoor: options.personDoor } : {}),
+    hubModelMap: options.hubSignin?.modelMap ?? {},
     secureCookies: options.publicUrl.startsWith('https:'),
     secrets: options.secrets,
     sourceEnv: options.sourceEnv ?? process.env,

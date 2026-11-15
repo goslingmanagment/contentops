@@ -92,6 +92,8 @@ export interface HubCustomOrder {
   pageLabel: string | null
   platform: string | null
   model: string | null
+  /** Hub's slug of the order's model (`test`); null — the page is not known, or an older Hub. */
+  modelSlug: string | null
   fan: { username: string | null; displayName: string | null } | null
   buyer: string | null
   card: HubOrderCard
@@ -256,6 +258,7 @@ export function parseHubOrder(raw: unknown, endpoint = 'custom-orders'): HubCust
     pageLabel: str(raw.pageLabel),
     platform: str(raw.platform),
     model: str(raw.model),
+    modelSlug: str(raw.modelSlug),
     fan,
     buyer: str(raw.buyer),
     card: parseCard(raw.card),

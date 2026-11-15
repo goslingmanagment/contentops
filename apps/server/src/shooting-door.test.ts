@@ -34,6 +34,7 @@ function order(id: number, fields: Partial<HubCustomOrder> = {}): HubCustomOrder
     pageLabel: 'lora-1',
     platform: 'fansly',
     model: 'Лора',
+    modelSlug: 'lora',
     fan: { username: `fan_${id}`, displayName: null },
     buyer: null,
     card: { task: `заказ ${id}`, wantsVideo: true },
@@ -69,6 +70,8 @@ class FakeHub implements HubSignin, PersonDoor {
   /** Who leads which order's shooting: the only login Hub lets take a step of it. */
   readonly leaderOf = new Map<string, string>()
   readonly steps: { login: string; body: PersonShootingStep }[] = []
+  /** Hub's models of a login's person (its slugs): Лора unless said otherwise. */
+  readonly modelsOf = new Map<string, string[]>()
   away = false
 
   mint(user: HubSigninUser): string {
@@ -100,7 +103,10 @@ class FakeHub implements HubSignin, PersonDoor {
         displayName: found.user.username,
         role: found.user.role,
         state: 'working',
-        models: found.user.role === 'content_manager' ? ['lora'] : [],
+        models:
+          found.user.role === 'content_manager'
+            ? (this.modelsOf.get(found.user.username) ?? ['lora'])
+            : [],
         customsModels: found.user.role === 'chatter' ? ['lora'] : [],
         products: ['contentops'],
       },
@@ -210,7 +216,13 @@ const step = (as: string, code: string, body: Record<string, unknown>) =>
 beforeAll(async () => {
   server = await testServer({
     secrets: { hub: true, hubBaseUrl: 'https://hub.example' },
-    hubSignin: { hub, origin: `https://${PUBLIC}`, ownerLogin: OWNER.login },
+    // Hub's test model is ContentOps' `ari` here by one setting, as `test=smoke` on the VM.
+    hubSignin: {
+      hub,
+      origin: `https://${PUBLIC}`,
+      ownerLogin: OWNER.login,
+      modelMap: { test: 'ari' },
+    },
     personDoor: hub,
   })
   await setHubPage(server.db, 'lora-1', 'lora-1')
@@ -219,10 +231,10 @@ afterAll(() => server.close())
 
 describe('«Съёмка» as the signed-in person', () => {
   it("reads the person's own orders through the door, fresh, which the background read does not have", async () => {
-    hub.ordersOf.set('kira', [order(201), order(202, { pageLabel: 'zoe-1' })])
+    hub.ordersOf.set('kira', [order(201), order(202, { pageLabel: 'zoe-1', modelSlug: 'zoe' })])
     const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
     const read = await list(kira)
-    // Hub's page of another model is not this model's: cut as the background read cuts.
+    // An order Hub names of another model is not this model's.
     expect(read.items.map((one) => one.code)).toEqual(['K-201'])
     expect(read.read_at).not.toBeNull()
     const card = HubOrderSchema.parse(
@@ -231,6 +243,33 @@ describe('«Съёмка» as the signed-in person', () => {
       ).json(),
     )
     expect(card).toMatchObject({ steps: ['at_model'], steps_note: null })
+  })
+
+  it("a model whose Hub slug differs and whose accounts are bound to no Hub page: Hub's answer places the order", async () => {
+    // `ari` here is Hub's `test` (HUB_MODEL_MAP); its accounts carry no hub_page_ref, as `smoke`'s on the VM.
+    hub.modelsOf.set('tkm', ['test'])
+    hub.ordersOf.set('tkm', [
+      order(231, { pageLabel: 'test-1', modelSlug: 'test', state: 'at_model' }),
+      order(232, { pageLabel: 'test-1', modelSlug: 'test', state: 'shot' }),
+    ])
+    hub.leaderOf.set('K-231', 'tkm')
+    const tkm = await throughHub({ id: 503, username: 'tkm', role: 'content_manager' })
+    const read = await call(server.app, { method: 'GET', url: '/api/v1/ari/hub-orders', as: tkm })
+    expect(read.statusCode, read.body).toBe(200)
+    expect(
+      HubOrderListSchema.parse(read.json())
+        .items.map((one) => one.code)
+        .sort(),
+    ).toEqual(['K-231', 'K-232'])
+    const taken = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/ari/hub-orders/K-231/steps',
+      as: tkm,
+      key: newKey(),
+      body: { step: 'shot' },
+    })
+    expect(taken.statusCode, taken.body).toBe(200)
+    expect(HubOrderSchema.parse(taken.json())).toMatchObject({ code: 'K-231', state: 'shot' })
   })
 
   it('writes a step through the door with the grant; Hub refuses whoever does not lead it', async () => {
