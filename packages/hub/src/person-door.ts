@@ -189,6 +189,8 @@ export interface HubWithdrawResult {
   reason: string | null
   /** The outcome in Hub's words (the person's door); null on an older Hub. */
   words: string | null
+  /** With an unknown outcome: what to check on the platform, as Hub says it; null — none. */
+  check: string | null
   publication: HubPublication | null
 }
 
@@ -211,6 +213,7 @@ function parseWithdraw(json: unknown, endpoint: string): HubWithdrawResult[] {
         outcome: one.outcome,
         reason: typeof one.reason === 'string' ? one.reason : null,
         words: typeof one.words === 'string' ? one.words : null,
+        check: typeof one.check === 'string' ? one.check : null,
         publication: one.publication == null ? null : parsePublication(one.publication, endpoint),
       },
     ]

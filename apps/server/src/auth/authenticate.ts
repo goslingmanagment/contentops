@@ -2,7 +2,7 @@ import type { Role } from '@contentops/contracts/domain/people'
 import type { Db } from '@contentops/db'
 import { HUB_AGENT_KEY_PREFIX } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
-import type { FastifyRequest } from 'fastify'
+import type { FastifyBaseLogger, FastifyRequest } from 'fastify'
 import type { Actor, Authenticate } from '../context'
 import { parseCookies } from '../context'
 import { ApiProblem } from '../errors'
@@ -21,7 +21,7 @@ interface PrincipalRow extends AgentRow {
   credential_id: string
 }
 
-interface SessionRow extends PrincipalRow {
+export interface SessionRow extends PrincipalRow {
   login: string
   hub_user_id: string | null
   /** A session opened through the hub; null — by password. */
@@ -171,26 +171,39 @@ export function createAuthenticate(
     }
     const token = parseCookies(request.headers.cookie)[SESSION_COOKIE]
     if (!token) return null
-    const person = await personBySession(db, token)
-    if (!person) return null
-    if (person.hub_grant !== null) {
-      const alive = hubSessions
-        ? await hubSessions.stillSignedIn(
-            {
-              sessionId: person.credential_id,
-              principalId: person.id,
-              login: person.login,
-              hubUserId: person.hub_user_id,
-              grant: person.hub_grant,
-              checkedAtMs: person.hub_checked_ms,
-            },
-            request,
-          )
-        : false
-      if (!alive) return null
-    }
-    return actorOf(db, 'person', person)
+    const person = await admittedSession(db, hubSessions, token, request)
+    return person === null ? null : actorOf(db, 'person', person)
   }
+}
+
+/**
+ * Whether a session cookie would be let in now, and as whom — the ONE judgment of a person's session: `authenticate`
+ * and «Войти через хаб» (which sends a browser with such a session straight on) both ask it. A session over Hub's
+ * grant also needs Hub's «still signed in» (cached a minute; a silent Hub holds it a while, then not).
+ */
+export async function admittedSession(
+  db: Db,
+  hubSessions: HubSessions | null,
+  token: string,
+  request: { id: string; log: FastifyBaseLogger },
+): Promise<SessionRow | null> {
+  const person = await personBySession(db, token)
+  if (!person) return null
+  if (person.hub_grant === null) return person
+  const alive = hubSessions
+    ? await hubSessions.stillSignedIn(
+        {
+          sessionId: person.credential_id,
+          principalId: person.id,
+          login: person.login,
+          hubUserId: person.hub_user_id,
+          grant: person.hub_grant,
+          checkedAtMs: person.hub_checked_ms,
+        },
+        request,
+      )
+    : false
+  return alive ? person : null
 }
 
 async function actorOf(db: Db, type: Actor['type'], row: PrincipalRow): Promise<Actor> {

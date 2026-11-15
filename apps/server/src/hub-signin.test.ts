@@ -482,7 +482,7 @@ describe('the silent try (a page that got 401 before the sign-in screen)', () =>
 
     hub.unreachable = true
     const down = await silentStart()
-    expect(down.headers.location).toBe('/login?from=%2Flora%2Flibrary')
+    expect(down.headers.location).toBe('/login?from=%2Flora%2Flibrary&hub=unreachable')
     expect(cookieOf(down, 'co_hub_state')).toBeUndefined()
     expect(setCookies(down)).toEqual(['co_hub_try=1; Path=/; Max-Age=600; SameSite=Lax'])
   })
@@ -556,5 +556,36 @@ describe('where a sign-in may lead (`next`)', () => {
       `/auth/hub/callback?${new URLSearchParams({ error: 'none', next: '/lora/library?kind=dm' })}`,
     )
     expect(kept.headers.location).toBe('/login?from=%2Flora%2Flibrary%3Fkind%3Ddm')
+  })
+})
+
+describe('«Войти через хаб» with a session of this browser (round 2, N6)', () => {
+  it('a session Hub cannot confirm now does not go straight on: one silent try, marked, then the sign-in screen', async () => {
+    const session = await signInThroughHub()
+    hub.unreachable = true
+    clock += HUB_SILENCE_MS + HUB_CHECK_EVERY_MS + 1
+    expect((await me(session)).statusCode).toBe(401)
+    const first = await get('/auth/hub/start?silent=1&next=%2Flora%2Flibrary', {
+      cookie: `co_session=${session}`,
+    })
+    expect(first.statusCode).toBe(302)
+    expect(first.headers.location).not.toBe('/lora/library')
+    expect(first.headers.location).toBe('/login?from=%2Flora%2Flibrary&hub=unreachable')
+    const mark = cookieOf(first, 'co_hub_try')
+    expect(mark).toBe('1')
+    // The next 401 of the page starts no new round: the mark is there.
+    const second = await get('/auth/hub/start?silent=1&next=%2Flora%2Flibrary', {
+      cookie: `co_session=${session}; co_hub_try=1`,
+    })
+    expect(second.headers.location).toMatch(/^\/login/)
+    hub.unreachable = false
+  })
+
+  it('a session that is let in goes straight on', async () => {
+    const session = await signInThroughHub()
+    const start = await get('/auth/hub/start?silent=1&next=%2Flora%2Flibrary', {
+      cookie: `co_session=${session}`,
+    })
+    expect(start.headers.location).toBe('/lora/library')
   })
 })

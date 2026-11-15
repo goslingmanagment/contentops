@@ -286,18 +286,31 @@ class FakeHub implements HubSignin, PersonDoor {
   }
   /** What Hub's door does with the next «Убрать из расписания» instead of answering (the client's real errors). */
   withdrawFails: HubError | null = null
+  /** Hub's answer to the next «Убрать из расписания» when it is not the test page's refusal. */
+  withdrawAnswer: Array<{
+    id: number
+    outcome: string
+    reason: string | null
+    words: string | null
+    check: string | null
+    publication: null
+  }> | null = null
   async publicationWithdraw(grant: string, id: number) {
     const user = this.who(grant)
     this.actions.push(`${user.username} withdraw ${id}`)
     const fails = this.withdrawFails
     this.withdrawFails = null
     if (fails) throw fails
+    const answer = this.withdrawAnswer
+    this.withdrawAnswer = null
+    if (answer) return answer
     return [
       {
         id,
         outcome: 'refused',
         reason: 'тестовая страница: на площадку не отправляется',
         words: 'Не убран: тестовая страница: на площадку не отправляется',
+        check: null,
         publication: null,
       },
     ]
@@ -767,6 +780,28 @@ describe("Hub's answers to an action, as a person reads them", () => {
     const answer = await withdraw(kira)
     expect(answer.statusCode, answer.body).toBe(422)
     expect(answer.json().message).toBe('Пост уже снят с расписания')
+  })
+
+  it('says Hub’s «unknown» outcome of «Убрать из расписания» as unknown, in Hub’s words — never «done»', async () => {
+    hub.publicationsOf.set('kira', [publication(901, 'lora-1', 'scheduled')])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    // HTTP 200: the platform's answer did not come (Hub's post-commands, onlyfansOutcome); the post is `unknown`.
+    hub.withdrawAnswer = [
+      {
+        id: 901,
+        outcome: 'unknown',
+        reason: null,
+        words: 'Исход неизвестен: проверьте пост на площадке',
+        check: 'Откройте страницу на площадке и посмотрите расписание',
+        publication: null,
+      },
+    ]
+    const answer = await withdraw(kira)
+    expect(answer.statusCode, answer.body).toBe(502)
+    expect(answer.json()).toMatchObject({
+      code: 'outcome_unknown',
+      message: 'Исход неизвестен: проверьте пост на площадке',
+    })
   })
 
   it('says an action whose outcome is unknown is unknown — never «no connection» to retry', async () => {

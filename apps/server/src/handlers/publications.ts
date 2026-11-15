@@ -330,9 +330,24 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
   })
   /** A withdrawal's or a deletion's outcome: a refusal is said in Hub's words. */
   const withdrawn = (
-    results: readonly { outcome: string; reason: string | null; words?: string | null }[],
+    results: readonly {
+      outcome: string
+      reason: string | null
+      words?: string | null
+      check?: string | null
+    }[],
     fallback: string,
   ): PublicationActionAnswer => {
+    // The platform's answer did not come (HTTP 200, `unknown`): done or not, nobody knows — said as unknown, in Hub's
+    // words, like an action whose answer was lost (no «Повторить»: a second try would go to the platform).
+    const unknown = results.find((one) => one.outcome === 'unknown')
+    if (unknown) {
+      throw new ApiProblem(
+        'outcome_unknown',
+        unknown.words ?? unknown.check ?? 'Исход неизвестен: проверьте пост на площадке',
+        unknown.check ? { check: unknown.check } : undefined,
+      )
+    }
     const refused = results.find((one) => ['refused', 'rejected', 'not_sent'].includes(one.outcome))
     // Hub's words of the outcome (its one table); an older Hub's Russian reason as written, else ours.
     return refused
