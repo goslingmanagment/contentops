@@ -99,6 +99,8 @@ services:
       HUB_SIGNIN_CLIENT: ${HUB_SIGNIN_CLIENT:-contentops}
       HUB_SIGNIN_KEY: ${HUB_SIGNIN_KEY:-}
       HUB_SIGNIN_OWNER: ${HUB_SIGNIN_OWNER:-}
+      # Hub's model slug → ContentOps' model code where they differ (`test=smoke`: Hub's test team).
+      HUB_MODEL_MAP: ${HUB_MODEL_MAP:-}
       # An agent's hub key (SPEC §11.1): only `web` asks Hub whose it is.
       HUB_INTROSPECT_KEY: ${HUB_INTROSPECT_KEY:-}
     volumes:
