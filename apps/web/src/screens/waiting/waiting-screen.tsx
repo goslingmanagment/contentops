@@ -13,7 +13,7 @@ import { WaitingLines } from './waiting-lines'
 export function WaitingScreen() {
   const model = useCurrentModel()
   const role = useRole()
-  const waiting = useWaiting(model.code, role)
+  const waiting = useWaiting(model.code, role, { withChecks: true })
   const hub = waiting.hub.data?.hub
   const empty = waiting.matters.length === 0 && waiting.own.length === 0
   return (
