@@ -11,7 +11,7 @@ import { type Db, enqueueWork, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { type FakeHub, startFakeHub } from '@contentops/hub/testing'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createCatalogItems } from '../../testing/catalog-factory'
+import { createCatalogItems, tombstoneCatalogItem } from '../../testing/catalog-factory'
 import {
   addPerson,
   call,
@@ -624,5 +624,153 @@ describe('один пост — один кандидат', () => {
     )
     expect(levels[0]).not.toMatch(/candidate/)
     expect(levels[1]).toBe('confirmed_manual')
+  })
+})
+
+describe('подсказка по именам файлов', () => {
+  const photo = (media: string, name: string) => ({
+    media,
+    name,
+    video: false,
+    width: 1000,
+    height: 1500,
+  })
+  const posted = {
+    names: at('06:00'),
+    one: at('06:20'),
+    many: at('06:40'),
+    gone: at('07:00'),
+    removed: at('07:20'),
+  }
+
+  beforeAll(async () => {
+    // Files of the disk with camera names; the posts carry them with the platform's extension.
+    await createCatalogItems(db, 'lora', [
+      {
+        type: 'set',
+        number: 90,
+        title: 'Сад',
+        secondPerson: false,
+        files: [
+          { role: 'ed', sourceName: 'IMG_7001.HEIC' },
+          { role: 'ed', sourceName: 'IMG_7002.HEIC' },
+          { role: 'ed', sourceName: 'IMG_7003.JPG' },
+        ],
+      },
+      {
+        type: 'set',
+        number: 91,
+        title: 'Дождь',
+        secondPerson: false,
+        files: [
+          { role: 'ed', sourceName: 'IMG_7101.JPG' },
+          { role: 'ed', sourceName: 'IMG_0001.JPG' },
+        ],
+      },
+      {
+        type: 'life',
+        number: 92,
+        title: 'Утро',
+        secondPerson: false,
+        files: [{ role: 'pic', sourceName: 'img_0001.heic' }],
+      },
+      {
+        type: 'set',
+        number: 93,
+        title: 'Удалённый',
+        secondPerson: false,
+        files: [
+          { role: 'ed', sourceName: 'IMG_7201.JPG' },
+          { role: 'ed', sourceName: 'IMG_7202.JPG' },
+        ],
+      },
+      {
+        type: 'set',
+        number: 94,
+        title: 'Без файлов',
+        secondPerson: false,
+        files: [
+          { role: 'ed', sourceName: 'IMG_7301.JPG' },
+          { role: 'ed', sourceName: 'IMG_7302.JPG' },
+        ],
+      },
+    ])
+    await tombstoneCatalogItem(db, 'lora', 'SET-093')
+    await withActorTx(
+      db,
+      { actor: SYSTEM_ACTOR('test'), action: 'test', requestId: randomUUID() },
+      (tx) =>
+        tx.execute(sql`
+          UPDATE item_memberships m SET removed_at = now(), display_position = NULL
+            FROM content_items i
+           WHERE i.model_id = m.model_id AND i.id = m.item_id
+             AND i.model_id = ${modelId}::uuid AND i.type = 'SET' AND i.number = 94`),
+    )
+    hub.setNow(new Date(Date.now() + 5_000))
+    hub.put('posts', 'page-a', [
+      hubPost('p-names', posted.names, { files: 3 }),
+      hubPost('p-one', posted.one),
+      hubPost('p-many', posted.many, { files: 3 }),
+      hubPost('p-gone', posted.gone, { files: 2 }),
+      hubPost('p-removed', posted.removed, { files: 2 }),
+    ])
+    hub.put('post_attachments', 'page-a', [
+      ...hubFiles('p-names', posted.names, [
+        photo('m-n1', 'img_7001.jpeg'),
+        photo('m-n2', 'IMG_7002.jpeg'),
+        photo('m-n3', 'IMG_7003.JPEG'),
+      ]),
+      ...hubFiles('p-one', posted.one, [photo('m-o1', 'IMG_0001.jpeg')]),
+      ...hubFiles('p-many', posted.many, [
+        photo('m-m1', 'IMG_0001.jpeg'),
+        photo('m-m2', 'IMG_9998.jpeg'),
+        photo('m-m3', 'IMG_9999.jpeg'),
+      ]),
+      ...hubFiles('p-gone', posted.gone, [
+        photo('m-g1', 'IMG_7201.jpeg'),
+        photo('m-g2', 'IMG_7202.jpeg'),
+      ]),
+      ...hubFiles('p-removed', posted.removed, [
+        photo('m-r1', 'IMG_7301.jpeg'),
+        photo('m-r2', 'IMG_7302.jpeg'),
+      ]),
+    ])
+    const outcome = await syncOnce(db, lora1, 'posts', { client: () => fakeClient(hub).client })
+    expect(outcome.state).toBe('succeeded')
+  })
+
+  async function looseCase(ref: string): Promise<CheckCase> {
+    const found = (await list()).items.find((item) => item.posts[0]?.url.endsWith(`/${ref}`))
+    if (!found) throw new Error(`no case of ${ref}`)
+    expect(found.kind).toBe('unplanned')
+    return found
+  }
+
+  it('все файлы поста — исходники одного объекта: одна подсказка, совпало все', async () => {
+    const names = await looseCase('p-names')
+    expect(names.suggestions).toEqual([{ item_id: 'SET-090', title: 'Сад', matched: 3, total: 3 }])
+    // The case alone answers the same, and the agent binds by it with the usual «Привязать».
+    const one = await call(server.app, {
+      method: 'GET',
+      url: `/api/v1/lora/reconcile/${names.id}`,
+      as: agent,
+    })
+    expect(CheckCaseSchema.parse(one.json()).suggestions[0]?.item_id).toBe('SET-090')
+    const bound = await decide(agent, names.id, 'bind', { item_id: 'SET-090' })
+    expect(bound.statusCode, bound.body).toBe(200)
+    expect((await list()).items.some((item) => item.id === names.id)).toBe(false)
+  })
+
+  it('одно общее имя камеры: у поста из одного файла — оба объекта, у поста из трёх — ничего', async () => {
+    expect((await looseCase('p-one')).suggestions).toEqual([
+      { item_id: 'LIFE-092', title: 'Утро', matched: 1, total: 1 },
+      { item_id: 'SET-091', title: 'Дождь', matched: 1, total: 1 },
+    ])
+    expect((await looseCase('p-many')).suggestions).toEqual([])
+  })
+
+  it('удалённый объект и убранные из объекта файлы не подсказываются', async () => {
+    expect((await looseCase('p-gone')).suggestions).toEqual([])
+    expect((await looseCase('p-removed')).suggestions).toEqual([])
   })
 })

@@ -55,6 +55,8 @@ export interface FixtureFile {
    * version gets a source revision of the model's fixture disk. No source when omitted.
    */
   arrivedAt?: string
+  /** The name of the file on the source disk (`source_paths`): `IMG_0478.HEIC`. Gives a source. */
+  sourceName?: string
   /** The old name of the file (`legacy_name` of the asset): `IMG_5001.JPG`. */
   name?: string
   /** When it was shot: EXIF (a photo) or `creation_time` (a video) of the current version. */
@@ -141,7 +143,13 @@ async function channelId(tx: Tx, modelId: string, code: string): Promise<string>
 }
 
 /** A revision of a file on the model's fixture disk that appeared at `at`. */
-async function sourceRevision(tx: Tx, modelId: string, at: string, bytes: number) {
+async function sourceRevision(
+  tx: Tx,
+  modelId: string,
+  at: string,
+  bytes: number,
+  name: string | null = null,
+) {
   await tx.execute(sql`
     INSERT INTO sources (model_id, kind, label, root_path, credentials_ref)
     VALUES (${modelId}::uuid, 'yandex_disk', 'fixtures', '/', 'FIXTURES_DISK')
@@ -158,6 +166,11 @@ async function sourceRevision(tx: Tx, modelId: string, at: string, bytes: number
                                   remote_created_at, detected_at)
     VALUES (${modelId}::uuid, ${revisionId}::uuid, ${objectId}::uuid, 1, ${bytes},
             ${at}::timestamptz, now())`)
+  if (name) {
+    await tx.execute(sql`
+      INSERT INTO source_paths (model_id, source_object_id, path_raw, name)
+      VALUES (${modelId}::uuid, ${objectId}::uuid, ${`/fixtures/${objectId}/${name}`}, ${name})`)
+  }
   return revisionId
 }
 
@@ -211,9 +224,16 @@ async function insertFile(
     const sha256 = file.sha256?.[index] ?? randomBytes(32)
     current = sha256
     await insertBlob(tx, file, sha256, shape.bytes)
-    const revision = file.arrivedAt
-      ? await sourceRevision(tx, modelId, file.arrivedAt, shape.bytes)
-      : null
+    const revision =
+      file.arrivedAt || file.sourceName
+        ? await sourceRevision(
+            tx,
+            modelId,
+            file.arrivedAt ?? new Date().toISOString(),
+            shape.bytes,
+            file.sourceName ?? null,
+          )
+        : null
     await tx.execute(sql`
       INSERT INTO asset_versions (model_id, id, asset_id, version_no, master_sha256, duration_ms,
                                   width, height, source_revision_id)

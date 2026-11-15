@@ -31,13 +31,14 @@ import type { Services } from '../services'
  * managers and agents decide (an agent's decision is marked «подтверждено агентом»).
  */
 export function checkHandlers({ db, command }: Services): HandlerRegistry {
-  const load = async (q: Queryable, model: ModelScope) => checkModel(q, await loadState(q, model))
+  const load = async (q: Queryable, model: ModelScope, suggest = false) =>
+    checkModel(q, await loadState(q, model), { suggest })
 
   return {
     check: {
       list: async ({ ctx }) => {
         const model = modelOf(ctx.model)
-        const check = await load(db, model)
+        const check = await load(db, model, true)
         const items = await allCases(db, check)
         const unverified = unverifiedRows(check)
         return {
@@ -68,7 +69,7 @@ export function checkHandlers({ db, command }: Services): HandlerRegistry {
       get: async ({ params, ctx }) => {
         const model = modelOf(ctx.model)
         const ref = parseCase(params.case)
-        const check = await load(db, model)
+        const check = await load(db, model, ref.kind === 'post')
         if (ref.kind === 'row') {
           const row = check.state.rows.find((one) => one.id === ref.id)
           if (!row) throw new ApiProblem('not_found', 'Такого случая сверки нет')

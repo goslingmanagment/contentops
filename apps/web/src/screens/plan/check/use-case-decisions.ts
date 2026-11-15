@@ -56,6 +56,9 @@ function isRejectAll(decision: Decision): boolean {
 }
 
 function pendingAction(decision: Decision): CaseAction {
+  if (decision.action === 'bind' && decision.entry.suggestions[0]?.item_id === decision.itemId) {
+    return 'bind-suggested'
+  }
   return isRejectAll(decision) ? 'reject-all' : decision.action
 }
 

@@ -1,7 +1,8 @@
 // Posts of the fake Agency Hub for `DEV_FAKE_HUB=1` (SPEC §12.0), made from the dev plan of Лора:
 // a post found exactly by its download name (FYP proven by For You views), a wall row with two
 // posts in its window («2 варианта»), one candidate for every other untouched row, OnlyFans
-// pairs, a vault file in its album and a post nobody planned. It also switches receiving and
+// pairs, a vault file in its album, a post nobody planned and one made by hand with the camera
+// files of a set (its names suggest the set in «Сверить»). It also switches receiving and
 // matching on for the model, sets the thresholds of SPEC §7 and starts matching three days back,
 // so the first hourly poll fills «План › Сверить» and the Hub states of the rows. Refs, names and
 // captions are made up. Called by `dev-hub.ts` before it says `ready`.
@@ -265,6 +266,65 @@ export async function seedMatching(hub: FakeHub, databaseUrl: string): Promise<n
     post(first, now - 5 * 3_600_000, [
       { asset_id: '', version_id: '', role: 'pic', ordinal: null, media_kind: 'image', duration_ms: null, width: 900, height: 1200 },
     ], { caption: 'Доброе утро ☀️' })
+    // Posted by hand with the files of the disk: six files of a set get camera names on a disk
+    // (a new version of the same bytes from a disabled source), the post carries them as `.jpeg`.
+    const camera = await cameraNames(6)
+    if (camera.length > 0) {
+      const photo: File = { asset_id: '', version_id: '', role: 'pic', ordinal: null, media_kind: 'image', duration_ms: null, width: 3024, height: 4032 }
+      post(first, now - 3 * 3_600_000, camera.map(() => photo), {
+        names: camera.map((name) => `${name}.jpeg`),
+        caption: 'Закат 🌅',
+      })
+    }
+  }
+
+  async function cameraNames(count: number): Promise<string[]> {
+    const names = Array.from({ length: count }, (_, index) => `IMG_48${String(index + 1).padStart(2, '0')}`)
+    const { rows: had } = await db.execute(sql`
+      SELECT 1 FROM source_paths WHERE model_id = ${modelId}::uuid AND name = ${`${names[0]}.HEIC`}`)
+    if (had.length > 0) return names
+    const { rows: files } = await db.execute<{ asset_id: string; version_no: number; sha: string; width: number | null; height: number | null }>(sql`
+      SELECT a.id AS asset_id, v.version_no, encode(v.master_sha256, 'hex') AS sha, v.width, v.height
+        FROM content_items i
+        JOIN item_memberships m ON m.model_id = i.model_id AND m.item_id = i.id AND m.removed_at IS NULL
+        JOIN assets a ON a.model_id = m.model_id AND a.id = m.asset_id AND a.media_kind = 'image'
+        JOIN asset_versions v ON v.model_id = a.model_id AND v.id = a.current_version_id
+       WHERE i.id = (SELECT c.id FROM content_items c
+                      WHERE c.model_id = ${modelId}::uuid AND c.type = 'SET' AND c.deleted_at IS NULL
+                        AND NOT EXISTS (SELECT 1 FROM posting_plan_rows r WHERE r.model_id = c.model_id AND r.item_id = c.id)
+                      ORDER BY c.number LIMIT 1)
+       ORDER BY m.display_position LIMIT ${count}`)
+    if (files.length < count) return []
+    await tx(async (t) => {
+      await t.execute(sql`
+        INSERT INTO sources (model_id, kind, label, enabled)
+        VALUES (${modelId}::uuid, 'legacy_metadata', 'dev-hub camera', false)
+        ON CONFLICT (model_id, label) DO NOTHING`)
+      for (const [index, file] of files.entries()) {
+        const name = `${names[index]}.HEIC`
+        const object = randomUUID()
+        const revision = randomUUID()
+        const version = randomUUID()
+        await t.execute(sql`
+          INSERT INTO source_objects (model_id, id, source_id, current_path, current_name)
+          SELECT ${modelId}::uuid, ${object}::uuid, id, ${`/camera/${name}`}, ${name}
+            FROM sources WHERE model_id = ${modelId}::uuid AND label = 'dev-hub camera'`)
+        await t.execute(sql`
+          INSERT INTO source_revisions (model_id, id, source_object_id, sequence_no, byte_size)
+          VALUES (${modelId}::uuid, ${revision}::uuid, ${object}::uuid, 1, 1000)`)
+        await t.execute(sql`
+          INSERT INTO source_paths (model_id, source_object_id, path_raw, name)
+          VALUES (${modelId}::uuid, ${object}::uuid, ${`/camera/${name}`}, ${name})`)
+        await t.execute(sql`
+          INSERT INTO asset_versions (model_id, id, asset_id, version_no, master_sha256, source_revision_id, width, height)
+          VALUES (${modelId}::uuid, ${version}::uuid, ${file.asset_id}::uuid, ${file.version_no + 1},
+                  decode(${file.sha}, 'hex'), ${revision}::uuid, ${file.width}, ${file.height})`)
+        await t.execute(sql`
+          UPDATE assets SET current_version_id = ${version}::uuid
+           WHERE model_id = ${modelId}::uuid AND id = ${file.asset_id}::uuid`)
+      }
+    })
+    return names
   }
 
   for (const [account, page] of byPage) {

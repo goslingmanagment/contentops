@@ -4,6 +4,7 @@ import {
   CHECK_KIND_BY_LEVEL,
   type CheckCase,
   type CheckList,
+  type CheckSuggestion,
   type HubPost,
   type ResolvedCase,
   type UnverifiedRow,
@@ -38,6 +39,7 @@ import { type HubPostFacts, loadPosts, type Page, pageOf, publicationLinks } fro
 import { albumFits, isAdPost, modelShapes, rowAlbum } from '../match/match'
 import { hintSurface, hubSurface, summaryOf } from '../match/rules'
 import { matchSettings } from '../match/settings'
+import { suggestByNames } from './suggest'
 
 /**
  * «Сверить» (DESIGN §4.15, SPEC §7): every ◆ of the placement function as a case — a plan row
@@ -86,6 +88,8 @@ export interface CheckModel {
   posts: Map<string, HubPostFacts & { account: string }>
   postCases: PostCase[]
   handles: Map<string, string>
+  /** «по именам файлов» of posts without plan, by post id; empty unless asked (`suggest`). */
+  suggestions: Map<string, CheckSuggestion[]>
 }
 
 async function postsById(
@@ -209,11 +213,14 @@ async function itemOfVersion(q: Queryable, page: Page, post: HubPostFacts): Prom
   return rows[0]?.item_id ?? null
 }
 
-/** `window` narrows the posts without plan to a period: the day view counts only its day. */
+/**
+ * `window` narrows the posts without plan to a period: the day view counts only its day.
+ * `suggest` reads «по именам файлов» for them: what the list and a case show, not the decisions.
+ */
 export async function checkModel(
   q: Queryable,
   state: PlanState,
-  window: PostWindow | null = null,
+  { window = null, suggest = false }: { window?: PostWindow | null; suggest?: boolean } = {},
 ): Promise<CheckModel> {
   const postCases = await loosePosts(q, state, window)
   const evidencePosts = [...state.evidence.values()]
@@ -242,6 +249,7 @@ export async function checkModel(
     posts,
     postCases,
     handles: new Map(state.view.accounts.map((account) => [account.code, account.handle])),
+    suggestions: suggest ? await suggestByNames(q, state.model.id, postCases) : new Map(),
   }
 }
 
@@ -380,6 +388,7 @@ export async function rowCase(
       how_checked: facts.evidence.map((item) => describeEvidence(item, today)),
     },
     hint: hintOf(model, row, posts),
+    suggestions: [],
   }
 }
 
@@ -529,6 +538,7 @@ export function postCase(model: CheckModel, one: PostCase): CheckCase | null {
       how_checked: verdict.facts.hub ? [verdict.facts.hub] : [],
     },
     hint: null,
+    suggestions: one.kind === 'unplanned' ? (model.suggestions.get(one.post.id) ?? []) : [],
   }
 }
 

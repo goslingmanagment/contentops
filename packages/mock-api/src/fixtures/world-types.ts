@@ -1,6 +1,7 @@
 import type { AccessGrant, AiSettings, Session } from '@contentops/contracts/domain/admin'
 import type { Agent } from '@contentops/contracts/domain/agents'
 import type { CatalogEntry, RecentItem } from '@contentops/contracts/domain/catalog'
+import type { CheckSuggestion } from '@contentops/contracts/domain/check'
 import type {
   AccountCode,
   Instant,
@@ -85,6 +86,8 @@ export interface CaseExtras {
   issued_to: string | null
   sizes: string | null
   hint: string | null
+  /** «по именам файлов» of a post without plan. */
+  suggestions?: CheckSuggestion[]
   attachments: { no: number; label: string; ok: boolean }[]
   ours_duration_s: number | null
   theirs_duration_s: number | null

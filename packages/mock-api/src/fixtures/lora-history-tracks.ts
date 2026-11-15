@@ -146,6 +146,8 @@ export function buildDetailedHistory(
         caption: 'mirror mood 🖤',
         platform_file_name: 'IMG_2319.mp4',
         theirs_duration_s: 7,
+        // Posted by hand with the file of the disk: its source name is in LIFE-191.
+        suggestions: [{ item_id: 'LIFE-191', title: titleOf('LIFE-191'), matched: 1, total: 1 }],
       }),
     }),
     // «Не наше · 3» (DESIGN §9.7): posts Диана marked as not ours, each told apart by its post.

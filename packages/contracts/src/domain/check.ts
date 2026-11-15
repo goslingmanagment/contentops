@@ -54,6 +54,21 @@ export const HubPostSchema = z.object({
 })
 export type HubPost = z.infer<typeof HubPostSchema>
 
+/**
+ * «по именам файлов: SET-046 · 15 из 15» (SPEC §7): an object of the catalog whose files came
+ * from source files with the names of the post's files, compared without extension and case.
+ * A suggestion only: the person or an agent binds the post with «Привязать».
+ */
+export const CheckSuggestionSchema = z.object({
+  item_id: ItemIdSchema,
+  title: z.string(),
+  /** Main files of the post found among the object's files. */
+  matched: z.int().positive(),
+  /** Main files of the post. */
+  total: z.int().positive(),
+})
+export type CheckSuggestion = z.infer<typeof CheckSuggestionSchema>
+
 export const CheckCaseSchema = z.object({
   id: z.string(),
   kind: CheckCaseKindSchema,
@@ -93,6 +108,8 @@ export const CheckCaseSchema = z.object({
   }),
   /** «в 23:40 был похожий пост». */
   hint: z.string().nullable(),
+  /** A post without plan: objects by the names of its files, most matched first, up to 3. */
+  suggestions: z.array(CheckSuggestionSchema),
 })
 export type CheckCase = z.infer<typeof CheckCaseSchema>
 

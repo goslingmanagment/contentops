@@ -4,10 +4,11 @@ import { ItemContextMenu, type ItemMenuModel } from '@contentops/ui/components/i
 import { StopRowClick } from '@contentops/ui/components/stop-row-click'
 import { cn } from '@contentops/ui/lib/utils'
 import { isOpenCase } from '@/data/check'
-import { ACTION_LABEL, type CaseAction, rowActions } from './case-kinds'
+import { actionLabel, type CaseAction, rowActions } from './case-kinds'
 import { CaseStatus } from './case-status'
 import { caseFact, caseSubtitle, caseTitle } from './case-text'
 import { CaseThumb } from './case-thumb'
+import { SuggestionHint } from './suggestion-hint'
 import type { PendingAction } from './use-case-decisions'
 
 interface CaseRowProps {
@@ -50,6 +51,7 @@ export function CaseRow({
 }: CaseRowProps) {
   const open = isOpenCase(entry)
   const actions = open && canDecide ? rowActions(entry, platform) : []
+  const suggestion = open ? entry.suggestions[0] : undefined
   return (
     <ItemContextMenu menu={menu}>
       <div
@@ -64,6 +66,12 @@ export function CaseRow({
           <p className="truncate text-ink-3 text-sm tabular-nums">
             {entry.version_label ? `${entry.version_label} · ` : null}
             {caseSubtitle(entry, today)}
+            {suggestion ? (
+              <>
+                {' · '}
+                <SuggestionHint suggestion={suggestion} />
+              </>
+            ) : null}
           </p>
         </div>
         <CaseStatus
@@ -87,7 +95,7 @@ export function CaseRow({
                   disabled={pending !== null && pending !== action}
                   onClick={() => onAction(action)}
                 >
-                  {ACTION_LABEL[action]}
+                  {actionLabel(entry, action)}
                 </Button>
               ))}
             </StopRowClick>
