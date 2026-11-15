@@ -89,6 +89,13 @@ Agency Hub (`README.md`, `PRD.md`).
   Sign-in is the hub's one-time code (`ops/README.md` «Вход через хаб», SPEC §11.1). The look
   is Hub's `vendor/hub-look` (re-vendor from a clean hub commit with
   `node scripts/vendor-look.mjs`). The one map: `~/code/SYSTEM.md` on the owner's machine.
+- **Продукт КМ** (с 15.11.2026, `v0.3.36`): своя рамка и меню «Сегодня · Ждут вас · План · Съёмка · Приехало ·
+  Библиотека · Журнал», у роли «Только кастомы» — «Съёмка · Ждут вас». Люди и роли входа («Контент-менеджер»,
+  «Только кастомы») приходят из реестра Hub в ответе входа; учётка КМ в Hub открывает только ContentOps. «Съёмка»
+  (вкладки «Кастомы» и «ТЗ») пишет шаги заказа кастома в Hub ключом ContentOps от имени вошедшего человека
+  (`person_step`, `onBehalfOf`); кто ведёт шаг, решает Hub. Тестовая модель Hub `test` сопоставлена с моделью
+  `smoke` через `HUB_MODEL_MAP` в `.env` ВМ: переменная должна доходить до сервиса `web` в `docker-compose.yml`, иначе
+  тестовая КМ видит «У вас нет доступа».
 - **Живой экземпляр:** `https://contentops.gosling-agency.ru` из интернета,
   `http://10.66.66.1:8088` при включённом VPN агентства или `http://contentops.tail1d911a.ts.net`
   в tailnet (`ops/README.md`, «Вход из интернета», «Вход через VPN агентства»).
