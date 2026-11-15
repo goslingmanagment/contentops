@@ -7,6 +7,7 @@ import {
   AddPersonCommandSchema,
   ChangePasswordCommandSchema,
   ConnectIntegrationCommandSchema,
+  JoinCommandSchema,
   MergeTagCommandSchema,
   PauseQueueCommandSchema,
   SignInCommandSchema,
@@ -211,6 +212,16 @@ export const authRoutes = {
     method: 'GET',
     path: '/api/v1/auth/methods',
     response: SignInMethodsSchema,
+  }),
+  /**
+   * «Придумайте пароль» (package C4): an invitation's or a new password's link of Hub's registry, ended on
+   * ContentOps' own page; the person is signed in. Public, like «Войти».
+   */
+  join: defineRoute({
+    method: 'POST',
+    path: '/api/v1/auth/join',
+    body: JoinCommandSchema,
+    response: SignInResultSchema,
   }),
   signIn: defineRoute({
     method: 'POST',

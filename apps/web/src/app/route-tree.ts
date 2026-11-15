@@ -65,6 +65,13 @@ const loginRoute = createRoute({
   component: lazyRouteComponent(() => import('@/screens/login'), 'LoginScreen'),
 })
 
+/** «Придумайте пароль» (пакет C4): ссылка приглашения из Hub кончается здесь; секрет — в `#`. */
+const joinRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'join',
+  component: lazyRouteComponent(() => import('@/screens/join'), 'JoinScreen'),
+})
+
 /** Оболочка: верхняя полоса, колонка и белое поле; экраны рисуются внутри поля. */
 const shellRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -338,6 +345,7 @@ const modelPagesRoute = createRoute({
 export const routeTree = rootRoute.addChildren([
   entryRoute,
   loginRoute,
+  joinRoute,
   shellRoute.addChildren([
     settingsIndexRoute,
     settingsTabRoute,

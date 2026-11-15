@@ -13,6 +13,7 @@ export type Access = 'public' | 'signed' | 'human' | 'staff' | 'owner'
 
 const ROUTE_ACCESS: Record<string, Access> = {
   'auth.signIn': 'public',
+  'auth.join': 'public',
   'auth.signInMethods': 'public',
   // «Выйти» always answers: whatever this browser's session is, it ends.
   'auth.signOut': 'public',

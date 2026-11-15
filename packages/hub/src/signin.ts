@@ -85,7 +85,62 @@ export interface HubSignin {
   check(grant: string, signal?: AbortSignal): Promise<HubCheck>
   /** What waits in Hub for the person of the grant; null — the sign-in is over. Reads only. */
   waiting(grant: string, signal?: AbortSignal): Promise<HubWaitingMatter[] | null>
+  /**
+   * ContentOps' own entrance (package C4): the login and the password typed on ContentOps' page, checked by Hub's own
+   * sign-in. Never retried: a lost answer may have counted a try. The password is not logged.
+   */
+  signIn(input: { username: string; password: string } & HubClientOrigin): Promise<HubSignedIn>
+  /** An invitation's or a new password's link (`/join#…`) set on ContentOps' page. */
+  setPasswordByLink(
+    input: { token: string; password: string } & HubClientOrigin,
+  ): Promise<HubSignedIn>
+  /** «Сменить пароль» from ContentOps' profile: every sign-in ends; a new grant comes back. */
+  changePassword(
+    input: { grant: string; currentPassword: string; newPassword: string } & HubClientOrigin,
+  ): Promise<HubSignedIn>
+  /** «Выйти»: Hub ends the session ContentOps' page opened (not one the person opened in Hub). */
+  signOut(grant: string): Promise<boolean>
 }
+
+/** The person's address and browser as ContentOps saw them: for Hub's journal of sign-ins. */
+export interface HubClientOrigin {
+  ip?: string | undefined
+  userAgent?: string | undefined
+}
+
+/**
+ * Why Hub said no, in one word: `wrong` — an unknown login or a wrong password; `locked` — too many tries; `owner` —
+ * the owner enters through Hub; `no_access` — no ContentOps for this person; the link's own words; `weak` — Hub does
+ * not take the password (`message` says why); `not_here` — a link of a login that opens elsewhere.
+ */
+export type HubRefusal =
+  | 'wrong'
+  | 'locked'
+  | 'owner'
+  | 'no_access'
+  | 'link_unknown'
+  | 'link_used'
+  | 'link_expired'
+  | 'link_revoked'
+  | 'not_here'
+  | 'weak'
+
+export type HubSignedIn =
+  | { kind: 'signed_in'; redeemed: HubRedeemed }
+  | { kind: 'refused'; reason: HubRefusal; message: string | null }
+
+const REFUSALS: ReadonlySet<string> = new Set<HubRefusal>([
+  'wrong',
+  'locked',
+  'owner',
+  'no_access',
+  'link_unknown',
+  'link_used',
+  'link_expired',
+  'link_revoked',
+  'not_here',
+  'weak',
+])
 
 export interface HubSigninOptions {
   /** Hub's console name: `https://hub.example`; the browser and this server both go there. */
@@ -154,6 +209,33 @@ function personOf(endpoint: string, value: Record<string, unknown>): HubSigninPe
     expiresAt,
     ...(person === undefined ? {} : { person }),
   }
+}
+
+function origin(ip: string | undefined, userAgent: string | undefined) {
+  return {
+    ...(ip ? { ip: ip.slice(0, 64) } : {}),
+    ...(userAgent ? { userAgent: userAgent.slice(0, 512) } : {}),
+  }
+}
+
+/** A door's answer: signed in (what `redeem` gives) or refused in one word. */
+async function signedIn(
+  ctx: HttpContext,
+  endpoint: string,
+  path: string,
+  json: Record<string, unknown>,
+): Promise<HubSignedIn> {
+  const answer = await callJson(ctx, endpoint, { method: 'POST', path, json })
+  if (!isRecord(answer)) throw badShape(endpoint, 'not an object')
+  if (answer.result === 'refused') {
+    const reason = str(answer.reason)
+    if (reason === null || !REFUSALS.has(reason)) throw badShape(endpoint, 'unknown refusal')
+    return { kind: 'refused', reason: reason as HubRefusal, message: str(answer.message) }
+  }
+  if (answer.result !== 'signed_in') throw badShape(endpoint, 'result is missing')
+  const grant = str(answer.grant)
+  if (grant === null || grant === '') throw badShape(endpoint, 'grant is missing')
+  return { kind: 'signed_in', redeemed: { ...personOf(endpoint, answer), grant } }
 }
 
 /** How long a silent try waits to learn whether Hub answers at all. */
@@ -230,6 +312,46 @@ export function createHubSignin(options: HubSigninOptions): HubSignin {
       }
       if (!answer.active) return { active: false }
       return { active: true, ...personOf(endpoint, answer) }
+    },
+
+    async signIn({ username, password, ip, userAgent }) {
+      return signedIn(ctx, 'signin.password', 'api/v1/auth/sso/password', {
+        client,
+        username,
+        password,
+        ...origin(ip, userAgent),
+      })
+    },
+
+    async setPasswordByLink({ token, password, ip, userAgent }) {
+      return signedIn(ctx, 'signin.link', 'api/v1/auth/sso/link', {
+        client,
+        token,
+        password,
+        ...origin(ip, userAgent),
+      })
+    },
+
+    async changePassword({ grant, currentPassword, newPassword, ip, userAgent }) {
+      return signedIn(ctx, 'signin.passwordChange', 'api/v1/auth/sso/password-change', {
+        client,
+        grant,
+        currentPassword,
+        newPassword,
+        ...origin(ip, userAgent),
+      })
+    },
+
+    async signOut(grant) {
+      const endpoint = 'signin.logout'
+      const answer = await callJson(ctx, endpoint, {
+        method: 'POST',
+        path: 'api/v1/auth/sso/logout',
+        json: { client, grant },
+      })
+      if (!isRecord(answer) || typeof answer.ended !== 'boolean')
+        throw badShape(endpoint, 'ended is missing')
+      return answer.ended
     },
 
     async waiting(grant, signal) {

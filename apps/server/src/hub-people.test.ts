@@ -3,6 +3,7 @@ import {
   HubError,
   type HubPerson,
   type HubRedeemed,
+  type HubSignedIn,
   type HubSignin,
   type HubSigninUser,
   type HubWaitingMatter,
@@ -68,6 +69,21 @@ class FakeHub implements HubSignin {
   async waiting(grant: string) {
     const user = this.live.get(grant)
     return user ? (this.waits.get(user.id) ?? []) : null
+  }
+  async signIn(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'wrong', message: null }
+  }
+
+  async setPasswordByLink(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'link_unknown', message: null }
+  }
+
+  async changePassword(): Promise<HubSignedIn> {
+    return { kind: 'refused', reason: 'wrong', message: null }
+  }
+
+  async signOut() {
+    return false
   }
 }
 

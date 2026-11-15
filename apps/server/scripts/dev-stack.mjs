@@ -198,7 +198,12 @@ if (process.env.DEV_FAKE_HUB === '1') {
     })
     fake.on('exit', () => reject(new Error('dev-hub stopped')))
   })
-  hubEnv = { HUB_BASE_URL: base, HUB_API_KEY: process.env.DEV_HUB_KEY ?? 'dev-hub-key' }
+  hubEnv = {
+    HUB_BASE_URL: base,
+    HUB_API_KEY: process.env.DEV_HUB_KEY ?? 'dev-hub-key',
+    // ContentOps' own entrance asks the fake Hub (package C4); its sign-in page is this stand's Vite address.
+    HUB_SIGNIN_ORIGIN: process.env.DEV_PUBLIC_URL ?? 'http://localhost:5173',
+  }
   // The owner's switch «Публикация» of Lora's pages, journaled like a click.
   psql(
     `SELECT set_config('app.actor_type', 'system', false), set_config('app.actor_id', '', false),

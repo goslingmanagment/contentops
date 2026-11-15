@@ -2,6 +2,7 @@ import type { Session } from '@contentops/contracts/domain/admin'
 import { logAction, SYSTEM_ACTOR, withActorTx } from '@contentops/db'
 import { hash, verify } from '@node-rs/argon2'
 import { sql } from 'drizzle-orm'
+import { HUB_SILENT_WORDS, REFUSAL_WORDS, refusalProblem, throughHub } from '../auth/hub-form'
 import { hubMarkCookie } from '../auth/hub-signin'
 import {
   clearedSessionCookie,
@@ -81,6 +82,31 @@ export function authHandlers(services: Services): HandlerRegistry {
   // `Secure` over HTTPS: the public address; the tailnet and the VPN of the pilot are plain HTTP.
   const cookieOptions = (ctx: RequestContext) => ({ secure: services.secureCookies || ctx.https })
   const byLogin = new Throttle(LOGIN_RULE)
+
+  /** The session the form opened over Hub's grant: its cookie, and the person as «Войти» answers. */
+  async function signedInThroughHub(ctx: RequestContext, token: string) {
+    const { rows } = await db.execute<{ principal_id: string }>(sql`
+      SELECT principal_id FROM sessions WHERE token_hash = ${sessionDigest(token)}`)
+    const principal = rows[0]?.principal_id
+    if (!principal) throw new Error('the session just opened is not there')
+    ctx.setHeader('Set-Cookie', sessionCookie(token, cookieOptions(ctx)))
+    return { person: await personById(db, principal) }
+  }
+
+  /** «Выйти» of a session over Hub's grant: Hub ends the session ContentOps' page opened. Best effort. */
+  async function endHubSide(sessionId: string, ctx: RequestContext) {
+    const hub = services.hubSignin
+    if (!hub) return
+    const { rows } = await db.execute<{ hub_grant: string | null }>(sql`
+      SELECT hub_grant FROM sessions WHERE id = ${sessionId}::uuid`)
+    const grant = rows[0]?.hub_grant
+    if (!grant) return
+    try {
+      await hub.setup.hub.signOut(grant)
+    } catch (error) {
+      ctx.log.warn({ err: error }, 'hub did not take «Выйти»: its session ends by itself')
+    }
+  }
   const byAddress = new Throttle(ADDRESS_RULE)
 
   return {
@@ -95,6 +121,34 @@ export function authHandlers(services: Services): HandlerRegistry {
         // A closed key does not check the password: the pause costs the server nothing.
         const wait = Math.max(byLogin.waitMs(keys.login), byAddress.waitMs(keys.address))
         if (wait > 0) throw closed(wait)
+        // ContentOps' own entrance (package C4): Hub first — one registry, one account; on Hub's «не подходят» the
+        // account of ContentOps itself, as before (people entered here by hand keep their passwords).
+        let hubSilent = false
+        const hub = services.hubSignin
+        if (hub) {
+          const outcome = await throughHub(
+            db,
+            hub,
+            () =>
+              hub.setup.hub.signIn({
+                username: body.login.trim(),
+                password: body.password,
+                ip: ctx.ip,
+                userAgent: ctx.userAgent ?? undefined,
+              }),
+            {
+              id: ctx.requestId,
+              ip: ctx.ip,
+              userAgent: ctx.userAgent,
+              previous: ctx.cookies[SESSION_COOKIE],
+            },
+            ctx.log,
+          )
+          if (outcome.kind === 'signed_in') return signedInThroughHub(ctx, outcome.token)
+          if (outcome.kind === 'refused' && outcome.reason !== 'wrong')
+            throw refusalProblem(outcome.reason)
+          hubSilent = outcome.kind === 'unreachable'
+        }
         const { rows } = await db.execute<SignInRow>(sql`
           SELECT id, display_name, password_hash, disabled_at FROM principals
            WHERE login = ${login} AND kind = 'human'`)
@@ -120,6 +174,8 @@ export function authHandlers(services: Services): HandlerRegistry {
               }),
           )
           if (pause > 0) throw closed(pause)
+          // Hub did not answer: its people cannot sign in now, and the form says so, not «не подходят».
+          if (hubSilent) throw new ApiProblem('unavailable', HUB_SILENT_WORDS)
           throw new ApiProblem('unauthenticated', 'Логин или пароль не подходят')
         }
         byLogin.clear(keys.login)
@@ -158,6 +214,36 @@ export function authHandlers(services: Services): HandlerRegistry {
       },
 
       /**
+       * «Придумайте пароль» (package C4): the invitation of a content manager ends here — Hub sets the password in its
+       * registry and the person is signed in; «Сегодня» with «Первый день» follows.
+       */
+      join: async ({ body, ctx }) => {
+        const hub = services.hubSignin
+        if (!hub) throw new ApiProblem('unavailable', 'Вход по ссылке здесь не настроен')
+        const outcome = await throughHub(
+          db,
+          hub,
+          () =>
+            hub.setup.hub.setPasswordByLink({
+              token: body.token,
+              password: body.password,
+              ip: ctx.ip,
+              userAgent: ctx.userAgent ?? undefined,
+            }),
+          {
+            id: ctx.requestId,
+            ip: ctx.ip,
+            userAgent: ctx.userAgent,
+            previous: ctx.cookies[SESSION_COOKIE],
+          },
+          ctx.log,
+        )
+        if (outcome.kind === 'signed_in') return signedInThroughHub(ctx, outcome.token)
+        if (outcome.kind === 'refused') throw refusalProblem(outcome.reason)
+        throw new ApiProblem('unavailable', HUB_SILENT_WORDS)
+      },
+
+      /**
        * «Выйти» (DESIGN §2.1): this browser's session ends. Public, so it always answers and
        * always leaves the «signed out here» mark: the next page load does not sign the person
        * back in through the hub (SPEC §11.1).
@@ -166,6 +252,8 @@ export function authHandlers(services: Services): HandlerRegistry {
         const actor = ctx.actor
         if (actor?.type === 'person' && actor.sessionId !== null) {
           const { sessionId } = actor
+          // A session the form opened ends in Hub too; one the person opened in Hub stays (Hub decides).
+          await endHubSide(sessionId, ctx)
           await withActorTx(
             db,
             {
@@ -301,8 +389,64 @@ export function authHandlers(services: Services): HandlerRegistry {
           return personById(tx, actor.id)
         }),
 
-      changePassword: ({ body, ctx }) =>
-        command({ ctx, body }, async (tx, actor) => {
+      changePassword: async ({ body, ctx }) => {
+        // A session over Hub's grant: the password is Hub's (package C4), changed there; Hub ends every sign-in of
+        // the person and signs this one in again — this session goes on with the new grant.
+        const actor = requireActor(ctx)
+        const hub = services.hubSignin
+        const { rows: held } = actor.sessionId
+          ? await db.execute<{ hub_grant: string | null }>(sql`
+              SELECT hub_grant FROM sessions WHERE id = ${actor.sessionId}::uuid`)
+          : { rows: [] }
+        const grant = held[0]?.hub_grant ?? null
+        if (grant !== null && hub && actor.sessionId) {
+          let answer: Awaited<ReturnType<typeof hub.setup.hub.changePassword>>
+          try {
+            answer = await hub.setup.hub.changePassword({
+              grant,
+              currentPassword: body.current,
+              newPassword: body.next,
+              ip: ctx.ip,
+              userAgent: ctx.userAgent ?? undefined,
+            })
+          } catch (error) {
+            ctx.log.warn({ err: error }, 'hub did not change the password')
+            throw new ApiProblem('unavailable', HUB_SILENT_WORDS)
+          }
+          if (answer.kind === 'refused') {
+            if (answer.reason === 'wrong') {
+              throw new ApiProblem('invalid_request', 'Нынешний пароль не подходит', {
+                field: 'current',
+              })
+            }
+            if (answer.reason === 'weak') {
+              throw new ApiProblem('invalid_request', REFUSAL_WORDS.weak, { field: 'next' })
+            }
+            throw refusalProblem(answer.reason)
+          }
+          await withActorTx(
+            db,
+            {
+              actor: { type: 'human', id: actor.id, label: actor.name },
+              action: ctx.route,
+              requestId: ctx.requestId,
+            },
+            async (tx) => {
+              await tx.execute(sql`
+                UPDATE sessions SET hub_grant = ${answer.redeemed.grant}, hub_checked_at = now()
+                 WHERE id = ${actor.sessionId}::uuid AND revoked_at IS NULL`)
+              await logAction(tx, {
+                modelId: null,
+                subjectKind: 'principals',
+                subjectId: actor.id,
+                subjectLabel: actor.name,
+                after: { Пароль: 'сменён в Hub' },
+              })
+            },
+          )
+          return { ok: true as const }
+        }
+        return command({ ctx, body }, async (tx, actor) => {
           const { rows } = await tx.execute<{ password_hash: string | null }>(sql`
             SELECT password_hash FROM principals WHERE id = ${actor.id}::uuid FOR UPDATE`)
           const current = rows[0]?.password_hash
@@ -328,7 +472,8 @@ export function authHandlers(services: Services): HandlerRegistry {
             after: { 'Другие сессии': `отозваны: ${revoked.rowCount ?? 0}` },
           })
           return { ok: true as const }
-        }),
+        })
+      },
     },
   }
 }

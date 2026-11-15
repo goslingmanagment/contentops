@@ -33,7 +33,8 @@ export function RootLayout() {
   // Сначала — одна молчаливая попытка через хаб (SPEC §11.1): вошли там — сразу здесь.
   const toLogin = useCallback(() => {
     const { pathname, href } = router.state.location
-    if (pathname === '/login') return
+    // «Придумайте пароль» (`/join#…`) — вход сам по себе: его не уводят на «Войти».
+    if (pathname === '/login' || pathname === '/join') return
     void leaveForSilentHubSignIn(href).then((leaving) => {
       if (!leaving) void router.navigate({ to: '/login', search: { from: href } })
     })

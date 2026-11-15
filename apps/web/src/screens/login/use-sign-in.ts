@@ -4,18 +4,39 @@ import { isNetworkFailure } from '@/actions/failure-message'
 import { useApi } from '@/data/api-session'
 import { queryKeys } from '@/data/query-keys'
 
-/** Что сказать под формой: без подробностей, какой из двух не подошёл (§4.21). */
+/**
+ * Что сказать под формой: без подробностей, какой из двух не подошёл (§4.21). Отказы Hub сервер говорит
+ * словами (пакет C4: нет доступа, слишком много попыток, Hub не отвечает) — их и показываем.
+ */
 export function signInFailure(error: unknown): string {
   if (isApiError(error) && error.status === 401) {
     return 'Логин или пароль не подходят'
   }
-  if (isApiError(error) && error.status === 429) {
-    return error.message
+  if (isApiError(error) && [400, 403, 429, 503].includes(error.status) && error.body.message) {
+    return error.body.message
   }
   if (isNetworkFailure(error) || (isApiError(error) && error.status === 503)) {
     return 'Не вошли: нет связи'
   }
   return 'Не вошли: сбой'
+}
+
+/** Hub ответил: это логин владельца. Владелец входит через Hub — одной кнопкой (его пароль сюда не идёт). */
+export function isOwnerRefusal(error: unknown): boolean {
+  return isApiError(error) && error.body.details?.reason === 'owner'
+}
+
+/** «Придумайте пароль» (`POST /api/v1/auth/join`): ссылка приглашения или нового пароля из Hub. */
+export function useJoin(onSignedIn: () => void) {
+  const api = useApi()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { token: string; password: string }) => api.auth.join({ body }),
+    onSuccess: async () => {
+      await queryClient.resetQueries()
+      onSignedIn()
+    },
+  })
 }
 
 /**

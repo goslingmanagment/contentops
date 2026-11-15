@@ -366,7 +366,7 @@ export function createHubSigninService(db: Db, setup: HubSigninSetup): HubSignin
  * comes — the configured owner, linked now. Then a session of ours with the hub's grant.
  * `null` — no principal for that person: no session.
  */
-async function openSession(
+export async function openHubSession(
   db: Db,
   setup: HubSigninSetup,
   person: HubRedeemed,
@@ -572,7 +572,7 @@ export function registerHubSignin(app: FastifyInstance, options: HubRoutesOption
           'redeem',
         )
       }
-      const token = await openSession(db, service.setup, person, {
+      const token = await openHubSession(db, service.setup, person, {
         id: request.id,
         userAgent:
           typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null,
