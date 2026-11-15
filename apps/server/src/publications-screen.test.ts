@@ -220,7 +220,90 @@ class FakeHub implements HubSignin, PersonDoor {
     this.who(grant)
     return []
   }
-  async publicationApprove(): Promise<never> {
+  readonly actions: string[] = []
+  async publicationApprove(grant: string, items: { id: number; version: number }[]) {
+    const user = this.who(grant)
+    this.actions.push(`${user.username} approve ${items.map((one) => one.id).join(',')}`)
+    return items.map((item) => {
+      const found = (this.publicationsOf.get(user.username) ?? []).find((one) => one.id === item.id)
+      if (!found)
+        return {
+          id: item.id,
+          outcome: 'refused' as const,
+          reason: 'not_found',
+          approved: false,
+          publication: null,
+        }
+      if (found.blocked) {
+        return {
+          id: item.id,
+          outcome: 'refused' as const,
+          reason: 'blocking_findings',
+          approved: false,
+          publication: found,
+        }
+      }
+      found.status = 'approved'
+      return {
+        id: item.id,
+        outcome: 'approved' as const,
+        reason: null,
+        approved: true,
+        publication: found,
+      }
+    })
+  }
+  async publicationCancel(grant: string, id: number) {
+    const user = this.who(grant)
+    this.actions.push(`${user.username} cancel ${id}`)
+    const found = (this.publicationsOf.get(user.username) ?? []).find((one) => one.id === id)
+    if (!found) throw new HubError('refused', 'HTTP 404', { endpoint: 'person', status: 404 })
+    if (found.status === 'scheduled') {
+      throw new HubError('refused', 'HTTP 409 publication_handed_to_platform', {
+        endpoint: 'person',
+        status: 409,
+      })
+    }
+    found.status = 'cancelled'
+    return found
+  }
+  async publicationWithdraw(grant: string, id: number) {
+    const user = this.who(grant)
+    this.actions.push(`${user.username} withdraw ${id}`)
+    return [
+      {
+        id,
+        outcome: 'refused',
+        reason: 'тестовая страница: на площадку не отправляется',
+        publication: null,
+      },
+    ]
+  }
+  publicationReplace(): never {
+    throw new Error('not this test')
+  }
+  publicationResolve(): never {
+    throw new Error('not this test')
+  }
+  publicationQueueRefresh(): never {
+    throw new Error('not this test')
+  }
+  publicationSettingsUpdate(): never {
+    throw new Error('not this test')
+  }
+  publicationDeletePost(): never {
+    throw new Error('not this test')
+  }
+  publicationWithdrawPage(): never {
+    throw new Error('not this test')
+  }
+  publicationSwitches(): never {
+    throw new Error('not this test')
+  }
+  publicationSwitchSet(): never {
+    throw new Error('not this test')
+  }
+  fanslyLoginPages(): never {
     throw new Error('not this test')
   }
 }
@@ -340,11 +423,58 @@ describe('«Публикации» as the signed-in person', () => {
     })
   })
 
+  it('acts as the person: approve, cancel, «Снять»; a refusal is said in words; another model is not there', async () => {
+    const draft = publication(311, 'lora-1')
+    const blocked = { ...publication(312, 'lora-1'), blocked: true }
+    const scheduled = publication(313, 'lora-1', 'scheduled')
+    hub.publicationsOf.set('kira', [draft, blocked, scheduled, publication(314, 'zoe-1')])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const act = (id: number, verb: string, body: object = {}) =>
+      call(server.app, {
+        method: 'POST',
+        url: `/api/v1/lora/publications/${id}:${verb}`,
+        as: kira,
+        body,
+      })
+    const approved = await act(311, 'approve', { version: 1 })
+    expect(approved.json()).toMatchObject({ outcome: 'done', publication_id: 311 })
+    expect((await act(312, 'approve', { version: 1 })).json()).toMatchObject({
+      outcome: 'refused',
+      words: 'Есть замечания, которые не дают утвердить',
+    })
+    expect((await act(311, 'cancel')).json()).toMatchObject({ outcome: 'done' })
+    const handed = await act(313, 'cancel')
+    expect(handed.statusCode).toBe(422)
+    expect((await act(313, 'withdraw')).json()).toMatchObject({
+      outcome: 'refused',
+      words: 'тестовая страница: на площадку не отправляется',
+    })
+    // A post of another model is not this model's: nothing is asked of Hub for it.
+    const before = hub.actions.length
+    expect((await act(314, 'approve', { version: 1 })).statusCode).toBe(404)
+    expect(hub.actions.length).toBe(before)
+    expect(hub.actions).toEqual([
+      'kira approve 311',
+      'kira approve 312',
+      'kira cancel 311',
+      'kira cancel 313',
+      'kira withdraw 313',
+    ])
+  })
+
   it('asks Hub nothing for an own account without a grant, and says why', async () => {
     const asked = hub.grantsAsked.length
     const owner = await signIn(server.app, OWNER.login, OWNER.password)
     const read = await feed(owner)
     expect(read).toMatchObject({ hub: 'no_grant', publications: [], pages: [] })
+    // An action without a grant is refused here, before Hub.
+    const action = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/publications/301:cancel',
+      as: owner,
+      body: {},
+    })
+    expect(action.statusCode).toBe(403)
     expect(hub.grantsAsked.length).toBe(asked)
   })
 

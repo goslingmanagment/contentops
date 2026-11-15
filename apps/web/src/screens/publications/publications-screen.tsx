@@ -8,6 +8,7 @@ import {
   type PublicationRow,
   type PublicationWindow,
 } from '@contentops/contracts'
+import { Button } from '@contentops/ui/components/button'
 import { ChoiceChips } from '@contentops/ui/components/choice-chips'
 import { FieldHeader } from '@contentops/ui/components/field-header'
 import { EmptyState } from '@contentops/ui/components/state-lines'
@@ -26,6 +27,8 @@ import { RefreshStrip } from '@/shell/field/refresh-strip'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { PublicationPanel } from './publication-panel'
 import type { PublicationsSearch } from './search'
+import { SettingsPanel } from './settings-panel'
+import { usePublicationActions } from './use-publication-actions'
 import {
   filesWord,
   formatMills,
@@ -66,6 +69,7 @@ export function PublicationsScreen() {
       },
       replace,
     })
+  const actions = usePublicationActions((id) => go({ post: id }))
   useKeyboardShortcut({ code: 'Escape', enabled: open !== null }, () =>
     go({ post: undefined }, true),
   )
@@ -81,15 +85,29 @@ export function PublicationsScreen() {
   )
   const stateWords = data ? hubStateWords(data.hub) : null
   const phone = useMediaQuery('(max-width: 639px)')
-  // На телефоне карточка закрывает ленту: две колонки там не помещаются.
+  // На телефоне карточка и настройки закрывают ленту: две колонки там не помещаются.
   if (phone && open !== null) {
     return (
       <FieldLayout>
         <PublicationPanel
+          actions={actions}
           id={open}
           width="narrow"
           className="w-full border-l-0"
           onClose={() => go({ post: undefined }, true)}
+        />
+      </FieldLayout>
+    )
+  }
+  if (phone && search.panel === 'settings' && data) {
+    return (
+      <FieldLayout>
+        <SettingsPanel
+          pages={data.pages}
+          actions={actions}
+          width="narrow"
+          className="w-full border-l-0"
+          onClose={() => go({ panel: undefined }, true)}
         />
       </FieldLayout>
     )
@@ -100,14 +118,35 @@ export function PublicationsScreen() {
       aside={
         open !== null ? (
           <PublicationPanel
+            actions={actions}
             id={open}
             width={narrow ? 'narrow' : 'wide'}
             onClose={() => go({ post: undefined }, true)}
           />
+        ) : search.panel === 'settings' && data ? (
+          <SettingsPanel
+            pages={data.pages}
+            actions={actions}
+            width={narrow ? 'narrow' : 'wide'}
+            onClose={() => go({ panel: undefined }, true)}
+          />
         ) : null
       }
     >
-      <FieldHeader title="Публикации" count={data?.publications.length} />
+      <FieldHeader
+        title="Публикации"
+        count={data?.publications.length}
+        actions={
+          data?.hub === 'ok' ? (
+            <Button
+              variant="secondary"
+              onClick={() => go({ panel: 'settings', post: undefined }, true)}
+            >
+              Настройки публикации
+            </Button>
+          ) : null
+        }
+      />
       <div className="flex flex-col gap-3 pb-2">
         <ChoiceChips
           label="Даты"
@@ -118,6 +157,7 @@ export function PublicationsScreen() {
         {data && data.pages.length > 0 ? (
           <PagesStrip
             pages={data.pages}
+            loginNeeded={data.login_needed}
             picked={search.page ?? null}
             onPick={(page) => go({ page })}
           />
@@ -133,7 +173,7 @@ export function PublicationsScreen() {
         />
         {data?.global_enabled === false ? (
           <p className="text-sm text-attention-ink">
-            Общий выключатель публикаций выключен: Hub ничего не публикует ни на одной странице.
+            Общий выключатель публикаций выключен: ничего не публикуется ни на одной странице.
           </p>
         ) : null}
       </div>
@@ -321,17 +361,21 @@ function ManualLine({ at, manual }: { at: Instant; manual: NonNullable<FeedEntry
 /** Страницы модели: публикуют ли и как Hub последний раз прочёл их расписание. Нажатие — только эта страница. */
 function PagesStrip({
   pages,
+  loginNeeded,
   picked,
   onPick,
 }: {
   pages: readonly PublicationPage[]
+  loginNeeded: readonly string[]
   picked: string | null
   onPick: (page: string | undefined) => void
 }) {
   return (
     <fieldset className="flex flex-wrap gap-2 border-0 p-0" aria-label="Страницы">
       {pages.map((page) => {
-        const state = pageState(page)
+        const state = loginNeeded.includes(page.hub_page)
+          ? { word: 'Нужен вход в Fansly', tone: 'bg-attention' }
+          : pageState(page)
         const isPicked = picked === page.hub_page
         return (
           <button
@@ -356,7 +400,7 @@ function PagesStrip({
 }
 
 function pageState(page: PublicationPage): { word: string; tone: string } {
-  if (page.stopped) return { word: 'Остановлена Hub', tone: 'bg-destructive' }
+  if (page.stopped) return { word: 'Остановлена', tone: 'bg-destructive' }
   if (!page.enabled) return { word: 'Не публикует', tone: 'bg-ink-3' }
   if (page.queue && (page.queue.last_failure || !page.queue.complete || page.queue.stale)) {
     return { word: 'Расписание не прочитано', tone: 'bg-attention' }

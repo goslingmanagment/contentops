@@ -90,6 +90,39 @@ class FakeHub implements HubSignin, PersonDoor {
   publicationApprove(): never {
     throw new Error('not this test')
   }
+  publicationCancel(): never {
+    throw new Error('not this test')
+  }
+  publicationWithdraw(): never {
+    throw new Error('not this test')
+  }
+  publicationReplace(): never {
+    throw new Error('not this test')
+  }
+  publicationResolve(): never {
+    throw new Error('not this test')
+  }
+  publicationQueueRefresh(): never {
+    throw new Error('not this test')
+  }
+  publicationSettingsUpdate(): never {
+    throw new Error('not this test')
+  }
+  publicationDeletePost(): never {
+    throw new Error('not this test')
+  }
+  publicationWithdrawPage(): never {
+    throw new Error('not this test')
+  }
+  publicationSwitches(): never {
+    throw new Error('not this test')
+  }
+  publicationSwitchSet(): never {
+    throw new Error('not this test')
+  }
+  fanslyLoginPages(): never {
+    throw new Error('not this test')
+  }
 
   mint(user: HubSigninUser): string {
     const code = randomBytes(32).toString('base64url')

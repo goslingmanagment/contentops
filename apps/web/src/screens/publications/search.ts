@@ -11,5 +11,6 @@ export const publicationsSearchSchema = z.object({
   page: z.string().max(100).optional().catch(undefined),
   post: z.coerce.number().int().positive().optional().catch(undefined),
   publication: z.coerce.number().int().positive().optional().catch(undefined),
+  panel: z.enum(['settings']).optional().catch(undefined),
 })
 export type PublicationsSearch = z.infer<typeof publicationsSearchSchema>

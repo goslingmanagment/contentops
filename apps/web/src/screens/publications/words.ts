@@ -25,7 +25,7 @@ export function statusWord(
 ): { word: string; sign?: StatusKind } {
   if (status === 'withdrawn' && reason === 'deleted_after_publish')
     return { word: 'Удалён со стены' }
-  return STATUS_WORDS[status] ?? { word: `в Hub: ${status}` }
+  return STATUS_WORDS[status] ?? { word: `статус: ${status}` }
 }
 
 export const KIND_WORDS: Readonly<Record<string, string>> = {
@@ -89,13 +89,13 @@ export function filesWord(count: number): string {
 export function hubStateWords(state: string): string | null {
   switch (state) {
     case 'no_grant':
-      return 'Публикации открываются с учётной записью из реестра людей Hub. Попросите владельца.'
+      return 'Публикации открываются с учётной записью из реестра людей. Попросите владельца.'
     case 'refused':
       return 'Вашей роли публикации не открыты. Попросите владельца.'
     case 'unreachable':
-      return 'Hub сейчас не отвечает. Публикации никуда не делись: обновите чуть позже.'
+      return 'Публикации сейчас не загружаются. Они никуда не делись: обновите чуть позже.'
     case 'no_hub':
-      return 'Hub не подключён к ContentOps.'
+      return 'Публикации ещё не подключены.'
     default:
       return null
   }
