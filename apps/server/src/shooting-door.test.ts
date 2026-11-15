@@ -71,6 +71,23 @@ class FakeHub implements HubSignin, PersonDoor {
   readonly steps: { login: string; body: PersonShootingStep }[] = []
   away = false
 
+  // The door's other rows («Публикации», package C2): not this test's.
+  publicationList(): never {
+    throw new Error('not this test')
+  }
+  publicationGet(): never {
+    throw new Error('not this test')
+  }
+  publicationSettings(): never {
+    throw new Error('not this test')
+  }
+  publicationQueues(): never {
+    throw new Error('not this test')
+  }
+  publicationApprove(): never {
+    throw new Error('not this test')
+  }
+
   mint(user: HubSigninUser): string {
     const code = randomBytes(32).toString('base64url')
     const grant = randomBytes(32).toString('base64url')

@@ -8,6 +8,7 @@ import {
   FolderIcon,
   HistoryIcon,
   InboxIcon,
+  NewspaperIcon,
   SunIcon,
 } from 'lucide-react'
 import { useHref } from '@/app/use-href'
@@ -28,8 +29,9 @@ function countOrNothing(value: number | undefined): number | undefined {
 }
 
 /**
- * Меню продукта (план продуктов §2.4): Сегодня · Ждут вас · План · Съёмка · Приехало · Библиотека ·
- * Журнал. «Публикации» и «Статистика» добавят их пакеты: пункта, который никуда не ведёт, нет.
+ * Меню продукта (план продуктов §2.4): Сегодня · Ждут вас · План · Публикации · Съёмка · Приехало · Библиотека ·
+ * Журнал. «Статистику» добавит её шаг пакета C2: пункта, который никуда не ведёт, нет. «Публикации» — у владельца
+ * и КМ (что видно и что можно, решает Hub по входу человека).
  * «Только чтение» не видит «Приехало» (DESIGN §2.3); «Только кастомы» — «Съёмка» и «Ждут вас».
  */
 export function SectionNav({ model, collapsed }: SectionNavProps) {
@@ -91,6 +93,15 @@ export function SectionNav({ model, collapsed }: SectionNavProps) {
         active={active === 'plan'}
         collapsed={collapsed}
       />
+      {role === 'owner' || role === 'manager' ? (
+        <NavItem
+          href={href({ to: '/$model/publications', params })}
+          icon={NewspaperIcon}
+          label="Публикации"
+          active={active === 'publications'}
+          collapsed={collapsed}
+        />
+      ) : null}
       {shootingItem}
       {role === 'reader' ? null : (
         <NavItem

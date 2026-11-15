@@ -20,6 +20,7 @@ import {
   planWeekSearchSchema,
 } from '@/screens/plan/search'
 import { promoSearchSchema } from '@/screens/promo/search'
+import { publicationsSearchSchema } from '@/screens/publications/search'
 import { shootingSearchSchema } from '@/screens/shooting/search'
 import { AppShell } from '@/shell/app-shell'
 import { ModelNotFound, ModelScope } from '@/shell/model/model-scope'
@@ -327,6 +328,14 @@ const shootingRoute = createRoute({
   component: lazyRouteComponent(() => import('@/screens/shooting'), 'ShootingScreen'),
 })
 
+/** «Публикации»: посты страниц модели в Hub, от имени вошедшего человека (план продуктов §2.4). */
+const publicationsRoute = createRoute({
+  getParentRoute: () => modelRoute,
+  path: 'publications',
+  validateSearch: publicationsSearchSchema,
+  component: lazyRouteComponent(() => import('@/screens/publications'), 'PublicationsScreen'),
+})
+
 /** «Ждут вас»: дела человека из Hub и свои строки ContentOps. */
 const waitingRoute = createRoute({
   getParentRoute: () => modelRoute,
@@ -362,6 +371,7 @@ export const routeTree = rootRoute.addChildren([
       modelIndexRoute,
       todayRoute,
       waitingRoute,
+      publicationsRoute,
       shootingRoute,
       libraryRootRoute,
       librarySectionRoute,

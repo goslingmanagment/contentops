@@ -33,6 +33,10 @@ export const queryKeys = {
     ['model', model, 'orders', tab] as const,
   order: (model: ModelCode, id: string) => ['model', model, 'order', id] as const,
   hubOrders: (model: ModelCode) => ['model', model, 'hub-orders'] as const,
+  publications: (model: ModelCode, search: Record<string, string | undefined>) =>
+    ['model', model, 'publications', search] as const,
+  publicationsAll: (model: ModelCode) => ['model', model, 'publications'] as const,
+  publication: (model: ModelCode, id: number) => ['model', model, 'publication', id] as const,
   shootingTasks: (model: ModelCode) => ['model', model, 'shooting-tasks'] as const,
   waiting: (model: ModelCode) => ['model', model, 'waiting'] as const,
   hubOrder: (model: ModelCode, code: string) => ['model', model, 'hub-order', code] as const,
