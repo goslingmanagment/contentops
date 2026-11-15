@@ -21,10 +21,13 @@ import type { Services } from '../services'
  * leaves it unapproved, a send spends it. An agent then sends the free rows by the stamp.
  */
 
-/** The owner, and a person: an agent never approves, whatever its role. */
+/**
+ * The owner or the content manager of the model (products plan §2.4; the model's scope is checked
+ * before), a person: an agent never approves, whatever its role.
+ */
 function assertOwnerPerson(actor: Actor) {
-  if (actor.type !== 'person' || actor.role !== 'owner') {
-    throw new ApiProblem('forbidden', 'Утверждает неделю только владелец')
+  if (actor.type !== 'person' || (actor.role !== 'owner' && actor.role !== 'manager')) {
+    throw new ApiProblem('forbidden', 'Утверждает неделю владелец или контент-менеджер модели')
   }
 }
 

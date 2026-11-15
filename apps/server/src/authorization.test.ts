@@ -40,6 +40,7 @@ const SELF = new Set([
   'settings.updateProfile',
   'settings.changePassword',
   'settings.revokeMySession',
+  'settings.closeFirstDay',
 ])
 
 const handlers = createHandlers({} as Services) as Record<string, Record<string, unknown>>

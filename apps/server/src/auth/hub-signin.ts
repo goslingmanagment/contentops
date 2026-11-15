@@ -1,9 +1,16 @@
 import { timingSafeEqual } from 'node:crypto'
 import { type Db, logAction, SYSTEM_ACTOR, setJournalContext, withActorTx } from '@contentops/db'
-import { type HubRedeemed, type HubSignin, isHubError, isSpentCode } from '@contentops/hub'
+import {
+  type HubRedeemed,
+  type HubSignin,
+  type HubWaitingMatter,
+  isHubError,
+  isSpentCode,
+} from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { parseCookies } from '../context'
+import { applyHubPerson } from './hub-people'
 import {
   deviceOf,
   HUB_SESSION_PREFIX,
@@ -54,6 +61,8 @@ export interface HubSigninSetup {
   origin: string
   /** The ContentOps owner whom the hub's owner signs in as (`HUB_SIGNIN_OWNER`). */
   ownerLogin: string | null
+  /** Hub's model slug → ContentOps' model code where they differ (`HUB_MODEL_MAP`: `test=smoke`). */
+  modelMap?: Record<string, string>
   /** Clock of the re-check; tests move it. */
   now?: () => number
 }
@@ -84,6 +93,11 @@ export interface HubSigninService extends HubSessions {
   offeredAt(host: string): boolean
   /** True the first time a state or a code is presented, never again for its lifetime. */
   takeOnce(value: string): boolean
+  /**
+   * What waits in Hub for the person of a session opened through Hub («Ждут вас», products plan §4.4),
+   * kept a minute: `null` — the sign-in is over there; `unreachable` — Hub did not answer.
+   */
+  waiting(grant: string): Promise<HubWaitingMatter[] | null | 'unreachable'>
 }
 
 /** Why the sign-in screen is shown again (`/login?hub=…`). */
@@ -272,6 +286,31 @@ export function createHubSigninService(db: Db, setup: HubSigninSetup): HubSignin
       return ok
     }
     if (answer.active && row.hubUserId !== null && String(answer.user.id) === row.hubUserId) {
+      // Hub's registry at every re-check: the person's role and models follow it, a person Hub
+      // closed is closed here (hub-people.ts) — the session with it.
+      if (answer.person !== undefined) {
+        const person = answer.person
+        const kept = await withActorTx(
+          db,
+          { actor: SYSTEM, action: 'auth.hubPersonChecked', requestId: request.id },
+          (tx) =>
+            applyHubPerson(
+              tx,
+              { id: row.principalId },
+              {
+                hubUserId: answer.user.id,
+                hubLogin: answer.user.username,
+                person,
+                modelMap: setup.modelMap ?? {},
+              },
+            ),
+        )
+        if (kept === null) {
+          remember(row.sessionId, { at, ok: false, activeAt })
+          await end(row, request.id, 'Hub закрыл доступ к ContentOps')
+          return false
+        }
+      }
       remember(row.sessionId, { at, ok: true, activeAt: at })
       await db.execute(sql`UPDATE sessions SET hub_checked_at = now()
         WHERE id = ${row.sessionId}::uuid AND revoked_at IS NULL`)
@@ -287,9 +326,27 @@ export function createHubSigninService(db: Db, setup: HubSigninSetup): HubSignin
   }
 
   const spent = new Spent(now)
+  const waitingSeen = new Map<string, { at: number; matters: HubWaitingMatter[] | null }>()
 
   return {
     setup,
+    async waiting(grant) {
+      const key = sha256(grant).toString('hex')
+      const known = waitingSeen.get(key)
+      if (known && now() - known.at < HUB_CHECK_EVERY_MS) return known.matters
+      try {
+        const matters = await setup.hub.waiting(grant)
+        waitingSeen.delete(key)
+        waitingSeen.set(key, { at: now(), matters })
+        for (const oldest of waitingSeen.keys()) {
+          if (waitingSeen.size <= MAX_REMEMBERED) break
+          waitingSeen.delete(oldest)
+        }
+        return matters
+      } catch {
+        return known?.matters ?? 'unreachable'
+      }
+    },
     takeOnce: (value) => spent.take(value),
     offeredAt: (requestHost) => requestHost.toLowerCase() === host,
     stillSignedIn(row, request) {
@@ -342,6 +399,24 @@ async function openSession(
             before: { Хаб: 'нет связи' },
             after: { Хаб: user.username },
           })
+        }
+      }
+      // Hub's registry (products plan §4.1): a content manager or a person who leads customs is made,
+      // brought up or closed by Hub's answer; the owner made here keeps its role and models.
+      if (person.person !== undefined) {
+        const applied = await applyHubPerson(tx, row ?? null, {
+          hubUserId: user.id,
+          hubLogin: user.username,
+          person: person.person,
+          modelMap: setup.modelMap ?? {},
+        })
+        if (applied === null) {
+          row = row ? { ...row, disabled_at: row.disabled_at ?? 'closed by Hub' } : undefined
+        } else {
+          const { rows: again } = await tx.execute<SignInRow>(sql`
+            SELECT id, login, display_name, disabled_at, hub_login FROM principals
+             WHERE id = ${applied.id}::uuid`)
+          row = again[0]
         }
       }
       if (!row || row.disabled_at !== null) {

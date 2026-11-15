@@ -2389,17 +2389,22 @@ CREATE TABLE public.principals (
     hub_user_id bigint,
     hub_login text,
     hub_agent_code text,
+    hub_person_code text,
+    hub_products text[],
+    first_day_closed_at timestamp with time zone,
     CONSTRAINT principals_gender_check CHECK ((gender = ANY (ARRAY['f'::text, 'm'::text]))),
     CONSTRAINT principals_gender_of_humans CHECK (((gender IS NOT NULL) OR (kind = 'agent'::text))),
     CONSTRAINT principals_hub_agent_code_agents_only CHECK (((hub_agent_code IS NULL) OR (kind = 'agent'::text))),
     CONSTRAINT principals_hub_agent_code_format CHECK ((hub_agent_code ~ '^[a-z0-9][a-z0-9-]{0,62}$'::text)),
     CONSTRAINT principals_hub_link_humans_only CHECK (((hub_user_id IS NULL) OR (kind = 'human'::text))),
     CONSTRAINT principals_hub_login_with_link CHECK (((hub_login IS NULL) OR (hub_user_id IS NOT NULL))),
+    CONSTRAINT principals_hub_person_code_format CHECK ((hub_person_code ~ '^[a-z0-9][a-z0-9-]{0,62}$'::text)),
+    CONSTRAINT principals_hub_person_with_link CHECK (((hub_person_code IS NULL) OR (hub_user_id IS NOT NULL))),
     CONSTRAINT principals_hub_user_id_positive CHECK ((hub_user_id > 0)),
     CONSTRAINT principals_kind_check CHECK ((kind = ANY (ARRAY['human'::text, 'agent'::text]))),
     CONSTRAINT principals_login_format CHECK ((login ~ '^[a-z0-9][a-z0-9._-]*$'::text)),
     CONSTRAINT principals_password_humans_only CHECK (((password_hash IS NULL) OR (kind = 'human'::text))),
-    CONSTRAINT principals_role_check CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'reader'::text]))),
+    CONSTRAINT principals_role_check CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'reader'::text, 'customs'::text]))),
     CONSTRAINT principals_ui_skin_check CHECK ((ui_skin = ANY (ARRAY['blue'::text, 'focus'::text])))
 );
 
@@ -2978,6 +2983,9 @@ ALTER TABLE ONLY public.principal_grants
 
 ALTER TABLE ONLY public.principals
     ADD CONSTRAINT principals_hub_agent_code_key UNIQUE (hub_agent_code);
+
+ALTER TABLE ONLY public.principals
+    ADD CONSTRAINT principals_hub_person_code_key UNIQUE (hub_person_code);
 
 ALTER TABLE ONLY public.principals
     ADD CONSTRAINT principals_hub_user_id_key UNIQUE (hub_user_id);

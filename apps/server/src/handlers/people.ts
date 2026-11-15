@@ -111,6 +111,10 @@ export function peopleHandlers({ db, command }: Services): HandlerRegistry {
             () => ({ role: before.role, models: before.models }),
           )
           const role = body.role ?? before.role
+          // A person from Hub: the role and the models are Hub's, at every re-check (products plan §4.1).
+          if (before.hub_code && (role !== before.role || body.models !== undefined)) {
+            throw new ApiProblem('forbidden', 'Роль и модели этого человека задаёт Hub')
+          }
           if (row.id === actor.id && role !== before.role) {
             throw new ApiProblem('forbidden', 'Свою роль не меняют')
           }

@@ -566,7 +566,8 @@
         "type": "string",
         "enum": [
           "manager",
-          "reader"
+          "reader",
+          "customs"
         ]
       },
       "AgentSendReason": {
@@ -4278,6 +4279,43 @@
           "sent",
           "failed"
         ]
+      },
+      "HubMatter": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "opened_at": {
+            "$ref": "#/components/schemas/Instant"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "href",
+          "pages",
+          "opened_at"
+        ],
+        "additionalProperties": false
       },
       "HubOrder": {
         "type": "object",
@@ -9029,6 +9067,12 @@
           },
           "version": {
             "$ref": "#/components/schemas/RecordVersion"
+          },
+          "hub_code": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -10190,6 +10234,41 @@
           "checking"
         ]
       },
+      "ProductLink": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "hub",
+              "workboard",
+              "contentops",
+              "tasks",
+              "monitor"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "href": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "quiet": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "href",
+          "current",
+          "quiet"
+        ],
+        "additionalProperties": false
+      },
       "Progress": {
         "type": "number",
         "minimum": 0,
@@ -11151,7 +11230,8 @@
         "enum": [
           "owner",
           "manager",
-          "reader"
+          "reader",
+          "customs"
         ]
       },
       "RoleInput": {
@@ -11159,7 +11239,8 @@
         "enum": [
           "owner",
           "manager",
-          "reader"
+          "reader",
+          "customs"
         ]
       },
       "RowApproval": {
@@ -11609,6 +11690,15 @@
           },
           "ui_skin": {
             "$ref": "#/components/schemas/UiSkin"
+          },
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductLink"
+            }
+          },
+          "first_day": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -13192,6 +13282,30 @@
           "separate",
           "reject"
         ]
+      },
+      "Waiting": {
+        "type": "object",
+        "properties": {
+          "hub": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "unreachable",
+              "no_hub"
+            ]
+          },
+          "matters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HubMatter"
+            }
+          }
+        },
+        "required": [
+          "hub",
+          "matters"
+        ],
+        "additionalProperties": false
       },
       "WeekColumn": {
         "type": "object",
@@ -21302,6 +21416,47 @@
         }
       }
     },
+    "/api/v1/{model}/waiting": {
+      "get": {
+        "operationId": "waiting.list",
+        "tags": [
+          "waiting"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "model",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Waiting"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/{model}/promo/channels": {
       "get": {
         "operationId": "promo.channels",
@@ -22654,6 +22809,36 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/me/first-day:close": {
+      "post": {
+        "operationId": "settings.closeFirstDay",
+        "tags": [
+          "settings"
+        ],
         "responses": {
           "200": {
             "description": "Default Response",

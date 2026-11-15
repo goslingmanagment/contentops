@@ -15,6 +15,7 @@ import type { Logger } from 'pino'
 import { configuredProviders, envProviders } from './annotation/providers'
 import { annotateHandler } from './annotation/work'
 import { createHubAgentKeyService, type HubAgentKeyService } from './auth/hub-agent-keys'
+import { parseModelMap } from './auth/hub-people'
 import type { HubSigninSetup } from './auth/hub-signin'
 import { type Config, ConfigError, loadConfig } from './config'
 import { isMountpoint, missingVolumes } from './health'
@@ -98,6 +99,7 @@ function hubSigninOf(config: Config, logger: Logger): HubSigninSetup | undefined
     hub: createHubSignin({ baseUrl: config.HUB_BASE_URL, key, client: config.HUB_SIGNIN_CLIENT }),
     origin: config.HUB_SIGNIN_ORIGIN,
     ownerLogin: config.HUB_SIGNIN_OWNER ?? null,
+    modelMap: parseModelMap(config.HUB_MODEL_MAP),
   }
 }
 

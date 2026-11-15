@@ -116,6 +116,12 @@ export const settingsRoutes = {
     body: ChangePasswordCommandSchema,
     response: OkSchema,
   }),
+  /** «Первый день» on «Сегодня» closed by the person: never shown again. */
+  closeFirstDay: defineRoute({
+    method: 'POST',
+    path: '/api/v1/admin/me/first-day:close',
+    response: OkSchema,
+  }),
   addModel: defineRoute({
     method: 'POST',
     path: '/api/v1/admin/models',

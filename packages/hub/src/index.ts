@@ -119,11 +119,13 @@ export { backoffDelay, DEFAULT_RETRY, type RetryPolicy, withRetry } from './retr
 export {
   createHubSignin,
   type HubCheck,
+  type HubPerson,
   type HubRedeemed,
   type HubRole,
   type HubSignin,
   type HubSigninOptions,
   type HubSigninPerson,
   type HubSigninUser,
+  type HubWaitingMatter,
   isSpentCode,
 } from './signin.ts'

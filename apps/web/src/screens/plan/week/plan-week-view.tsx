@@ -86,9 +86,9 @@ export function PlanWeekView({ week }: { week: IsoWeek }) {
       selection.selectRows(ids)
     },
     openEmpty,
-    // Утверждает неделю владелец (11.11.2026); остальные видят состояние без кнопок.
+    // Утверждает неделю владелец или КМ модели (план продуктов §2.4); остальные видят состояние.
     approval: {
-      owner: access.role === 'owner',
+      owner: access.role === 'owner' || access.role === 'manager',
       pending: approval.pending,
       approve: approval.approve,
       revoke: approval.revoke,

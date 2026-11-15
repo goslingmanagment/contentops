@@ -9,7 +9,37 @@ import { badShape, callJson, type HttpContext, int, isRecord, str } from './http
  * comes here.
  */
 
-export type HubRole = 'owner' | 'team_lead' | 'chatter' | (string & {})
+export type HubRole = 'owner' | 'team_lead' | 'chatter' | 'content_manager' | (string & {})
+
+/**
+ * The person behind a sign-in as Hub's registry has them (products plan §4.1): enough for ContentOps
+ * to make, change and close its own person. Models are Hub's lower-case model slugs.
+ */
+export interface HubPerson {
+  code: string
+  displayName: string
+  /** `owner | team_lead | chatter | content_manager | contractor` in Hub's registry. */
+  role: string
+  /** `invited | set_up | working | left`. */
+  state: string
+  /** The models of the person's working pages. */
+  models: string[]
+  /** The models where the person leads customs («ведёт кастомы»). */
+  customsModels: string[]
+  /** What Hub's `auth/me` gives the person: the frame's switcher. */
+  products: string[]
+}
+
+/** One open matter of the person in Hub, for «Ждут вас»: it opens where it is decided. */
+export interface HubWaitingMatter {
+  id: number
+  kind: string
+  title: string
+  /** A path of Hub or Workboard, or an address; null — Hub's list. */
+  link: string | null
+  pageLabels: string[]
+  openedAt: Date
+}
 
 export interface HubSigninUser {
   id: number
@@ -23,6 +53,11 @@ export interface HubSigninPerson {
   owner: boolean
   /** Hub's session behind the sign-in ends then at the latest. */
   expiresAt: Date
+  /**
+   * Who this is in Hub's registry; null — the login is nobody's there; undefined — this Hub does not
+   * say (before products plan §4.1): ContentOps then links the owner alone, as before.
+   */
+  person?: HubPerson | null
 }
 
 export interface HubRedeemed extends HubSigninPerson {
@@ -48,6 +83,8 @@ export interface HubSignin {
   redeem(code: string, signal?: AbortSignal): Promise<HubRedeemed>
   /** Whether the person of the grant is still signed in at Hub. Reads only. */
   check(grant: string, signal?: AbortSignal): Promise<HubCheck>
+  /** What waits in Hub for the person of the grant; null — the sign-in is over. Reads only. */
+  waiting(grant: string, signal?: AbortSignal): Promise<HubWaitingMatter[] | null>
 }
 
 export interface HubSigninOptions {
@@ -74,6 +111,35 @@ function userOf(endpoint: string, value: unknown): HubSigninUser {
   return { id, username, role }
 }
 
+function strings(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((one) => typeof one === 'string') ? value : null
+}
+
+function hubPersonOf(endpoint: string, value: unknown): HubPerson | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (!isRecord(value)) throw badShape(endpoint, 'person is not an object')
+  const code = str(value.code)
+  const displayName = str(value.displayName)
+  const role = str(value.role)
+  const state = str(value.state)
+  const models = strings(value.models)
+  const customsModels = strings(value.customsModels)
+  const products = strings(value.products)
+  if (
+    code === null ||
+    displayName === null ||
+    role === null ||
+    state === null ||
+    models === null ||
+    customsModels === null ||
+    products === null
+  ) {
+    throw badShape(endpoint, 'person lacks a field')
+  }
+  return { code, displayName, role, state, models, customsModels, products }
+}
+
 function personOf(endpoint: string, value: Record<string, unknown>): HubSigninPerson {
   const expires = str(value.expiresAt)
   const expiresAt = expires === null ? null : new Date(expires)
@@ -81,7 +147,13 @@ function personOf(endpoint: string, value: Record<string, unknown>): HubSigninPe
     throw badShape(endpoint, 'expiresAt is missing')
   }
   if (typeof value.owner !== 'boolean') throw badShape(endpoint, 'owner is missing')
-  return { user: userOf(endpoint, value.user), owner: value.owner, expiresAt }
+  const person = hubPersonOf(endpoint, value.person)
+  return {
+    user: userOf(endpoint, value.user),
+    owner: value.owner,
+    expiresAt,
+    ...(person === undefined ? {} : { person }),
+  }
 }
 
 /** How long a silent try waits to learn whether Hub answers at all. */
@@ -158,6 +230,40 @@ export function createHubSignin(options: HubSigninOptions): HubSignin {
       }
       if (!answer.active) return { active: false }
       return { active: true, ...personOf(endpoint, answer) }
+    },
+
+    async waiting(grant, signal) {
+      const endpoint = 'signin.waiting'
+      const answer = await callJson(ctx, endpoint, {
+        method: 'POST',
+        path: 'api/v1/auth/sso/waiting',
+        json: { client, grant },
+        ...(signal ? { signal } : {}),
+      })
+      if (!isRecord(answer) || typeof answer.active !== 'boolean') {
+        throw badShape(endpoint, 'active is missing')
+      }
+      if (!answer.active) return null
+      if (!Array.isArray(answer.matters)) throw badShape(endpoint, 'matters is missing')
+      return answer.matters.map((raw) => {
+        if (!isRecord(raw)) throw badShape(endpoint, 'a matter is not an object')
+        const id = int(raw.id)
+        const kind = str(raw.kind)
+        const title = str(raw.title)
+        const opened = str(raw.openedAt)
+        const pageLabels = strings(raw.pageLabels)
+        const link = raw.link === null ? null : str(raw.link)
+        if (
+          id === null ||
+          kind === null ||
+          title === null ||
+          opened === null ||
+          pageLabels === null
+        ) {
+          throw badShape(endpoint, 'a matter lacks a field')
+        }
+        return { id, kind, title, link, pageLabels, openedAt: new Date(opened) }
+      })
     },
   }
 }
