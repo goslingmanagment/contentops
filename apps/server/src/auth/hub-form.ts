@@ -25,7 +25,7 @@ export const REFUSAL_WORDS: Record<HubRefusal, string> = {
 }
 
 export const HUB_SILENT_WORDS =
-  'Hub не отвечает: вход по учётной записи Hub сейчас недоступен. Попробуйте через несколько минут'
+  'Вход сейчас недоступен: сервер учётных записей не отвечает. Попробуйте через несколько минут'
 
 /** A refusal as the API's problem: the status the form reads, the reason for the owner's button. */
 export function refusalProblem(reason: HubRefusal): ApiProblem {

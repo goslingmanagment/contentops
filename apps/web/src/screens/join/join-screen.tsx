@@ -94,7 +94,7 @@ export function JoinScreen() {
           Сохранить и войти
         </Button>
         <p className="mt-3 text-muted-foreground text-sm">
-          Пароль не короче 12 знаков. Логин — тот, что в сообщении с этой ссылкой.
+          Пароль не короче 12 знаков. Логин тот же, что в сообщении с этой ссылкой.
         </p>
       </form>
     </LoginCard>
