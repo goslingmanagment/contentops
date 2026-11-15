@@ -12,6 +12,7 @@ const LISTS: Record<string, readonly string[]> = {
   principals_kind_check: v.principalKinds,
   principals_gender_check: v.genders,
   principals_role_check: v.principalRoles,
+  sessions_opened_via_check: v.sessionOpenedVia,
   principals_ui_skin_check: v.uiSkins,
   accounts_platform_check: v.platforms,
   accounts_default_uniq_level_check: v.uniqLevels,

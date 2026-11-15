@@ -33,6 +33,9 @@ export type PrincipalKind = (typeof principalKinds)[number]
 
 export const principalRoles = ['owner', 'manager', 'reader', 'customs'] as const
 export type PrincipalRole = (typeof principalRoles)[number]
+/** How a session over Hub's grant was opened (0025): Hub's one step, ContentOps' form, an invitation's link. */
+export const sessionOpenedVia = ['hub', 'form', 'link'] as const
+export type SessionOpenedVia = (typeof sessionOpenedVia)[number]
 
 /** A call with an agent's hub key: acted as the linked agent, or no link for the code (SPEC §11.1). */
 export const hubAgentCallOutcomes = ['ok', 'not_linked'] as const
