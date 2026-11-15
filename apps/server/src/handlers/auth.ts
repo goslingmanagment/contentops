@@ -153,8 +153,28 @@ export function authHandlers(services: Services): HandlerRegistry {
             ctx.log,
           )
           if (outcome.kind === 'signed_in') return signedInThroughHub(ctx, outcome.token)
-          if (outcome.kind === 'refused' && outcome.reason !== 'wrong')
-            throw refusalProblem(outcome.reason)
+          if (outcome.kind === 'refused' && outcome.reason !== 'wrong') {
+            // Every refusal counts toward the pause and is journaled, as a wrong password is (package C4).
+            const pause = Math.max(byLogin.fail(keys.login), byAddress.fail(keys.address))
+            const reason = outcome.reason
+            await withActorTx(
+              db,
+              { actor: SYSTEM_ACTOR('вход'), action: ctx.route, requestId: ctx.requestId },
+              (tx) =>
+                logAction(tx, {
+                  modelId: null,
+                  subjectKind: 'principals',
+                  subjectId: null,
+                  subjectLabel: login,
+                  after: {
+                    Hub: REFUSAL_WORDS[reason],
+                    ...(pause > 0 ? { 'Вход закрыт': `на ${minutes(pause)} мин` } : {}),
+                  },
+                  result: 'denied',
+                }),
+            )
+            throw refusalProblem(reason)
+          }
           hubSilent = outcome.kind === 'unreachable'
         }
         const { rows } = await db.execute<SignInRow>(sql`

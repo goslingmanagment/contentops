@@ -28,7 +28,7 @@ const person = (code: string): HubPerson => ({
 })
 
 class FakeHub implements HubSignin {
-  answer: HubSignedIn | 'down' = 'down'
+  answer: HubSignedIn | 'down' | 'limited' = 'down'
   signedOut: string[] = []
   changed: string[] = []
   private readonly live = new Set<string>()
@@ -94,6 +94,11 @@ class FakeHub implements HubSignin {
     return []
   }
   private next(): Promise<HubSignedIn> {
+    if (this.answer === 'limited') {
+      return Promise.reject(
+        new HubError('rate_limited', 'HTTP 429', { endpoint: 'signin.password', status: 429 }),
+      )
+    }
     if (this.answer === 'down') {
       return Promise.reject(
         new HubError('transient', 'network: down', { endpoint: 'signin.password' }),
@@ -255,6 +260,17 @@ describe('the form on ContentOps’ page', () => {
       (await call(server.app, { method: 'GET', url: '/api/v1/admin/me', as: own })).json()
         .password_in_hub,
     ).toBeUndefined()
+  })
+  it('counts and journals every refusal of Hub; Hub’s limit of tries is «слишком много попыток»', async () => {
+    hub.answer = { kind: 'refused', reason: 'no_access', message: null }
+    expect((await signIn('ivan-c', 'right-password', '203.0.113.50')).statusCode).toBe(403)
+    const { rows } = await server.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM action_log WHERE subject_label = 'ivan-c' AND result = 'denied'`,
+    )
+    expect(rows[0]?.n).toBe(1)
+    hub.answer = 'limited'
+    const limited = await signIn('ivan-d', 'x', '203.0.113.51')
+    expect(limited.statusCode).toBe(429)
   })
 })
 

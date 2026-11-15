@@ -1,5 +1,5 @@
 import type { Db } from '@contentops/db'
-import type { HubRefusal, HubSignedIn } from '@contentops/hub'
+import { type HubRefusal, type HubSignedIn, isHubError } from '@contentops/hub'
 import { ApiProblem } from '../errors'
 import { type HubSigninService, openHubSession } from './hub-signin'
 
@@ -72,6 +72,8 @@ export async function throughHub(
   try {
     answer = await ask()
   } catch (error) {
+    // Hub's limit of tries from this address: said as «слишком много попыток», not as a silent Hub.
+    if (isHubError(error, 'rate_limited')) return { kind: 'refused', reason: 'locked' }
     log.warn({ err: error }, 'hub did not answer the sign-in form')
     return { kind: 'unreachable' }
   }

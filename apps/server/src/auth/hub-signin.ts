@@ -468,6 +468,15 @@ export async function openHubSession(
   )
 }
 
+/** A session of this browser that `authenticate` would take as it stands (Hub's re-check aside). */
+async function liveSession(db: Db, token: string): Promise<boolean> {
+  const { rows } = await db.execute(sql`
+    SELECT 1 FROM sessions s JOIN principals p ON p.id = s.principal_id
+     WHERE s.token_hash = ${sessionDigest(token)} AND s.revoked_at IS NULL AND s.expires_at > now()
+       AND p.disabled_at IS NULL AND (s.hub_grant IS NOT NULL OR p.hub_person_code IS NULL)`)
+  return rows.length > 0
+}
+
 /** The answers of the two steps are never stored, framed or sent on as a Referer. */
 function handoffHeaders(reply: FastifyReply) {
   reply.header('cache-control', 'no-store')
@@ -504,6 +513,9 @@ export function registerHubSignin(app: FastifyInstance, options: HubRoutesOption
     handoffHeaders(reply)
     const query = request.query as Record<string, unknown>
     const next = ownPath(query.next)
+    // Already signed in here (by the form, through Hub, by the password): straight on, never Hub's sign-in page.
+    const present = parseCookies(request.headers.cookie)[SESSION_COOKIE]
+    if (present && (await liveSession(db, present))) return reply.redirect(next, 302)
     if (!service?.offeredAt(request.host)) return reply.redirect(loginAddress(next), 302)
     const secure = secureOf(request)
     const cookies = parseCookies(request.headers.cookie)

@@ -185,11 +185,11 @@ export function TodayScreen() {
 
           <TodayBlock
             title="В съёмке"
-            href={href({ to: '/$model/library/customs', params, search: { view: 'orders' } })}
-            linkLabel="Заказы"
+            href={href({ to: '/$model/shooting', params })}
+            linkLabel="Съёмка"
           >
             {orders.isPending ? (
-              <Quiet>Загружаем заказы Hub…</Quiet>
+              <Quiet>Загружаем съёмку…</Quiet>
             ) : shooting.length === 0 ? (
               <Quiet>
                 {orders.data?.configured === false ? 'Hub не подключён' : 'Кастомов в съёмке нет'}
