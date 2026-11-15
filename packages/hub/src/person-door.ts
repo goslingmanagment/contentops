@@ -15,6 +15,7 @@ import {
   parseHubOrderAnswer,
   parseHubOrderList,
 } from './custom-orders.ts'
+import { isHubError } from './errors.ts'
 import { badShape, callJson, type HttpContext, isRecord } from './http.ts'
 import {
   type ApproveResult,
@@ -58,6 +59,8 @@ export interface HubPublicationEvent {
   fromStatus: string | null
   toStatus: string
   actorKind: 'human' | 'agent' | 'hub'
+  /** Who moved it, by name (a person's registry name, an agent key's name); null when Hub did or did not say. */
+  actorName: string | null
   reason: string | null
 }
 
@@ -65,6 +68,15 @@ export interface HubPublicationDetail {
   publication: HubPublication
   events: HubPublicationEvent[]
   approvedAt: string | null
+  /** Who drafted it and who approved it, by name; null when Hub does not say (an older Hub, a login with no person). */
+  authorName: string | null
+  approvedByName: string | null
+}
+
+/** Where a post of a page goes: its Fansly walls and subscription tiers by name, no prices. */
+export interface HubPublicationTargets {
+  walls: { wallRef: string; name: string | null; defaultWall: boolean }[]
+  tiers: { tierRef: string; name: string | null }[]
 }
 
 /** A page's publishing settings, as Hub says them (no prices of anything but the paid range). */
@@ -155,6 +167,12 @@ export interface PersonDoor {
   ): Promise<HubPublication[]>
   /** One publication with its journal; 404 — not the person's or not there. */
   publicationGet(grant: string, id: number, signal?: AbortSignal): Promise<HubPublicationDetail>
+  /** The page's walls and tiers by name (no prices); null when this Hub has no such row yet. */
+  publicationTargets(
+    grant: string,
+    pageLabel: string,
+    signal?: AbortSignal,
+  ): Promise<HubPublicationTargets | null>
   /** The global switch and the person's pages' settings. */
   publicationSettings(
     grant: string,
@@ -299,6 +317,22 @@ export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
       })
       const publication = parsePublication(json, endpoint)
       const raw = publication.raw
+      // Who, by name (Hub with the names): id → name; an older Hub has none, and the card says «человек» / «агент».
+      const namesOf = (list: unknown) =>
+        new Map(
+          (Array.isArray(list) ? list : []).flatMap((one) =>
+            isRecord(one) && typeof one.id === 'number' && typeof one.name === 'string'
+              ? [[one.id, one.name] as const]
+              : [],
+          ),
+        )
+      const names = isRecord(raw.names) ? raw.names : {}
+      const users = namesOf(names.users)
+      const agentKeys = namesOf(names.agentKeys)
+      const nameOf = (userId: unknown, agentKeyId: unknown) =>
+        (typeof userId === 'number' ? users.get(userId) : undefined) ??
+        (typeof agentKeyId === 'number' ? agentKeys.get(agentKeyId) : undefined) ??
+        null
       const events: HubPublicationEvent[] = Array.isArray(raw.events)
         ? raw.events.flatMap((event) => {
             if (
@@ -314,17 +348,57 @@ export function createPersonDoor(options: PersonDoorOptions): PersonDoor {
                 fromStatus: typeof event.fromStatus === 'string' ? event.fromStatus : null,
                 toStatus: event.toStatus,
                 actorKind: actor === 'human' || actor === 'agent' ? actor : 'hub',
+                actorName: nameOf(event.actorUserId, event.actorAgentKeyId),
                 reason: typeof event.reason === 'string' ? event.reason : null,
               },
             ]
           })
         : []
       const revision = isRecord(raw.revision) ? raw.revision : null
+      const author = isRecord(raw.author) ? raw.author : {}
       return {
         publication,
         events,
         approvedAt:
           revision && typeof revision.approvedAt === 'string' ? revision.approvedAt : null,
+        authorName: nameOf(author.userId, author.agentKeyId),
+        approvedByName: revision ? nameOf(revision.approvedByUserId, null) : null,
+      }
+    },
+    async publicationTargets(grant, pageLabel, signal) {
+      const endpoint = 'person.publications.targets'
+      let json: unknown
+      try {
+        json = await callJson(ctx, endpoint, {
+          method: 'POST',
+          path: 'api/v1/person/publications/targets',
+          json: { client, grant, pageLabel },
+          signal,
+        })
+      } catch (error) {
+        // A Hub without the row answers 404 (or refuses the unknown operation): the card goes without the names.
+        if (isHubError(error) && (error.status === 404 || error.status === 403)) return null
+        throw error
+      }
+      if (!isRecord(json) || !Array.isArray(json.walls) || !Array.isArray(json.tiers))
+        throw badShape(endpoint, 'no walls or tiers')
+      return {
+        walls: json.walls.flatMap((one) =>
+          isRecord(one) && typeof one.wallRef === 'string'
+            ? [
+                {
+                  wallRef: one.wallRef,
+                  name: typeof one.name === 'string' ? one.name : null,
+                  defaultWall: one.defaultWall === true,
+                },
+              ]
+            : [],
+        ),
+        tiers: json.tiers.flatMap((one) =>
+          isRecord(one) && typeof one.tierRef === 'string'
+            ? [{ tierRef: one.tierRef, name: typeof one.name === 'string' ? one.name : null }]
+            : [],
+        ),
       }
     },
     async publicationSettings(grant, modelSlug, signal) {

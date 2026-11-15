@@ -8,6 +8,7 @@ import {
   type HubCheck,
   HubError,
   type HubPublication,
+  type HubPublicationTargets,
   type HubRedeemed,
   type HubSignedIn,
   type HubSignin,
@@ -196,7 +197,20 @@ class FakeHub implements HubSignin, PersonDoor {
     const user = this.who(grant)
     const found = (this.publicationsOf.get(user.username) ?? []).find((one) => one.id === id)
     if (!found) throw new HubError('refused', 'HTTP 404', { endpoint: 'person', status: 404 })
-    return { publication: found, events: [], approvedAt: null }
+    return {
+      publication: found,
+      events: [],
+      approvedAt: null,
+      authorName: this.withNames ? 'Генгар' : null,
+      approvedByName: this.withNames ? 'Диана' : null,
+    }
+  }
+  /** The page's walls and tiers; null — a Hub without the row. */
+  targets: HubPublicationTargets | null = null
+  withNames = false
+  async publicationTargets(grant: string) {
+    this.who(grant)
+    return this.targets
   }
   async publicationSettings(grant: string, modelSlug?: string) {
     const user = this.who(grant)
@@ -652,5 +666,44 @@ describe("Hub's old addresses", () => {
     const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
     const other = await call(server.app, { method: 'GET', url: '/api/v1/admin/me', as: kira })
     expect(other.json().hub_models).toEqual({})
+  })
+})
+
+describe('the card names who and where', () => {
+  it("names the author, the approver and the post's wall and tiers, and goes without them on an older Hub", async () => {
+    const post = publication(701, 'lora-1', 'approved')
+    post.raw.tierRefs = ['t1', 't9']
+    post.raw.pinWallRefs = ['w2']
+    hub.publicationsOf.set('kira', [post])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const read = async () => {
+      const card = await call(server.app, {
+        method: 'GET',
+        url: '/api/v1/lora/publications/701',
+        as: kira,
+      })
+      expect(card.statusCode, card.body).toBe(200)
+      return PublicationCardSchema.parse(card.json())
+    }
+    // An older Hub: no names, no targets — the card stays as it was.
+    hub.withNames = false
+    hub.targets = null
+    expect(await read()).toMatchObject({ author_name: null, approved_by_name: null, targets: null })
+    hub.withNames = true
+    hub.targets = {
+      walls: [
+        { wallRef: 'w1', name: 'Posts', defaultWall: true },
+        { wallRef: 'w2', name: 'Free', defaultWall: false },
+      ],
+      tiers: [{ tierRef: 't1', name: 'Gold' }],
+    }
+    expect(await read()).toMatchObject({
+      author_name: 'Генгар',
+      approved_by_name: 'Диана',
+      // No wall named: the default one; a tier Hub cannot name is counted, never shown as its number.
+      targets: { wall: 'Posts (основная)', pinned: 'Free', tiers: '2 уровня' },
+    })
+    hub.withNames = false
+    hub.targets = null
   })
 })
