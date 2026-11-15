@@ -50,6 +50,8 @@ export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrder
   const list = useHubOrderList(model.code)
   const actions = useHubOrderActions()
   const narrow = useMediaQuery('(max-width: 1319px)')
+  // На телефоне панель заказа закрывает список: кнопки шапки под ней не нужны (и не лезут поверх).
+  const phone = useMediaQuery('(max-width: 639px)')
   const now = useClock().now()
   const href = useHref()
   useKeyboardShortcut({ code: 'Escape', enabled: selectedCode !== null }, onClosePanel)
@@ -113,7 +115,7 @@ export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrder
         title="Съёмка"
         count={data?.items.length}
         nav={<ShootingTabs value="customs" />}
-        actions={headerActions}
+        actions={phone && selectedCode ? null : headerActions}
       />
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-6 gap-y-1 pb-1">
         {line ? <IntegrationLine state={line.state}>{line.text}</IntegrationLine> : <span />}

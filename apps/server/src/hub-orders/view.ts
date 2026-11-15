@@ -112,7 +112,7 @@ function statusOf(order: HubCustomOrder, pending: number, now: Instant): StatusW
       }
       break
     case 'shot':
-      status = { sign: 'done', word: 'снято', detail: 'отдать фану в Hub' }
+      status = { sign: 'done', word: 'снято', detail: 'отдать фану в Workboard' }
       break
     case 'partly':
       status = late

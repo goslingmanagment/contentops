@@ -435,7 +435,9 @@ describe('the hub orders of a model', () => {
       })
     ).session
     // «Только кастомы» comes from Hub alone (package C1): made here as Hub's sign-in makes it.
-    await server.db.execute(sql`UPDATE principals SET role = 'customs' WHERE login = 'customs-lead'`)
+    await server.db.execute(
+      sql`UPDATE principals SET role = 'customs' WHERE login = 'customs-lead'`,
+    )
     hub.orders.set('K-31', hubOrder(31, { state: 'checked' }))
     await run()
     const stepAs = (as: string) =>
@@ -460,7 +462,11 @@ describe('the hub orders of a model', () => {
     expect((await task(reader)).statusCode).toBe(403)
     const made = await task(owner)
     expect(made.statusCode, made.body).toBe(201)
-    const listed = await call(server.app, { method: 'GET', url: '/api/v1/lora/shooting-tasks', as: reader })
+    const listed = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/lora/shooting-tasks',
+      as: reader,
+    })
     expect(listed.json().open.map((one: { title: string }) => one.title)).toEqual(['Сет у окна'])
     const handed = await call(server.app, {
       method: 'POST',

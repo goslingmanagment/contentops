@@ -1,4 +1,5 @@
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import { useRole } from '@/data/session'
 import { HubOrdersView } from '@/screens/orders/hub/hub-orders-view'
 import { useCurrentModel } from '@/shell/model/model-context'
 import { TasksView } from './tasks-view'
@@ -14,7 +15,9 @@ export function ShootingScreen() {
   const { tab, order } = routeApi.useSearch()
   const model = useCurrentModel().code
   const navigate = useNavigate()
-  if (tab === 'tasks') return <TasksView />
+  // «Только кастомы» видит одни заказы: вкладки «ТЗ» у роли нет.
+  const role = useRole()
+  if (tab === 'tasks' && role !== 'customs') return <TasksView />
   const select = (code: string | null) =>
     void navigate({
       to: '/$model/shooting',
