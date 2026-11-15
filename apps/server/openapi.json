@@ -10750,13 +10750,38 @@
                 "type": "null"
               }
             ]
+          },
+          "author_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approved_by_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "targets": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicationTargets"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "hub",
           "publication",
           "events",
-          "approved_at"
+          "approved_at",
+          "author_name",
+          "approved_by_name",
+          "targets"
         ],
         "additionalProperties": false
       },
@@ -10808,6 +10833,12 @@
               "hub"
             ]
           },
+          "actor_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reason": {
             "type": [
               "string",
@@ -10820,6 +10851,7 @@
           "from",
           "to",
           "actor",
+          "actor_name",
           "reason"
         ],
         "additionalProperties": false
@@ -11391,6 +11423,35 @@
           "hub",
           "switches",
           "ofapi"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationTargets": {
+        "type": "object",
+        "properties": {
+          "wall": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pinned": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tiers": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "wall",
+          "pinned",
+          "tiers"
         ],
         "additionalProperties": false
       },

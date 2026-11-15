@@ -120,6 +120,9 @@ class FakeHub implements HubSignin, PersonDoor {
   publicationSwitchSet(): never {
     throw new Error('not this test')
   }
+  publicationTargets(): never {
+    throw new Error('not this test')
+  }
   fanslyLoginPages(): never {
     throw new Error('not this test')
   }

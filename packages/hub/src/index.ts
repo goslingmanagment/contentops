@@ -99,6 +99,7 @@ export {
   type HubPublicationEvent,
   type HubPublicationQueue,
   type HubPublicationSettings,
+  type HubPublicationTargets,
   type PersonDoor,
   type PersonDoorOptions,
   type PersonShootingStep,

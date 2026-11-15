@@ -126,9 +126,17 @@ export function PublicationPanel({
           {row.price_mills !== null ? (
             <Line term="Цена">{formatMills(row.price_mills)}</Line>
           ) : null}
-          <Line term="Автор">{ACTOR_WORDS[row.author]}</Line>
+          {card.targets ? (
+            <>
+              <Line term="Стена">{card.targets.wall}</Line>
+              {card.targets.pinned ? <Line term="Закреплён на">{card.targets.pinned}</Line> : null}
+              {card.targets.tiers ? <Line term="Тиры">{card.targets.tiers}</Line> : null}
+            </>
+          ) : null}
+          <Line term="Автор">{card.author_name ?? ACTOR_WORDS[row.author]}</Line>
           {card.approved_at ? (
-            <Line term="Утверждён">
+            <Line term={card.approved_by_name ? 'Утвердил' : 'Утверждён'}>
+              {card.approved_by_name ? `${card.approved_by_name}, ` : ''}
               {formatDateWords(mskDate(card.approved_at), today)}, {formatClock(card.approved_at)}
             </Line>
           ) : null}
@@ -199,7 +207,8 @@ export function PublicationPanel({
                     {formatDateWords(mskDate(event.at), today)}, {formatClock(event.at)}
                   </span>
                   <span>
-                    {statusWord(event.to, event.reason).word} · {ACTOR_WORDS[event.actor]}
+                    {statusWord(event.to, event.reason).word} ·{' '}
+                    {event.actor_name ?? ACTOR_WORDS[event.actor]}
                   </span>
                 </li>
               ))}

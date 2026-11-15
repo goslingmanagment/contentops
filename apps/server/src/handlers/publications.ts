@@ -5,10 +5,16 @@ import type {
   PublicationRow,
   PublicationSwitches,
   PublicationsFeed,
+  PublicationTargets,
   PublicationWindow,
 } from '@contentops/contracts/domain/publications-screen'
 import type { Queryable } from '@contentops/db'
-import { type HubPublication, isHubError, type PersonDoor } from '@contentops/hub'
+import {
+  type HubPublication,
+  type HubPublicationTargets,
+  isHubError,
+  type PersonDoor,
+} from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import { modelOf } from '../catalog/ids'
 import { requireActor } from '../commands'
@@ -187,6 +193,61 @@ function hubWords(error: { message: string }): string {
   return error.message.replace(/^HTTP \d+\s*/, '')
 }
 
+const NO_CARD: Omit<PublicationCard, 'hub'> = {
+  publication: null,
+  events: [],
+  approved_at: null,
+  author_name: null,
+  approved_by_name: null,
+  targets: null,
+}
+
+function refsOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((one): one is string => typeof one === 'string') : []
+}
+
+/** «Posts, VIP»; a name Hub does not know: «2 стены». */
+function namesOr(
+  refs: readonly string[],
+  names: ReadonlyMap<string, string | null>,
+  forms: readonly [string, string, string],
+): string {
+  const found = refs.map((ref) => names.get(ref) ?? null)
+  if (found.every((name) => name !== null)) return found.join(', ')
+  const n = refs.length
+  const form =
+    n % 10 === 1 && n % 100 !== 11
+      ? forms[0]
+      : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)
+        ? forms[1]
+        : forms[2]
+  return `${n} ${form}`
+}
+
+/** Where a Fansly post goes, in names (Hub's walls and tiers of its page): the wall, pinned walls, tiers. */
+export function targetsOf(
+  raw: Record<string, unknown>,
+  targets: HubPublicationTargets,
+): PublicationTargets {
+  const walls = new Map(targets.walls.map((wall) => [wall.wallRef, wall.name]))
+  const tiers = new Map(targets.tiers.map((tier) => [tier.tierRef, tier.name]))
+  const wallRefs = refsOf(raw.wallRefs)
+  const pinRefs = refsOf(raw.pinWallRefs)
+  const tierRefs = refsOf(raw.tierRefs)
+  const fallback = targets.walls.find((wall) => wall.defaultWall)?.name ?? null
+  return {
+    // No wall named: the page's default wall.
+    wall:
+      wallRefs.length > 0
+        ? namesOr(wallRefs, walls, ['стена', 'стены', 'стен'])
+        : fallback
+          ? `${fallback} (основная)`
+          : 'основная стена',
+    pinned: pinRefs.length > 0 ? namesOr(pinRefs, walls, ['стена', 'стены', 'стен']) : null,
+    tiers: tierRefs.length > 0 ? namesOr(tierRefs, tiers, ['уровень', 'уровня', 'уровней']) : null,
+  }
+}
+
 export function publicationsHandlers(services: Services): HandlerRegistry {
   const { db } = services
   const slugOf = (model: ModelScope) => hubSlugOf(services.hubSignin?.setup.modelMap, model)
@@ -356,8 +417,7 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
         if (!Number.isInteger(id) || id <= 0)
           throw new ApiProblem('not_found', 'Такой публикации нет')
         const person = await personOf(services, actor)
-        if (person.state !== 'ok')
-          return { hub: person.state, publication: null, events: [], approved_at: null }
+        if (person.state !== 'ok') return { hub: person.state, ...NO_CARD }
         const names = await boundNames(db, model)
         const accountOf = new Map([...names].map(([hubPage, bound]) => [hubPage, bound.code]))
         try {
@@ -369,7 +429,16 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
           if (!settings.pages.some((page) => page.pageLabel === detail.publication.pageLabel)) {
             throw new ApiProblem('not_found', 'Такой публикации нет')
           }
-          const plan = await planRows(db, [id])
+          const fansly = detail.publication.platform === 'fansly'
+          const [plan, targets] = await Promise.all([
+            planRows(db, [id]),
+            // Where it goes, by name; a Hub without the row (or a refusal) leaves the card without it.
+            fansly && detail.publication.pageLabel
+              ? person.door
+                  .publicationTargets(person.grant, detail.publication.pageLabel)
+                  .catch(() => null)
+              : Promise.resolve(null),
+          ])
           return {
             hub: 'ok',
             publication: rowOf(detail.publication, accountOf, plan),
@@ -378,15 +447,19 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
               from: event.fromStatus,
               to: event.toStatus,
               actor: event.actorKind,
+              actor_name: event.actorName,
               reason: event.reason,
             })),
             approved_at: detail.approvedAt,
+            author_name: detail.authorName,
+            approved_by_name: detail.approvedByName,
+            targets: targets ? targetsOf(detail.publication.raw, targets) : null,
           }
         } catch (error) {
           if (error instanceof ApiProblem) throw error
           if (isHubError(error) && error.status === 404)
             throw new ApiProblem('not_found', 'Такой публикации нет')
-          return { hub: failed(error), publication: null, events: [], approved_at: null }
+          return { hub: failed(error), ...NO_CARD }
         }
       },
 

@@ -125,14 +125,31 @@ export const PublicationEventSchema = z.object({
   from: z.string().nullable(),
   to: z.string(),
   actor: z.enum(['human', 'agent', 'hub']),
+  /** Who, by name (a person's registry name, an agent's name): null — Hub did it, or did not say. */
+  actor_name: z.string().nullable(),
   reason: z.string().nullable(),
 })
+
+/**
+ * Where a Fansly post goes, in names: its wall (none named — the page's default wall), the walls it is pinned on, its
+ * subscription tiers. Never a price. Null on the card: not Fansly, or Hub did not say.
+ */
+export const PublicationTargetsSchema = z.object({
+  wall: z.string().nullable(),
+  pinned: z.string().nullable(),
+  tiers: z.string().nullable(),
+})
+export type PublicationTargets = z.infer<typeof PublicationTargetsSchema>
 
 export const PublicationCardSchema = z.object({
   hub: PublicationsHubStateSchema,
   publication: PublicationRowSchema.nullable(),
   events: z.array(PublicationEventSchema),
   approved_at: InstantSchema.nullable(),
+  /** Who drafted it and who approved it, by name; null — Hub did not say (the card says the kind). */
+  author_name: z.string().nullable(),
+  approved_by_name: z.string().nullable(),
+  targets: PublicationTargetsSchema.nullable(),
 })
 export type PublicationCard = z.infer<typeof PublicationCardSchema>
 
