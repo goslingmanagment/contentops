@@ -522,6 +522,7 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
           body.outcome === 'went_out'
             ? {
                 outcome: 'went_out' as const,
+                ...(body.state ? { state: body.state } : {}),
                 ...(body.platform_post_ref ? { platformPostRef: body.platform_post_ref } : {}),
               }
             : { outcome: 'did_not_go_out' as const }

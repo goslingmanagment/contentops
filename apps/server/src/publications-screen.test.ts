@@ -297,8 +297,14 @@ class FakeHub implements HubSignin, PersonDoor {
   publicationReplace(): never {
     throw new Error('not this test')
   }
-  publicationResolve(): never {
-    throw new Error('not this test')
+  /** The answers «Проверить» sent, as Hub's door got them. */
+  readonly resolved: Array<{ id: number; answer: unknown }> = []
+  async publicationResolve(grant: string, id: number, answer: unknown) {
+    const user = this.who(grant)
+    const found = (this.publicationsOf.get(user.username) ?? []).find((one) => one.id === id)
+    if (!found) throw new HubError('refused', 'HTTP 404', { endpoint: 'person', status: 404 })
+    this.resolved.push({ id, answer })
+    return { publication: { ...found, status: 'scheduled' }, replacementId: null }
   }
   publicationQueueRefresh(): never {
     throw new Error('not this test')
@@ -705,5 +711,24 @@ describe('the card names who and where', () => {
     })
     hub.withNames = false
     hub.targets = null
+  })
+})
+
+describe('«Вышел» on an unknown outcome', () => {
+  it("sends Hub the post's number and where it is", async () => {
+    hub.publicationsOf.set('kira', [publication(801, 'lora-1', 'unknown')])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const answer = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/publications/801:resolve',
+      as: kira,
+      body: { outcome: 'went_out', state: 'scheduled', platform_post_ref: '851203394123456789' },
+    })
+    expect(answer.statusCode, answer.body).toBe(200)
+    expect(answer.json()).toMatchObject({ outcome: 'done', publication_id: 801 })
+    expect(hub.resolved.at(-1)).toEqual({
+      id: 801,
+      answer: { outcome: 'went_out', state: 'scheduled', platformPostRef: '851203394123456789' },
+    })
   })
 })
