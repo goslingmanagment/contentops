@@ -77,8 +77,16 @@ export async function personRead(
       throw new ApiProblem('unauthenticated', 'Вход закончился: войдите снова')
     }
     if (!isHubError(error)) throw error
-    // Hub away: the last background read, with its time, and why.
-    return null
+    // The person's own read failed or was refused: said in words, with nothing shown. Never the
+    // background read in its place — an old snapshot of another key's read, not the person's orders.
+    const now = new Date().toISOString()
+    return {
+      read_at: null,
+      orders: [],
+      unassigned: 0,
+      tried_at: now,
+      error: readFailureWords(error.status),
+    }
   }
   const mapping = await modelMapping(db)
   const slug = hubSlugOf(model.code, modelMap)
@@ -94,6 +102,17 @@ export async function personRead(
     tried_at: now,
     error: null,
   }
+}
+
+/** Why the person's own read gave nothing, in words: «Hub не показал заказы: …». */
+export function readFailureWords(status: number | null | undefined): string {
+  const why =
+    status === 403
+      ? 'съёмка этой учётной записи не открыта, спросите владельца'
+      : status === 404
+        ? 'такой модели в Hub нет'
+        : 'Hub не ответил, обновите чуть позже'
+  return `Hub не показал заказы: ${why}`
 }
 
 /**

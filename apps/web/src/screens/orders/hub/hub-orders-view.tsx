@@ -2,7 +2,7 @@ import { formatNumber, type HubOrder } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { FieldHeader, HeaderAction } from '@contentops/ui/components/field-header'
 import { IntegrationLine } from '@contentops/ui/components/integration-line'
-import { EmptyState } from '@contentops/ui/components/state-lines'
+import { EmptyState, ErrorLine } from '@contentops/ui/components/state-lines'
 import { UiLink } from '@contentops/ui/components/ui-link'
 import { ExternalLinkIcon, PlusIcon, RefreshCwIcon } from 'lucide-react'
 import { useMemo } from 'react'
@@ -130,7 +130,11 @@ export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrder
       <div className="@container -mx-7 flex min-h-0 flex-1 flex-col overflow-y-auto px-7 pt-2 pb-8">
         <QueryErrorLine query={list} hasData={data !== undefined} />
         {list.isPending ? <OrdersSkeleton /> : null}
-        {data && groups.length === 0 ? (
+        {data && groups.length === 0 && data.read_error ? (
+          // The read failed or was refused: said as it is, never «Заказов в съёмке нет».
+          <ErrorLine message="Заказы не загрузились" onRetry={() => void list.refetch()} />
+        ) : null}
+        {data && groups.length === 0 && !data.read_error ? (
           <EmptyState>
             {data.read_at
               ? 'Заказов в съёмке нет: новые появятся, когда их проверят в Workboard'
