@@ -17,13 +17,14 @@ const LoginSchema = z
 export const AddPersonCommandSchema = z.object({
   name: z.string().trim().min(1, 'Нужно имя'),
   login: LoginSchema,
-  role: RoleSchema,
+  /** «Только кастомы» gives Hub alone (products plan §4.1). */
+  role: RoleSchema.exclude(['customs']),
   models: z.array(ModelCodeSchema),
 })
 export type AddPersonCommand = z.infer<typeof AddPersonCommandSchema>
 
 export const UpdatePersonCommandSchema = z.object({
-  role: RoleSchema.optional(),
+  role: RoleSchema.exclude(['customs']).optional(),
   models: z.array(ModelCodeSchema).optional(),
 })
 export type UpdatePersonCommand = z.infer<typeof UpdatePersonCommandSchema>

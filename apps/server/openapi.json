@@ -436,7 +436,12 @@
             "pattern": "^[a-z][a-z0-9._-]{1,31}$"
           },
           "role": {
-            "$ref": "#/components/schemas/RoleInput"
+            "type": "string",
+            "enum": [
+              "owner",
+              "manager",
+              "reader"
+            ]
           },
           "models": {
             "type": "array",
@@ -11234,15 +11239,6 @@
           "customs"
         ]
       },
-      "RoleInput": {
-        "type": "string",
-        "enum": [
-          "owner",
-          "manager",
-          "reader",
-          "customs"
-        ]
-      },
       "RowApproval": {
         "type": "object",
         "properties": {
@@ -12839,7 +12835,12 @@
         "type": "object",
         "properties": {
           "role": {
-            "$ref": "#/components/schemas/RoleInput"
+            "type": "string",
+            "enum": [
+              "owner",
+              "manager",
+              "reader"
+            ]
           },
           "models": {
             "type": "array",

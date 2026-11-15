@@ -16,7 +16,7 @@ interface FieldLayoutProps {
 export function FieldLayout({ children, aside, className }: FieldLayoutProps) {
   return (
     <div className="flex h-full min-h-0 min-w-0">
-      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col px-7 pt-5', className)}>
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col px-4 pt-5 sm:px-7', className)}>
         {children}
       </div>
       {aside}

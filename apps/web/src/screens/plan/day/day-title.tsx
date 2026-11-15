@@ -66,8 +66,8 @@ export function DayTitle({
     zip.download({ scope: 'day', date }, id === 'all' ? null : id, stripMetadata, mine)
 
   return (
-    <div className="@container/day-title flex h-10 shrink-0 items-center gap-3 whitespace-nowrap">
-      <h2 className="shrink-0 text-lg">{formatLongDay(date)}</h2>
+    <div className="@container/day-title flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap">
+      <h2 className="shrink-0 text-base sm:text-lg">{formatLongDay(date)}</h2>
       {date === today ? (
         <span className="text-ink-3 text-sm @max-[46rem]/day-title:hidden">сегодня</span>
       ) : null}

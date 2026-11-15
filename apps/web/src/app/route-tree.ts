@@ -304,6 +304,20 @@ const planCaseRoute = createRoute({
   },
 })
 
+/** «Сегодня» — дом модели (план продуктов §2.4). */
+const todayRoute = createRoute({
+  getParentRoute: () => modelRoute,
+  path: 'today',
+  component: lazyRouteComponent(() => import('@/screens/today'), 'TodayScreen'),
+})
+
+/** «Ждут вас»: дела человека из Hub и свои строки ContentOps. */
+const waitingRoute = createRoute({
+  getParentRoute: () => modelRoute,
+  path: 'waiting',
+  component: lazyRouteComponent(() => import('@/screens/waiting'), 'WaitingScreen'),
+})
+
 const journalRoute = createRoute({
   getParentRoute: () => modelRoute,
   path: 'journal',
@@ -329,6 +343,8 @@ export const routeTree = rootRoute.addChildren([
     settingsTabRoute,
     modelRoute.addChildren([
       modelIndexRoute,
+      todayRoute,
+      waitingRoute,
       libraryRootRoute,
       librarySectionRoute,
       customsRoute,

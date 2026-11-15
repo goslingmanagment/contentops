@@ -3,11 +3,10 @@ import { useState } from 'react'
 import { useKeyboardShortcut } from '@/lib/use-keyboard-shortcut'
 import { useShellModel } from '../model/use-shell-model'
 import { TopSearch } from '../search/top-search'
-import { AccountMenu } from './account-menu'
 
 /**
  * Верхняя полоса на холсте над полем (DESIGN §2.1): поиск от левого края поля, справа
- * `?` со списком клавиш и аватар. Колокольчика нет: его заменяют счётчики в колонке.
+ * `?` со списком клавиш. Человек и его меню — внизу колонки (план продуктов §2.1).
  */
 export function TopBar() {
   const { model } = useShellModel()
@@ -24,7 +23,6 @@ export function TopBar() {
       )}
       <div className="flex shrink-0 items-center gap-1">
         <HotkeysHelp open={hotkeysOpen} onOpenChange={setHotkeysOpen} />
-        <AccountMenu />
       </div>
     </header>
   )

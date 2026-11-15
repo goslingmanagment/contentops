@@ -7,13 +7,17 @@ import { readLastSection, type SectionKey } from '@/shell/last-section'
 import { useModelIndexPrefetch } from '@/shell/model/model-scope'
 
 /**
- * Адреса без экрана ведут дальше: `/` — в последний раздел или Библиотеку первой
- * доступной модели, `/<модель>` — в Библиотеку, `/<модель>/plan` — на сегодня.
+ * Адреса без экрана ведут дальше (план продуктов §2.4): `/` и `/<модель>` — на «Сегодня» модели,
+ * где человек был в прошлый раз (у «Только кастомы» — на «Ждут вас»), `/<модель>/plan` — на сегодня.
  */
 
 function SectionRedirect({ model, section }: { model: string; section: SectionKey }) {
   const today = mskDate(useClock().now())
   switch (section) {
+    case 'today':
+      return <Navigate to="/$model/today" params={{ model }} replace />
+    case 'waiting':
+      return <Navigate to="/$model/waiting" params={{ model }} replace />
     case 'inbox':
       return <Navigate to="/$model/inbox" params={{ model }} replace />
     case 'plan':
@@ -39,14 +43,21 @@ export function EntryRedirect() {
   if (!model) {
     return <Navigate to="/login" replace />
   }
-  return <SectionRedirect model={model} section={remembered?.section ?? 'library'} />
+  return <SectionRedirect model={model} section={homeOf(session.data.person.role)} />
+}
+
+/** Дом человека: «Сегодня»; у «Только кастомы» — «Ждут вас». */
+function homeOf(role: string): SectionKey {
+  return role === 'customs' ? 'waiting' : 'today'
 }
 
 const modelRouteApi = getRouteApi('/_shell/$model')
 
 export function ModelIndexRedirect() {
   const { model } = modelRouteApi.useParams()
-  return <Navigate to="/$model/library" params={{ model }} replace />
+  const role = useSession().data?.person.role
+  if (!role) return null
+  return <SectionRedirect model={model} section={homeOf(role)} />
 }
 
 export function PlanTodayRedirect() {

@@ -94,11 +94,17 @@ test.describe('«Только чтение» на Лоре', () => {
   test('sees Библиотеку, План and Журнал without uploads, downloads or actions', async ({
     reader,
   }) => {
-    // The sidebar: three sections, no «Приехало» and no «Загрузить».
+    // The sidebar: no «Приехало» and no «Загрузить» (products plan §2.4: «Сегодня» and «Ждут вас» first).
     await reader.goto('/lora/library')
     await expect(main(reader).getByRole('heading', { name: /^Библиотека/ })).toBeVisible()
     const nav = reader.getByRole('navigation', { name: 'Разделы' })
-    await expect(nav.getByRole('link')).toHaveText([/^Библиотека/, /^План/, /^Журнал/])
+    await expect(nav.getByRole('link')).toHaveText([
+      /^Сегодня/,
+      /^Ждут вас/,
+      /^План/,
+      /^Библиотека/,
+      /^Журнал/,
+    ])
     await expectNoActions(reader.locator('body'))
 
     // A section: tiles, filters, and the tile menu without work items.
