@@ -50,6 +50,8 @@ export interface FormRequest {
   userAgent: string | null
   /** The session this browser had: replaced by the new one. */
   previous: string | undefined
+  /** ContentOps' form or an invitation's «Придумайте пароль»: how the profile names the session. */
+  via: 'form' | 'link'
 }
 
 export type HubFormOutcome =
@@ -82,6 +84,7 @@ export async function throughHub(
     id: request.id,
     userAgent: request.userAgent,
     previous: request.previous,
+    via: request.via,
   })
   return token === null ? { kind: 'refused', reason: 'no_access' } : { kind: 'signed_in', token }
 }

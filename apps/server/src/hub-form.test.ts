@@ -272,6 +272,21 @@ describe('the form on ContentOps’ page', () => {
     const limited = await signIn('ivan-d', 'x', '203.0.113.51')
     expect(limited.statusCode).toBe(429)
   })
+  it('names a session of the form as a sign-in by password, not «через хаб»; Hub’s one step keeps its word', async () => {
+    hub.answer = hub.signedIn('kira')
+    const form = sessionOf(await signIn('kira', 'her-password-in-hub'))
+    const sessions = await call(server.app, {
+      method: 'GET',
+      url: '/api/v1/admin/me/sessions',
+      as: form,
+    })
+    const mine = sessions.json().items.find((one: { current: boolean }) => one.current)
+    expect(mine.device).not.toMatch(/хаб/i)
+    const { rows } = await server.db.execute<{ via: string | null }>(
+      sql`SELECT opened_via AS via FROM sessions WHERE hub_grant IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
+    )
+    expect(rows[0]?.via).toBe('form')
+  })
 })
 
 async function signInOwn(): Promise<string> {

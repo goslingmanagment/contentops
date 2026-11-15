@@ -371,7 +371,13 @@ export async function openHubSession(
   db: Db,
   setup: HubSigninSetup,
   person: HubRedeemed,
-  request: { id: string; userAgent: string | null; previous: string | undefined },
+  request: {
+    id: string
+    userAgent: string | null
+    previous: string | undefined
+    /** How the session is opened: Hub's one step (default), ContentOps' form, an invitation's link. */
+    via?: 'hub' | 'form' | 'link'
+  },
 ): Promise<string | null> {
   const { user } = person
   return withActorTx(
@@ -442,11 +448,11 @@ export async function openHubSession(
       const token = newSecret(HUB_SESSION_PREFIX)
       const { rows: created } = await tx.execute<{ id: string }>(sql`
         INSERT INTO sessions (principal_id, token_hash, user_agent, expires_at, hub_grant,
-                              hub_checked_at)
+                              hub_checked_at, opened_via)
         VALUES (${row.id}::uuid, ${sessionDigest(token)}, ${request.userAgent},
                 least(now() + ${`${SESSION_DAYS} days`}::interval,
                       ${person.expiresAt.toISOString()}::timestamptz),
-                ${person.grant}, now())
+                ${person.grant}, now(), ${request.via ?? 'hub'})
         RETURNING id`)
       const session = created[0]
       if (!session) throw new Error('session insert returned nothing')
@@ -513,7 +519,10 @@ export function registerHubSignin(app: FastifyInstance, options: HubRoutesOption
     if (!service?.offeredAt(request.host)) return reply.redirect(loginAddress(next), 302)
     const secure = secureOf(request)
     const cookies = parseCookies(request.headers.cookie)
-    const silent = query.silent === '1'
+    // Silent unless the person asked Hub openly («Войти через Hub» on the form, `prompt=1`): a Hub address opened in
+    // a browser with nobody signed in lands on ContentOps' own form with `next` kept, never on Hub's sign-in page;
+    // the owner signed in at Hub still goes straight through (round 2, N8).
+    const silent = query.silent === '1' || query.prompt !== '1'
     if (silent) {
       // One silent try: not after «Выйти» here, not twice in ten minutes, not to a hub that
       // does not answer — then the sign-in screen at once.

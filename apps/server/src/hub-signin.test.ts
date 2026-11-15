@@ -509,7 +509,7 @@ describe('the silent try (a page that got 401 before the sign-in screen)', () =>
     expect(again.statusCode).toBe(200)
     expect(setCookies(again)).toContain('co_hub_out=1; Path=/; SameSite=Lax')
     // Pressing «Войти через хаб» takes the mark away.
-    const pressed = await get('/auth/hub/start?next=%2F', { cookie: 'co_hub_out=1' })
+    const pressed = await get('/auth/hub/start?next=%2F&prompt=1', { cookie: 'co_hub_out=1' })
     expect(setCookies(pressed)).toContain('co_hub_out=; Path=/; Max-Age=0; SameSite=Lax')
   })
 })
@@ -587,5 +587,39 @@ describe('«Войти через хаб» with a session of this browser (round
       cookie: `co_session=${session}`,
     })
     expect(start.headers.location).toBe('/lora/library')
+  })
+})
+
+describe('a Hub address opened in a browser with no session (round 2, N8)', () => {
+  it('asks Hub silently: nobody there → ContentOps’ own form with `next` kept, never Hub’s sign-in page', async () => {
+    const next = '/hub/publications?page=test-1&post=49'
+    const start = await get(`/auth/hub/start?${new URLSearchParams({ next })}`)
+    expect(start.statusCode).toBe(302)
+    const atHub = new URL(String(start.headers.location))
+    expect(atHub.searchParams.get('silent')).toBe('1')
+    const state = cookieOf(start, 'co_hub_state') ?? ''
+    // Hub has nobody: it answers the callback «none», no code.
+    const back = await get(
+      `/auth/hub/callback?${new URLSearchParams({ error: 'none', state, next })}`,
+      { cookie: `co_hub_state=${state}` },
+    )
+    expect(back.headers.location).toBe(`/login?${new URLSearchParams({ from: next })}`)
+  })
+
+  it('the owner signed in at Hub goes straight through; «Войти через Hub» on the form asks Hub openly', async () => {
+    const state = await start('/hub/publications')
+    expect(
+      cookieOf(
+        await callback({
+          code: hub.mint(OWNER_AT_HUB),
+          state,
+          cookie: `co_hub_state=${state}`,
+          next: '/hub/publications',
+        }),
+        'co_session',
+      ),
+    ).toMatch(/^hub\./)
+    const asked = await get('/auth/hub/start?next=%2Flora%2Flibrary&prompt=1')
+    expect(new URL(String(asked.headers.location)).searchParams.get('silent')).toBeNull()
   })
 })

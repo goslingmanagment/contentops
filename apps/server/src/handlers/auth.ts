@@ -63,7 +63,7 @@ interface SessionRow extends Record<string, unknown> {
 async function liveSessions(services: Services, ctx: RequestContext): Promise<Session[]> {
   const actor = requireActor(ctx)
   const { rows } = await services.db.execute<SessionRow>(sql`
-    SELECT id, user_agent, created_at, last_seen_at, hub_grant IS NOT NULL AS via_hub
+    SELECT id, user_agent, created_at, last_seen_at, coalesce(opened_via, CASE WHEN hub_grant IS NOT NULL THEN 'hub' END) = 'hub' AS via_hub
       FROM sessions
      WHERE principal_id = ${actor.id}::uuid AND revoked_at IS NULL AND expires_at > now()
      ORDER BY coalesce(last_seen_at, created_at) DESC, id DESC`)
@@ -149,6 +149,7 @@ export function authHandlers(services: Services): HandlerRegistry {
               ip: ctx.ip,
               userAgent: ctx.userAgent,
               previous: ctx.cookies[SESSION_COOKIE],
+              via: 'form',
             },
             ctx.log,
           )
@@ -263,6 +264,7 @@ export function authHandlers(services: Services): HandlerRegistry {
             ip: ctx.ip,
             userAgent: ctx.userAgent,
             previous: ctx.cookies[SESSION_COOKIE],
+            via: 'link',
           },
           ctx.log,
         )
@@ -382,7 +384,7 @@ export function authHandlers(services: Services): HandlerRegistry {
             UPDATE sessions SET revoked_at = now()
              WHERE id::text = ${params.session} AND principal_id = ${actor.id}::uuid
                AND revoked_at IS NULL AND expires_at > now()
-            RETURNING id, user_agent, created_at, last_seen_at, hub_grant IS NOT NULL AS via_hub`)
+            RETURNING id, user_agent, created_at, last_seen_at, coalesce(opened_via, CASE WHEN hub_grant IS NOT NULL THEN 'hub' END) = 'hub' AS via_hub`)
           const session = rows[0]
           if (!session) throw new ApiProblem('not_found', 'Такой сессии нет')
           await logAction(tx, {
