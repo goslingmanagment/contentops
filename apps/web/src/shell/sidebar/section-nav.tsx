@@ -28,9 +28,9 @@ function countOrNothing(value: number | undefined): number | undefined {
 }
 
 /**
- * Меню продукта (план продуктов §2.4): Сегодня · Ждут вас · План · Приехало · Библиотека · Журнал.
- * «Публикации», «Статистика» и «Съёмка» добавят их пакеты: пункта, который никуда не ведёт, нет.
- * «Только чтение» не видит «Приехало» (DESIGN §2.3); «Только кастомы» — «Ждут вас» и «Заказы».
+ * Меню продукта (план продуктов §2.4): Сегодня · Ждут вас · План · Съёмка · Приехало · Библиотека ·
+ * Журнал. «Публикации» и «Статистика» добавят их пакеты: пункта, который никуда не ведёт, нет.
+ * «Только чтение» не видит «Приехало» (DESIGN §2.3); «Только кастомы» — «Съёмка» и «Ждут вас».
  */
 export function SectionNav({ model, collapsed }: SectionNavProps) {
   const href = useHref()
@@ -53,18 +53,21 @@ export function SectionNav({ model, collapsed }: SectionNavProps) {
     />
   )
 
+  const shootingItem = (
+    <NavItem
+      href={href({ to: '/$model/shooting', params })}
+      icon={ClapperboardIcon}
+      label="Съёмка"
+      active={active === 'shooting'}
+      collapsed={collapsed}
+    />
+  )
+
   if (role === 'customs') {
-    const orders = pathname.startsWith(`/${model.code}/library/customs`)
     return (
       <nav aria-label="Разделы" className="flex flex-col gap-0.5">
+        {shootingItem}
         {waitingItem}
-        <NavItem
-          href={href({ to: '/$model/library/customs', params, search: { view: 'orders' } })}
-          icon={ClapperboardIcon}
-          label="Заказы"
-          active={orders}
-          collapsed={collapsed}
-        />
       </nav>
     )
   }
@@ -88,6 +91,7 @@ export function SectionNav({ model, collapsed }: SectionNavProps) {
         active={active === 'plan'}
         collapsed={collapsed}
       />
+      {shootingItem}
       {role === 'reader' ? null : (
         <NavItem
           href={href({ to: '/$model/inbox', params })}

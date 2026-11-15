@@ -270,6 +270,11 @@ const WORDING: Record<string, Wording> = {
     rest: 'сдачу от заказа Hub: {subject}',
     noun: 'отвязка сдачи',
   },
+  // «Съёмка» (package C3): a step of the content side, written to Hub as the person.
+  'hubOrders.step': { verb: 'отметил', rest: 'шаг заказа Hub: {subject}', noun: 'шаг заказа' },
+  'shootingTasks.create': { verb: 'завёл', rest: 'ТЗ: {subject}', noun: 'новое ТЗ' },
+  'shootingTasks.handIn': { verb: 'отметил', rest: 'сдачу ТЗ: {subject}', noun: 'сдача ТЗ' },
+  'shootingTasks.cancel': { verb: 'убрал', rest: 'ТЗ: {subject}', noun: 'ТЗ убрано' },
   // Legacy import (stage 3): the runs, their inputs and the reserve the pass writes.
   'legacy.parse': { verb: 'запустил', rest: 'разбор старых имён', noun: 'разбор старых имён' },
   'legacy.plan': { verb: 'запустил', rest: 'сухой прогон импорта', noun: 'сухой прогон' },
@@ -522,7 +527,7 @@ const AREA_PREFIXES: readonly [JournalArea, readonly string[]][] = [
   ['catalog', ['objects.', 'objectFiles.', 'objectBatch.', 'markup.']],
   ['plan', ['plan.']],
   ['check', ['check.', 'hub.']],
-  ['orders', ['orders.', 'hubOrders.']],
+  ['orders', ['orders.', 'hubOrders.', 'shootingTasks.']],
   ['promo', ['promo.']],
   ['settings', ['settings.', 'admin.', 'policy.', 'integration.', 'agent.', 'person.']],
   ['system', ['auth.', 'principal.', 'work.', 'bootstrap', 'repair.', 'smoke.', 'fixtures.']],

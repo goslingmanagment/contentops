@@ -9,7 +9,7 @@
 //   POST /__dev/custom-orders/<code>/<step>          at_model | revision {note} | given | cancel
 import type { LoggedRequest, Reply } from '@contentops/hub/testing'
 
-type State = 'recorded' | 'paid' | 'at_model' | 'partly' | 'shot' | 'revision' | 'given' | 'cancelled'
+type State = 'recorded' | 'paid' | 'checked' | 'at_model' | 'partly' | 'shot' | 'revision' | 'refused' | 'given' | 'cancelled'
 type Part = 'video' | 'photos'
 
 interface Message {
@@ -61,6 +61,9 @@ export class DevOrders {
     this.create({ page: 'lora-1', task: 'чулки и каблуки, стриптиз', duration: '4 минуты', deadline: day(4), state: 'revision', note: 'фан просит без музыки' })
     this.create({ page: null, task: 'спортивный комплект', duration: '5 минут', deadline: day(1), state: 'shot', contentops: 'lora/tg-7000000001-3-501' })
     this.create({ page: 'lora-3', task: 'ещё не у модели', duration: '3 минуты', state: 'paid' })
+    // «Проверен» (package C3): given to shooting, waits to be handed to the model.
+    this.create({ page: 'lora-1', task: 'в белой рубашке у окна, с именем', duration: '4 минуты', state: 'checked' })
+    this.create({ page: 'lora-2', task: 'фото в форме медсестры', duration: '12 фото', photos: 12, deadline: day(5), state: 'checked' })
     this.create({ page: 'ari-1', task: 'кастом Ари', duration: '5 минут', deadline: day(3), state: 'at_model' })
   }
 
@@ -111,7 +114,7 @@ export class DevOrders {
   }
 
   #overdue(order: Order): number | null {
-    if (!['at_model', 'partly', 'revision'].includes(order.state) || !order.deadlineOn) return null
+    if (!['checked', 'at_model', 'partly', 'revision'].includes(order.state) || !order.deadlineOn) return null
     const days = Math.floor((Date.now() - Date.parse(`${order.deadlineOn}T21:00:00Z`)) / 86_400_000) + 1
     return days > 0 ? days : null
   }
@@ -132,6 +135,15 @@ export class DevOrders {
       what: task.split('\n')[0],
       deadlineOn: order.deadlineOn,
       state: order.state,
+      stateWord: null,
+      // «Ведёт» (package C3): the shooting is the content manager's on this stand (made up).
+      leader: ['recorded', 'paid'].includes(order.state)
+        ? { name: 'Тимлид', phase: 'check', product: 'workboard' }
+        : order.state === 'shot'
+          ? { name: 'Чаттер', phase: 'give', product: 'workboard' }
+          : ['given', 'cancelled'].includes(order.state)
+            ? null
+            : { name: 'Диана', phase: 'shoot', product: 'contentops' },
       stateAt: order.stateAt,
       stateNote: order.stateNote,
       stateRef: null,
@@ -171,6 +183,14 @@ export class DevOrders {
     if (method === 'POST' && step) {
       const order = this.orders.get(Number(step[1]))
       if (!order) return { status: 404, body: { error: 'not_found', message: 'Not found' } }
+      const person = req.json as { action: string; step?: State; onBehalfOf?: string; deadlineOn?: string; note?: string }
+      if (person.action === 'person_step' && person.step) {
+        // The hub's rule on this stand: anyone signed in through Hub leads the shooting.
+        if (person.deadlineOn) order.deadlineOn = person.deadlineOn
+        if (person.step === 'shot') order.partsDone = this.#wanted(order)
+        this.#move(order, person.step, person.note ?? null)
+        return { status: 200, body: { order: this.wire(order), outcome: 'changed', event: null } }
+      }
       const body = req.json as {
         action: string; eventRef?: string; retracts?: string; reason?: string; part?: Part; complete?: boolean; kind?: string
         message?: { telegramRef?: string; at?: string; author?: string; excerpt?: string }

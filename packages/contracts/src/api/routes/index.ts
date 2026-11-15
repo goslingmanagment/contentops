@@ -11,6 +11,7 @@ import { orderRoutes } from './orders'
 import { planRoutes } from './plan'
 import { promoRoutes } from './promo'
 import { authRoutes, settingsRoutes } from './settings'
+import { shootingTaskRoutes } from './shooting'
 import { waitingRoutes } from './waiting'
 
 /** Every route of API v1 by area; the client and the mock read from here. */
@@ -26,6 +27,7 @@ export const apiRoutes = {
   check: checkRoutes,
   orders: orderRoutes,
   hubOrders: hubOrderRoutes,
+  shootingTasks: shootingTaskRoutes,
   waiting: waitingRoutes,
   promo: promoRoutes,
   journal: journalRoutes,

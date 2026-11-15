@@ -7,6 +7,7 @@ import type { SectionKey } from './last-section'
 const SECTION_BY_SEGMENT: Readonly<Record<string, SectionKey>> = {
   today: 'today',
   waiting: 'waiting',
+  shooting: 'shooting',
   library: 'library',
   i: 'library',
   a: 'library',

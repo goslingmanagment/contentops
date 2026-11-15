@@ -1,4 +1,10 @@
-import type { HubOrder, HubOrderFile, HubOrderList, ItemId } from '@contentops/contracts'
+import type {
+  HubOrder,
+  HubOrderFile,
+  HubOrderList,
+  HubOrderStepCommand,
+  ItemId,
+} from '@contentops/contracts'
 import { useQueryClient } from '@tanstack/react-query'
 import { useActionToast } from '@/actions/action-toast-context'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
@@ -85,6 +91,17 @@ export function useHubOrderActions() {
     },
   })
 
+  // «Съёмка» (пакет C3): шаг пишется в Hub сразу, от имени человека; Hub отказывает, если шаг не его.
+  const step = useIntentMutation<{ order: HubOrder; body: HubOrderStepCommand }, HubOrder>({
+    failed: 'Шаг не записан',
+    run: ({ order, body }, key) =>
+      api.hubOrders.step({ params: { model, code: order.code }, body, idempotencyKey: key }),
+    onSuccess: (next) => {
+      saved(next)
+      toast.show({ message: `${next.code}: ${next.status.word}, записано в Hub` })
+    },
+  })
+
   const refresh = useIntentMutation<undefined, HubOrderList>({
     failed: 'Hub не перечитался',
     run: (_, key) => api.hubOrders.refresh({ params: { model }, idempotencyKey: key }),
@@ -99,6 +116,8 @@ export function useHubOrderActions() {
     unlink: (order: HubOrder, file: HubOrderFile, reason: string) =>
       unlink.start({ order, file, reason }),
     unlinking: unlink.isPending,
+    step: (order: HubOrder, body: HubOrderStepCommand) => step.start({ order, body }),
+    stepping: step.isPending,
     refresh: () => refresh.start(undefined),
     refreshing: refresh.isPending,
   }

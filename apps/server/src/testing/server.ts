@@ -3,6 +3,7 @@ import { createTestDatabase, type TestDatabase } from '@contentops/db/testing'
 import type { InjectOptions, LightMyRequestResponse } from 'fastify'
 import type { HubAgentKeyService } from '../auth/hub-agent-keys'
 import type { HubSigninSetup } from '../auth/hub-signin'
+import type { HubOrdersClientFactory } from '../hub-orders/work'
 import { createLogger } from '../logger'
 import type { BlobStore } from '../media/storage'
 import { tempStore } from '../media/testing'
@@ -65,6 +66,7 @@ export async function testServer(
     filesDirect?: boolean
     hubSignin?: HubSigninSetup
     hubAgentKeys?: HubAgentKeyService
+    hubOrders?: HubOrdersClientFactory
   } = {},
 ): Promise<TestServer> {
   const database = await createTestDatabase()
@@ -82,6 +84,7 @@ export async function testServer(
     ...(options.filesDirect ? { filesDirect: true } : {}),
     ...(options.hubSignin ? { hubSignin: options.hubSignin } : {}),
     ...(options.hubAgentKeys ? { hubAgentKeys: options.hubAgentKeys } : {}),
+    ...(options.hubOrders ? { hubOrders: options.hubOrders } : {}),
   })
   await app.ready()
   return {

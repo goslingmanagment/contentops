@@ -20,6 +20,7 @@ import {
   planWeekSearchSchema,
 } from '@/screens/plan/search'
 import { promoSearchSchema } from '@/screens/promo/search'
+import { shootingSearchSchema } from '@/screens/shooting/search'
 import { AppShell } from '@/shell/app-shell'
 import { ModelNotFound, ModelScope } from '@/shell/model/model-scope'
 import {
@@ -311,6 +312,14 @@ const todayRoute = createRoute({
   component: lazyRouteComponent(() => import('@/screens/today'), 'TodayScreen'),
 })
 
+/** «Съёмка» (пакет C3): заказы Hub со стороны съёмки и ТЗ модели. */
+const shootingRoute = createRoute({
+  getParentRoute: () => modelRoute,
+  path: 'shooting',
+  validateSearch: shootingSearchSchema,
+  component: lazyRouteComponent(() => import('@/screens/shooting'), 'ShootingScreen'),
+})
+
 /** «Ждут вас»: дела человека из Hub и свои строки ContentOps. */
 const waitingRoute = createRoute({
   getParentRoute: () => modelRoute,
@@ -345,6 +354,7 @@ export const routeTree = rootRoute.addChildren([
       modelIndexRoute,
       todayRoute,
       waitingRoute,
+      shootingRoute,
       libraryRootRoute,
       librarySectionRoute,
       customsRoute,

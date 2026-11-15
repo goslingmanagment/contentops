@@ -5,6 +5,7 @@ import { requireActor } from '../commands'
 import type { RequestContext } from '../context'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { sendHubStep, storeHubOrder } from '../hub-orders/steps'
 import { type HubOrderContext, hubOrderList, hubOrderView } from '../hub-orders/view'
 import { enqueueHubOrders } from '../hub-orders/work'
 import { linkHubDelivery, retractHubDelivery } from '../hub-orders/writes'
@@ -23,7 +24,7 @@ function codeOf(raw: string): string {
   return parsed.data
 }
 
-export function hubOrderHandlers({ db, command, secrets }: Services): HandlerRegistry {
+export function hubOrderHandlers({ db, command, secrets, hubOrders }: Services): HandlerRegistry {
   // A registry built without services (the route tests) has no secrets: nothing configured.
   const configured = secrets?.hub === true
   const hubBase = secrets?.hubBaseUrl ?? null
@@ -51,6 +52,24 @@ export function hubOrderHandlers({ db, command, secrets }: Services): HandlerReg
           if (configured) await enqueueHubOrders(tx, model.id, `refresh:${ctx.requestId}`)
           return hubOrderList(tx, await context(tx, ctx), { configured })
         }),
+
+      step: async ({ params, body, ctx }) => {
+        const code = codeOf(params.code)
+        const model = modelOf(ctx.model)
+        // The hub first, as the person: it says yes or no; then the order as it answered, journaled.
+        const order = await sendHubStep(
+          db,
+          hubOrders?.() ?? null,
+          model,
+          code,
+          body,
+          requireActor(ctx),
+        )
+        return command({ ctx, body }, async (tx) => {
+          await storeHubOrder(tx, model, order)
+          return hubOrderView(tx, await context(tx, ctx), code)
+        })
+      },
 
       linkDelivery: ({ params, body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {

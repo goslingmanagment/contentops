@@ -1,6 +1,7 @@
 import type { Db } from '@contentops/db'
 import type { HubSigninService } from './auth/hub-signin'
 import type { RunCommand } from './commands'
+import type { HubOrdersClientFactory } from './hub-orders/work'
 import type { BlobStore } from './media/storage'
 import type { SpaceOptions } from './space'
 
@@ -29,4 +30,6 @@ export interface Services {
   store: BlobStore
   /** «Войти через хаб» (SPEC §11.1); absent — not configured. */
   hubSignin?: HubSigninService | null
+  /** The hub's custom orders, for a person's step of «Съёмка» (package C3); absent — none. */
+  hubOrders?: HubOrdersClientFactory
 }

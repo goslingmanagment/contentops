@@ -12,12 +12,11 @@ import { useHubOrderList } from '@/data/hub-orders'
 import { useRole } from '@/data/session'
 import { useKeyboardShortcut } from '@/lib/use-keyboard-shortcut'
 import { useMediaQuery } from '@/lib/use-media-query'
-import { CustomsViewSwitch } from '@/screens/library/shared/customs-view-switch'
+import { ShootingTabs } from '@/screens/shooting/shooting-tabs'
 import { FieldLayout } from '@/shell/field/field-layout'
 import { QueryErrorLine } from '@/shell/field/query-error-line'
 import { RefreshStrip } from '@/shell/field/refresh-strip'
 import { useCurrentModel } from '@/shell/model/model-context'
-import { useCustomsCount, useCustomsCrumbs } from '../customs-crumbs'
 import { OrdersSkeleton } from '../orders-skeleton'
 import { HubOrderPanel } from './hub-order-panel'
 import { HubOrderRow } from './hub-order-row'
@@ -38,10 +37,11 @@ interface HubOrdersViewProps {
 }
 
 /**
- * Кастомы › Заказы с 12.11.2026 (пакет N): дом заказа — Hub. Здесь заказы Hub в
- * производстве — у модели, сдано частично, правка, снято и не отдано, — по коду Hub, с
- * файлами, что держит ContentOps. Новый заказ заводят на доске Hub; заказы ContentOps до
- * Hub — в «Архиве заказов». Hub недоступен — экран показывает последнее чтение и время.
+ * «Съёмка › Кастомы» (пакет C3; до него — Кастомы › Заказы, пакет N): дом заказа — Hub. Здесь
+ * заказы Hub от «Проверен» до «Снят» — передать модели, у модели, правка, просрочено, снято, —
+ * по коду Hub, со сроком, пожеланием фана и файлами, что держит ContentOps. Шаги съёмки
+ * пишутся в Hub от имени человека; новый заказ записывают в Workboard; заказы ContentOps до Hub
+ * — в «Архиве заказов». Hub недоступен — экран показывает последнее чтение и время.
  */
 export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrdersViewProps) {
   const model = useCurrentModel()
@@ -50,8 +50,6 @@ export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrder
   const list = useHubOrderList(model.code)
   const actions = useHubOrderActions()
   const narrow = useMediaQuery('(max-width: 1319px)')
-  const crumbs = useCustomsCrumbs()
-  const customsCount = useCustomsCount()
   const now = useClock().now()
   const href = useHref()
   useKeyboardShortcut({ code: 'Escape', enabled: selectedCode !== null }, onClosePanel)
@@ -89,7 +87,7 @@ export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrder
         <Button variant="secondary" asChild>
           <a href={data.board_url} target="_blank" rel="noreferrer">
             <PlusIcon />
-            Новый заказ в Hub
+            Записать кастом
             <ExternalLinkIcon aria-hidden />
           </a>
         </Button>
@@ -112,10 +110,9 @@ export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrder
       }
     >
       <FieldHeader
-        crumbs={crumbs}
-        title="Кастомы"
-        count={customsCount}
-        nav={<CustomsViewSwitch value="orders" />}
+        title="Съёмка"
+        count={data?.items.length}
+        nav={<ShootingTabs value="customs" />}
         actions={headerActions}
       />
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-6 gap-y-1 pb-1">
@@ -134,7 +131,7 @@ export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrder
         {data && groups.length === 0 ? (
           <EmptyState>
             {data.read_at
-              ? 'Заказов в производстве нет: новые появятся, когда Hub отметит «у модели»'
+              ? 'Заказов в съёмке нет: новые появятся, когда их проверят в Workboard'
               : 'Hub ещё не прочитан'}
           </EmptyState>
         ) : null}

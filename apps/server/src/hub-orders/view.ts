@@ -92,6 +92,18 @@ function statusOf(order: HubCustomOrder, pending: number, now: Instant): StatusW
   const late = overdue !== null ? `${overdue} ${plural(overdue, DAYS)}` : null
   let status: StatusWord
   switch (order.state) {
+    case 'checked':
+      status = late
+        ? { sign: 'trouble', word: 'просрочено', detail: `не у модели · ${late}` }
+        : { sign: null, word: 'передать модели', detail: null }
+      break
+    case 'refused':
+      status = {
+        sign: 'trouble',
+        word: 'отказ модели',
+        detail: order.stateNote ? `«${order.stateNote}»` : null,
+      }
+      break
     case 'revision':
       status = {
         sign: 'turn',
@@ -356,6 +368,12 @@ export async function hubOrderViews(
       hub_url: boardUrl(context.hubBase, order.code),
       archive_order: archiveAddress,
       files,
+      leader: order.leader
+        ? { name: order.leader.name, shooting: order.leader.product === 'contentops' }
+        : null,
+      // «Только чтение» takes no step; the others are offered them, and the hub refuses whoever
+      // does not lead the step.
+      steps: reader ? [] : (STEPS_BY_STATE[order.state] ?? []),
       pending_reports: pending,
       version: order.version,
     }
@@ -363,9 +381,21 @@ export async function hubOrderViews(
   return { read, items: items.sort(byStep) }
 }
 
+/** The content side's steps the screen offers by the order's state (the hub decides whose they are). */
+const STEPS_BY_STATE: Readonly<Record<string, HubOrder['steps']>> = {
+  checked: ['at_model'],
+  refused: ['at_model'],
+  at_model: ['partly', 'shot', 'refused'],
+  partly: ['partly', 'shot', 'revision', 'refused'],
+  revision: ['partly', 'shot', 'revision', 'refused'],
+  shot: ['revision'],
+}
+
 /** A revision first, then the overdue, then the oldest step. */
 const STEP_RANK: Partial<Record<string, number>> = {
   revision: 0,
+  refused: 0,
+  checked: 2,
   at_model: 2,
   partly: 2,
   shot: 3,
@@ -395,7 +425,8 @@ export async function hubOrderList(
     read_error: readError(read),
     refreshing: rows[0]?.busy === true,
     unassigned: read.unassigned,
-    board_url: boardUrl(context.hubBase),
+    // «Записать кастом» opens Workboard's form right away (package C3).
+    board_url: context.hubBase ? `${boardUrl(context.hubBase)}?record=1` : null,
   }
 }
 

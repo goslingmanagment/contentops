@@ -69,8 +69,12 @@ export const CUSTOMS_ROUTES: ReadonlySet<string> = new Set([
   'settings.closeFirstDay',
   'hubOrders.list',
   'hubOrders.get',
+  'hubOrders.step',
   'waiting.list',
 ])
+
+/** The writes «Только кастомы» makes (package C3): a step of «Съёмка», as themselves in the hub. */
+const CUSTOMS_WRITES: ReadonlySet<string> = new Set(['hubOrders.step'])
 
 function forbidden(message: string): ApiProblem {
   return new ApiProblem('forbidden', message)
@@ -127,7 +131,12 @@ export function createAuthorize(db: Db): Authorize {
     if (access === 'staff' && !STAFF.has(actor.role)) throw forbidden('Недостаточно прав')
     if (access === 'owner' && actor.role !== 'owner') throw forbidden('Это может только владелец')
     // «Только чтение» не меняет ничего, кроме своего профиля и сессий (DESIGN §2.3).
-    if (access === 'model' && route.method !== 'GET' && !STAFF.has(actor.role)) {
+    if (
+      access === 'model' &&
+      route.method !== 'GET' &&
+      !STAFF.has(actor.role) &&
+      !(actor.role === 'customs' && CUSTOMS_WRITES.has(key))
+    ) {
       throw forbidden('Только чтение')
     }
     const code = params.model

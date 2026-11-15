@@ -13,16 +13,17 @@ import {
 import { accountLabel } from '@/lib/words'
 
 /**
- * Группы «Заказов» (пакет N): правка и просрочка наверху, снятое — внизу, до отдачи фану;
- * шаг, которого эта версия не знает (Hub добавил его позже), — отдельной группой в конце.
+ * Группы «Съёмки › Кастомы» (пакет C3): передать модели (проверен в Hub или модель отказалась),
+ * у модели (и сдано частично), правка, просрочено, снято — до отдачи фану; шаг, которого эта
+ * версия не знает (Hub добавил его позже), — отдельной группой в конце.
  */
-export type HubOrderGroup = 'revision' | 'overdue' | 'at_model' | 'partly' | 'shot' | 'other'
+export type HubOrderGroup = 'handover' | 'at_model' | 'revision' | 'overdue' | 'shot' | 'other'
 
 export const HUB_GROUP_ORDER: readonly HubOrderGroup[] = [
+  'handover',
+  'at_model',
   'revision',
   'overdue',
-  'at_model',
-  'partly',
   'shot',
   'other',
 ]
@@ -31,18 +32,18 @@ export function hubGroupOf(order: HubOrder): HubOrderGroup {
   if (!isKnownHubState(order.state)) return 'other'
   if (order.state === 'revision') return 'revision'
   if (order.overdue_days !== null) return 'overdue'
-  if (order.state === 'partly') return 'partly'
+  if (order.state === 'checked' || order.state === 'refused') return 'handover'
   if (order.state === 'shot') return 'shot'
   return 'at_model'
 }
 
 export function hubGroupLabel(group: HubOrderGroup, modelGenitive: string): string {
   const labels: Record<HubOrderGroup, string> = {
+    handover: 'Передать модели',
+    at_model: `У ${modelGenitive}`,
     revision: 'Правка',
     overdue: 'Просрочено',
-    at_model: `У ${modelGenitive}`,
-    partly: 'Сдано частично',
-    shot: 'Снято — отдать фану в Hub',
+    shot: 'Снято: отдать фану',
     other: 'Другие шаги в Hub',
   }
   return labels[group]

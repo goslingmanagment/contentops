@@ -2528,6 +2528,28 @@ CREATE TABLE public.sessions (
 
 ALTER TABLE public.sessions OWNER TO contentops_migrate;
 
+CREATE TABLE public.shooting_tasks (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    title text NOT NULL,
+    kind text NOT NULL,
+    note text,
+    deadline_on date,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid NOT NULL,
+    handed_in_at timestamp with time zone,
+    handed_in_by uuid,
+    cancelled_at timestamp with time zone,
+    cancelled_by uuid,
+    CONSTRAINT shooting_tasks_cancelled CHECK (((cancelled_at IS NULL) = (cancelled_by IS NULL))),
+    CONSTRAINT shooting_tasks_handed_in CHECK (((handed_in_at IS NULL) = (handed_in_by IS NULL))),
+    CONSTRAINT shooting_tasks_kind_check CHECK ((kind = ANY (ARRAY['set'::text, 'fyp'::text, 'other'::text]))),
+    CONSTRAINT shooting_tasks_note_check CHECK (((note IS NULL) OR ((length(note) >= 1) AND (length(note) <= 2000)))),
+    CONSTRAINT shooting_tasks_title_check CHECK (((length(title) >= 1) AND (length(title) <= 200)))
+);
+
+ALTER TABLE public.shooting_tasks OWNER TO contentops_migrate;
+
 CREATE TABLE public.source_objects (
     model_id uuid NOT NULL,
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -3047,6 +3069,9 @@ ALTER TABLE ONLY public.sessions
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_token_hash_key UNIQUE (token_hash);
 
+ALTER TABLE ONLY public.shooting_tasks
+    ADD CONSTRAINT shooting_tasks_pkey PRIMARY KEY (model_id, id);
+
 ALTER TABLE ONLY public.source_objects
     ADD CONSTRAINT source_objects_model_id_archive_revision_id_archive_entry_n_key UNIQUE (model_id, archive_revision_id, archive_entry_no);
 
@@ -3306,6 +3331,8 @@ CREATE UNIQUE INDEX provenance_voided_by ON public.provenance USING btree (model
 CREATE UNIQUE INDEX rendition_generations_active_key ON public.rendition_generations USING btree (master_sha256, kind, recipe_digest, meta_stripped) WHERE is_active;
 
 CREATE INDEX rendition_generations_input ON public.rendition_generations USING btree (input_sha256);
+
+CREATE INDEX shooting_tasks_open ON public.shooting_tasks USING btree (model_id, deadline_on) WHERE ((handed_in_at IS NULL) AND (cancelled_at IS NULL));
 
 CREATE INDEX source_objects_last_seen ON public.source_objects USING btree (model_id, last_seen_at);
 
@@ -4244,6 +4271,18 @@ ALTER TABLE ONLY public.sessions
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.sessions(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.shooting_tasks
+    ADD CONSTRAINT shooting_tasks_cancelled_by_fkey FOREIGN KEY (cancelled_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.shooting_tasks
+    ADD CONSTRAINT shooting_tasks_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.shooting_tasks
+    ADD CONSTRAINT shooting_tasks_handed_in_by_fkey FOREIGN KEY (handed_in_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.shooting_tasks
+    ADD CONSTRAINT shooting_tasks_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.source_objects
     ADD CONSTRAINT source_objects_model_id_archive_revision_id_fkey FOREIGN KEY (model_id, archive_revision_id) REFERENCES public.source_revisions(model_id, id) ON DELETE RESTRICT;
 
@@ -4471,6 +4510,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.review_cases TO contentops_app
 GRANT SELECT ON TABLE public.schema_migrations TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sessions TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.shooting_tasks TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.source_objects TO contentops_app;
 

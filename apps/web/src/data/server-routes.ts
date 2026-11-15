@@ -109,6 +109,7 @@ export const SERVER_ROUTES: ServerRoutes = {
   // Заказы кастомов (4б): с 12.11.2026 — архив; заказы живут в Hub (пакет N).
   orders: 'all',
   hubOrders: 'all',
+  shootingTasks: 'all',
   waiting: 'all',
   inbox: [
     'list',

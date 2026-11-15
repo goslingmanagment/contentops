@@ -21,6 +21,7 @@ import { planApprovalHandlers } from './plan-approval'
 import { planObjectHandlers } from './plan-objects'
 import { planPublishHandlers } from './plan-publish'
 import { promoHandlers } from './promo'
+import { shootingTaskHandlers } from './shooting'
 import { systemHandlers } from './system'
 import { tagHandlers } from './tags'
 import { thresholdHandlers } from './thresholds'
@@ -69,6 +70,7 @@ export function createHandlers(services: Services): HandlerRegistry {
     promoHandlers(services),
     orderHandlers(services),
     hubOrderHandlers(services),
+    shootingTaskHandlers(services),
     waitingHandlers(services),
   )
 }
