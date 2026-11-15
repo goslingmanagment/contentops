@@ -23,6 +23,7 @@ import { planPublishHandlers } from './plan-publish'
 import { promoHandlers } from './promo'
 import { publicationsHandlers } from './publications'
 import { shootingTaskHandlers } from './shooting'
+import { statsHandlers } from './stats'
 import { systemHandlers } from './system'
 import { tagHandlers } from './tags'
 import { thresholdHandlers } from './thresholds'
@@ -74,5 +75,6 @@ export function createHandlers(services: Services): HandlerRegistry {
     shootingTaskHandlers(services),
     waitingHandlers(services),
     publicationsHandlers(services),
+    statsHandlers(services),
   )
 }

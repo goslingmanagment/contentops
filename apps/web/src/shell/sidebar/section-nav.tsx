@@ -4,6 +4,7 @@ import { useLocation } from '@tanstack/react-router'
 import {
   BellIcon,
   CalendarDaysIcon,
+  ChartColumnIcon,
   ClapperboardIcon,
   FolderIcon,
   HistoryIcon,
@@ -99,6 +100,15 @@ export function SectionNav({ model, collapsed }: SectionNavProps) {
           icon={NewspaperIcon}
           label="Публикации"
           active={active === 'publications'}
+          collapsed={collapsed}
+        />
+      ) : null}
+      {role === 'owner' || role === 'manager' ? (
+        <NavItem
+          href={href({ to: '/$model/stats', params })}
+          icon={ChartColumnIcon}
+          label="Статистика"
+          active={active === 'stats'}
           collapsed={collapsed}
         />
       ) : null}

@@ -26,6 +26,8 @@ function SectionRedirect({ model, section }: { model: string; section: SectionKe
       return <Navigate to="/$model/plan/$date" params={{ model, date: today }} replace />
     case 'publications':
       return <Navigate to="/$model/publications" params={{ model }} replace />
+    case 'stats':
+      return <Navigate to="/$model/stats" params={{ model }} replace />
     case 'journal':
       return <Navigate to="/$model/journal" params={{ model }} replace />
     case 'library':

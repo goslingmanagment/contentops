@@ -123,6 +123,15 @@ class FakeHub implements HubSignin, PersonDoor {
   fanslyLoginPages(): never {
     throw new Error('not this test')
   }
+  statsContent(): never {
+    throw new Error('not this test')
+  }
+  statsMedia(): never {
+    throw new Error('not this test')
+  }
+  contentComments(): never {
+    throw new Error('not this test')
+  }
 
   mint(user: HubSigninUser): string {
     const code = randomBytes(32).toString('base64url')

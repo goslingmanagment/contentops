@@ -22,6 +22,7 @@ import {
 import { promoSearchSchema } from '@/screens/promo/search'
 import { publicationsSearchSchema } from '@/screens/publications/search'
 import { shootingSearchSchema } from '@/screens/shooting/search'
+import { statsSearchSchema } from '@/screens/stats/search'
 import { AppShell } from '@/shell/app-shell'
 import { ModelNotFound, ModelScope } from '@/shell/model/model-scope'
 import {
@@ -336,6 +337,14 @@ const publicationsRoute = createRoute({
   component: lazyRouteComponent(() => import('@/screens/publications'), 'PublicationsScreen'),
 })
 
+/** «Статистика»: что смотрят, покупают и комментируют на странице модели — цифры Fansly из Hub (пакет C2). */
+const statsRoute = createRoute({
+  getParentRoute: () => modelRoute,
+  path: 'stats',
+  validateSearch: statsSearchSchema,
+  component: lazyRouteComponent(() => import('@/screens/stats'), 'StatsScreen'),
+})
+
 /** «Ждут вас»: дела человека из Hub и свои строки ContentOps. */
 const waitingRoute = createRoute({
   getParentRoute: () => modelRoute,
@@ -372,6 +381,7 @@ export const routeTree = rootRoute.addChildren([
       todayRoute,
       waitingRoute,
       publicationsRoute,
+      statsRoute,
       shootingRoute,
       libraryRootRoute,
       librarySectionRoute,
