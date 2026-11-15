@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from '@/data/session'
 import { FieldMessage } from '@/shell/field/field-message'
 import { useCurrentModel } from '@/shell/model/model-context'
-import { type HubScreenSearch, innerQuery, sameQuery } from './search'
+import { type HubScreenSearch, innerQuery, routerSearch, sameQuery } from './search'
 
 /**
  * «Публикации» and «Статистика» (products plan §2.4, package C2): the menu item, the address and the
@@ -82,7 +82,7 @@ export function HubScreen({ screen, search }: { screen: HubScreenId; search: Hub
       // The place is mirrored into ContentOps' address in place: the frame's own steps are the history.
       void navigate({
         to: pathname,
-        search: Object.fromEntries(query.entries()) as never,
+        search: routerSearch(query) as never,
         replace: true,
       })
     }

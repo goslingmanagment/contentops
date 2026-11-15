@@ -3,14 +3,27 @@
  * keeps its place in its address (`?page=lora-1&publication=12&period=30d`), and ContentOps mirrors it
  * into its own, so «Назад», a reload and a link keep the place. Taken as it is: text values only.
  */
-export type HubScreenSearch = Record<string, string>
+export type HubScreenSearch = Record<string, string | number | boolean>
 
+/** Text, numbers and switches as the router read them (a number stays a number: `?publication=12`). */
 export function hubScreenSearchSchema(raw: Record<string, unknown>): HubScreenSearch {
   const out: HubScreenSearch = {}
   for (const [key, value] of Object.entries(raw)) {
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      out[key] = String(value)
+      out[key] = value
     }
+  }
+  return out
+}
+
+/** Hub's query as ContentOps' router keeps it: a number written as one, so the address stays plain. */
+export function routerSearch(query: URLSearchParams): HubScreenSearch {
+  const out: HubScreenSearch = {}
+  for (const [key, value] of query.entries()) {
+    out[key] =
+      value !== '' && /^-?\d{1,15}$/.test(value) && String(Number(value)) === value
+        ? Number(value)
+        : value
   }
   return out
 }
@@ -22,7 +35,7 @@ const OWN = new Set(['demo', 'as', 'skin'])
 export function innerQuery(search: HubScreenSearch): URLSearchParams {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(search)) {
-    if (!OWN.has(key) && key !== 'model') query.set(key, value)
+    if (!OWN.has(key) && key !== 'model') query.set(key, String(value))
   }
   return query
 }
