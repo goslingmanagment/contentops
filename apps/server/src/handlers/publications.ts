@@ -185,12 +185,27 @@ function actionProblem(error: unknown, fallback: string): never {
   if (error.status === 409 || error.status === 400) {
     throw new ApiProblem('publication_refused', wordsOf(hubWords(error), fallback))
   }
-  throw new ApiProblem('unavailable', 'Ответа нет: неизвестно, сделано ли. Обновите и посмотрите')
+  // Hub turned it away before doing anything (too many at once): safe to try again later.
+  if (error.kind === 'rate_limited')
+    throw new ApiProblem('unavailable', 'Hub занят: ничего не сделано. Попробуйте через минуту')
+  // Sent, and no answer: done or not, nobody knows. Never «повторить» by itself.
+  throw new ApiProblem(
+    'outcome_unknown',
+    'Ответа нет: неизвестно, сделано ли. Обновите и посмотрите',
+  )
 }
 
-/** What Hub said in its refusal (its message without the status line). */
-function hubWords(error: { message: string }): string {
-  return error.message.replace(/^HTTP \d+\s*/, '')
+/** A read before an action failed: nothing was sent, so trying again is safe. */
+function readProblem(error: unknown): never {
+  if (isHubError(error) && (error.kind === 'transient' || error.kind === 'rate_limited')) {
+    throw new ApiProblem('unavailable', 'Hub не ответил: ничего не сделано. Попробуйте ещё раз')
+  }
+  return actionProblem(error, 'Hub не ответил')
+}
+
+/** What Hub said in its refusal: its own sentence, never the operation or the status (those are the log's). */
+function hubWords(error: { hubMessage: string | null }): string {
+  return error.hubMessage ?? ''
 }
 
 const NO_CARD: Omit<PublicationCard, 'hub'> = {
@@ -273,7 +288,7 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
     const [detail, settings] = await Promise.all([
       door.publicationGet(grant, id),
       door.publicationSettings(grant, slugOf(model)),
-    ]).catch((error: unknown) => actionProblem(error, 'Пост не нашёлся'))
+    ]).catch((error: unknown) => readProblem(error))
     if (!settings.pages.some((page) => page.pageLabel === detail.publication.pageLabel)) {
       throw new ApiProblem('not_found', 'Такой публикации нет')
     }
@@ -283,7 +298,7 @@ export function publicationsHandlers(services: Services): HandlerRegistry {
   async function pageOfModel(ctx: Ctx, door: PersonDoor, grant: string, page: string) {
     const settings = await door
       .publicationSettings(grant, slugOf(modelOf(ctx.model)))
-      .catch((error: unknown) => actionProblem(error, 'Ответа нет: обновите чуть позже'))
+      .catch((error: unknown) => readProblem(error))
     const found = settings.pages.find((one) => one.pageLabel === page)
     if (!found) throw new ApiProblem('not_found', 'Такой страницы нет')
     return found

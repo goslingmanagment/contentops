@@ -85,4 +85,22 @@ describe('отказ действия словами §3.8', () => {
   it('отменённый уходом запрос не показывается', () => {
     expect(describeFailure(new DOMException('Запрос отменён', 'AbortError'), 'x')).toBeNull()
   })
+
+  it('итог неизвестен — слова сервера и «Обновить», без «Повторить» и без автоповтора', () => {
+    expect(
+      describeFailure(
+        apiError(
+          502,
+          'outcome_unknown',
+          'Ответа нет: неизвестно, сделано ли. Обновите и посмотрите',
+        ),
+        'Не получилось',
+      ),
+    ).toEqual({
+      message: 'Ответа нет: неизвестно, сделано ли. Обновите и посмотрите',
+      retryable: false,
+      autoRetryMs: null,
+      refresh: true,
+    })
+  })
 })

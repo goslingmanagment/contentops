@@ -48,6 +48,8 @@ export interface HubErrorInit {
   status?: number
   code?: string
   retryAfterMs?: number
+  /** Hub's own sentence of its answer (its body's `message`), for a person: never the endpoint or the status. */
+  hubMessage?: string
   at?: Date
   cause?: unknown
 }
@@ -58,6 +60,8 @@ export class HubError extends Error {
   readonly status: number | null
   readonly code: HubRefusalCode | null
   readonly retryAfterMs: number | null
+  /** Hub's own sentence, as Hub wrote it; null when Hub sent none. `message` is the log's line. */
+  readonly hubMessage: string | null
   /** When it happened; for `auth_rejected` — «токен не принят с …». */
   readonly at: Date
 
@@ -69,6 +73,7 @@ export class HubError extends Error {
     this.status = init.status ?? null
     this.code = init.code ?? null
     this.retryAfterMs = init.retryAfterMs ?? null
+    this.hubMessage = init.hubMessage ?? null
     this.at = init.at ?? new Date()
   }
 

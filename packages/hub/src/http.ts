@@ -124,6 +124,7 @@ function errorFor(ctx: HttpContext, endpoint: string, res: Response, text: strin
       endpoint,
       status: res.status,
       ...(code === undefined ? {} : { code }),
+      ...(message === undefined ? {} : { hubMessage: message }),
       ...(kind === 'rate_limited'
         ? { retryAfterMs: parseRetryAfter(res.headers.get('retry-after'), at.getTime()) }
         : {}),
