@@ -33,16 +33,25 @@ function doorProblem(error: unknown, words: { refused: string; away: string }): 
   throw new ApiProblem('unavailable', words.away)
 }
 
+/** Hub's slug of a model of ContentOps: the reverse of `HUB_MODEL_MAP` (`smoke` → `test`), else its code. */
+export function hubSlugOf(modelCode: string, modelMap: Readonly<Record<string, string>>): string {
+  const code = modelCode.toLowerCase()
+  return Object.entries(modelMap).find(([, to]) => to === code)?.[0] ?? code
+}
+
 /**
- * The person's own read: their open orders through the door, cut to this model as the background
- * read cuts them (by the page, the old order of the import, the chats). `null` — the person reads
- * the last background read (no door, no grant).
+ * The person's own read: their open orders through the door, of this model BY HUB'S ANSWER — an order
+ * with a page is this model's when Hub names this model's slug (`HUB_MODEL_MAP` read backwards), never
+ * through the accounts' binding (`hub_page_ref`, which a test model's accounts do not carry); an order
+ * of no known page as the background read places it (the old order of the import, the chats). `null`
+ * — the person reads the last background read (no door, no grant).
  */
 export async function personRead(
   db: Db,
   door: PersonDoor | null,
   model: ModelScope,
   grant: string | null,
+  modelMap: Readonly<Record<string, string>> = {},
 ): Promise<HubOrderRead | null> {
   if (!door || !grant) return null
   let orders: HubCustomOrder[]
@@ -57,10 +66,15 @@ export async function personRead(
     return null
   }
   const mapping = await modelMapping(db)
+  const slug = hubSlugOf(model.code, modelMap)
   const now = new Date().toISOString()
   return {
     read_at: now,
-    orders: orders.filter((order) => modelOfOrder(order, mapping) === model.id),
+    orders: orders.filter((order) =>
+      order.pageLabel !== null
+        ? order.modelSlug?.toLowerCase() === slug
+        : modelOfOrder(order, mapping) === model.id,
+    ),
     unassigned: 0,
     tried_at: now,
     error: null,

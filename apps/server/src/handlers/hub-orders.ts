@@ -24,7 +24,13 @@ function codeOf(raw: string): string {
   return parsed.data
 }
 
-export function hubOrderHandlers({ db, command, secrets, personDoor }: Services): HandlerRegistry {
+export function hubOrderHandlers({
+  db,
+  command,
+  secrets,
+  personDoor,
+  hubModelMap,
+}: Services): HandlerRegistry {
   // A registry built without services (the route tests) has no secrets: nothing configured.
   const configured = secrets?.hub === true
   const hubBase = secrets?.hubBaseUrl ?? null
@@ -44,7 +50,9 @@ export function hubOrderHandlers({ db, command, secrets, personDoor }: Services)
     const [view] = await modelViews(q, [model.code])
     const grant = await grantOf(q, actor)
     const read =
-      options.fresh === false ? null : await personRead(db, personDoor ?? null, model, grant)
+      options.fresh === false
+        ? null
+        : await personRead(db, personDoor ?? null, model, grant, hubModelMap ?? {})
     return {
       model: { ...model, genitive: view?.name_genitive ?? model.name },
       role: actor.role,

@@ -49,6 +49,7 @@ function hubOrder(id: number, fields: Partial<HubCustomOrder> = {}): HubCustomOr
     pageLabel: 'lora-1',
     platform: 'fansly',
     model: 'Лора',
+    modelSlug: 'lora',
     fan: { username: 'fan_one', displayName: null },
     buyer: null,
     card: { task: '1. в красном\n2. медленно', duration: '5 минут', wantsVideo: true },

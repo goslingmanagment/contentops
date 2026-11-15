@@ -35,4 +35,6 @@ export interface Services {
    * PERSON (their session's grant); absent — Hub's sign-in is not configured.
    */
   personDoor?: PersonDoor | null
+  /** Hub's model slug → ContentOps' model code where they differ (`HUB_MODEL_MAP`: `test=smoke`). */
+  hubModelMap?: Record<string, string>
 }
