@@ -93,6 +93,14 @@ export function authHandlers(services: Services): HandlerRegistry {
     return { person: await personById(db, principal) }
   }
 
+  /** The session lives on Hub's grant (signed in through Hub or by the form that asks Hub). */
+  async function overHubGrant(sessionId: string | null): Promise<boolean> {
+    if (!sessionId) return false
+    const { rows } = await db.execute<{ hub_grant: string | null }>(sql`
+      SELECT hub_grant FROM sessions WHERE id = ${sessionId}::uuid`)
+    return (rows[0]?.hub_grant ?? null) !== null
+  }
+
   /** «Выйти» of a session over Hub's grant: Hub ends the session ContentOps' page opened. Best effort. */
   async function endHubSide(sessionId: string, ctx: RequestContext) {
     const hub = services.hubSignin
@@ -314,7 +322,13 @@ export function authHandlers(services: Services): HandlerRegistry {
                  (role = 'manager' AND first_day_closed_at IS NULL) AS first_day
             FROM principals WHERE id = ${actor.id}::uuid`)
         const row = rows[0]
+        const ownerViaHub =
+          actor.type === 'person' && actor.role === 'owner' && (await overHubGrant(actor.sessionId))
+        const hubBase = services.secrets.hubBaseUrl
         return {
+          ...(ownerViaHub && hubBase
+            ? { password_in_hub: `${new URL(hubBase).origin}/workboard/account` }
+            : {}),
           person: await personById(db, actor.id),
           models: [...actor.models],
           ui_skin: row?.ui_skin ?? 'blue',
@@ -404,6 +418,10 @@ export function authHandlers(services: Services): HandlerRegistry {
               SELECT hub_grant FROM sessions WHERE id = ${actor.sessionId}::uuid`)
           : { rows: [] }
         const grant = held[0]?.hub_grant ?? null
+        // The owner's password never passes through ContentOps (package C4): refused before anything is sent.
+        if (grant !== null && actor.role === 'owner') {
+          throw new ApiProblem('forbidden', 'Пароль владельца меняется в Hub', { reason: 'owner' })
+        }
         if (grant !== null && hub && actor.sessionId) {
           let answer: Awaited<ReturnType<typeof hub.setup.hub.changePassword>>
           try {

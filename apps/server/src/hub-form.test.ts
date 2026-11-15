@@ -32,6 +32,23 @@ class FakeHub implements HubSignin {
   signedOut: string[] = []
   changed: string[] = []
   private readonly live = new Set<string>()
+  /** The owner's grants: the re-check answers the owner for them. */
+  readonly owners = new Set<string>()
+
+  ownerSignedIn(): HubSignedIn {
+    const grant = randomBytes(32).toString('base64url')
+    this.live.add(grant)
+    this.owners.add(grant)
+    return {
+      kind: 'signed_in',
+      redeemed: {
+        user: { id: 7, username: 'boss', role: 'owner' },
+        owner: true,
+        expiresAt: new Date(Date.now() + 86_400_000),
+        grant,
+      },
+    }
+  }
 
   signedIn(code: string): HubSignedIn {
     const grant = randomBytes(32).toString('base64url')
@@ -57,6 +74,14 @@ class FakeHub implements HubSignin {
   }
   async check(grant: string) {
     if (!this.live.has(grant)) return { active: false as const }
+    if (this.owners.has(grant)) {
+      return {
+        active: true as const,
+        user: { id: 7, username: 'boss', role: 'owner' },
+        owner: true,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      }
+    }
     return {
       active: true as const,
       user: { id: 901, username: 'kira', role: 'content_manager' },
@@ -99,6 +124,7 @@ let server: TestServer
 beforeAll(async () => {
   server = await testServer({
     hubSignin: { hub, origin: `https://${PUBLIC}`, ownerLogin: OWNER.login },
+    secrets: { hub: false, hubBaseUrl: 'https://hub.example.test' },
   })
 })
 afterAll(() => server.close())
@@ -204,4 +230,35 @@ describe('the form on ContentOps’ page', () => {
       (await call(server.app, { method: 'GET', url: '/api/v1/admin/me', as: session })).statusCode,
     ).toBe(401)
   })
+  it('offers the owner signed in through Hub no password form, and refuses his change before asking Hub', async () => {
+    hub.answer = hub.ownerSignedIn()
+    const session = sessionOf(await signIn('boss', 'not-checked-here'))
+    const me = await call(server.app, { method: 'GET', url: '/api/v1/admin/me', as: session })
+    expect(me.json()).toMatchObject({
+      person: { role: 'owner' },
+      password_in_hub: 'https://hub.example.test/workboard/account',
+    })
+    const before = hub.changed.length
+    const changed = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/admin/me/password',
+      as: session,
+      key: `k-owner-${Date.now()}`,
+      body: { current: 'whatever-it-is', next: 'a-new-password-1' },
+    })
+    expect(changed.statusCode).toBe(403)
+    expect(changed.json()).toMatchObject({ message: 'Пароль владельца меняется в Hub' })
+    expect(hub.changed.length).toBe(before)
+    // The owner's own ContentOps password (no Hub grant): the form is his, as before.
+    const own = await signInOwn()
+    expect(
+      (await call(server.app, { method: 'GET', url: '/api/v1/admin/me', as: own })).json()
+        .password_in_hub,
+    ).toBeUndefined()
+  })
 })
+
+async function signInOwn(): Promise<string> {
+  hub.answer = { kind: 'refused', reason: 'wrong', message: null }
+  return sessionOf(await signIn(OWNER.login, OWNER.password))
+}
