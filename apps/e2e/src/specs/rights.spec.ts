@@ -148,9 +148,12 @@ test.describe('«Только чтение» на Лоре', () => {
     await expect(rows.getByRole('option').first()).toBeVisible()
     await expectNoActions(main(reader))
 
-    // The week: the norm's empty places do not add rows for the reader.
+    // The week: the norm's empty places do not add rows for the reader. They are drawn from
+    // today on, so on a Sunday this week may have none left: the next week always has them.
     await main(reader).getByRole('link', { name: 'Неделя' }).click()
     await expect(reader).toHaveURL(/\/lora\/plan\/w\/\d{4}-W\d{2}$/)
+    await expectNoActions(main(reader))
+    await main(reader).getByRole('link', { name: 'Следующая неделя' }).click()
     const gaps = main(reader).getByRole('button', { name: /^\+ / })
     await expect(gaps.first()).toBeVisible()
     for (const gap of await gaps.all()) await expect(gap).toBeDisabled()
