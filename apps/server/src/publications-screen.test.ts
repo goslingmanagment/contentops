@@ -250,6 +250,17 @@ class FakeHub implements HubSignin, PersonDoor {
           approved: false,
           publication: null,
         }
+      // Hub's own check: the version the person saw must still be the post's.
+      if (item.version !== found.version) {
+        return {
+          id: item.id,
+          outcome: 'refused' as const,
+          reason: 'version_conflict',
+          approved: false,
+          publication: found,
+          words: 'пост изменили, пока вы смотрели: проверьте ещё раз',
+        }
+      }
       if (found.blocked) {
         return {
           id: item.id,
@@ -876,5 +887,32 @@ describe("«Утвердить выбранные» and Hub's words", () => {
         },
       ],
     })
+  })
+})
+
+describe('«Утвердить выбранные» sends the version the person saw', () => {
+  it('a draft changed after the tick is refused by Hub, in its words, never approved unread', async () => {
+    // Ticked at version 1; an agent has changed it since: Hub holds version 2.
+    const changed = { ...publication(1301, 'lora-1'), version: 2 }
+    const same = publication(1302, 'lora-1')
+    hub.publicationsOf.set('kira', [changed, same])
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const answer = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/lora/publications:approve-many',
+      as: kira,
+      body: {
+        items: [
+          { id: 1301, version: 1 },
+          { id: 1302, version: 1 },
+        ],
+      },
+    })
+    expect(answer.statusCode, answer.body).toBe(200)
+    expect(answer.json().results).toEqual([
+      { id: 1301, outcome: 'refused', words: 'Пост изменили, пока вы смотрели: проверьте ещё раз' },
+      { id: 1302, outcome: 'approved', words: null },
+    ])
+    expect(changed.status).toBe('draft')
   })
 })

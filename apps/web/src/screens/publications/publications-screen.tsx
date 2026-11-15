@@ -26,6 +26,7 @@ import { FieldLayout } from '@/shell/field/field-layout'
 import { QueryErrorLine } from '@/shell/field/query-error-line'
 import { RefreshStrip } from '@/shell/field/refresh-strip'
 import { useCurrentModel } from '@/shell/model/model-context'
+import { type Picks, pickAll, pickedItems, togglePick } from './batch-pick'
 import { PublicationPanel } from './publication-panel'
 import type { PublicationsSearch } from './search'
 import { SettingsPanel } from './settings-panel'
@@ -72,7 +73,8 @@ export function PublicationsScreen() {
     })
   const actions = usePublicationActions((id) => go({ post: id }))
   // «Утвердить выбранные»: the drafts Hub may approve as they stand (no blocking check), picked in the feed.
-  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set())
+  // A tick keeps the version on screen when it was made (batch-pick.ts): a draft changed since is refused by Hub.
+  const [picked, setPicked] = useState<Picks>(new Map())
   const [refusals, setRefusals] = useState<readonly { id: number; text: string; words: string }[]>(
     [],
   )
@@ -194,13 +196,11 @@ export function PublicationsScreen() {
           busy={actions.approveMany.isPending}
           onPick={setPicked}
           onApprove={() => {
-            const items = approvable
-              .filter((row) => picked.has(row.id))
-              .map((row) => ({ id: row.id, version: row.version }))
+            const items = pickedItems(picked, approvable)
             actions.approveMany.start({
               items,
               onAnswered: (answer) => {
-                setPicked(new Set())
+                setPicked(new Map())
                 setRefusals(
                   answer.results.flatMap((one) =>
                     one.outcome === 'refused'
@@ -271,14 +271,7 @@ export function PublicationsScreen() {
             openId={open}
             onOpen={(id) => go({ post: id })}
             picked={picked}
-            onToggle={(id) =>
-              setPicked((now) => {
-                const next = new Set(now)
-                if (next.has(id)) next.delete(id)
-                else next.add(id)
-                return next
-              })
-            }
+            onToggle={(row) => setPicked((now) => togglePick(now, row))}
           />
         ))}
       </div>
@@ -341,8 +334,8 @@ function DaySection({
   day: Day
   openId: number | null
   onOpen: (id: number) => void
-  picked: ReadonlySet<number>
-  onToggle: (id: number) => void
+  picked: Picks
+  onToggle: (row: PublicationRow) => void
 }) {
   const today = useToday()
   return (
@@ -361,7 +354,7 @@ function DaySection({
             {row && row.status === 'draft' && !row.blocked ? (
               <Checkbox
                 checked={picked.has(row.id)}
-                onCheckedChange={() => onToggle(row.id)}
+                onCheckedChange={() => onToggle(row)}
                 aria-label={`Выбрать для утверждения: ${row.text || 'без текста'}`}
                 className="ml-2 shrink-0"
               />
@@ -523,9 +516,9 @@ function BatchBar({
   onApprove,
 }: {
   approvable: readonly PublicationRow[]
-  picked: ReadonlySet<number>
+  picked: Picks
   busy: boolean
-  onPick: (next: ReadonlySet<number>) => void
+  onPick: (next: Picks) => void
   onApprove: () => void
 }) {
   const chosen = approvable.filter((row) => picked.has(row.id)).length
@@ -535,7 +528,7 @@ function BatchBar({
       <Button
         variant="outline"
         size="sm"
-        onClick={() => onPick(all ? new Set() : new Set(approvable.map((row) => row.id)))}
+        onClick={() => onPick(all ? new Map() : pickAll(picked, approvable))}
       >
         {all
           ? 'Снять выбор'
