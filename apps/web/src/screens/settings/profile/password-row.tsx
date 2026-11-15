@@ -9,10 +9,24 @@ import { useForm } from 'react-hook-form'
 import { useActionToast } from '@/actions/action-toast-context'
 import { useIntentMutation } from '@/actions/use-intent-mutation'
 import { useApi } from '@/data/api-session'
+import { useSession } from '@/data/session'
 
-/** «Пароль»: форма раскрывается под строкой, после ответа сервера — «Пароль сменён». */
+/**
+ * «Пароль»: форма раскрывается под строкой, после ответа сервера — «Пароль сменён». Владелец, вошедший через Hub,
+ * формы не видит: его пароль меняется в Hub и через ContentOps не проходит (пакет C4).
+ */
 export function PasswordRow() {
   const [open, setOpen] = useState(false)
+  const inHub = useSession().data?.password_in_hub
+  if (inHub) {
+    return (
+      <SettingsRow label="Пароль" detail="Пароль владельца меняется в Hub">
+        <Button variant="outline" size="sm" asChild>
+          <a href={inHub}>Открыть в Hub</a>
+        </Button>
+      </SettingsRow>
+    )
+  }
   return (
     <SettingsRow
       label="Пароль"

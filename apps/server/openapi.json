@@ -12701,6 +12701,9 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/ModelCode"
             }
+          },
+          "password_in_hub": {
+            "type": "string"
           }
         },
         "required": [

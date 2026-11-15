@@ -68,5 +68,10 @@ export const SessionPrincipalSchema = z.object({
    * models: Hub's old addresses come with Hub's slug (`/hub/<screen>?model=`).
    */
   hub_models: z.record(z.string(), ModelCodeSchema).optional(),
+  /**
+   * The owner signed in through Hub (package C4): his password is Hub's and never passes through ContentOps — the
+   * profile offers no form, only this address in Hub. Absent — the password is changed here.
+   */
+  password_in_hub: z.string().optional(),
 })
 export type SessionPrincipal = z.infer<typeof SessionPrincipalSchema>
