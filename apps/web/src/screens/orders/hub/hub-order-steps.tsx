@@ -23,8 +23,9 @@ const ASK: Partial<Record<HubShootingStep, { label: string; required: boolean }>
 
 /**
  * Шаги съёмки (пакет C3): передать модели со сроком, сдан частично, снят, правка, отказ. Шаг
- * пишется в Hub от имени вошедшего человека; ведёт его КМ модели, пока его нет — ведущий
- * кастомы, иначе владелец. Hub отказывает тому, кто шаг не ведёт, — карточка так и скажет.
+ * пишется от имени вошедшего человека (его вход из реестра); ведёт его КМ модели, пока его нет —
+ * ведущий кастомы, иначе владелец. Тому, кто шаг не ведёт, — отказ, карточка так и скажет. Своя
+ * учётная запись без входа из реестра шагов не делает: вместо кнопок — почему.
  */
 export function HubOrderSteps({ order, actions }: { order: HubOrder; actions: HubOrderActions }) {
   const role = useRole()
@@ -33,7 +34,15 @@ export function HubOrderSteps({ order, actions }: { order: HubOrder; actions: Hu
   const [deadline, setDeadline] = useState(order.deadline ?? '')
   const id = useId()
   if (role === 'reader' || order.steps.length === 0) {
-    return order.leader ? <Leader order={order} /> : null
+    if (!order.leader && !order.steps_note) return null
+    return (
+      <InfoSection title="Шаг съёмки">
+        <div className="flex flex-col gap-2">
+          {order.leader ? <Leader order={order} /> : null}
+          {order.steps_note ? <p className="text-ink-3 text-sm">{order.steps_note}</p> : null}
+        </div>
+      </InfoSection>
+    )
   }
   const ask = open ? ASK[open] : undefined
   const submit = (step: HubShootingStep) => {

@@ -9,7 +9,7 @@ import {
   WorkRunner,
   WorkScheduler,
 } from '@contentops/db'
-import { createHubAgentKeys, createHubSignin } from '@contentops/hub'
+import { createHubAgentKeys, createHubSignin, createPersonDoor } from '@contentops/hub'
 import type { ToolVersions } from '@contentops/media'
 import type { Logger } from 'pino'
 import { configuredProviders, envProviders } from './annotation/providers'
@@ -104,6 +104,16 @@ function hubSigninOf(config: Config, logger: Logger): HubSigninSetup | undefined
 }
 
 /**
+ * Hub's person's door (package C3): the same Hub address and sign-in key as «Войти через хаб»
+ * (`signin:<client>`); without them — none, and «Съёмка» shows the last background read.
+ */
+function personDoorOf(config: Config) {
+  const key = config.HUB_SIGNIN_KEY ?? config.HUB_API_KEY
+  if (!config.HUB_BASE_URL || !key) return null
+  return createPersonDoor({ baseUrl: config.HUB_BASE_URL, key, client: config.HUB_SIGNIN_CLIENT })
+}
+
+/**
  * An agent's Agency Hub key (SPEC §11.1, ecosystem M2): Hub's address and ContentOps' own key with
  * `introspect:agent_keys`. Without one of them hub keys are not accepted, as before.
  */
@@ -154,8 +164,8 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     filesDirect: config.FILES_DIRECT,
     ...(hubSignin ? { hubSignin } : {}),
     ...(hubAgentKeys ? { hubAgentKeys } : {}),
-    // «Съёмка»: a person's step goes to the hub with the same key as the orders' read.
-    hubOrders: envHubOrdersClient(config),
+    // «Съёмка» reads and moves orders AS THE SIGNED-IN PERSON: Hub's person's door, with the sign-in key.
+    personDoor: personDoorOf(config),
   })
   app.addHook('onClose', () => pool.end())
   onStop(logger, () => app.close())

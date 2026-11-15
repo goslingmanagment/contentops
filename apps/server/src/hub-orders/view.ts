@@ -35,7 +35,24 @@ export interface HubOrderContext {
   /** The hub's console (`HUB_BASE_URL`); `null` — not configured. */
   hubBase: string | null
   now?: Instant
+  /**
+   * The person's own read through Hub's person's door (package C3), fresh and of their realm; absent —
+   * the last background read (`hub_order_reads`).
+   */
+  read?: HubOrderRead
+  /**
+   * Whether the viewer takes shooting steps: `person` — signed in over Hub's grant (Hub decides whose a
+   * step is); `no_grant` — an own account with no grant: the words instead of the buttons; `none` —
+   * «Только чтение».
+   */
+  steps?: 'person' | 'no_grant' | 'none'
 }
+
+/** Instead of the step buttons, for a person on an own account with no grant of Hub's registry. */
+export const NO_GRANT_STEPS = 'Шаги доступны с учётной записью из реестра: попросите владельца'
+
+/** Workboard, the chat side of an order: ONE address for every role (products plan §2.3). */
+const WORKBOARD_CUSTOMS = 'https://chatgoose.gosling-agency.ru/workboard/customs'
 
 export interface HubOrderRead {
   read_at: string | null
@@ -55,11 +72,10 @@ export async function readHubOrders(q: Queryable, modelId: string): Promise<HubO
   return rows[0] ?? { read_at: null, orders: [], unassigned: 0, tried_at: null, error: null }
 }
 
-/** The hub's board «Кастомы»: where an order is made, moved, given and closed. */
+/** Workboard's board «Кастомы» (the chat side): where an order is recorded, checked and given. */
 export function boardUrl(hubBase: string | null, code?: string): string | null {
   if (!hubBase) return null
-  const base = hubBase.replace(/\/+$/, '')
-  return code ? `${base}/workboard/customs/${code}` : `${base}/workboard/customs`
+  return code ? `${WORKBOARD_CUSTOMS}/${code}` : WORKBOARD_CUSTOMS
 }
 
 /** «Hub не ответил 12:04» — what the screen says while the hub is away. */
@@ -267,7 +283,7 @@ export async function hubOrderViews(
   options: { code?: string } = {},
 ): Promise<{ read: HubOrderRead; items: HubOrder[] }> {
   const now = context.now ?? new Date().toISOString()
-  const read = await readHubOrders(q, context.model.id)
+  const read = context.read ?? (await readHubOrders(q, context.model.id))
   const orders = read.orders.filter((order) =>
     options.code ? order.code === options.code : inProduction(order),
   )
@@ -371,9 +387,13 @@ export async function hubOrderViews(
       leader: order.leader
         ? { name: order.leader.name, shooting: order.leader.product === 'contentops' }
         : null,
-      // «Только чтение» takes no step; the others are offered them, and the hub refuses whoever
-      // does not lead the step.
-      steps: reader ? [] : (STEPS_BY_STATE[order.state] ?? []),
+      // Only a person signed in over Hub's grant is offered steps; Hub refuses whoever does not lead
+      // the step. An own account with no grant reads the words instead.
+      steps: !reader && context.steps === 'person' ? (STEPS_BY_STATE[order.state] ?? []) : [],
+      steps_note:
+        !reader && context.steps === 'no_grant' && (STEPS_BY_STATE[order.state] ?? []).length > 0
+          ? NO_GRANT_STEPS
+          : null,
       pending_reports: pending,
       version: order.version,
     }

@@ -183,14 +183,6 @@ export class DevOrders {
     if (method === 'POST' && step) {
       const order = this.orders.get(Number(step[1]))
       if (!order) return { status: 404, body: { error: 'not_found', message: 'Not found' } }
-      const person = req.json as { action: string; step?: State; onBehalfOf?: string; deadlineOn?: string; note?: string }
-      if (person.action === 'person_step' && person.step) {
-        // The hub's rule on this stand: anyone signed in through Hub leads the shooting.
-        if (person.deadlineOn) order.deadlineOn = person.deadlineOn
-        if (person.step === 'shot') order.partsDone = this.#wanted(order)
-        this.#move(order, person.step, person.note ?? null)
-        return { status: 200, body: { order: this.wire(order), outcome: 'changed', event: null } }
-      }
       const body = req.json as {
         action: string; eventRef?: string; retracts?: string; reason?: string; part?: Part; complete?: boolean; kind?: string
         message?: { telegramRef?: string; at?: string; author?: string; excerpt?: string }
@@ -234,6 +226,21 @@ export class DevOrders {
         this.#move(order, open && body.complete === false ? 'revision' : this.#wanted(order).every((part) => parts.has(part)) ? 'shot' : 'partly')
       }
       return { status: 200, body: { order: this.wire(order), outcome: 'changed', event: { ref, result: 'stored' } } }
+    }
+    // Hub's person's door (package C3): «Съёмка» as the signed-in person. On this stand every live grant
+    // reads every order and leads every shooting step.
+    if (method === 'POST' && path === '/api/v1/person/custom-orders/list') {
+      const open = [...this.orders.values()].filter((o) => !['given', 'cancelled'].includes(o.state))
+      return { status: 200, body: { orders: open.map((o) => this.wire(o)), serverNow: new Date().toISOString() } }
+    }
+    if (method === 'POST' && path === '/api/v1/person/custom-orders/step') {
+      const body = req.json as { code?: string; step?: State; deadlineOn?: string; note?: string }
+      const order = this.orders.get(Number((body.code ?? '').replace(/^K-/, '')))
+      if (!order || !body.step) return { status: 404, body: { error: 'not_found', message: 'Not found' } }
+      if (body.deadlineOn) order.deadlineOn = body.deadlineOn
+      if (body.step === 'shot') order.partsDone = this.#wanted(order)
+      this.#move(order, body.step, body.note ?? null)
+      return { status: 200, body: { order: this.wire(order), outcome: 'changed', event: null } }
     }
     if (method === 'POST' && path === '/api/v1/agent/matters') {
       const body = req.json as { key: string; title: string }

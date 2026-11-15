@@ -1,75 +1,115 @@
 import type { HubOrderStepCommand } from '@contentops/contracts/domain/hub-orders'
 import type { Db, Queryable } from '@contentops/db'
-import { type HubClient, type HubCustomOrder, isHubError } from '@contentops/hub'
+import { type HubCustomOrder, isHubError, type PersonDoor } from '@contentops/hub'
 import { sql } from 'drizzle-orm'
 import type { Actor, ModelScope } from '../context'
 import { ApiProblem } from '../errors'
-import { readHubOrders } from './view'
+import { type HubOrderRead, NO_GRANT_STEPS } from './view'
+import { modelMapping, modelOfOrder } from './work'
 
 /**
- * «Съёмка» (products plan 13.11, §4.5, package C3): a step of the content side — handed to the
- * model with a deadline, delivered in part, shot, a revision, the model's refusal — written to the
- * hub NOW as the signed-in person (their hub login, `principals.hub_login`). The hub owns the
- * order and decides whose the step is: it refuses whoever does not lead it (the content manager of
- * the model, else its customs lead, else the owner). The answer replaces the order in the last
- * read (`storeHubOrder`), so the screen shows what the hub holds at once. Never through the
- * outbox: a person waits for the hub's yes or no.
+ * «Съёмка» AS THE SIGNED-IN PERSON (products plan §2.4, §4.5, package C3): the list and the steps of
+ * the content side go through Hub's person's door with the person's live grant (their session's
+ * `hub_grant`), never with ContentOps' agent key, so Hub's rights and the test realm's wall are the
+ * person's own. The worker's periodic read with the agent key stays for what it serves in the
+ * background («Приехало», the placements) and for a person with no grant.
+ */
+
+/** The person's grant of Hub's registry, from their session; `null` — an own account, an agent. */
+export async function grantOf(q: Queryable, actor: Actor): Promise<string | null> {
+  if (actor.type !== 'person' || actor.sessionId === null) return null
+  const { rows } = await q.execute<{ hub_grant: string | null }>(sql`
+    SELECT hub_grant FROM sessions WHERE id = ${actor.sessionId}::uuid AND revoked_at IS NULL`)
+  return rows[0]?.hub_grant ?? null
+}
+
+function doorProblem(error: unknown, words: { refused: string; away: string }): never {
+  if (!isHubError(error)) throw error
+  if (error.status === 401)
+    throw new ApiProblem('unauthenticated', 'Вход закончился: войдите снова')
+  if (error.status === 404) throw new ApiProblem('not_found', 'Такого заказа нет')
+  if (error.status === 409 || error.status === 403) throw new ApiProblem('forbidden', words.refused)
+  if (error.status === 400) throw new ApiProblem('invalid_request', 'Шаг не принят')
+  throw new ApiProblem('unavailable', words.away)
+}
+
+/**
+ * The person's own read: their open orders through the door, cut to this model as the background
+ * read cuts them (by the page, the old order of the import, the chats). `null` — the person reads
+ * the last background read (no door, no grant).
+ */
+export async function personRead(
+  db: Db,
+  door: PersonDoor | null,
+  model: ModelScope,
+  grant: string | null,
+): Promise<HubOrderRead | null> {
+  if (!door || !grant) return null
+  let orders: HubCustomOrder[]
+  try {
+    orders = (await door.customOrders(grant)).orders
+  } catch (error) {
+    if (isHubError(error) && error.status === 401) {
+      throw new ApiProblem('unauthenticated', 'Вход закончился: войдите снова')
+    }
+    if (!isHubError(error)) throw error
+    // Hub away: the last background read, with its time, and why.
+    return null
+  }
+  const mapping = await modelMapping(db)
+  const now = new Date().toISOString()
+  return {
+    read_at: now,
+    orders: orders.filter((order) => modelOfOrder(order, mapping) === model.id),
+    unassigned: 0,
+    tried_at: now,
+    error: null,
+  }
+}
+
+/**
+ * A step of the content side — handed to the model with a deadline, delivered in part, shot, a
+ * revision, the model's refusal — written to Hub NOW as the person. Hub decides whose the step is
+ * (the model's content manager, else its customs lead, else the owner) and refuses anyone else.
  */
 export async function sendHubStep(
   db: Db,
-  client: HubClient | null,
-  model: ModelScope,
+  door: PersonDoor | null,
   code: string,
   body: HubOrderStepCommand,
   actor: Actor,
 ): Promise<HubCustomOrder> {
-  if (!client) throw new ApiProblem('unavailable', 'Не удалось записать шаг: заказы не подключены')
   if (actor.type !== 'person' || actor.role === 'reader') {
     throw new ApiProblem('forbidden', 'Шаги заказа делает человек, который ведёт съёмку')
   }
-  const { rows } = await db.execute<{ hub_login: string | null }>(sql`
-    SELECT hub_login FROM principals WHERE id = ${actor.id}::uuid`)
-  const login = rows[0]?.hub_login ?? null
-  if (!login) {
-    throw new ApiProblem('forbidden', 'Шаг пишется в Hub от вашего имени: войдите через Hub')
-  }
-  const read = await readHubOrders(db, model.id)
-  if (!read.orders.some((order) => order.code === code)) {
-    throw new ApiProblem('not_found', `Заказа ${code} у этой модели нет`)
-  }
+  const grant = await grantOf(db, actor)
+  if (!grant) throw new ApiProblem('forbidden', NO_GRANT_STEPS)
+  if (!door) throw new ApiProblem('unavailable', 'Не удалось записать шаг: заказы не подключены')
   const note = body.note?.trim() || undefined
   if (body.step === 'refused' && !note) {
     throw new ApiProblem('invalid_request', 'Нужна причина отказа', { field: 'note' })
   }
-  let order: HubCustomOrder
   try {
-    const answer = await client.reportCustomOrder(code, {
-      action: 'person_step',
+    const answer = await door.customOrderStep(grant, {
+      code,
       step: body.step,
-      onBehalfOf: login,
       ...(body.step === 'at_model' && body.deadline ? { deadlineOn: body.deadline } : {}),
       ...(note ? { note } : {}),
       ...(body.step === 'revision' && body.part ? { part: body.part } : {}),
     })
-    order = answer.order
+    return answer.order
   } catch (error) {
-    if (!isHubError(error)) throw error
-    if (error.status === 404) throw new ApiProblem('not_found', `Заказа ${code} нет`)
-    if (error.status === 409 || error.status === 403) {
-      throw new ApiProblem(
-        'forbidden',
+    doorProblem(error, {
+      refused:
         'Шаг не принят: его ведёт другой человек, или заказ уже на другом шаге. Обновите заказ',
-      )
-    }
-    if (error.status === 400) throw new ApiProblem('invalid_request', 'Шаг не принят')
-    throw new ApiProblem('unavailable', 'Не удалось записать шаг, попробуйте ещё раз')
+      away: 'Не удалось записать шаг, попробуйте ещё раз',
+    })
   }
-  return order
 }
 
 /**
- * The hub's answer is the order now: it replaces the order in the last read, in one statement (a
- * read of the worker at the same moment writes the whole list; the next one has the step anyway).
+ * The hub's answer is the order now: it replaces the order in the last background read, in one
+ * statement, where that read has it (a test model's background read has none of the person's).
  */
 export async function storeHubOrder(q: Queryable, model: ModelScope, order: HubCustomOrder) {
   await q.execute(sql`

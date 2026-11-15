@@ -27,7 +27,11 @@ class DevHub extends FakeHub {
   protected override endpointOf(method: string, path: string): string {
     if (method === 'POST' && path.startsWith('/__dev/')) return 'dev'
     if (method === 'POST' && path.startsWith('/api/v1/auth/sso/')) return 'signin'
-    if (path.startsWith('/api/v1/agent/custom-orders') || path.startsWith('/api/v1/agent/matters'))
+    if (
+      path.startsWith('/api/v1/agent/custom-orders') ||
+      path.startsWith('/api/v1/agent/matters') ||
+      path.startsWith('/api/v1/person/custom-orders')
+    )
       return 'orders'
     return super.endpointOf(method, path)
   }
