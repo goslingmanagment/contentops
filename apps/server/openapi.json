@@ -12631,6 +12631,15 @@
           },
           "first_day": {
             "type": "boolean"
+          },
+          "hub_models": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ModelCode"
+            }
           }
         },
         "required": [

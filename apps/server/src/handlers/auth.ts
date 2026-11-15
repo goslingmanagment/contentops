@@ -321,6 +321,11 @@ export function authHandlers(services: Services): HandlerRegistry {
           // The switcher: Hub's list for a person signed in through Hub (products plan §2.1).
           products: productLinks(row?.hub_products ?? null, services.secrets.hubBaseUrl),
           first_day: actor.type === 'person' && row?.first_day === true,
+          hub_models: Object.fromEntries(
+            Object.entries(services.hubSignin?.setup.modelMap ?? {}).filter(([, code]) =>
+              actor.models.includes(code),
+            ),
+          ),
         }
       },
     },
