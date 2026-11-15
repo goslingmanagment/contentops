@@ -642,3 +642,15 @@ describe('«Статистика» as the signed-in person', () => {
     expect(hub.statsAsked).toEqual([])
   })
 })
+
+describe("Hub's old addresses", () => {
+  it("the session carries Hub's slugs of the person's models where they differ", async () => {
+    const tkm = await throughHub({ id: 601, username: 'tkm', role: 'content_manager' })
+    const me = await call(server.app, { method: 'GET', url: '/api/v1/admin/me', as: tkm })
+    expect(me.statusCode, me.body).toBe(200)
+    expect(me.json()).toMatchObject({ models: ['ari'], hub_models: { test: 'ari' } })
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const other = await call(server.app, { method: 'GET', url: '/api/v1/admin/me', as: kira })
+    expect(other.json().hub_models).toEqual({})
+  })
+})

@@ -4,6 +4,7 @@ import {
   lazyRouteComponent,
   retainSearchParams,
 } from '@tanstack/react-router'
+import { hubEntrySearchSchema } from '@/screens/hub-entry-search'
 import { inboxDoneSearchSchema, inboxSearchSchema } from '@/screens/inbox/search'
 import { journalSearchSchema } from '@/screens/journal/search'
 import {
@@ -27,6 +28,7 @@ import { AppShell } from '@/shell/app-shell'
 import { ModelNotFound, ModelScope } from '@/shell/model/model-scope'
 import {
   EntryRedirect,
+  HubEntryRedirect,
   ModelIndexRedirect,
   PlanTodayRedirect,
   SettingsIndexRedirect,
@@ -59,6 +61,14 @@ const entryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: EntryRedirect,
+})
+
+/** Старые адреса Hub «Публикаций» и «Статистики» (пакет C2): `/hub/publications|stats?model=<модель Hub>&…`. */
+const hubEntryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'hub/$screen',
+  validateSearch: hubEntrySearchSchema,
+  component: HubEntryRedirect,
 })
 
 const loginRoute = createRoute({
@@ -371,6 +381,7 @@ const modelPagesRoute = createRoute({
 
 export const routeTree = rootRoute.addChildren([
   entryRoute,
+  hubEntryRoute,
   loginRoute,
   joinRoute,
   shellRoute.addChildren([

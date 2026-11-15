@@ -63,5 +63,10 @@ export const SessionPrincipalSchema = z.object({
   products: z.array(ProductLinkSchema).optional(),
   /** «Первый день» on «Сегодня» is shown until the person closes it. */
   first_day: z.boolean().optional(),
+  /**
+   * Hub's model slug → the model here, where they differ (`HUB_MODEL_MAP`: Hub's `test` is `smoke`), for the person's
+   * models: Hub's old addresses come with Hub's slug (`/hub/<screen>?model=`).
+   */
+  hub_models: z.record(z.string(), ModelCodeSchema).optional(),
 })
 export type SessionPrincipal = z.infer<typeof SessionPrincipalSchema>
