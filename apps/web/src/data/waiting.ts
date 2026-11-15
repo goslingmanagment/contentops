@@ -28,16 +28,21 @@ export interface OwnLine {
   to: 'check' | 'inbox'
 }
 
-/** Свои строки и общее число; у «Только чтение» и «Только кастомы» своих строк нет. */
-export function useWaiting(model: ModelCode, role: Role | null) {
+/**
+ * Свои строки и общее число; у «Только чтение» и «Только кастомы» своих строк нет. Список
+ * «Сверить» тяжёлый: его читают экраны «Сегодня» и «Ждут вас» (`withChecks`), а не колонка на
+ * каждом экране — число в меню без него (у «Сверить» своё число на вкладке Плана).
+ */
+export function useWaiting(model: ModelCode, role: Role | null, { withChecks = false } = {}) {
   const staff = role === 'owner' || role === 'manager'
   const hub = useHubWaiting(model)
-  const check = useCheckList(model, staff)
+  const check = useCheckList(model, staff && withChecks)
   // «Нужно решение» — из счётчиков колонки, а не второго чтения списка «Приехало».
   const counters = useModelCounters(model)
   const own: OwnLine[] = []
   const checks = check.data?.items.length ?? 0
-  if (staff && checks > 0) own.push({ key: 'check', label: 'Сверить', count: checks, to: 'check' })
+  if (staff && withChecks && checks > 0)
+    own.push({ key: 'check', label: 'Сверить', count: checks, to: 'check' })
   const decisions = counters?.inbox_decision ?? 0
   if (staff && decisions > 0) {
     own.push({ key: 'inbox', label: 'Приехало: нужно решение', count: decisions, to: 'inbox' })

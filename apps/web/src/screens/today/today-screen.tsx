@@ -45,7 +45,7 @@ export function TodayScreen() {
   const following = usePlanWeek(model.code, nextWeek, nextWeek !== thisWeek)
   const inbox = useInboxList(model.code, 'active', role !== 'reader')
   const orders = useHubOrderList(model.code)
-  const waiting = useWaiting(model.code, role)
+  const waiting = useWaiting(model.code, role, { withChecks: true })
 
   // «Выходит сегодня» по страницам, в порядке страниц дня.
   const rows = (day.data?.rows ?? []).filter((row) => !row.cancelled)

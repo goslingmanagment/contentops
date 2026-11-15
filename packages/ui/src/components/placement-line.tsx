@@ -51,15 +51,24 @@ export function PlacementLine({
           >
             ·
           </span>
-          <button
-            type="button"
-            aria-pressed={entry.page === activePage}
-            onClick={() => onSelectPage?.(entry.page)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 transition-colors duration-120 hover:bg-accent aria-pressed:bg-primary-tint"
-          >
-            <span className="font-medium text-foreground">{entry.page}</span>
-            <StatusWord sign={entry.sign}>{entry.text}</StatusWord>
-          </button>
+          {onSelectPage ? (
+            <button
+              type="button"
+              aria-pressed={entry.page === activePage}
+              onClick={() => onSelectPage(entry.page)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 transition-colors duration-120 hover:bg-accent aria-pressed:bg-primary-tint"
+            >
+              <span className="font-medium text-foreground">{entry.page}</span>
+              <StatusWord sign={entry.sign}>{entry.text}</StatusWord>
+            </button>
+          ) : (
+            // Без обработчика (первый кадр до ответа сервера) страница — не кнопка: нажатие
+            // ничего бы не сделало.
+            <span className="inline-flex h-8 items-center gap-1.5 px-2">
+              <span className="font-medium text-foreground">{entry.page}</span>
+              <StatusWord sign={entry.sign}>{entry.text}</StatusWord>
+            </span>
+          )}
         </li>
       ))}
     </ul>
