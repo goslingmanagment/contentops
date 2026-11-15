@@ -893,3 +893,6 @@ export const dbErrorCodes = {
    */
   secondPersonOnOnlyFans: 'CO007',
 } as const
+
+// «Съёмка › ТЗ» (0024_shooting_tasks; products plan 15.11.2026, package C3)
+export const shootingTaskKinds = ['set', 'fyp', 'other'] as const

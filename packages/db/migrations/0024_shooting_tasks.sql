@@ -26,3 +26,7 @@ CREATE TABLE shooting_tasks (
 );
 CREATE INDEX shooting_tasks_open ON shooting_tasks (model_id, deadline_on)
   WHERE handed_in_at IS NULL AND cancelled_at IS NULL;
+
+-- A task is the people's own record: every change is in the journal, as a plan row's.
+CREATE TRIGGER shooting_tasks_journal AFTER INSERT OR UPDATE OR DELETE ON shooting_tasks
+  FOR EACH ROW EXECUTE FUNCTION log_row_change('model_id', 'id');

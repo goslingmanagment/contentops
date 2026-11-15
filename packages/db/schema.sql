@@ -3564,6 +3564,8 @@ CREATE TRIGGER review_cases_fixed BEFORE UPDATE ON public.review_cases FOR EACH 
 
 CREATE TRIGGER review_cases_journal AFTER INSERT OR DELETE OR UPDATE ON public.review_cases FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
+CREATE TRIGGER shooting_tasks_journal AFTER INSERT OR DELETE OR UPDATE ON public.shooting_tasks FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
+
 CREATE TRIGGER source_objects_fixed BEFORE UPDATE ON public.source_objects FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_id', 'resource_id', 'upload_id', 'archive_revision_id', 'archive_entry_no');
 
 CREATE TRIGGER source_objects_journal AFTER INSERT OR DELETE OR UPDATE ON public.source_objects FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
