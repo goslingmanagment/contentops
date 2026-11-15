@@ -260,6 +260,77 @@ describe('a person from Hub', () => {
       'Неделя ждёт утверждения',
     ])
   })
+  it('a person of the registry: «Отозвать доступ» is not here, the registry decides', async () => {
+    hub.people.set(108, person('olga', { displayName: 'Ольга' }))
+    await throughHub({ id: 108, username: 'olga', role: 'content_manager' })
+    const { rows } = await server.db.execute<{ id: string }>(
+      sql`SELECT id FROM principals WHERE hub_person_code = 'olga'`,
+    )
+    const revoked = await call(server.app, {
+      method: 'POST',
+      url: `/api/v1/admin/people/${rows[0]?.id}:revoke-access`,
+      as: await ownerSession(),
+      key: `k-revoke-${Date.now()}`,
+    })
+    expect(revoked.statusCode).toBe(403)
+    expect(revoked.json().message).toMatch(/реестр людей/)
+  })
+
+  it('a hand-made person linked to the registry: the old password is no way in, its sessions end', async () => {
+    const added = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/admin/people',
+      as: await ownerSession(),
+      key: `k-add-${Date.now()}`,
+      body: { name: 'Надя', login: 'nadia', role: 'manager', models: ['lora'] },
+    })
+    expect(added.statusCode, added.body).toBe(201)
+    const password = added.json().temporary_password as string
+    const local = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/auth/sign-in',
+      body: { login: 'nadia', password },
+    })
+    expect(local.statusCode).toBe(200)
+    const localSession = /co_session=([^;]+)/.exec(String(local.headers['set-cookie']))?.[1] ?? ''
+    // The owner invites her through the registry; her first sign-in through Hub links her by code.
+    hub.people.set(109, person('nadia', { displayName: 'Надя' }))
+    const { session } = await throughHub({ id: 109, username: 'nadia', role: 'content_manager' })
+    expect(session).toBeTruthy()
+    expect((await me(localSession)).statusCode).toBe(401)
+    const again = await call(server.app, {
+      method: 'POST',
+      url: '/api/v1/auth/sign-in',
+      body: { login: 'nadia', password },
+    })
+    expect(again.statusCode).toBe(401)
+  })
+
+  it('«Ждут вас» cuts by Hub’s model, not by the pages bound here', async () => {
+    hub.people.set(110, person('t-km2', { displayName: 'Тест: КМ', models: ['test'] }))
+    hub.waits.set(110, [
+      {
+        id: 2,
+        kind: 'content.week_approve',
+        title: 'Неделя тестовой страницы',
+        link: '/matters',
+        pageLabels: ['test-1'],
+        models: ['test'],
+        openedAt: new Date(),
+      },
+    ])
+    const { session = '' } = await throughHub({
+      id: 110,
+      username: 't-km2',
+      role: 'content_manager',
+    })
+    const waiting = (
+      await call(server.app, { method: 'GET', url: '/api/v1/ari/waiting', as: session })
+    ).json()
+    expect(waiting.matters.map((matter: { title: string }) => matter.title)).toEqual([
+      'Неделя тестовой страницы',
+    ])
+  })
 })
 
 let owner: string | null = null

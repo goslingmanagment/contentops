@@ -159,7 +159,7 @@ export function authHandlers(services: Services): HandlerRegistry {
         }
         const { rows } = await db.execute<SignInRow>(sql`
           SELECT id, display_name, password_hash, disabled_at FROM principals
-           WHERE login = ${login} AND kind = 'human'`)
+           WHERE login = ${login} AND kind = 'human' AND hub_person_code IS NULL`)
         const row = rows[0]
         const passwordOk = row?.password_hash
           ? await verify(row.password_hash, body.password)

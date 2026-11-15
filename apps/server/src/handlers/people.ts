@@ -155,6 +155,17 @@ export function peopleHandlers({ db, command }: Services): HandlerRegistry {
         command({ ctx, body }, async (tx, actor) => {
           const row = await lockPerson(tx, params.person)
           if (row.id === actor.id) throw new ApiProblem('forbidden', 'Свой доступ не отзывают')
+          // A person of the registry: one place decides — Hub «Люди»; a revocation here would be undone by the next
+          // sign-in through Hub (package C4).
+          const { rows: linked } = await tx.execute<{ code: string | null }>(sql`
+            SELECT hub_person_code AS code FROM principals WHERE id = ${row.id}::uuid`)
+          if (linked[0]?.code) {
+            throw new ApiProblem(
+              'forbidden',
+              'Доступ этого человека ведёт реестр людей: закройте его в Hub «Люди»',
+              { reason: 'registry' },
+            )
+          }
           // The person can no longer sign in; sessions and grants end at once.
           await tx.execute(sql`
             UPDATE principals SET disabled_at = now(), row_version = row_version + 1

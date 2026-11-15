@@ -4,6 +4,7 @@ import { modelOf } from '../catalog/ids'
 import { requireActor } from '../commands'
 import type { HandlerRegistry } from '../handlers'
 import type { Services } from '../services'
+import { hubSlugOf } from './publications'
 
 /**
  * «Ждут вас» of a model (products plan §2.4, §4.4): what waits in Hub for the person, read through
@@ -37,10 +38,14 @@ export function waitingHandlers({ db, secrets, hubSignin }: Services): HandlerRe
           SELECT hub_page_ref AS ref FROM accounts
            WHERE model_id = ${model.id}::uuid AND hub_page_ref IS NOT NULL`)
         const own = new Set(pages.map((page) => page.ref))
+        // By Hub's model, like every other screen (`HUB_MODEL_MAP` read backwards); an older Hub that names no
+        // models — by the pages bound here.
+        const slug = hubSlugOf(hubSignin.setup.modelMap, model)
         const matters: HubMatter[] = (answer ?? [])
-          .filter(
-            (matter) =>
-              matter.pageLabels.length === 0 || matter.pageLabels.some((label) => own.has(label)),
+          .filter((matter) =>
+            matter.models !== undefined
+              ? matter.models.length === 0 || matter.models.includes(slug)
+              : matter.pageLabels.length === 0 || matter.pageLabels.some((label) => own.has(label)),
           )
           .map((matter) => ({
             id: matter.id,

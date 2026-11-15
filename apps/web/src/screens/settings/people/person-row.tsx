@@ -90,7 +90,7 @@ export function PersonRow({ person, models, isMe }: PersonRowProps) {
                 .filter((model) => person.models.includes(model.code))
                 .map((model) => model.name)
                 .join(', ') || 'моделей нет'}
-              {' · роль и модели задаёт Hub'}
+              {' · роль, модели и доступ ведёт реестр людей: Hub «Люди»'}
             </p>
           ) : (
             <ModelChecks
@@ -156,16 +156,18 @@ export function PersonRow({ person, models, isMe }: PersonRowProps) {
                 onSelect: () => setHistoryOpen((open) => !open),
               },
             ],
-            dangerActions: isMe
-              ? []
-              : [
-                  {
-                    id: 'revoke',
-                    label: 'Отозвать доступ…',
-                    icon: UserXIcon,
-                    onSelect: () => setRevoking(true),
-                  },
-                ],
+            // A person of the registry: Hub «Люди» decides, not this list (package C4).
+            dangerActions:
+              isMe || fromHub
+                ? []
+                : [
+                    {
+                      id: 'revoke',
+                      label: 'Отозвать доступ…',
+                      icon: UserXIcon,
+                      onSelect: () => setRevoking(true),
+                    },
+                  ],
           }}
         />
       </div>
