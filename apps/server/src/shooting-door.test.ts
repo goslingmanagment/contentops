@@ -73,6 +73,8 @@ class FakeHub implements HubSignin, PersonDoor {
   /** Hub's models of a login's person (its slugs): Лора unless said otherwise. */
   readonly modelsOf = new Map<string, string[]>()
   away = false
+  /** The step is written in Hub, then its answer is lost on the way back (a timeout). */
+  loseAnswer = false
 
   // The door's other rows («Публикации», package C2): not this test's.
   publicationList(): never {
@@ -222,11 +224,21 @@ class FakeHub implements HubSignin, PersonDoor {
         code: 'not_allowed',
       })
     }
+    if (!['checked', 'refused'].includes(String(found.state)) && body.step === 'at_model') {
+      // Hub's answer to a step out of order.
+      throw new HubError('refused', 'HTTP 409 not_allowed', {
+        endpoint: 'person',
+        status: 409,
+        code: 'not_allowed',
+      })
+    }
     Object.assign(found, {
       state: body.step,
       stateWord: null,
       deadlineOn: body.deadlineOn ?? found.deadlineOn,
     })
+    if (this.loseAnswer)
+      throw new HubError('transient', 'timeout after 15000 ms', { endpoint: 'person' })
     return { order: structuredClone(found), outcome: 'changed' as const, event: null }
   }
 }
@@ -376,16 +388,77 @@ describe('«Съёмка» as the signed-in person', () => {
     )
   })
 
-  it('Hub away: the person reads the last background read, and a step is not written', async () => {
+  it('Hub away: the person reads the last background read, and a step is «неизвестно, записан ли»', async () => {
     const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
     hub.away = true
     try {
       expect((await list(kira)).items).toEqual([])
       const away = await step(kira, 'K-211', { step: 'shot' })
       expect(away.statusCode).toBe(503)
-      expect(away.json().message).toBe('Не удалось записать шаг, попробуйте ещё раз')
+      // No answer: whether the step was written is not known; never «not written».
+      expect(away.json().message).toBe('Ответа нет: неизвестно, записан ли шаг. Обновите заказ')
     } finally {
       hub.away = false
     }
+  })
+  it('a lost answer: «неизвестно, записан ли шаг», and a repeat with the same key never sends the step again', async () => {
+    hub.ordersOf.set('kira', [order(241)])
+    hub.leaderOf.set('K-241', 'kira')
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const key = newKey()
+    const once = () =>
+      call(server.app, {
+        method: 'POST',
+        url: '/api/v1/lora/hub-orders/K-241/steps',
+        as: kira,
+        key,
+        body: { step: 'at_model' },
+      })
+    const sent = () => hub.steps.filter((one) => one.body.code === 'K-241').length
+    hub.loseAnswer = true
+    try {
+      const lost = await once()
+      expect(lost.statusCode).toBe(503)
+      expect(lost.json()).toMatchObject({
+        message: 'Ответа нет: неизвестно, записан ли шаг. Обновите заказ',
+        details: { outcome: 'unknown' },
+      })
+    } finally {
+      hub.loseAnswer = false
+    }
+    expect(sent()).toBe(1)
+    // The interface's «Повторить» comes with the same key: Hub is not asked again, the words stay.
+    const again = await once()
+    expect(again.statusCode).toBe(503)
+    expect(again.json().message).toBe('Ответа нет: неизвестно, записан ли шаг. Обновите заказ')
+    expect(sent()).toBe(1)
+    // «Обновить»: the order as Hub has it — the step went through.
+    const card = HubOrderSchema.parse(
+      (
+        await call(server.app, { method: 'GET', url: '/api/v1/lora/hub-orders/K-241', as: kira })
+      ).json(),
+    )
+    expect(card.state).toBe('at_model')
+  })
+
+  it('a repeat of a step that was answered replays the answer and asks Hub nothing', async () => {
+    hub.ordersOf.set('kira', [order(251)])
+    hub.leaderOf.set('K-251', 'kira')
+    const kira = await throughHub({ id: 501, username: 'kira', role: 'content_manager' })
+    const key = newKey()
+    const once = () =>
+      call(server.app, {
+        method: 'POST',
+        url: '/api/v1/lora/hub-orders/K-251/steps',
+        as: kira,
+        key,
+        body: { step: 'at_model' },
+      })
+    const first = await once()
+    expect(first.statusCode, first.body).toBe(200)
+    const again = await once()
+    expect(again.statusCode, again.body).toBe(200)
+    expect(again.json()).toEqual(first.json())
+    expect(hub.steps.filter((one) => one.body.code === 'K-251')).toHaveLength(1)
   })
 })

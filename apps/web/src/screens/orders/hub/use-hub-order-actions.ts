@@ -1,9 +1,10 @@
-import type {
-  HubOrder,
-  HubOrderFile,
-  HubOrderList,
-  HubOrderStepCommand,
-  ItemId,
+import {
+  type HubOrder,
+  type HubOrderFile,
+  type HubOrderList,
+  type HubOrderStepCommand,
+  type ItemId,
+  isApiError,
 } from '@contentops/contracts'
 import { useQueryClient } from '@tanstack/react-query'
 import { useActionToast } from '@/actions/action-toast-context'
@@ -94,6 +95,22 @@ export function useHubOrderActions() {
   // «Съёмка» (пакет C3): шаг пишется в Hub сразу, от имени человека; Hub отказывает, если шаг не его.
   const step = useIntentMutation<{ order: HubOrder; body: HubOrderStepCommand }, HubOrder>({
     failed: 'Шаг не записан',
+    // Ответ потерян: шаг мог записаться. Только «Обновить», никогда «Повторить» (тот же ключ
+    // ответил бы так же, но сам шаг не отправляется второй раз и вслепую).
+    handleFailure: (error, { order }) => {
+      if (!(isApiError(error) && error.body.details?.outcome === 'unknown')) return false
+      toast.show({
+        message: error.body.message,
+        action: {
+          label: 'Обновить',
+          onSelect: () => {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.hubOrder(model, order.code) })
+            void queryClient.invalidateQueries({ queryKey: queryKeys.hubOrders(model) })
+          },
+        },
+      })
+      return true
+    },
     run: ({ order, body }, key) =>
       api.hubOrders.step({ params: { model, code: order.code }, body, idempotencyKey: key }),
     onSuccess: (next) => {
