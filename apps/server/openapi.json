@@ -11131,6 +11131,13 @@
                 "type": "string",
                 "const": "went_out"
               },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "scheduled",
+                  "published"
+                ]
+              },
               "platform_post_ref": {
                 "type": "string",
                 "pattern": "^[0-9A-Za-z_-]{1,64}$"

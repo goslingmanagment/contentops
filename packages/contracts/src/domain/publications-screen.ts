@@ -163,10 +163,12 @@ export type PublicationActionAnswer = z.infer<typeof PublicationActionAnswerSche
 
 export const PublicationApproveCommandSchema = z.object({ version: z.int().positive() })
 
-/** «Проверить»: it went out (with the platform's post, when the person knows it), or it did not. */
+/** «Проверить»: it went out (the post's number on the platform and where it is; a vault album: neither), or it did not. */
 export const PublicationResolveCommandSchema = z.discriminatedUnion('outcome', [
   z.object({
     outcome: z.literal('went_out'),
+    /** Where the post is now: Hub needs it with the post's number, except for a vault album. */
+    state: z.enum(['scheduled', 'published']).optional(),
     platform_post_ref: z
       .string()
       .regex(/^[0-9A-Za-z_-]{1,64}$/)

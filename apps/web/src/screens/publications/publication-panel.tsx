@@ -7,6 +7,7 @@ import {
 } from '@contentops/contracts'
 import { Button } from '@contentops/ui/components/button'
 import { InfoSection } from '@contentops/ui/components/info-panel'
+import { Input } from '@contentops/ui/components/input'
 import {
   PanelFrame,
   type PanelFrameWidth,
@@ -16,13 +17,14 @@ import { Skeleton } from '@contentops/ui/components/skeleton'
 import { ErrorLine } from '@contentops/ui/components/state-lines'
 import { StatusWord } from '@contentops/ui/components/status-word'
 import { UiLink } from '@contentops/ui/components/ui-link'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useId, useState } from 'react'
 import { useHref } from '@/app/use-href'
 import { useToday } from '@/data/api-session'
 import { usePublicationCard } from '@/data/publications'
 import { useRole } from '@/data/session'
 import { accountLabel } from '@/lib/words'
 import { useCurrentModel } from '@/shell/model/model-context'
+import { postRefOf } from './post-ref'
 import type { PublicationActions } from './use-publication-actions'
 import { findingWord, formatMills, hubStateWords, KIND_WORDS, statusWord } from './words'
 
@@ -233,6 +235,7 @@ function Line({ term, children }: { term: string; children: ReactNode }) {
 function PostActions({ row, actions }: { row: PublicationRow; actions: PublicationActions }) {
   const role = useRole()
   const [confirm, setConfirm] = useState<'withdraw' | 'deletePost' | null>(null)
+  const [wentOut, setWentOut] = useState(false)
   const busy = actions.approve.isPending || actions.post.isPending || actions.resolve.isPending
   const buttons: ReactNode[] = []
   if (row.status === 'draft') {
@@ -276,7 +279,12 @@ function PostActions({ row, actions }: { row: PublicationRow; actions: Publicati
       <Button
         key="went"
         disabled={busy}
-        onClick={() => actions.resolve.start({ id: row.id, answer: { outcome: 'went_out' } })}
+        onClick={() =>
+          // A vault album has no post: one press. A post: its number on the platform and where it is.
+          row.kind === 'vault_album'
+            ? actions.resolve.start({ id: row.id, answer: { outcome: 'went_out' } })
+            : setWentOut(true)
+        }
       >
         Вышел
       </Button>,
@@ -315,6 +323,21 @@ function PostActions({ row, actions }: { row: PublicationRow; actions: Publicati
       </Button>,
     )
   }
+  if (wentOut) {
+    return (
+      <WentOutForm
+        busy={busy}
+        onCancel={() => setWentOut(false)}
+        onSend={(state, ref) => {
+          actions.resolve.start({
+            id: row.id,
+            answer: { outcome: 'went_out', state, platform_post_ref: ref },
+          })
+          setWentOut(false)
+        }}
+      />
+    )
+  }
   if (confirm) {
     return (
       <div className="flex flex-col gap-2 pb-3">
@@ -343,4 +366,82 @@ function PostActions({ row, actions }: { row: PublicationRow; actions: Publicati
   }
   if (buttons.length === 0) return null
   return <div className="flex flex-wrap gap-2 pb-3">{buttons}</div>
+}
+
+/**
+ * «Вышел»: Hub records it with the post's number on the platform and where it is — in the schedule or on the wall
+ * (Hub's own screen asked for both). The number may be pasted as the post's link.
+ */
+function WentOutForm({
+  busy,
+  onCancel,
+  onSend,
+}: {
+  busy: boolean
+  onCancel: () => void
+  onSend: (state: 'scheduled' | 'published', ref: string) => void
+}) {
+  const id = useId()
+  const [text, setText] = useState('')
+  const [state, setState] = useState<'scheduled' | 'published' | null>(null)
+  const [tried, setTried] = useState(false)
+  const ref = postRefOf(text)
+  const problem =
+    ref === null
+      ? text.trim() === ''
+        ? 'Укажите номер поста на площадке или вставьте ссылку на него'
+        : 'Не похоже на номер поста или ссылку на пост Fansly или OnlyFans'
+      : state === null
+        ? 'Выберите, где пост сейчас: в расписании или уже опубликован'
+        : null
+  return (
+    <form
+      className="flex flex-col gap-3 pb-3"
+      onSubmit={(event) => {
+        event.preventDefault()
+        setTried(true)
+        if (ref !== null && state !== null) onSend(state, ref)
+      }}
+    >
+      <span className="flex flex-col gap-1 text-sm">
+        <label htmlFor={`${id}-ref`}>Пост на площадке: номер или ссылка</label>
+        <Input
+          id={`${id}-ref`}
+          value={text}
+          autoComplete="off"
+          placeholder="https://fansly.com/post/…"
+          aria-invalid={tried && ref === null}
+          onChange={(event) => setText(event.target.value)}
+        />
+      </span>
+      <fieldset className="flex flex-wrap gap-2 border-0 p-0" aria-label="Где пост сейчас">
+        {(
+          [
+            ['scheduled', 'В расписании'],
+            ['published', 'Опубликован'],
+          ] as const
+        ).map(([value, label]) => (
+          <Button
+            key={value}
+            type="button"
+            size="sm"
+            variant={state === value ? 'default' : 'outline'}
+            aria-pressed={state === value}
+            onClick={() => setState(value)}
+          >
+            {label}
+          </Button>
+        ))}
+      </fieldset>
+      {tried && problem ? <p className="text-destructive text-sm">{problem}</p> : null}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={busy}>
+          Записать «Вышел»
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Не надо
+        </Button>
+      </div>
+    </form>
+  )
 }
