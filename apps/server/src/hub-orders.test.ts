@@ -406,7 +406,7 @@ describe('the hub orders of a model', () => {
     await login('someone-else')
     const refusedStep = await step({ step: 'at_model', deadline: '2030-01-10' })
     expect(refusedStep.statusCode).toBe(403)
-    expect(refusedStep.json().message).toMatch(/^Hub не принял шаг/)
+    expect(refusedStep.json().message).toMatch(/^Шаг не принят/)
     expect(hub.steps.at(-1)?.body).toMatchObject({ onBehalfOf: 'someone-else', step: 'at_model' })
     await login('lead-login')
     const taken = await step({ step: 'at_model', deadline: '2030-01-10' })
@@ -495,7 +495,7 @@ describe('the hub orders of a model', () => {
     ])
     // The hub does not know yet: the card keeps the hub's state and says the delivery waits.
     expect(before.state).toBe('at_model')
-    expect(before.status.detail).toContain('сдача ещё не в Hub')
+    expect(before.status.detail).toContain('сдача ещё не записана')
     const { rows: works } = await server.db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM work_operations
        WHERE kind = 'hub_orders' AND state = 'pending'`)

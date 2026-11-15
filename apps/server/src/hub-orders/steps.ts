@@ -23,7 +23,7 @@ export async function sendHubStep(
   body: HubOrderStepCommand,
   actor: Actor,
 ): Promise<HubCustomOrder> {
-  if (!client) throw new ApiProblem('unavailable', 'Hub не настроен: шаги заказа не записываются')
+  if (!client) throw new ApiProblem('unavailable', 'Не удалось записать шаг: заказы не подключены')
   if (actor.type !== 'person' || actor.role === 'reader') {
     throw new ApiProblem('forbidden', 'Шаги заказа делает человек, который ведёт съёмку')
   }
@@ -35,7 +35,7 @@ export async function sendHubStep(
   }
   const read = await readHubOrders(db, model.id)
   if (!read.orders.some((order) => order.code === code)) {
-    throw new ApiProblem('not_found', `Заказа ${code} в последнем чтении Hub у этой модели нет`)
+    throw new ApiProblem('not_found', `Заказа ${code} у этой модели нет`)
   }
   const note = body.note?.trim() || undefined
   if (body.step === 'refused' && !note) {
@@ -54,15 +54,15 @@ export async function sendHubStep(
     order = answer.order
   } catch (error) {
     if (!isHubError(error)) throw error
-    if (error.status === 404) throw new ApiProblem('not_found', `Hub не знает заказа ${code}`)
+    if (error.status === 404) throw new ApiProblem('not_found', `Заказа ${code} нет`)
     if (error.status === 409 || error.status === 403) {
       throw new ApiProblem(
         'forbidden',
-        'Hub не принял шаг: его ведёт другой человек, или заказ уже на другом шаге. Обновите заказ',
+        'Шаг не принят: его ведёт другой человек, или заказ уже на другом шаге. Обновите заказ',
       )
     }
-    if (error.status === 400) throw new ApiProblem('invalid_request', 'Hub не принял шаг')
-    throw new ApiProblem('unavailable', 'Hub не ответил: шаг не записан, попробуйте ещё раз')
+    if (error.status === 400) throw new ApiProblem('invalid_request', 'Шаг не принят')
+    throw new ApiProblem('unavailable', 'Не удалось записать шаг, попробуйте ещё раз')
   }
   return order
 }

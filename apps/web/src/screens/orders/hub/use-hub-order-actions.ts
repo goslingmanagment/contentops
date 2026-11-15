@@ -52,11 +52,11 @@ export function useHubOrderActions() {
         .filter((candidate) => candidate.item_id === item && candidate.retracted === null)
         .at(-1)
       if (undo || !file) {
-        toast.show({ message: undo ? 'Отменено' : `${item} привязан, отправляю в Hub` })
+        toast.show({ message: undo ? 'Отменено' : `${item} привязан к заказу` })
         return
       }
       toast.show({
-        message: `${item} привязан, отправляю в Hub`,
+        message: `${item} привязан к заказу`,
         action: {
           label: 'Отменить',
           onSelect: () => unlink.start({ order: next, file, reason: 'отменено сразу', undo: true }),
@@ -80,7 +80,7 @@ export function useHubOrderActions() {
         undo
           ? { message: 'Отменено' }
           : {
-              message: `${file.item_id} отвязан, Hub получит отметку`,
+              message: `${file.item_id} отвязан от заказа`,
               action: {
                 label: 'Вернуть',
                 onSelect: () => link.start({ order: next, item: file.item_id, undo: true }),
@@ -98,12 +98,12 @@ export function useHubOrderActions() {
       api.hubOrders.step({ params: { model, code: order.code }, body, idempotencyKey: key }),
     onSuccess: (next) => {
       saved(next)
-      toast.show({ message: `${next.code}: ${next.status.word}, записано в Hub` })
+      toast.show({ message: `${next.code}: ${next.status.word}, записано` })
     },
   })
 
   const refresh = useIntentMutation<undefined, HubOrderList>({
-    failed: 'Hub не перечитался',
+    failed: 'Не обновилось',
     run: (_, key) => api.hubOrders.refresh({ params: { model }, idempotencyKey: key }),
     onSuccess: (list) => {
       queryClient.setQueryData(queryKeys.hubOrders(model), list)

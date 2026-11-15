@@ -134,7 +134,7 @@ export function HubOrdersView({ selectedCode, onSelect, onClosePanel }: HubOrder
           <EmptyState>
             {data.read_at
               ? 'Заказов в съёмке нет: новые появятся, когда их проверят в Workboard'
-              : 'Hub ещё не прочитан'}
+              : 'Заказы ещё не загружены'}
           </EmptyState>
         ) : null}
         {groups.map(({ group, orders }) => (

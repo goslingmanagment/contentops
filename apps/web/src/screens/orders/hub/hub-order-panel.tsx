@@ -28,7 +28,7 @@ import { useHref } from '@/app/use-href'
 import { useClock, useToday } from '@/data/api-session'
 import { useCatalogIndex } from '@/data/catalog'
 import { useHubOrder } from '@/data/hub-orders'
-import { useRole } from '@/data/session'
+import { useRole, useSession } from '@/data/session'
 import { accountLabel } from '@/lib/words'
 import { useItemCover } from '@/objects/use-item-cover'
 import { useCurrentModel } from '@/shell/model/model-context'
@@ -61,7 +61,7 @@ export function HubOrderPanel({ code, width, onClose, ...rest }: HubOrderPanelPr
   if (isApiError(query.error) && query.error.status === 404) {
     return (
       <PanelMessage label="Заказ" width={width} onClose={onClose}>
-        Заказа {code} у {model.name_genitive} в последнем чтении Hub нет
+        Заказа {code} у {model.name_genitive} нет
       </PanelMessage>
     )
   }
@@ -105,6 +105,14 @@ interface LoadedPanelProps extends Omit<HubOrderPanelProps, 'code'> {
 
 function LoadedPanel({ order, accounts, width, actions, onClose }: LoadedPanelProps) {
   const role = useRole()
+  // «Сторона чата в Workboard» — только тому, у кого Workboard среди продуктов (у КМ его нет).
+  const workboard = useSession().data?.products?.find((product) => product.id === 'workboard')
+  const chatSide = workboard
+    ? new URL(
+        `customs/${order.code}`,
+        workboard.href.endsWith('/') ? workboard.href : `${workboard.href}/`,
+      ).toString()
+    : null
   const editable = role === 'owner' || role === 'manager'
   const [linkOpen, setLinkOpen] = useState(false)
   const openRevisions = order.messages.filter(
@@ -125,10 +133,10 @@ function LoadedPanel({ order, accounts, width, actions, onClose }: LoadedPanelPr
         </StatusWord>
       }
       actions={
-        order.hub_url ? (
+        chatSide ? (
           <Button variant="outline" asChild>
-            <a href={order.hub_url} target="_blank" rel="noreferrer">
-              Открыть {order.code} в Hub
+            <a href={chatSide} target="_blank" rel="noreferrer">
+              Сторона чата в Workboard
               <ExternalLinkIcon aria-hidden />
             </a>
           </Button>
@@ -140,7 +148,7 @@ function LoadedPanel({ order, accounts, width, actions, onClose }: LoadedPanelPr
       <HubOrderSteps order={order} actions={actions} />
       <OrderFacts order={order} accounts={accounts} />
       {openRevisions.length > 0 ? (
-        <InfoSection title="Правки из Hub">
+        <InfoSection title="Правки">
           <ul className="flex flex-col gap-2">
             {openRevisions.map((message, index) => (
               <MessageRow key={`${message.at}-${index}`} message={message} />
@@ -166,7 +174,7 @@ function OrderFacts({ order, accounts }: { order: HubOrder; accounts: readonly A
   const today = useToday()
   const done = order.parts_done.map((part) => (part === 'video' ? 'видео' : 'фото')).join(' и ')
   return (
-    <InfoSection title="Заказ в Hub">
+    <InfoSection title="Заказ">
       <dl className="flex flex-col gap-2">
         <FieldRow label="Код">
           <span className="tabular-nums">{order.code}</span>
@@ -186,8 +194,8 @@ function OrderFacts({ order, accounts }: { order: HubOrder; accounts: readonly A
             <span className="text-ink-3">не назначен</span>
           )}
         </FieldRow>
-        <FieldRow label="Hub считает">
-          {done ? `сдано целиком: ${done}` : <span className="text-ink-3">ничего не сдано</span>}
+        <FieldRow label="Сдано">
+          {done ? `целиком: ${done}` : <span className="text-ink-3">ничего</span>}
         </FieldRow>
       </dl>
     </InfoSection>
@@ -240,7 +248,7 @@ function FileRow({
               ].join(' · ')}
         </p>
         {file.archive_order ? (
-          <p className="text-ink-3 text-sm">в архивном заказе ContentOps, до Hub</p>
+          <p className="text-ink-3 text-sm">в старом заказе ContentOps (архив)</p>
         ) : null}
         {words ? (
           <p
@@ -264,7 +272,7 @@ function FileRow({
         ) : null}
         {unlinking ? (
           <ReasonForm
-            label="Почему отвязываем файл — Hub получит отметку"
+            label="Почему отвязываем файл"
             choices={UNLINK_REASONS}
             submitLabel="Отвязать"
             pending={actions.unlinking}
@@ -302,7 +310,7 @@ function FilesSection({
       title="Файлы в ContentOps"
       aside={
         order.pending_reports > 0 ? (
-          <span className="text-attention-ink">не все в Hub</span>
+          <span className="text-attention-ink">не все записаны</span>
         ) : undefined
       }
     >
@@ -398,7 +406,7 @@ function MessageRow({ message }: { message: HubOrderMessage }) {
 function MessagesSection({ order }: { order: HubOrder }) {
   if (order.messages.length === 0) return null
   return (
-    <InfoSection title="Сообщения заказа в Hub">
+    <InfoSection title="Сообщения заказа">
       <ul className="flex flex-col gap-3">
         {order.messages.slice(0, 12).map((message, index) => (
           <MessageRow key={`${message.at}-${index}`} message={message} />
@@ -413,7 +421,7 @@ function ArchiveLink({ order }: { order: HubOrder }) {
   const href = useHref()
   if (!order.archive_order) return null
   return (
-    <InfoSection title="До Hub">
+    <InfoSection title="Архив">
       <UiLink
         href={href({
           to: '/$model/library/customs/orders/$order',
