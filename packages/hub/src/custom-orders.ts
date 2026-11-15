@@ -23,6 +23,13 @@ export const HUB_ORDER_STATES = [
 ] as const
 export type HubOrderState = (typeof HUB_ORDER_STATES)[number]
 
+/**
+ * A state as the hub sends it: one of the known ones, or a step the hub gained after this
+ * release (products plan 13.11, package C3). An unknown one is kept as its word and shown as
+ * «в Hub: <слово>»; it never fails the read.
+ */
+export type HubOrderStateWire = HubOrderState | (string & {})
+
 export const HUB_ORDER_MESSAGE_KINDS = [
   'repost',
   'delivery',
@@ -79,7 +86,9 @@ export interface HubCustomOrder {
   /** The task's first line. */
   what: string
   deadlineOn: string | null
-  state: HubOrderState
+  state: HubOrderStateWire
+  /** The hub's word of the state («Проверен»), when it sends one; null — an older hub. */
+  stateWord: string | null
   stateAt: string
   stateNote: string | null
   stateRef: string | null
@@ -156,14 +165,16 @@ function oneOf<T extends string>(list: readonly T[], value: unknown): T | null {
     : null
 }
 
-function parseMessage(raw: unknown, endpoint: string, at: string): HubOrderMessage {
+/** A message of a kind this release does not know: left out, the order stays readable. */
+function parseMessage(raw: unknown, endpoint: string, at: string): HubOrderMessage | null {
   if (!isRecord(raw)) throw badShape(endpoint, `${at}: a message is not an object`)
   const telegramRef = str(raw.telegramRef)
   const eventRef = str(raw.eventRef)
-  const kind = oneOf(HUB_ORDER_MESSAGE_KINDS, raw.kind)
-  if ((telegramRef === null && eventRef === null) || kind === null) {
-    throw badShape(endpoint, `${at}: a message without its link (or event) or kind`)
+  if (telegramRef === null && eventRef === null) {
+    throw badShape(endpoint, `${at}: a message without its link (or event)`)
   }
+  const kind = oneOf(HUB_ORDER_MESSAGE_KINDS, raw.kind)
+  if (kind === null) return null
   const part = oneOf(['video', 'photos'] as const, raw.part)
   return {
     telegramRef,
@@ -207,7 +218,8 @@ export function parseHubOrder(raw: unknown, endpoint = 'custom-orders'): HubCust
   if (!isRecord(raw)) throw badShape(endpoint, 'an order is not an object')
   const code = str(raw.code)
   const id = int(raw.id)
-  const state = oneOf(HUB_ORDER_STATES, raw.state)
+  // Any word: a state the hub gained later is shown by its word, never a failed read.
+  const state = str(raw.state)
   const version = int(raw.version)
   if (code === null || !CODE.test(code) || id === null || state === null || version === null) {
     throw badShape(endpoint, 'an order without its code, number, state or version')
@@ -228,6 +240,7 @@ export function parseHubOrder(raw: unknown, endpoint = 'custom-orders'): HubCust
     what: str(raw.what) ?? '',
     deadlineOn: str(raw.deadlineOn),
     state,
+    stateWord: str(raw.stateWord),
     stateAt: str(raw.stateAt) ?? str(raw.updatedAt) ?? '',
     stateNote: str(raw.stateNote),
     stateRef: str(raw.stateRef),
@@ -241,7 +254,10 @@ export function parseHubOrder(raw: unknown, endpoint = 'custom-orders'): HubCust
     updatedAt: str(raw.updatedAt) ?? '',
     cardText: str(raw.cardText) ?? '',
     sourceText: str(raw.sourceText),
-    messages: raw.messages.map((message, i) => parseMessage(message, endpoint, `${code}#${i}`)),
+    messages: raw.messages.flatMap((message, i) => {
+      const parsed = parseMessage(message, endpoint, `${code}#${i}`)
+      return parsed === null ? [] : [parsed]
+    }),
   }
 }
 

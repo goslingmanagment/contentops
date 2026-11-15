@@ -4725,18 +4725,7 @@
       },
       "HubOrderState": {
         "type": "string",
-        "enum": [
-          "recorded",
-          "paid",
-          "at_model",
-          "partly",
-          "shot",
-          "revision",
-          "refused",
-          "given",
-          "closed",
-          "cancelled"
-        ]
+        "minLength": 1
       },
       "HubPost": {
         "type": "object",

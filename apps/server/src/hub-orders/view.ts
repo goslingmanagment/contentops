@@ -7,6 +7,7 @@ import {
   type HubOrderList,
   type HubOrderMessage,
   type HubReport,
+  isKnownHubState,
 } from '@contentops/contracts/domain/hub-orders'
 import type { OrderPartKind } from '@contentops/contracts/domain/orders'
 import type { Role } from '@contentops/contracts/domain/people'
@@ -74,7 +75,18 @@ function wantsOf(order: HubCustomOrder): { video: boolean; photos: number } {
   return !video && photos === 0 ? { video: false, photos: 1 } : { video, photos }
 }
 
+/** Shown in «Заказы»: in production, or a state this release does not know (shown by its word). */
+function inProduction(order: HubCustomOrder): boolean {
+  return !isKnownHubState(order.state) || HUB_PRODUCTION_STATES.includes(order.state)
+}
+
+/** «в Hub: Проверен» — a state the hub gained after this release, by the hub's own word. */
+function unknownStateWord(order: HubCustomOrder): StatusWord {
+  return { sign: null, word: `в Hub: ${order.stateWord ?? order.state}`, detail: null }
+}
+
 function statusOf(order: HubCustomOrder, pending: number, now: Instant): StatusWord {
+  if (!isKnownHubState(order.state)) return unknownStateWord(order)
   const today = mskDate(now)
   const overdue = order.overdueDays
   const late = overdue !== null ? `${overdue} ${plural(overdue, DAYS)}` : null
@@ -245,7 +257,7 @@ export async function hubOrderViews(
   const now = context.now ?? new Date().toISOString()
   const read = await readHubOrders(q, context.model.id)
   const orders = read.orders.filter((order) =>
-    options.code ? order.code === options.code : HUB_PRODUCTION_STATES.includes(order.state),
+    options.code ? order.code === options.code : inProduction(order),
   )
   const codes = orders.map((order) => order.code)
   const { rows: accounts } = await q.execute<{ code: string; hub: string }>(sql`
@@ -352,7 +364,7 @@ export async function hubOrderViews(
 }
 
 /** A revision first, then the overdue, then the oldest step. */
-const STEP_RANK: Partial<Record<HubOrder['state'], number>> = {
+const STEP_RANK: Partial<Record<string, number>> = {
   revision: 0,
   at_model: 2,
   partly: 2,

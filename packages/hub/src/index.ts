@@ -51,6 +51,7 @@ export {
   type HubOrderPart,
   type HubOrderReportBody,
   type HubOrderState,
+  type HubOrderStateWire,
   parseHubOrder,
   parseHubOrderList,
 } from './custom-orders.ts'

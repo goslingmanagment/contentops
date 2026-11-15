@@ -16,8 +16,8 @@ import { OrderPartKindSchema } from './orders'
  * them and tells the hub what a file means; its own orders stay as history («Архив заказов»).
  */
 
-/** The hub's states (hub `CUSTOM_ORDER_STATES`). */
-export const HubOrderStateSchema = z.enum([
+/** The hub's states this release knows (hub `CUSTOM_ORDER_STATES`). */
+export const HubKnownOrderStateSchema = z.enum([
   'recorded',
   'paid',
   'at_model',
@@ -29,10 +29,25 @@ export const HubOrderStateSchema = z.enum([
   'closed',
   'cancelled',
 ])
-export type HubOrderState = z.infer<typeof HubOrderStateSchema>
+export type HubKnownOrderState = z.infer<typeof HubKnownOrderStateSchema>
 
-/** In production — what «Заказы» shows: at the model, partly shot, a revision, shot and not given. */
-export const HUB_PRODUCTION_STATES: readonly HubOrderState[] = [
+/**
+ * A state as the hub sent it: a known one, or a step the hub gained after this release
+ * (products plan 13.11, package C3) — shown as «в Hub: <слово>», never a failed read.
+ */
+export const HubOrderStateSchema = z.string().min(1)
+export type HubOrderState = HubKnownOrderState | (string & {})
+
+/** Whether this release knows the state (else it is only shown by its word). */
+export function isKnownHubState(state: string): state is HubKnownOrderState {
+  return (HubKnownOrderStateSchema.options as readonly string[]).includes(state)
+}
+
+/**
+ * In production — what «Заказы» shows: at the model, partly shot, a revision, shot and not
+ * given; and any state this release does not know (`isKnownHubState`), by its word.
+ */
+export const HUB_PRODUCTION_STATES: readonly HubKnownOrderState[] = [
   'at_model',
   'partly',
   'revision',
