@@ -200,7 +200,12 @@ export function PublicationsScreen() {
             actions.approveMany.start({
               items,
               onAnswered: (answer) => {
-                setPicked(new Map())
+                // The sent ticks are done; a tick hidden by another filter was not sent and stays.
+                setPicked((now) => {
+                  const next = new Map(now)
+                  for (const one of items) next.delete(one.id)
+                  return next
+                })
                 setRefusals(
                   answer.results.flatMap((one) =>
                     one.outcome === 'refused'
