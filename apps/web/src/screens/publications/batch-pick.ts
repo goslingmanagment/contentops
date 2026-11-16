@@ -24,12 +24,17 @@ export function pickAll(picks: Picks, rows: readonly PickRow[]): Picks {
   return next
 }
 
-/** What goes to Hub: every tick with its own version, in the feed's order, then any tick no longer shown. */
+/**
+ * What goes to Hub: the ticks the button counts — the shown drafts that may be approved — each with its own version, in
+ * the feed's order. A tick hidden by another filter (or of a draft that left the approvable ones) stays and is not sent:
+ * «Утвердить выбранные (N)» approves N posts the person sees, never one out of sight.
+ */
 export function pickedItems(
   picks: Picks,
   rows: readonly PickRow[],
 ): { id: number; version: number }[] {
-  const shown = rows.filter((row) => picks.has(row.id)).map((row) => row.id)
-  const rest = [...picks.keys()].filter((id) => !shown.includes(id))
-  return [...shown, ...rest].map((id) => ({ id, version: picks.get(id)! }))
+  return rows.flatMap((row) => {
+    const version = picks.get(row.id)
+    return version === undefined ? [] : [{ id: row.id, version }]
+  })
 }

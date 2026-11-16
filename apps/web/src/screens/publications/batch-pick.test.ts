@@ -27,7 +27,14 @@ describe('«Утвердить выбранные»: the version on screen when 
     expect(togglePick(all, { id: 1, version: 9 }).has(1)).toBe(false)
   })
 
-  it('a ticked draft no longer shown is still sent: Hub answers for it', () => {
-    expect(pickedItems(new Map([[7, 2]]), [])).toEqual([{ id: 7, version: 2 }])
+  it('sends only what the button counts: a tick hidden by another filter stays, and is not sent', () => {
+    // Three ticked, the filter changed: one shown, «Утвердить выбранные (1)» approves that one.
+    const picks = new Map([
+      [1, 1],
+      [2, 1],
+      [3, 1],
+    ])
+    expect(pickedItems(picks, [{ id: 2, version: 1 }])).toEqual([{ id: 2, version: 1 }])
+    expect(pickedItems(picks, [])).toEqual([])
   })
 })
