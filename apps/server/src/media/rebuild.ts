@@ -23,7 +23,8 @@ import { currentPipelineVersion, type MediaEnv } from './pipeline'
 /** Below intake and the copies, above the prints (−10). */
 export const REBUILD_PRIORITY = -5
 export const REBUILD_BATCH = 200
-export const REBUILD_EVERY_MS = 10 * 60 * 1000
+/** A minute: adopted previews (`work/derive.ts`) finish in seconds, the batch must not wait for them. */
+export const REBUILD_EVERY_MS = 60 * 1000
 
 export function rebuildKey(pipelineVersion: string, masterHex: string): string {
   return `rebuild:${pipelineVersion}:${masterHex}`
@@ -96,7 +97,7 @@ export async function enqueueRebuilds(
   return rowCount ?? 0
 }
 
-/** Starts the rebuild of `worker-video`: now, then every ten minutes; returns the stop function. */
+/** Starts the rebuild of `worker-video`: now, then every minute; returns the stop function. */
 export function startRenditionRebuild(
   db: Db,
   env: Pick<MediaEnv, 'pipelineVersion' | 'recipes'>,
