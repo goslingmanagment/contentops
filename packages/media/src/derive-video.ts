@@ -36,9 +36,9 @@ export const VIDEO_DERIVATIVE_KINDS: readonly VideoDerivativeKind[] = [
 ]
 
 /**
- * SPEC §9.3 `preview.mp4`: CRF 29 under a 2 Mbit/s cap. The preview is watched inside ContentOps
- * only, so it need not be indistinguishable from the master (owner, 17.11.2026): half the size of
- * CRF 23 (compression.md §10.13).
+ * SPEC §9.3 `preview.mp4`: CRF 27 under a 2 Mbit/s cap. The preview is watched inside ContentOps
+ * only, so it need not be indistinguishable from the master: 0.61 of the size of CRF 23. The owner
+ * chose 27 over 29 by eye on 17.11.2026 (compression.md §10.13).
  */
 export const PREVIEW_PROFILE = {
   maxLongSide: 1280,
@@ -46,7 +46,7 @@ export const PREVIEW_PROFILE = {
   codec: 'libx264',
   profile: 'high',
   preset: 'medium',
-  crf: 29,
+  crf: 27,
   maxrateKbps: 2000,
   bufsizeKbps: 4000,
   pixFmt: 'yuv420p',
