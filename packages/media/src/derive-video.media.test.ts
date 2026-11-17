@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, inject, it } from 'vitest'
 import {
+  adoptPreview,
   buildVideoDerivatives,
   VIDEO_DERIVATIVE_KINDS,
   type VideoDerivatives,
@@ -61,6 +62,41 @@ describe('video renditions — one decoding pass (SPEC §9.3)', () => {
       'thumb-320.webp': [180, 320],
       'frames/0000.webp': [288, 512],
     })
+  })
+
+  it('a preview built elsewhere is adopted when it fits its source, never otherwise', async () => {
+    const built = await buildVideoDerivatives({
+      input: fx.files.vertical,
+      outDir: await freshDir('adopt-built'),
+      kinds: ['preview'],
+      versions,
+    })
+    const file = built.artifacts[0]?.path as string
+    const source = await probeVideo(fx.files.vertical)
+    const outDir = await freshDir('adopt-out')
+    const adopted = await adoptPreview({ file, outDir, source })
+    expect(adopted).toMatchObject({
+      kind: 'preview',
+      name: 'preview.mp4',
+      path: `${outDir}/preview.mp4`,
+      sha256: built.artifacts[0]?.sha256,
+      width: 720,
+      height: 1280,
+    })
+    expect(await sha256File(file)).toBe(adopted?.sha256)
+    // The preview of another picture: a landscape source does not take a portrait file.
+    const other = await probeVideo(fx.files.hdr4k60)
+    expect(
+      await adoptPreview({ file, outDir: await freshDir('adopt-no'), source: other }),
+    ).toBeNull()
+    // Not a video at all.
+    expect(
+      await adoptPreview({
+        file: fx.files.unreadable,
+        outDir: await freshDir('adopt-bad'),
+        source,
+      }),
+    ).toBeNull()
   })
 
   it('never upscales', async () => {
