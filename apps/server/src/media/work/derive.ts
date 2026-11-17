@@ -1,7 +1,9 @@
-import { rm } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Tx, WorkContext, WorkHandler, WorkSuccess } from '@contentops/db'
 import {
   type Artifact,
+  adoptPreview,
   buildVideoDerivatives,
   PHOTO_DERIVATIVE_KINDS,
   type PhotoDerivativeKind,
@@ -153,6 +155,20 @@ export function videoRecipesOf(env: MediaEnv, hdr: boolean) {
   return hdr ? env.recipes.videoHdr : env.recipes.video
 }
 
+/**
+ * A preview built outside the VM for these bytes by this recipe, or `null`:
+ * `<TMP_ROOT>/prebuilt/preview/<sha256>.<recipe digest>.mp4` (SPEC §9.1, ops/README «Превью,
+ * собранное заранее»). The digest in the name keeps a file of another recipe out.
+ */
+async function prebuiltPreview(env: MediaEnv, sha: Buffer, digest: string): Promise<string | null> {
+  const file = join(env.store.prebuiltDir, 'preview', `${sha.toString('hex')}.${digest}.mp4`)
+  try {
+    return (await stat(file)).isFile() ? file : null
+  } catch {
+    return null
+  }
+}
+
 export function deriveVideoHandler(env: MediaEnv): WorkHandler {
   return async (ctx) => {
     const sha = inputSha(ctx)
@@ -173,16 +189,29 @@ export function deriveVideoHandler(env: MediaEnv): WorkHandler {
       const ids = await createGenerations(env, ctx, sha, plan, digestOf)
       dir = await buildDir(env, ctx.work.id, ctx.work.attemptNo)
       const progress = progressReporter(ctx, 'превью и кадры')
-      const result = await buildVideoDerivatives({
-        input: input.path,
-        outDir: dir,
-        kinds: plan.todo,
-        probe,
-        signal: ctx.signal,
-        ...(env.niceness === undefined ? {} : { niceness: env.niceness }),
-        versions: env.versions,
-        onProgress: (p) => progress(p.fraction),
-      })
+      // Only the preview is due and one built outside waits for these bytes: take it, checked.
+      const prebuilt =
+        plan.todo.length === 1 && plan.todo[0] === 'preview'
+          ? await prebuiltPreview(env, sha, digestOf('preview'))
+          : null
+      const adopted = prebuilt
+        ? await adoptPreview({ file: prebuilt, outDir: dir, source: probe, signal: ctx.signal })
+        : null
+      if (prebuilt && !adopted) {
+        env.log(`prebuilt preview of ${sha.toString('hex').slice(0, 12)} does not fit, building`)
+      }
+      const result = adopted
+        ? { artifacts: [adopted], decodeErrors: { count: 0 }, ffmpegMs: 0, totalMs: 0 }
+        : await buildVideoDerivatives({
+            input: input.path,
+            outDir: dir,
+            kinds: plan.todo,
+            probe,
+            signal: ctx.signal,
+            ...(env.niceness === undefined ? {} : { niceness: env.niceness }),
+            versions: env.versions,
+            onProgress: (p) => progress(p.fraction),
+          })
       const preview = result.artifacts.find((artifact) => artifact.kind === 'preview')
       const print = await printFor(env, sha, preview?.path ?? null, ctx.signal)
       const commit = await finish(
@@ -192,9 +221,12 @@ export function deriveVideoHandler(env: MediaEnv): WorkHandler {
         result.artifacts,
         print ? (tx) => savePrint(tx, sha, print) : undefined,
       )
+      // The preview of these bytes is in place either way: the file from outside has served.
+      if (prebuilt) await rm(prebuilt, { force: true })
       return {
         report: {
           built: plan.todo,
+          ...(adopted ? { adopted: true } : {}),
           files: result.artifacts.length,
           decode_errors: result.decodeErrors.count,
           ffmpeg_ms: result.ffmpegMs,

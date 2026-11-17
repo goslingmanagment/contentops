@@ -159,6 +159,11 @@ export class BlobStore {
     return join(this.roots.tmpRoot, 'staging')
   }
 
+  /** Renditions built outside the VM, waiting for the worker (ops/README «Превью, собранное заранее»). */
+  get prebuiltDir(): string {
+    return join(this.roots.tmpRoot, 'prebuilt')
+  }
+
   get exportsDir(): string {
     return join(this.roots.tmpRoot, 'exports')
   }

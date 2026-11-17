@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, rename, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import sharp from 'sharp'
 import { removeQuietly, Scratch, sha256File, tempPathIn } from './files.ts'
@@ -460,6 +460,66 @@ export async function buildVideoDerivatives(
     await scratch.cleanup()
     throw abortAware(error, signal)
   }
+}
+
+/** How far a preview built elsewhere may be from what the profile gives for its source. */
+const ADOPT_TOLERANCE = { sidePx: 2, durationMs: 1000, durationShare: 0.01 }
+
+export interface AdoptPreviewOptions {
+  /** The preview built elsewhere; it is copied, never moved or changed. */
+  file: string
+  /** Where `preview.mp4` goes; same filesystem as `derived/`. */
+  outDir: string
+  /** The probe of the bytes the preview was built from. */
+  source: VideoProbe
+  signal?: AbortSignal
+  paths?: ToolPaths
+}
+
+/**
+ * A preview built outside the worker by this profile (SPEC §9.1, ops/README «Превью, собранное
+ * заранее»): checked against its source — H.264 `yuv420p`, the picture fit into the profile's
+ * long side, the duration, sound where the source has a decodable track — and published as
+ * `preview.mp4` of `outDir`. `null` when it does not fit; the caller then builds its own.
+ */
+export async function adoptPreview(options: AdoptPreviewOptions): Promise<Artifact | null> {
+  const paths = options.paths ?? toolPaths()
+  const signal = options.signal
+  let probe: VideoProbe
+  try {
+    probe = await probeVideo(options.file, { paths, signal })
+  } catch (error) {
+    if (signal?.aborted) throw abortAware(error, signal)
+    return null
+  }
+  const p = PREVIEW_PROFILE
+  const t = ADOPT_TOLERANCE
+  const source = options.source
+  const scale = Math.min(
+    1,
+    p.maxLongSide / Math.max(source.video.displayWidth, source.video.displayHeight),
+  )
+  const near = (side: number, wanted: number) => Math.abs(side - wanted) <= t.sidePx
+  const fits =
+    probe.video.codec === 'h264' &&
+    probe.video.pixFmt === p.pixFmt &&
+    near(probe.video.displayWidth, source.video.displayWidth * scale) &&
+    near(probe.video.displayHeight, source.video.displayHeight * scale) &&
+    Math.abs(probe.durationMs - source.durationMs) <=
+      Math.max(t.durationMs, source.durationMs * t.durationShare) &&
+    (firstDecodableAudio(source) === null) === (probe.audio.length === 0)
+  if (!fits) return null
+  await mkdir(options.outDir, { recursive: true })
+  const part = tempPathIn(options.outDir, 'adopt', '.mp4')
+  const target = join(options.outDir, 'preview.mp4')
+  try {
+    await copyFile(options.file, part)
+    await rename(part, target)
+  } catch (error) {
+    await removeQuietly(part)
+    throw abortAware(error, signal)
+  }
+  return describe('preview', 'preview.mp4', target, null, paths, signal)
 }
 
 async function toWebp(png: string, out: string): Promise<void> {
