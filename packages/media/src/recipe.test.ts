@@ -88,7 +88,7 @@ describe('recipe_digest', () => {
     expect(digests(FAKE_VERSIONS)).toEqual({
       master: '4a5dc7ea91aeb0a481fdebaed851c718200c0c717cc220a1d4f1c65ee7a94640',
       platform: 'd203d1a1b87b98f1725be39666053a200e54e883d9ec7d7ca74267c750145131',
-      'video.preview': '764ebc639ade512946e415b9cd300b762a1d4281a262945975a49a1b050f5cdc',
+      'video.preview': '6f9de569f6d7fe4b2a8096f4becdfcd284ffa7636bdb3a235e1d4dbf3e27355e',
       'video.poster': 'b74aaf45452b8040acecb6f3ee4395fcc597fa9ca5051dd438261c3a1febe79b',
       'video.thumb320': '2636f4cd2c7f8e162c65c02bacdc6760f6e11a0f4461769c0c5e428ed07437d9',
       'video.thumb640': 'e4271bc372e4ddcf6ca7592cbcdfd1db3946b2c439dd3fc7865e29758e1020b9',
