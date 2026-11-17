@@ -67,7 +67,8 @@ Agency Hub (`README.md`, `PRD.md`).
   `DEV_AI_PORT` — свой порт). Забыт пароль в ВМ —
   `contentops-db reset-password <login>` (пароль из `CONTENTOPS_NEW_PASSWORD` или stdin).
   После правки таблицы маршрутов —
-  `pnpm --filter @contentops/server openapi`, иначе CI красный.
+  `pnpm --filter @contentops/server openapi` (файл описания в репо; CI его с таблицей не
+  сверяет: сервер отдаёт описание прямо из таблицы).
   Клиенты Я.Диска и Dropbox — `packages/sources` (только чтение); живая проверка Я.Диска —
   `node packages/sources/scripts/live-smoke.ts` (токен из Keychain `ydisk-audit`, печатает только счёт).
 - **Ключ хаба агента** (SPEC §11.1, `ops/README.md` «Ключ хаба агента»): Bearer `agency_hub_agent_…`

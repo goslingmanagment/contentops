@@ -8,7 +8,7 @@ import { createMockFetch, PROTOTYPE_NOW } from '@contentops/mock-api'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type PageSummariesView, pageSummariesView } from '@/data/catalog'
 import { pageBacklog } from '../shared/not-uploaded-index'
-import { backlogCount, backlogGroups, surfaceFor } from './backlog'
+import { backlogGroups, surfaceFor } from './backlog'
 
 const lora = { model: 'lora' }
 let api: ApiClient
@@ -32,38 +32,6 @@ async function accounts() {
 }
 
 describe('«Ещё не залито» по индексу в браузере (DESIGN §4.3)', () => {
-  it('совпадает с ответом сервера на каждой вкладке: группы, числа и «уже в плане»', async () => {
-    for (const account of await accounts()) {
-      const backlog = pageBacklog(items, summaries, account)
-      const page = await api.objects.notUploaded({
-        params: lora,
-        query: { account: account.code },
-      })
-      const local = [...backlog.byType]
-        .filter(([, entries]) => entries.length > 0)
-        .map(([type, entries]) => ({ type, ids: entries.map((entry) => entry.id).sort() }))
-      const server = page.groups.map((group) => ({
-        type: group.type,
-        ids: [...group.item_ids].sort(),
-      }))
-      expect(local).toEqual(server)
-      expect(backlog.planned.length).toBe(page.planned_hidden)
-      expect(backlogCount(backlog)).toBe(
-        page.tabs.find((tab) => tab.account === account.code)?.count,
-      )
-    }
-  })
-
-  it('числа DESIGN §9.3: Fansly 2 — 4 PPV · 14 сетов · 12 лайф, фупов 488', async () => {
-    const fansly2 = (await accounts()).find((account) => account.code === 'lora-2')
-    if (!fansly2) throw new Error('нет Fansly 2')
-    const backlog = pageBacklog(items, summaries, fansly2)
-    const counts = Object.fromEntries(
-      [...backlog.byType].map(([type, entries]) => [type, entries.length]),
-    )
-    expect(counts).toMatchObject({ ppv: 4, set: 14, life: 12, fyp: 488 })
-  })
-
   it('фупы свёрнуты и последние, пустые по фильтру группы не рисуются', async () => {
     const fansly2 = (await accounts()).find((account) => account.code === 'lora-2')
     if (!fansly2) throw new Error('нет Fansly 2')

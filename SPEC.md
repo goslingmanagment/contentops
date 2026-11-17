@@ -2024,9 +2024,10 @@ Fyper — read-only клиент API ContentOps: читает каталог и 
   этого схемы меняются вместе с интерфейсом и CLI. Единственный источник контракта —
   таблица маршрутов на zod в `packages/contracts`, как в принятом прототипе и в Hub
   (решение владельца 29.10.2026): по ней Fastify (`fastify-type-provider-zod`) проверяет
-  вход и ответ, из неё порождается OpenAPI 3.1 (`@fastify/swagger`; файл в репо, его же
-  отдаёт сервер) и строится клиент интерфейса и CLI (`createApiClient`), без
-  `openapi-typescript` и `openapi-fetch`; CI сверяет файл описания с таблицей.
+  вход и ответ, из неё порождается OpenAPI 3.1 (`@fastify/swagger`; сервер отдаёт его по
+  `/api/v1/openapi.json`, файл в репо обновляется командой `openapi`, CI его с таблицей не
+  сверяет) и строится клиент интерфейса и CLI (`createApiClient`), без
+  `openapi-typescript` и `openapi-fetch`.
 - Пути: `/api/v1/<model>/…` для объектов модели, `/api/v1/admin/…` для настроек,
   выключателей и операций без модели (`/api/v1/admin/operations/<id>`: бэкап,
   `verify-blobs`), `/api/v1/auth/…` для входа и выхода; коды моделей `admin` и `auth`
