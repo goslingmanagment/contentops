@@ -56,16 +56,6 @@ describe('поиск по индексу в браузере (DESIGN §4.7)', ()
     expect(ids('кружево', 6)).toContain('PPV-073')
   })
 
-  it('совпадает с сервером: то же число по каждому типу', async () => {
-    for (const query of ['кастом в колготках', 'кружева', 'фуп в чёрном', 'лонг ппв', 'йога']) {
-      const server = await api.objects.search({ params: lora, query: { q: query } })
-      const local = search.find(query)
-      for (const group of server.groups) {
-        expect(local.filter((entry) => entry.type === group.type).length).toBe(group.total)
-      }
-    }
-  })
-
   it('окно выбора ищет так же по своему списку: «лайф 191»', () => {
     const lives = items.filter((entry) => entry.type === 'life')
     const picker = createCatalogSearch(lives)

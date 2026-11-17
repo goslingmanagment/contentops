@@ -380,6 +380,3 @@ export function buildLoraCatalog(): CatalogEntry[] {
   applyDetailed(entries)
   return entries
 }
-
-/** IDs of the §9.3 table; tests check they are all present. */
-export const LORA_DETAILED_IDS: readonly ItemId[] = Object.keys(DETAILED)
