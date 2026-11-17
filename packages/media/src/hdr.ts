@@ -5,9 +5,11 @@ import type { VideoProbe, VideoStream } from './probe.ts'
 import { sha256Hex } from './recipe.ts'
 
 /**
- * HDR → SDR of what people download and fans see (SPEC §9.3, compression.md §10.12):
- * `platform.mp4`, uniq versions, the compatible copy and a frame taken as a photo. Previews and
- * stills stay on `HDR_TO_SDR`: their recipe drives rebuilds of the whole library.
+ * HDR → SDR of everything built from an HDR source (SPEC §9.3, compression.md §10.12): previews,
+ * poster, thumbnails and annotation frames, `platform.mp4`, uniq versions, the compatible copy and
+ * a frame taken as a photo — one conversion, so a clip looks the same in ContentOps and on the
+ * platform (owner, 17.11.2026). `HDR_TO_SDR` is applied to nothing; it only stays inside the
+ * recipes of SDR sources.
  *
  * - HLG (every HDR file of the library) goes through a 3D table measured from Apple's conversion.
  * - PQ, none in the library yet: `tonemap`, the closest cheap chain to Apple's PQ conversion.
@@ -78,7 +80,7 @@ export function hlgSdrCube(): string {
   return cube
 }
 
-/** What goes into the recipes of copies from HDR sources: a new table is a new recipe. */
+/** What goes into the recipes of renditions of HDR sources: a new table is a new recipe. */
 export function copyHdrRecipe() {
   return {
     hlg: hlgToSdr('<table>'),

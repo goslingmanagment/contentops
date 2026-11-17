@@ -42,6 +42,8 @@ export interface PipelineRecipes {
   probeVideo: DigestedRecipe
   probePhoto: DigestedRecipe
   video: ReturnType<typeof videoDerivativeRecipes>
+  /** Previews and stills of an HDR source: its own recipes, an SDR one stays (SPEC §9.3). */
+  videoHdr: ReturnType<typeof videoDerivativeRecipes>
   photo: ReturnType<typeof photoRecipes>
   /** A copy of an HDR master has a recipe of its own: an SDR copy stays valid (SPEC §9.3). */
   platform: {
@@ -63,6 +65,7 @@ export function pipelineRecipes(
     probeVideo: probeRecipe(versions),
     probePhoto: photo.probe,
     video: videoDerivativeRecipes(versions),
+    videoHdr: videoDerivativeRecipes(versions, true),
     photo,
     platform: {
       kept: platformRecipe(versions, platform, false),
@@ -85,6 +88,7 @@ export function recipeDigests(recipes: PipelineRecipes): Record<string, string> 
     'platform.hdr.stripped': recipes.platform.hdrStripped.digest,
   }
   for (const [kind, r] of Object.entries(recipes.video)) digests[`video.${kind}`] = r.digest
+  for (const [kind, r] of Object.entries(recipes.videoHdr)) digests[`video.${kind}.hdr`] = r.digest
   for (const [kind, r] of Object.entries(recipes.photo)) digests[`photo.${kind}`] = r.digest
   return digests
 }
@@ -107,6 +111,7 @@ export async function activatePipelineVersion(
   const version = pipelineVersionOf(recipes)
   const renditionRecipes = {
     video: Object.fromEntries(Object.entries(recipes.video).map(([k, r]) => [k, r.recipe])),
+    videoHdr: Object.fromEntries(Object.entries(recipes.videoHdr).map(([k, r]) => [k, r.recipe])),
     photo: Object.fromEntries(Object.entries(recipes.photo).map(([k, r]) => [k, r.recipe])),
     platform: {
       kept: recipes.platform.kept.recipe,

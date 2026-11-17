@@ -94,15 +94,20 @@ export async function createGeneration(
   return rows[0]?.id as string
 }
 
-/** Serialises switches of one derivative key (schema §9.1 «переключение поколения»). */
+/**
+ * Serialises switches of one derivative of a master (schema §9.1 «переключение поколения»):
+ * the master, kind and strip mode, whatever the recipe — a new recipe replaces the old one.
+ */
 export async function lockKey(tx: Tx, master: Buffer, key: GenerationKey): Promise<void> {
-  const name = `rendition:${master.toString('hex')}:${key.kind}:${key.recipeDigest}:${key.metaStripped}`
+  const name = `rendition:${master.toString('hex')}:${key.kind}:${key.metaStripped}`
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${name}, 0))`)
 }
 
 /**
- * Makes a ready generation the active one of its key; the previous one stays readable under
- * its own address until the collector removes it.
+ * Makes a ready generation the active one of its derivative (master, kind, strip mode): the
+ * previous one — of the same recipe or of an older one (a recipe change, an HDR source moved to
+ * its own recipe) — stops being active, so a screen is served the new build. The previous one
+ * stays readable under its own address until the collector removes it.
  */
 export async function activateGeneration(tx: Tx, generationId: string): Promise<void> {
   const { rows } = await tx.execute<{
@@ -120,8 +125,7 @@ export async function activateGeneration(tx: Tx, generationId: string): Promise<
   await tx.execute(sql`
     UPDATE rendition_generations SET is_active = false
      WHERE master_sha256 = ${row.master_sha256} AND kind = ${row.kind}
-       AND recipe_digest = ${row.recipe_digest} AND meta_stripped = ${row.meta_stripped}
-       AND is_active AND id <> ${generationId}::uuid`)
+       AND meta_stripped = ${row.meta_stripped} AND is_active AND id <> ${generationId}::uuid`)
   await tx.execute(sql`
     UPDATE rendition_generations SET is_active = true WHERE id = ${generationId}::uuid`)
 }
@@ -173,8 +177,9 @@ export async function finishGenerations(
 
 /**
  * Binds the generations built from a source to its verified master (schema §3.3): once,
- * `bound_at`; the address does not change. The newest bound generation of each key becomes
- * active unless the key already has an active ready one.
+ * `bound_at`; the address does not change. The newest bound generation of each derivative
+ * (kind, strip mode) becomes active unless the master already has an active ready one of
+ * the same recipe or built no earlier (a rebuild by a newer recipe is never undone by a bind).
  */
 export async function bindGenerations(
   tx: Tx,
@@ -187,14 +192,18 @@ export async function bindGenerations(
        AND state IN ('building', 'ready')
     RETURNING id`)
   const { rows: ready } = await tx.execute<{ id: string }>(sql`
-    SELECT DISTINCT ON (kind, recipe_digest, meta_stripped) id FROM rendition_generations g
-     WHERE master_sha256 = ${masterSha} AND state = 'ready'
-       AND NOT EXISTS (
-         SELECT 1 FROM rendition_generations a
-          WHERE a.master_sha256 = g.master_sha256 AND a.kind = g.kind
-            AND a.recipe_digest = g.recipe_digest AND a.meta_stripped = g.meta_stripped
-            AND a.is_active AND a.state = 'ready')
-     ORDER BY kind, recipe_digest, meta_stripped, ready_at DESC`)
+    SELECT n.id FROM (
+      SELECT DISTINCT ON (kind, meta_stripped)
+             id, master_sha256, kind, recipe_digest, meta_stripped, ready_at
+        FROM rendition_generations
+       WHERE master_sha256 = ${masterSha} AND state = 'ready'
+       ORDER BY kind, meta_stripped, ready_at DESC
+    ) n
+     WHERE NOT EXISTS (
+       SELECT 1 FROM rendition_generations a
+        WHERE a.master_sha256 = n.master_sha256 AND a.kind = n.kind
+          AND a.meta_stripped = n.meta_stripped AND a.is_active AND a.state = 'ready'
+          AND (a.recipe_digest = n.recipe_digest OR a.ready_at >= n.ready_at))`)
   for (const { id } of ready) await activateGeneration(tx, id)
   return rows.length
 }

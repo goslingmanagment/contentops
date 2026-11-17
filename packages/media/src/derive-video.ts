@@ -2,6 +2,7 @@ import { mkdir, readdir, rename, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import sharp from 'sharp'
 import { removeQuietly, Scratch, sha256File, tempPathIn } from './files.ts'
+import { hdrOfRecipe, withHdrFilter } from './hdr.ts'
 import { probeVideo, type VideoProbe } from './probe.ts'
 import { type DigestedRecipe, digested, type RenditionKind, recipe } from './recipe.ts'
 import {
@@ -53,9 +54,9 @@ export const PREVIEW_PROFILE = {
 } as const
 
 /**
- * HDR (PQ/HLG) → SDR BT.709 of previews and stills, applied after the first downscale. What people
- * download and fans see converts by `hdr.ts` (SPEC §9.3); this one stays, since its change would
- * rebuild the previews of the whole library.
+ * The former HDR → SDR chain of previews and stills (`tonemap=hable`). Applied to nothing since
+ * 17.11.2026: every HDR source converts by `hdr.ts` (SPEC §9.3). It stays only as the `hdr` member
+ * of the recipes of SDR sources, so that their digests — and the previews of the library — stay.
  */
 export const HDR_TO_SDR =
   'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p'
@@ -123,9 +124,15 @@ export interface VideoDerivativeOptions {
 
 const STILL_TOOLS = ['ffmpeg', 'libvips', 'sharp', 'libwebp'] as const
 
+/**
+ * Recipes of the video renditions. An HDR source has recipes of its own (its conversion and the
+ * table, `hdr.ts`): a new conversion rebuilds HDR clips only, SDR recipes stay as they were.
+ */
 export function videoDerivativeRecipes(
   versions: ToolVersions,
+  hdrSource = false,
 ): Record<VideoDerivativeKind, DigestedRecipe> {
+  const hdr = hdrOfRecipe(hdrSource, HDR_TO_SDR)
   const stills = (kind: VideoDerivativeKind, own: object) =>
     digested(
       recipe(
@@ -134,7 +141,7 @@ export function videoDerivativeRecipes(
         {
           ...own,
           intermediate: VIDEO_STILLS_PROFILE.intermediate,
-          hdr: HDR_TO_SDR,
+          hdr,
           webp: VIDEO_STILLS_PROFILE.webp,
         },
         versions,
@@ -143,7 +150,7 @@ export function videoDerivativeRecipes(
     )
   return {
     preview: digested(
-      recipe('preview', 'video', { ...PREVIEW_PROFILE, hdr: HDR_TO_SDR }, versions, ['ffmpeg']),
+      recipe('preview', 'video', { ...PREVIEW_PROFILE, hdr }, versions, ['ffmpeg']),
     ),
     poster: stills('poster', VIDEO_STILLS_PROFILE.poster),
     thumb320: stills('thumb320', {
@@ -182,11 +189,13 @@ interface PassPlan {
   framesDir: string | null
 }
 
+/** `hdr` — the conversion of an HDR source (`withHdrFilter`), `null` for SDR. */
 export function videoPassArgs(
   input: string,
   workDir: string,
   probe: VideoProbe,
   kinds: readonly VideoDerivativeKind[],
+  hdr: string | null = null,
 ): PassPlan {
   const want = new Set(kinds)
   const s = VIDEO_STILLS_PROFILE
@@ -300,7 +309,8 @@ export function videoPassArgs(
   }
   if (labels.length === 0) throw new Error('no video derivative requested')
 
-  const head = `[0:v:0]${fitFilter(PREVIEW_PROFILE.maxLongSide, true)}${probe.video.isHdr ? `,${HDR_TO_SDR}` : ''}`
+  // First the downscale to ≤1280, then the conversion: the table runs on the small picture.
+  const head = `[0:v:0]${fitFilter(PREVIEW_PROFILE.maxLongSide, true)}${hdr ? `,${hdr}` : ''}`
   const split =
     labels.length === 1
       ? `${head}[${labels[0]}]`
@@ -339,27 +349,31 @@ export async function buildVideoDerivatives(
   const signal = options.signal
   const kinds = options.kinds ?? VIDEO_DERIVATIVE_KINDS
   const versions = options.versions ?? (await detectToolVersions({ paths, signal }))
-  const allRecipes = videoDerivativeRecipes(versions)
   const probe = options.probe ?? (await probeVideo(options.input, { paths, signal }))
+  const allRecipes = videoDerivativeRecipes(versions, probe.video.isHdr)
   await mkdir(options.outDir, { recursive: true })
   const scratch = new Scratch()
   const workDir = scratch.track(tempPathIn(options.outDir, 'derive', ''))
   try {
     await mkdir(workDir)
-    const plan = videoPassArgs(options.input, workDir, probe, kinds)
-    if (plan.framesDir) await mkdir(plan.framesDir)
     const framePts: number[] = []
     const decodeErrors = errorLog()
     const encoder = errorLog()
-    const run = await runTool(paths.ffmpeg, plan.args, {
-      signal,
-      niceness: options.niceness,
-      onStdoutLine: progressParser(probe.durationMs, options.onProgress),
-      onStderrLine: encodeLogParser({
-        onFrame: (t) => framePts.push(t),
-        source: decodeErrors,
-        encoder,
-      }),
+    // HDR converts the same way as the copies (SPEC §9.3): the table lies in workDir for the pass.
+    const { plan, run } = await withHdrFilter(probe, workDir, async (hdr) => {
+      const plan = videoPassArgs(options.input, workDir, probe, kinds, hdr)
+      if (plan.framesDir) await mkdir(plan.framesDir)
+      const run = await runTool(paths.ffmpeg, plan.args, {
+        signal,
+        niceness: options.niceness,
+        onStdoutLine: progressParser(probe.durationMs, options.onProgress),
+        onStderrLine: encodeLogParser({
+          onFrame: (t) => framePts.push(t),
+          source: decodeErrors,
+          encoder,
+        }),
+      })
+      return { plan, run }
     })
     const ffmpegMs = Math.round(performance.now() - started)
     if (run.code !== 0) {

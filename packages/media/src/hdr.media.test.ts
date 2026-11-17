@@ -9,7 +9,7 @@ import {
   DEFAULT_PLATFORM_PROFILE,
   platformRecipe,
 } from './copies.ts'
-import { HDR_TO_SDR } from './derive-video.ts'
+import { buildVideoDerivatives, HDR_TO_SDR, videoDerivativeRecipes } from './derive-video.ts'
 import { extractFrame, frameRecipe } from './frame.ts'
 import { probeVideo } from './probe.ts'
 import { HDR_PATCH_COLUMNS, HDR_PATCH_SIDE, HDR_PATCHES } from './testing/fixtures.ts'
@@ -83,7 +83,15 @@ async function patches(file: string, filter = ''): Promise<Record<PatchName, Lab
     '1',
     png,
   ])
-  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true })
+  return patchesOfImage(png)
+}
+
+/** CIE Lab of every patch of an image file (PNG, WebP), as sRGB. */
+async function patchesOfImage(image: string): Promise<Record<PatchName, Lab>> {
+  const { data, info } = await sharp(image)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
   const out = {} as Record<PatchName, Lab>
   for (const [index, { name }] of HDR_PATCHES.entries()) {
     const left = (index % HDR_PATCH_COLUMNS) * HDR_PATCH_SIDE
@@ -200,6 +208,28 @@ describe('copies from HDR sources (SPEC §9.3, compression.md §10.12)', () => {
     expect(await listFiles(outDir)).toEqual([frame.file.name])
     const seen = await patches(frame.file.path, 'scale=out_color_matrix=bt709:out_range=tv,')
     for (const name of SKIN) expect(deltaE(seen[name], APPLE_HLG[name]), name).toBeLessThan(2)
+  })
+
+  it('previews and stills convert the same way, by recipes of their own', async () => {
+    const outDir = await freshDir('derive')
+    const d = await buildVideoDerivatives({
+      input: fx.files.hlgPatches,
+      outDir,
+      kinds: ['preview', 'poster'],
+      versions,
+    })
+    expect(await listFiles(outDir)).toEqual(['poster.webp', 'preview.mp4'])
+    const hdr = videoDerivativeRecipes(versions, true)
+    expect(d.recipes.preview?.digest).toBe(hdr.preview.digest)
+    expect(d.recipes.poster?.digest).toBe(hdr.poster.digest)
+    expect(hdr.preview.digest).not.toBe(videoDerivativeRecipes(versions).preview.digest)
+    const preview = await patches(`${outDir}/preview.mp4`)
+    const poster = await patchesOfImage(`${outDir}/poster.webp`)
+    for (const name of SKIN) {
+      expect(deltaE(preview[name], APPLE_HLG[name]), name).toBeLessThan(2)
+      expect(deltaE(poster[name], APPLE_HLG[name]), name).toBeLessThan(2.5)
+    }
+    for (const name of NEUTRAL) expect(chroma(preview[name]), name).toBeLessThan(0.5)
   })
 
   it('an SDR source keeps its recipe and needs no table', async () => {
