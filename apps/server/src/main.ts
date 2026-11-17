@@ -35,6 +35,7 @@ import { importParseHandler } from './legacy/parse'
 import { createLogger } from './logger'
 import { startGenerationCollector } from './media/collector'
 import { createMediaEnv } from './media/pipeline'
+import { startRenditionRebuild } from './media/rebuild'
 import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
 import { BlobStore } from './media/storage'
 import { reconcileStorage } from './media/storage-ops'
@@ -377,10 +378,14 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
   const stopStaging = role === 'worker' ? startStagingSweep(db, store, log) : () => {}
   // Old rendition generations go once their rebuild has served a day (SPEC §9.1).
   const stopCollector = role === 'worker' ? startGenerationCollector(db, store, log) : () => {}
+  // Previews and stills of a recipe that no longer applies are rebuilt in the background, a
+  // batch at a time below intake (SPEC §9.1).
+  const stopRebuild = role === 'worker-video' ? startRenditionRebuild(db, env, log) : () => {}
   const stopSweep = () => {
     stopExports()
     stopStaging()
     stopCollector()
+    stopRebuild()
   }
   // Periodic works (Hub polls, source scans) are scheduled only by `worker`. A source's
   // streams exist while its token is in the environment, Hub's while its key is there.

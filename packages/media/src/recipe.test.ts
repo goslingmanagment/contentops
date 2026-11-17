@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PLATFORM_PROFILE, platformRecipe } from './copies.ts'
-import { videoDerivativeRecipes } from './derive-video.ts'
+import { HDR_TO_SDR, videoDerivativeRecipes } from './derive-video.ts'
 import { copyHdrRecipe } from './hdr.ts'
 import { masterRecipe } from './master.ts'
 import { photoRecipes } from './photo.ts'
@@ -100,6 +100,17 @@ describe('recipe_digest', () => {
       'photo.phash': '648c23eaf4f730675c29139db17d508d570073899f61ae67a84790faba8c78ad',
       'photo.probe': 'd582796df31b963d68c63cffe6e55d8046d50c3f23615037076b2caeff5dfa56',
     })
+  })
+
+  it('of previews and stills from an HDR source are their own: SDR ones stay valid', () => {
+    const sdr = videoDerivativeRecipes(FAKE_VERSIONS)
+    const hdr = videoDerivativeRecipes(FAKE_VERSIONS, true)
+    expect(videoDerivativeRecipes(FAKE_VERSIONS, false)).toEqual(sdr)
+    for (const kind of Object.keys(sdr) as (keyof typeof sdr)[]) {
+      expect(hdr[kind].digest, kind).not.toBe(sdr[kind].digest)
+      expect(hdr[kind].recipe.profile, kind).toMatchObject({ hdr: copyHdrRecipe() })
+      expect(sdr[kind].recipe.profile, kind).toMatchObject({ hdr: HDR_TO_SDR })
+    }
   })
 
   it('of a copy from an HDR source is its own: SDR copies stay valid', () => {

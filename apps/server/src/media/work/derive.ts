@@ -131,10 +131,33 @@ async function printFor(
   }
 }
 
+/**
+ * Whether the bytes are HDR, by their ffprobe row of the current probe recipe; bytes not probed
+ * yet are probed now (the row is kept), so the plan and the build go by the same probe.
+ */
+async function isHdrInput(env: MediaEnv, sha: Buffer, signal: AbortSignal): Promise<boolean> {
+  const { rows } = await env.db.execute<{ is_hdr: boolean }>(sql`
+    SELECT is_hdr FROM blob_probes
+     WHERE sha256 = ${sha} AND kind = 'ffprobe' AND recipe_digest = ${env.recipes.probeVideo.digest}`)
+  if (rows[0]) return rows[0].is_hdr
+  try {
+    const probe = await probeVideoCached(env, await locateInput(env, sha), signal)
+    return probe.video.isHdr
+  } catch (error) {
+    throw asWorkError(error)
+  }
+}
+
+/** The recipes of the video renditions of these bytes: an HDR source has its own (SPEC §9.3). */
+export function videoRecipesOf(env: MediaEnv, hdr: boolean) {
+  return hdr ? env.recipes.videoHdr : env.recipes.video
+}
+
 export function deriveVideoHandler(env: MediaEnv): WorkHandler {
   return async (ctx) => {
     const sha = inputSha(ctx)
-    const digestOf = (kind: VideoDerivativeKind) => env.recipes.video[kind].digest
+    const recipes = videoRecipesOf(env, await isHdrInput(env, sha, ctx.signal))
+    const digestOf = (kind: VideoDerivativeKind) => recipes[kind].digest
     const plan = await planKinds(env, sha, VIDEO_DERIVATIVE_KINDS, digestOf)
     if (plan.todo.length === 0) {
       const print = await printFor(env, sha, null, ctx.signal)
