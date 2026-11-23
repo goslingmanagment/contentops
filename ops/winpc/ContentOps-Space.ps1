@@ -51,7 +51,7 @@ try {
   $tmp = "$target.tmp"
   [System.IO.File]::WriteAllText($tmp, $json)
   if (Test-Path -LiteralPath $target) {
-    [System.IO.File]::Replace($tmp, $target, $null)
+    [System.IO.File]::Replace($tmp, $target, [NullString]::Value)
   } else {
     Move-Item -Force -Path $tmp -Destination $target
   }
