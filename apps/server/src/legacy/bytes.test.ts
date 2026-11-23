@@ -14,6 +14,7 @@ import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fetchHandler } from '../intake/fetch'
 import { mediaKindOf } from '../intake/grouping'
+import { sweepUnpacked } from '../intake/staging'
 import { drain, type IntakeHarness, intakeHarness, LORA_ROOT, setSwitch } from '../intake/testing'
 import { createLogger } from '../logger'
 import type { BlobStore } from '../media/storage'
@@ -714,6 +715,141 @@ describe('«Можно освобождать» (SPEC §12.2)', () => {
     await writeFile(list, `${lines}\n${JSON.stringify(extra)}\n`)
     const smm = (await releaseReport(h.db, 'lora', list)).roots.find((r) => r.root === '9. SMM')
     expect(smm).toMatchObject({ ready: false, blockers: { 'в копии, но не в снимке': 1 } })
+  })
+
+  it('checks sibling .meta.json (errors, client_running, unlisted dirs) and file size mismatches', async () => {
+    const base = (await readFile(join(copyRoot, 'list.jsonl'), 'utf8')).trim()
+    // Clean meta with finished_at: header prints the timestamp and 9. SMM stays ready.
+    const okList = join(copyRoot, 'list-ok.jsonl')
+    await writeFile(okList, `${base}\n`)
+    await writeFile(
+      join(copyRoot, 'list-ok.meta.json'),
+      JSON.stringify({
+        finished_at: '2026-11-23T01:00:00Z',
+        errors: 0,
+        dirs_not_listed: 0,
+        client_running: false,
+      }),
+    )
+    const okReport = await releaseReport(h.db, 'lora', okList)
+    expect(okReport.roots.find((r) => r.root === '9. SMM')?.ready).toBe(true)
+    expect(releaseMarkdown(okReport)).toContain('от 2026-11-23T01:00:00Z')
+
+    // Meta with errors & client_running blocks every root.
+    const badMetaList = join(copyRoot, 'list-badmeta.jsonl')
+    await writeFile(badMetaList, `${base}\n`)
+    await writeFile(
+      join(copyRoot, 'list-badmeta.meta.json'),
+      JSON.stringify({
+        finished_at: '2026-11-23T01:00:00Z',
+        errors: 2,
+        dirs_not_listed: 0,
+        client_running: true,
+      }),
+    )
+    const badMetaSmm = (await releaseReport(h.db, 'lora', badMetaList)).roots.find(
+      (r) => r.root === '9. SMM',
+    )
+    expect(badMetaSmm?.ready).toBe(false)
+    expect(badMetaSmm?.blockers).toMatchObject({
+      'ошибки обхода копии': 1,
+      'клиент Я.Диска был запущен при обходе': 1,
+    })
+
+    // Unlisted directory inside 9. SMM blocks only that root.
+    const unlistedList = join(copyRoot, 'list-unlisted.jsonl')
+    const unlistedDir = {
+      path: 'Lora/9. SMM/Twitter/zenpromo june',
+      is_dir: true,
+      size: 0,
+      last_write_utc: '2026-11-01T10:00:00Z',
+      attributes: 0x10,
+      listed: false,
+    }
+    await writeFile(unlistedList, `${base}\n${JSON.stringify(unlistedDir)}\n`)
+    const unlistedSmm = (await releaseReport(h.db, 'lora', unlistedList)).roots.find(
+      (r) => r.root === '9. SMM',
+    )
+    expect(unlistedSmm).toMatchObject({
+      ready: false,
+      blockers: { 'не перечисленная папка в копии': 1 },
+    })
+
+    // Copy file with a different byte size than the frozen snapshot blocks the root.
+    const wrongSizeList = join(copyRoot, 'list-size.jsonl')
+    const modified = base
+      .split('\n')
+      .map((line) => {
+        const entry = JSON.parse(line) as { path: string; size: number }
+        if (entry.path.includes('june_photo_001.jpg')) entry.size += 123
+        return JSON.stringify(entry)
+      })
+      .join('\n')
+    await writeFile(wrongSizeList, `${modified}\n`)
+    const wrongSizeSmm = (await releaseReport(h.db, 'lora', wrongSizeList)).roots.find(
+      (r) => r.root === '9. SMM',
+    )
+    expect(wrongSizeSmm).toMatchObject({
+      ready: false,
+      blockers: { 'размер в копии не совпадает со снимком': 1 },
+    })
+  })
+
+  it('sweepUnpacked keeps unpack/<sha> while any archive revision with that SHA has unbound members, then removes it', async () => {
+    const { rows } = await h.db.execute<{ sha: string; revision_id: string }>(sql`
+      SELECT encode(r.source_sha256, 'hex') AS sha, r.id AS revision_id
+        FROM source_revisions r
+        JOIN source_objects o ON o.id = r.source_object_id
+       WHERE o.current_name = 'extra.zip' AND r.source_sha256 IS NOT NULL
+       LIMIT 1`)
+    const archiveSha = rows[0]?.sha as string
+    expect(archiveSha).toMatch(/^[0-9a-f]{64}$/)
+    const unpackDir = join(store.roots.tmpRoot, 'unpack', archiveSha)
+
+    // Plant a duplicate archive revision sharing the same remote_sha256 with an unbound member.
+    const dupMemberRevId = await withActorTx(h.db, ctx(), async (tx) => {
+      const { rows: src } = await tx.execute<{ id: string }>(sql`
+        SELECT id FROM sources WHERE model_id = ${h.modelId}::uuid AND kind = 'yandex_disk' LIMIT 1`)
+      const sourceId = src[0]?.id as string
+      const { rows: ao } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO source_objects (model_id, source_id, resource_id, current_path, current_name)
+        VALUES (${h.modelId}::uuid, ${sourceId}::uuid, 'dup-archive-obj', 'disk:/dup-extra.zip', 'dup-extra.zip')
+        RETURNING id`)
+      const { rows: ar } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO source_revisions (model_id, source_object_id, sequence_no, byte_size, remote_sha256)
+        VALUES (${h.modelId}::uuid, ${ao[0]?.id}::uuid, 1, 100, decode(${archiveSha}, 'hex'))
+        RETURNING id`)
+      const { rows: mo } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO source_objects (model_id, source_id, current_path, current_name,
+                                    archive_revision_id, archive_entry_no)
+        VALUES (${h.modelId}::uuid, ${sourceId}::uuid, 'disk:/dup-extra.zip/1.jpg', '1.jpg',
+                ${ar[0]?.id}::uuid, 1)
+        RETURNING id`)
+      const { rows: mr } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO source_revisions (model_id, source_object_id, sequence_no, byte_size)
+        VALUES (${h.modelId}::uuid, ${mo[0]?.id}::uuid, 1, 50)
+        RETURNING id`)
+      await tx.execute(sql`
+        UPDATE source_objects SET current_revision_id = ${mr[0]?.id}::uuid
+         WHERE id = ${mo[0]?.id}::uuid`)
+      return mr[0]?.id as string
+    })
+
+    // While the duplicate archive has an unbound member, unpack/<sha> stays on disk!
+    const kept = await sweepUnpacked(h.db, store, Date.now() + 2 * 60 * 60 * 1000, 0)
+    expect(kept).not.toContain(archiveSha)
+    expect(await readFile(join(unpackDir, 'index.json'), 'utf8')).toBeTruthy()
+
+    // Once all duplicate members are bound (source_sha256 set), sweepUnpacked reclaims the folder.
+    await withActorTx(h.db, ctx(), (tx) =>
+      tx.execute(sql`
+        UPDATE source_revisions
+           SET source_sha256 = decode(${'11'.repeat(32)}, 'hex'),
+               verified_at = now(), verified_route = 'download'
+         WHERE id = ${dupMemberRevId}::uuid`),
+    )
+    const removed = await sweepUnpacked(h.db, store, Date.now() + 2 * 60 * 60 * 1000, 0)
+    expect(removed).toContain(archiveSha)
   })
 })
 

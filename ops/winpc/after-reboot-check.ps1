@@ -168,13 +168,16 @@ if ($null -eq $svc) {
   Row 'FAIL' 'yandex' 'YandexDiskUpdateService' ('start type {0}, {1} (must be Manual)' -f $svc.StartType, $svc.Status)
 }
 
-# --- Space as Windows sees it ---------------------------------------------------------
+# --- Space as Windows sees it (decimal GB, matching SPEC 12.2 / config.ts) -------------
+$spaceWarn = @{ C = 200; E = 160 }
+$spaceStop = @{ C = 100; E = 100 }
 foreach ($letter in 'C', 'E') {
   $d = Get-PSDrive -Name $letter -ErrorAction SilentlyContinue
   if ($null -eq $d) { Row 'FAIL' 'space' "${letter}:" 'missing (E: gone - the VM cannot start, ops/README.md)'; continue }
-  $free = [math]::Round($d.Free / 1GB)
-  $status = if ($letter -eq 'C' -and $free -lt 100) { 'FAIL' } elseif ($letter -eq 'C' -and $free -lt 200) { 'warn' } else { 'ok' }
-  Row $status 'space' "${letter}:" ('{0} GB free of {1} GB' -f $free, [math]::Round(($d.Free + $d.Used) / 1GB))
+  $free = [math]::Round($d.Free / 1e9)
+  $total = [math]::Round(($d.Free + $d.Used) / 1e9)
+  $status = if ($free -le $spaceStop[$letter]) { 'FAIL' } elseif ($free -le $spaceWarn[$letter]) { 'warn' } else { 'ok' }
+  Row $status 'space' "${letter}:" ('{0} GB free of {1} GB' -f $free, $total)
 }
 
 if ($script:fails -gt 0) { "FAILED: $($script:fails)"; exit 1 }

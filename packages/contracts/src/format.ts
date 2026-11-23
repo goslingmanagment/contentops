@@ -89,6 +89,7 @@ export function formatHoursMinutes(totalSeconds: number): string {
 
 /** `58 МБ`, `1,9 ГБ`, `2,65 ГБ`. */
 export function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 КБ'
   const megabytes = bytes / 1_000_000
   if (megabytes < 1) return `${Math.max(1, Math.round(bytes / 1000))} КБ`
   if (megabytes < 1000) return `${formatDecimal(megabytes, megabytes < 10 ? 1 : 0)} МБ`

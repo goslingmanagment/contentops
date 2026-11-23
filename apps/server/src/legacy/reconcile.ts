@@ -151,13 +151,14 @@ export async function rowsOf(q: Queryable, snapshot: SnapshotWork): Promise<Row[
      WHERE r.model_id = ${snapshot.modelId}::uuid AND r.frozen_by_work_id = ${snapshot.id}::uuid
      ORDER BY r.frozen_path`)
   // What the import takes no draft of: the same rules as the pass (`@contentops/legacy`).
-  const { notContent } = await readInputs(q, snapshot.modelId)
+  const { notContent } = await readInputs(q, snapshot.modelId, snapshot.sourceKind)
   for (const row of rows) {
     if (row.member || row.draft_state !== null) continue
     const relative = sourcePath(row.path, snapshot.rootPath).relative
     const context = contextOf(relative, {
       isDir: false,
       ...(notContent.length > 0 ? { notContent } : {}),
+      ...(snapshot.sourceKind === 'dropbox' ? { caseInsensitive: true } : {}),
     })
     if (context.notContent) row.not_content = true
   }

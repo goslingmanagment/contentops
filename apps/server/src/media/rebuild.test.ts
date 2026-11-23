@@ -171,4 +171,59 @@ describe('rebuild of renditions by the current recipes', () => {
        WHERE id = ${fresh}::uuid`)
     expect((await collectGenerations(server.db, server.store)).evicted).toEqual([old])
   })
+
+  it('queues a rebuild when a live master has evicted or missing required renditions, unless intake derive is in flight', async () => {
+    // Drain any stale masters left by earlier tests in this file.
+    await enqueueRebuilds(server.db, env)
+
+    const missing = await master({ hdr: false, recipes: 'sdr' })
+    await server.db.execute(sql`
+      UPDATE rendition_generations SET state = 'evicted', is_active = false
+       WHERE master_sha256 = ${missing} AND kind IN ('frames', 'poster')`)
+
+    const inFlight = await master({ hdr: false, recipes: 'sdr' })
+    const rawSource = randomBytes(32)
+    await server.db.execute(sql`
+      UPDATE rendition_generations SET state = 'evicted', is_active = false
+       WHERE master_sha256 = ${inFlight} AND kind = 'frames'`)
+    await systemTx(server.db, async (tx) => {
+      const { rows: src } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO sources (model_id, kind, label, read_only, enabled)
+        VALUES (${lora}::uuid, 'web_upload', 'Rebuild Source', false, true)
+        RETURNING id`)
+      const { rows: obj } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO source_objects (model_id, source_id, resource_id, current_path, current_name)
+        VALUES (${lora}::uuid, ${src[0]?.id}::uuid, 'rebuild-obj', '/clip.mp4', 'clip.mp4')
+        RETURNING id`)
+      const { rows: rev } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO source_revisions (model_id, source_object_id, sequence_no, byte_size)
+        VALUES (${lora}::uuid, ${obj[0]?.id}::uuid, 1, 100)
+        RETURNING id`)
+      const { rows: grp } = await tx.execute<{ id: string }>(sql`
+        INSERT INTO inbox_groups (model_id, source_id, group_key, grouping, evidence)
+        VALUES (${lora}::uuid, ${src[0]?.id}::uuid, ${`rebuild-src:${rawSource.toString('hex').slice(0, 8)}`}, 'single', '{}'::jsonb)
+        RETURNING id`)
+      await tx.execute(sql`
+        INSERT INTO inbox_drafts (model_id, group_id, source_revision_id, origin, state, byte_size,
+                                  path, source_sha256, master_sha256, master_verified_at)
+        VALUES (${lora}::uuid, ${grp[0]?.id}::uuid, ${rev[0]?.id}::uuid, 'disk_scan', 'processing',
+                100, '/clip.mp4', ${rawSource}, ${inFlight}, now())`)
+    })
+    await enqueueWork(server.db, {
+      modelId: lora,
+      kind: 'derive_video',
+      workKey: `derive:${rawSource.toString('hex')}:intake-src`,
+      inputSha256: rawSource,
+      priority: 10,
+    })
+
+    expect(await enqueueRebuilds(server.db, env)).toBe(1)
+    expect(await rebuilds(missing)).toEqual([
+      {
+        work_key: rebuildKey(env.pipelineVersion, missing.toString('hex')),
+        priority: REBUILD_PRIORITY,
+      },
+    ])
+    expect(await rebuilds(inFlight)).toEqual([])
+  })
 })

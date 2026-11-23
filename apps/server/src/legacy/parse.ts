@@ -124,7 +124,7 @@ export function importParseHandler(): WorkHandler {
     }
     await ctx.checkpoint({ progress: { num: 0, note: 'разбор: чтение снимка' } })
     const listing = await snapshotListing(db, snapshot)
-    const inputs = await readInputs(db, modelId)
+    const inputs = await readInputs(db, modelId, snapshot.sourceKind)
     const model = await modelOf(db, modelId)
     const plan = planLegacyImport(listing, {
       registry: inputs.registry,
@@ -132,6 +132,7 @@ export function importParseHandler(): WorkHandler {
       vaultAlbums: inputs.vaultAlbums,
       foreignModelNames: model.foreign,
       ...(inputs.notContent.length > 0 ? { notContent: inputs.notContent } : {}),
+      ...(snapshot.sourceKind === 'dropbox' ? { caseInsensitive: true } : {}),
     })
     const report: ImportReport = summarizePlan(plan, {
       mode,

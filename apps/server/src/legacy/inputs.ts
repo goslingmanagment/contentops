@@ -15,6 +15,27 @@ export const REGISTRY_KEY = 'legacy.registry'
 export const VAULT_ALBUMS_KEY = 'legacy.vault_albums'
 export const NOT_CONTENT_KEY = 'legacy.not_content'
 
+export function notContentKey(sourceKind?: string): string {
+  return sourceKind ? `${NOT_CONTENT_KEY}.${sourceKind}` : NOT_CONTENT_KEY
+}
+
+function mergePaths(rows: readonly { value: unknown }[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const paths = (row.value as { paths?: unknown } | null)?.paths
+    if (!Array.isArray(paths)) continue
+    for (const raw of paths) {
+      const path = String(raw)
+      if (!seen.has(path)) {
+        seen.add(path)
+        out.push(path)
+      }
+    }
+  }
+  return out
+}
+
 export interface ImportInputs {
   registryText: string | null
   registry: RegistryClaim[]
@@ -23,31 +44,46 @@ export interface ImportInputs {
   notContent: string[]
 }
 
-export async function readInputs(q: Queryable, modelId: string): Promise<ImportInputs> {
+export async function readInputs(
+  q: Queryable,
+  modelId: string,
+  sourceKind?: string,
+): Promise<ImportInputs> {
+  const scopedKey = sourceKind ? notContentKey(sourceKind) : null
+  const keys = [REGISTRY_KEY, VAULT_ALBUMS_KEY, NOT_CONTENT_KEY, ...(scopedKey ? [scopedKey] : [])]
   const { rows } = await q.execute<{ key: string; value: unknown }>(sql`
     SELECT key, value FROM policy_settings
      WHERE model_id = ${modelId}::uuid AND account_id IS NULL AND item_type IS NULL
-       AND key IN (${REGISTRY_KEY}, ${VAULT_ALBUMS_KEY}, ${NOT_CONTENT_KEY})`)
+       AND key = ANY (${sql.param(keys)}::text[])`)
   const value = (key: string) => rows.find((row) => row.key === key)?.value ?? null
   const registryText = (value(REGISTRY_KEY) as { text?: string } | null)?.text ?? null
   const albums = (value(VAULT_ALBUMS_KEY) as { albums?: VaultAlbumEvidence[] } | null)?.albums
-  const paths = (value(NOT_CONTENT_KEY) as { paths?: unknown } | null)?.paths
+  const notContentRows = rows.filter(
+    (row) => row.key === NOT_CONTENT_KEY || (scopedKey !== null && row.key === scopedKey),
+  )
   return {
     registryText,
     registry: registryText ? parsePpvRegistry(registryText) : [],
     vaultAlbums: albums ?? [],
-    notContent: Array.isArray(paths) ? paths.map(String) : [],
+    notContent: mergePaths(notContentRows),
   }
 }
 
-/** Only the model's list of what is not content: the scan reads it for every batch. */
-export async function readNotContent(q: Queryable, modelId: string): Promise<string[]> {
+/**
+ * The model's list of what is not content: merges `legacy.not_content` with
+ * `legacy.not_content.<sourceKind>` when a source kind is given.
+ */
+export async function readNotContent(
+  q: Queryable,
+  modelId: string,
+  sourceKind?: string,
+): Promise<string[]> {
+  const keys = sourceKind ? [NOT_CONTENT_KEY, notContentKey(sourceKind)] : [NOT_CONTENT_KEY]
   const { rows } = await q.execute<{ value: unknown }>(sql`
     SELECT value FROM policy_settings
      WHERE model_id = ${modelId}::uuid AND account_id IS NULL AND item_type IS NULL
-       AND key = ${NOT_CONTENT_KEY}`)
-  const paths = (rows[0]?.value as { paths?: unknown } | null)?.paths
-  return Array.isArray(paths) ? paths.map(String) : []
+       AND key = ANY (${sql.param(keys)}::text[])`)
+  return mergePaths(rows)
 }
 
 async function setSetting(

@@ -63,11 +63,7 @@ export async function enqueueRebuilds(
                  WHERE p.sha256 = b.sha256 AND p.kind = 'ffprobe' AND p.is_hdr
               ) THEN w.hdr ELSE w.sdr END AS digest
             ) applies
-            WHERE EXISTS (
-                    SELECT 1 FROM rendition_generations g
-                     WHERE g.master_sha256 = b.sha256 AND g.kind = w.kind
-                       AND g.is_active AND g.state = 'ready' AND NOT g.meta_stripped)
-              AND NOT EXISTS (
+            WHERE NOT EXISTS (
                     SELECT 1 FROM rendition_generations g
                      WHERE g.master_sha256 = b.sha256 AND g.kind = w.kind
                        AND g.recipe_digest = applies.digest
@@ -76,8 +72,15 @@ export async function enqueueRebuilds(
            SELECT 1 FROM work_operations o
             WHERE o.kind = 'derive_video'
               AND (o.work_key = ${prefix} || encode(b.sha256, 'hex')
-                   OR (o.input_sha256 = b.sha256
-                       AND o.state IN ('pending', 'running', 'retry_wait')))))
+                   OR (o.state IN ('pending', 'running', 'retry_wait')
+                       AND (o.input_sha256 = b.sha256
+                            OR o.input_sha256 IN (
+                              SELECT d.source_sha256 FROM inbox_drafts d
+                               WHERE d.master_sha256 = b.sha256 AND d.source_sha256 IS NOT NULL
+                              UNION
+                              SELECT v.source_sha256 FROM asset_versions v
+                               WHERE v.master_sha256 = b.sha256 AND v.source_sha256 IS NOT NULL
+                            ))))))
     INSERT INTO work_operations (
       model_id, kind, work_key, priority, input_sha256, pipeline_version
     )

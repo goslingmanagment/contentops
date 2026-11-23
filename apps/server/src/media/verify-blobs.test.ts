@@ -75,6 +75,28 @@ describe('verify-blobs', () => {
         SELECT ${lora}::uuid, 'abandoned-1', id, 'clip.mp4', 'other', 100, 14, 'failed', ${key}
           FROM principals LIMIT 1`),
     )
+    // A slow receiving upload created >1d ago whose file mtime is fresh must NOT be flagged abandoned.
+    const activeKey = 'inbox/web/lora/receiving-active/data'
+    await mkdir(dirname(join(store.roots.dataRoot, activeKey)), { recursive: true })
+    await writeFile(join(store.roots.dataRoot, activeKey), 'still uploading')
+    await systemTx(db, (tx) =>
+      tx.execute(sql`
+        INSERT INTO web_uploads (model_id, upload_id, principal_id, client_filename,
+                                 declared_kind, size_expected, bytes_received, state, tmp_key, created_at)
+        SELECT ${lora}::uuid, 'receiving-active', id, 'slow.mp4', 'other', 1000, 15, 'receiving',
+               ${activeKey}, now() - interval '2 days'
+          FROM principals LIMIT 1`),
+    )
+    // A registered raw web upload (no AV1 master linked to this raw sha) stays protected and is counted.
+    const rawUpload = await put('raw custom web upload')
+    await systemTx(db, (tx) =>
+      tx.execute(sql`
+        INSERT INTO web_uploads (model_id, upload_id, principal_id, client_filename,
+                                 declared_kind, size_expected, bytes_received, state, tmp_key, sha256)
+        SELECT ${lora}::uuid, 'registered-raw-1', id, 'custom.mov', 'other', 21, 21, 'registered',
+               'inbox/web/lora/registered-raw-1/data', ${shaBytes(rawUpload)}
+          FROM principals LIMIT 1`),
+    )
 
     const runner = new WorkRunner({
       db,
@@ -97,12 +119,14 @@ describe('verify-blobs', () => {
     await runner.stop()
 
     expect(report).toMatchObject({
-      checked: 4,
-      ok: 2,
+      checked: 5,
+      ok: 3,
       corrupt: [damaged],
       missing: [lost],
       orphans: [stray],
-      unreferenced: [{ sha256: loose, key: blobKey(loose, 'mp4') }],
+      unreferenced: [{ sha256: loose, key: blobKey(loose, 'mp4'), origin: 'orphan_blob' }],
+      unreferenced_by_origin: { orphan_blob: { count: 1 } },
+      held_web_uploads: { count: 1, bytes: 21 },
       abandoned_uploads: [{ model_id: lora, upload_id: 'abandoned-1', key, bytes: 14 }],
     })
     const { rows } = await db.execute<{ sha256: Buffer; state: string; verified: boolean }>(sql`
@@ -113,6 +137,7 @@ describe('verify-blobs', () => {
       [loose]: 'present',
       [damaged]: 'corrupt',
       [lost]: 'missing',
+      [rawUpload]: 'present',
     })
     expect(await store.exists(blobKey(loose, 'mp4')), 'nothing is removed').toBe(true)
     const verified = rows.find((r) => r.sha256.equals(shaBytes(held)))

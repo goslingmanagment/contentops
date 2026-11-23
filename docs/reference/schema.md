@@ -638,7 +638,9 @@ processed_frames | master_version | other`), `target_item_id?`, `plan_row_id?`
 (задача; исходники берутся из её `input_manifest_id`), `size_expected`,
 `bytes_received`, `sha256?`, `state` (`receiving | received | verified |
 registered | failed | abandoned`), `tmp_key`, `error`, `created_at`,
-`completed_at`. UNIQUE `(model_id, upload_id)`; частичный индекс незавершённых. Черновик
+`completed_at`, `raw_released_at?`, `raw_archive_ref?` (добавлены в `0026_storage_safety`:
+сырой исходник зарегистрированной веб-загрузки удерживается `blob_is_referenced` до
+освобождения после внешнего архивирования, если её черновик не `rejected`/`alias`). UNIQUE `(model_id, upload_id)`; частичный индекс незавершённых. Черновик
 загрузки — `inbox_drafts.web_upload_id` (UNIQUE: одна загрузка — один черновик); обратной
 ссылки нет.
 Порядок: файл докачан и сверен → блоб в `blobs/` → черновик обычной приёмки.
@@ -1471,7 +1473,8 @@ LLM.
     свой же блоб), `rendition_generations.master_sha256`, `review_cases.blob_sha256`.
     `blob_is_referenced(sha256)` держит: мастер любой версии; `master_sha256` и
     `source_blob_sha256` черновика, пока он не `resolved`; `web_uploads.sha256`, пока загрузка
-    не дошла до черновика (`receiving | received | verified`); выход работы в `pending |
+    не дошла до черновика (`receiving | received | verified`) или зарегистрирована без
+    `raw_released_at` (кроме черновиков с исходом `rejected`/`alias`, миграция `0026`); выход работы в `pending |
     running | retry_wait`. Тест сверяет список с каждым FK на `blobs (sha256)`. Строку
     `blobs` прикладная роль не удаляет (REVOKE DELETE).
   - Записанное однажды (функция `set_once`, NULL → значение): у ревизии `source_sha256`,

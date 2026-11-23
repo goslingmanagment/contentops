@@ -1,4 +1,8 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { photoShotTime, probePhoto } from './photo.ts'
 import { type FfprobeJson, parseFfprobe, parseZoned, UnreadableMediaError } from './probe.ts'
 
 /** Shape of an iPhone HDR portrait clip with spatial audio, as ffprobe prints it. */
@@ -121,5 +125,55 @@ describe('parseFfprobe', () => {
     })
     expect(parseZoned('2024-01-02T06:04:05+03:00')?.shotTz).toBe('+03:00')
     expect(parseZoned('garbage')).toBeNull()
+    expect(parseZoned('2025-01-20T19:56:92+03:00')).toBeNull()
+    expect(parseZoned('2025-02-30T10:00:00+00:00')).toBeNull()
+  })
+})
+
+describe('photo EXIF and probe error handling', () => {
+  it('drops out-of-range EXIF timestamps instead of producing invalid Postgres timestamps', () => {
+    expect(photoShotTime({ DateTimeOriginal: '2025:01:20 19:56:92' })).toEqual({
+      shotAt: null,
+      shotAtLocal: null,
+      shotTz: null,
+    })
+    expect(photoShotTime({ DateTimeOriginal: '2025:02:29 12:00:00' })).toEqual({
+      shotAt: null,
+      shotAtLocal: null,
+      shotTz: null,
+    })
+    expect(photoShotTime({ DateTimeOriginal: '0000:00:00 00:00:00' })).toEqual({
+      shotAt: null,
+      shotAtLocal: null,
+      shotTz: null,
+    })
+    expect(photoShotTime({ DateTimeOriginal: '2024:02:29 12:34:56' })).toEqual({
+      shotAt: null,
+      shotAtLocal: '2024-02-29T12:34:56',
+      shotTz: null,
+    })
+    // Falls back to CreateDate when DateTimeOriginal is broken.
+    expect(
+      photoShotTime({
+        DateTimeOriginal: '2025:01:20 19:56:92',
+        CreateDate: '2025:01:20 19:56:02',
+        OffsetTime: '+03:00',
+      }),
+    ).toEqual({
+      shotAt: '2025-01-20T16:56:02.000Z',
+      shotAtLocal: '2025-01-20T19:56:02',
+      shotTz: '+03:00',
+    })
+  })
+
+  it('converts sharp decode errors in probePhoto to UnreadableMediaError', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'contentops-probe-photo-'))
+    try {
+      const bad = join(dir, 'corrupt.jpg')
+      await writeFile(bad, 'not a valid image payload')
+      await expect(probePhoto(bad)).rejects.toBeInstanceOf(UnreadableMediaError)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

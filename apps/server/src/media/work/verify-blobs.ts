@@ -13,6 +13,12 @@ import { sha256OfFile, shaHex } from '../storage'
  * checks the references again under the row lock. Nothing is removed here.
  */
 
+export type UnreferencedOrigin =
+  | 'rejected_draft'
+  | 'alias_draft'
+  | 'released_web_upload'
+  | 'orphan_blob'
+
 export interface VerifyReport {
   checked: number
   ok: number
@@ -21,11 +27,14 @@ export interface VerifyReport {
   corrupt: string[]
   /** Files on disk with no `blobs` row (an interrupted put, a hand-made copy). */
   orphans: string[]
-  unreferenced: { sha256: string; key: string; bytes: number }[]
+  unreferenced: { sha256: string; key: string; bytes: number; origin?: UnreferencedOrigin }[]
   unreferenced_bytes: number
+  unreferenced_by_origin?: Partial<Record<UnreferencedOrigin, { count: number; bytes: number }>>
+  /** Raw bytes of registered web uploads kept until archived externally (`raw_released_at IS NULL`). */
+  held_web_uploads?: { count: number; bytes: number }
   /**
    * Web uploads left behind (SPEC §9.1: «брошенную загрузку удаляет та же команда
-   * владельца»): failed, cancelled, or still receiving after a day, with bytes on disk.
+   * владельца»): failed, cancelled, or still receiving with no activity for a day, with bytes on disk.
    */
   abandoned_uploads?: { model_id: string; upload_id: string; key: string; bytes: number }[]
 }
@@ -119,31 +128,94 @@ export function verifyBlobsHandler(deps: { db: Db; store: BlobStore }): WorkHand
       sha256: Buffer
       storage_key: string
       byte_size: string
+      origin: UnreferencedOrigin
     }>(sql`
-      SELECT sha256, storage_key, byte_size FROM blobs
-       WHERE state = 'present' AND NOT blob_is_referenced(sha256)
-       ORDER BY registered_at`)
+      SELECT b.sha256, b.storage_key, b.byte_size,
+             CASE
+               WHEN EXISTS (
+                 SELECT 1 FROM web_uploads u
+                  WHERE u.sha256 = b.sha256 AND u.state = 'registered'
+                    AND u.raw_released_at IS NOT NULL
+               ) THEN 'released_web_upload'
+               WHEN EXISTS (
+                 SELECT 1 FROM inbox_drafts d
+                  WHERE (d.master_sha256 = b.sha256 OR d.source_blob_sha256 = b.sha256)
+                    AND d.state = 'resolved' AND d.outcome = 'rejected'
+               ) THEN 'rejected_draft'
+               WHEN EXISTS (
+                 SELECT 1 FROM inbox_drafts d
+                  WHERE (d.master_sha256 = b.sha256 OR d.source_blob_sha256 = b.sha256)
+                    AND d.state = 'resolved' AND d.outcome = 'alias'
+               ) THEN 'alias_draft'
+               ELSE 'orphan_blob'
+             END AS origin
+        FROM blobs b
+       WHERE b.state = 'present' AND NOT blob_is_referenced(b.sha256)
+       ORDER BY b.registered_at`)
     report.unreferenced = unreferenced.map((row) => ({
       sha256: shaHex(row.sha256),
       key: row.storage_key,
       bytes: Number(row.byte_size),
+      origin: row.origin,
     }))
     report.unreferenced_bytes = report.unreferenced.reduce((sum, b) => sum + b.bytes, 0)
+    const byOrigin: Partial<Record<UnreferencedOrigin, { count: number; bytes: number }>> = {}
+    for (const item of report.unreferenced) {
+      const origin = item.origin ?? 'orphan_blob'
+      const entry = byOrigin[origin] ?? { count: 0, bytes: 0 }
+      entry.count += 1
+      entry.bytes += item.bytes
+      byOrigin[origin] = entry
+    }
+    report.unreferenced_by_origin = byOrigin
+
+    const { rows: heldRaw } = await deps.db.execute<{ count: number; bytes: string }>(sql`
+      SELECT count(*)::int AS count, coalesce(sum(b.byte_size), 0)::text AS bytes
+        FROM blobs b
+       WHERE b.state = 'present'
+         AND EXISTS (
+           SELECT 1 FROM web_uploads u
+            WHERE u.sha256 = b.sha256 AND u.state = 'registered' AND u.raw_released_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM inbox_drafts d
+                 WHERE d.model_id = u.model_id AND d.web_upload_id = u.id
+                   AND d.state = 'resolved' AND d.outcome IN ('rejected', 'alias')
+              )
+         )
+         AND NOT EXISTS (SELECT 1 FROM asset_versions v WHERE v.master_sha256 = b.sha256)
+         AND NOT EXISTS (
+           SELECT 1 FROM inbox_drafts d
+            WHERE (d.master_sha256 = b.sha256 OR d.source_blob_sha256 = b.sha256)
+              AND d.state <> 'resolved'
+         )`)
+    report.held_web_uploads = {
+      count: heldRaw[0]?.count ?? 0,
+      bytes: Number(heldRaw[0]?.bytes ?? 0),
+    }
 
     const { rows: uploads } = await deps.db.execute<{
       model_id: string
       upload_id: string
+      state: string
       tmp_key: string
     }>(sql`
-      SELECT model_id, upload_id, tmp_key FROM web_uploads
+      SELECT model_id, upload_id, state, tmp_key FROM web_uploads
        WHERE sha256 IS NULL
          AND (state IN ('failed', 'abandoned')
               OR (state IN ('receiving', 'received') AND created_at < now() - interval '1 day'))
        ORDER BY created_at`)
+    const staleCutoffMs = Date.now() - 24 * 60 * 60 * 1000
     report.abandoned_uploads = []
     for (const upload of uploads) {
       const info = await stat(join(deps.store.roots.dataRoot, upload.tmp_key)).catch(() => null)
       if (!info) continue
+      // An upload still receiving chunks (fresh mtime) is not abandoned even if started >1d ago.
+      if (
+        (upload.state === 'receiving' || upload.state === 'received') &&
+        info.mtimeMs >= staleCutoffMs
+      ) {
+        continue
+      }
       report.abandoned_uploads.push({
         model_id: upload.model_id,
         upload_id: upload.upload_id,

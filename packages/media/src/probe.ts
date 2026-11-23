@@ -306,6 +306,22 @@ function videoShotTime(tags: Record<string, string>): ShotTime {
   return { shotAt: null, shotAtLocal: null, shotTz: null }
 }
 
+/** True when `(y, mo, d, h, mi, s)` is a real calendar wall-clock timestamp accepted by Postgres. */
+export function isValidWallClock(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+): boolean {
+  if (year < 1900 || year > 2100) return false
+  if (month < 1 || month > 12) return false
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return false
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return day >= 1 && day <= daysInMonth
+}
+
 /** `2024-01-02T06:04:05+0300` or `…+03:00` → instant, wall clock and zone. */
 export function parseZoned(value: string): ShotTime | null {
   const m =
@@ -314,6 +330,10 @@ export function parseZoned(value: string): ShotTime | null {
     )
   if (!m) return null
   const [, y, mo, d, h, mi, s, sign, tzh, tzm] = m as unknown as string[]
+  if (!isValidWallClock(Number(y), Number(mo), Number(d), Number(h), Number(mi), Number(s))) {
+    return null
+  }
+  if (Number(tzh) > 14 || Number(tzm) > 59) return null
   const local = `${y}-${mo}-${d}T${h}:${mi}:${s}`
   const tz = `${sign}${tzh}:${tzm}`
   const at = new Date(`${local}${tz}`)

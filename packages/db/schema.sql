@@ -2,176 +2,33 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
 
-CREATE TABLE public.asset_versions (
-    model_id uuid NOT NULL,
-    id uuid DEFAULT uuidv7() NOT NULL,
-    asset_id uuid NOT NULL,
-    version_no integer NOT NULL,
-    master_sha256 bytea NOT NULL,
-    source_sha256 bytea,
-    source_revision_id uuid,
-    work_id uuid,
-    duration_ms bigint,
-    width integer,
-    height integer,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_by uuid,
-    CONSTRAINT asset_versions_source_sha256_check CHECK ((octet_length(source_sha256) = 32)),
-    CONSTRAINT asset_versions_version_no_check CHECK ((version_no >= 1))
-);
-
-ALTER TABLE public.asset_versions OWNER TO contentops_migrate;
-
-CREATE TABLE public.inbox_drafts (
-    model_id uuid NOT NULL,
-    id uuid DEFAULT uuidv7() NOT NULL,
-    group_id uuid NOT NULL,
-    source_revision_id uuid,
-    web_upload_id uuid,
-    from_version_id uuid,
-    origin text NOT NULL,
-    state text DEFAULT 'discovered'::text NOT NULL,
-    outcome text,
-    priority integer DEFAULT 0 NOT NULL,
-    discovered_at timestamp with time zone DEFAULT now() NOT NULL,
-    ready_at timestamp with time zone,
-    decided_at timestamp with time zone,
-    decided_by uuid,
-    md5 bytea,
-    byte_size bigint,
-    path text,
-    preview_url_at timestamp with time zone,
-    source_sha256 bytea,
-    source_blob_sha256 bytea,
-    master_sha256 bytea,
-    master_verified_at timestamp with time zone,
-    master_is_source boolean DEFAULT false NOT NULL,
-    proposed_role text,
-    proposed_ordinal integer,
-    proposed_life_use text,
-    target_item_id uuid,
-    target_asset_id uuid,
-    duplicate_of_version_id uuid,
-    blocked_reason text,
-    applied_item_id uuid,
-    applied_version_id uuid,
-    reject_reason text,
-    rejected_at timestamp with time zone,
-    reopened_at timestamp with time zone,
-    reopen_count integer DEFAULT 0 NOT NULL,
-    error text,
-    search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('russian'::regconfig, translate(COALESCE(path, ''::text), '/._-'::text, '    '::text))) STORED,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    row_version bigint DEFAULT 1 NOT NULL,
-    CONSTRAINT inbox_drafts_accept_applied CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (applied_item_id IS NOT NULL))),
-    CONSTRAINT inbox_drafts_accept_verified CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (master_verified_at IS NOT NULL))),
-    CONSTRAINT inbox_drafts_alias_target CHECK (((outcome <> 'alias'::text) OR (duplicate_of_version_id IS NOT NULL))),
-    CONSTRAINT inbox_drafts_blocked_reason_check CHECK ((blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text, 'row_changed'::text, 'archive_split'::text, 'video_copy'::text]))),
-    CONSTRAINT inbox_drafts_byte_size_check CHECK ((byte_size >= 0)),
-    CONSTRAINT inbox_drafts_md5_check CHECK ((octet_length(md5) = 16)),
-    CONSTRAINT inbox_drafts_one_input CHECK ((num_nonnulls(source_revision_id, web_upload_id, from_version_id) = 1)),
-    CONSTRAINT inbox_drafts_origin_check CHECK ((origin = ANY (ARRAY['disk_scan'::text, 'web_upload'::text, 'legacy_import'::text, 'archive'::text, 'derived'::text]))),
-    CONSTRAINT inbox_drafts_outcome CHECK (((state = 'resolved'::text) = (outcome IS NOT NULL))),
-    CONSTRAINT inbox_drafts_outcome_check CHECK ((outcome = ANY (ARRAY['new_item'::text, 'append'::text, 'alias'::text, 'rejected'::text]))),
-    CONSTRAINT inbox_drafts_proposed_life_use_check CHECK ((proposed_life_use = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text]))),
-    CONSTRAINT inbox_drafts_proposed_ordinal_check CHECK (((proposed_ordinal >= 1) AND (proposed_ordinal <= 999))),
-    CONSTRAINT inbox_drafts_proposed_role_check CHECK ((proposed_role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text]))),
-    CONSTRAINT inbox_drafts_rejected_at CHECK (((outcome <> 'rejected'::text) OR (rejected_at IS NOT NULL))),
-    CONSTRAINT inbox_drafts_reopen_count_check CHECK ((reopen_count >= 0)),
-    CONSTRAINT inbox_drafts_source_sha256_check CHECK ((octet_length(source_sha256) = 32)),
-    CONSTRAINT inbox_drafts_state_check CHECK ((state = ANY (ARRAY['discovered'::text, 'processing'::text, 'ready'::text, 'resolved'::text]))),
-    CONSTRAINT inbox_drafts_verified_master CHECK (((master_verified_at IS NULL) OR (master_sha256 IS NOT NULL)))
-);
-
-ALTER TABLE public.inbox_drafts OWNER TO contentops_migrate;
-
-CREATE TABLE public.web_uploads (
-    model_id uuid NOT NULL,
-    id uuid DEFAULT uuidv7() NOT NULL,
-    upload_id text NOT NULL,
-    principal_id uuid NOT NULL,
-    client_filename text NOT NULL,
-    declared_kind text NOT NULL,
-    target_item_id uuid,
-    size_expected bigint NOT NULL,
-    bytes_received bigint DEFAULT 0 NOT NULL,
-    sha256 bytea,
-    state text DEFAULT 'receiving'::text NOT NULL,
-    tmp_key text NOT NULL,
-    error text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    completed_at timestamp with time zone,
-    plan_row_id uuid,
-    CONSTRAINT web_uploads_bytes_received_check CHECK ((bytes_received >= 0)),
-    CONSTRAINT web_uploads_declared_kind_check CHECK ((declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text]))),
-    CONSTRAINT web_uploads_progress CHECK ((bytes_received <= size_expected)),
-    CONSTRAINT web_uploads_registered CHECK (((state <> 'registered'::text) OR (sha256 IS NOT NULL))),
-    CONSTRAINT web_uploads_size_expected_check CHECK ((size_expected >= 0)),
-    CONSTRAINT web_uploads_state_check CHECK ((state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text, 'registered'::text, 'failed'::text, 'abandoned'::text])))
-);
-
-ALTER TABLE public.web_uploads OWNER TO contentops_migrate;
-
-CREATE TABLE public.work_operations (
-    id uuid DEFAULT uuidv7() NOT NULL,
-    model_id uuid,
-    kind text NOT NULL,
-    work_key text NOT NULL,
-    account_id uuid,
-    dataset text,
-    scope text,
-    window_from timestamp with time zone,
-    window_to timestamp with time zone,
-    pipeline_version text,
-    recipe_digest text,
-    state text DEFAULT 'pending'::text NOT NULL,
-    paused_reason text,
-    priority integer DEFAULT 0 NOT NULL,
-    attempt_no integer DEFAULT 0 NOT NULL,
-    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
-    lease_owner text,
-    lease_until timestamp with time zone,
-    fence_generation bigint DEFAULT 0 NOT NULL,
-    heartbeat_at timestamp with time zone,
-    input_sha256 bytea,
-    output_sha256 bytea,
-    output_ref text,
-    progress_num bigint,
-    progress_den bigint,
-    progress_note text,
-    checkpoint jsonb,
-    failure_kind text,
-    error_code text,
-    error_text text,
-    report jsonb,
-    stream_key text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
-    draft_id uuid,
-    source_revision_id uuid,
-    asset_version_id uuid,
-    manifest_id uuid,
-    receipt_id uuid,
-    generation_id uuid,
-    CONSTRAINT work_operations_attempt_no_check CHECK ((attempt_no >= 0)),
-    CONSTRAINT work_operations_failure_kind_check CHECK ((failure_kind = ANY (ARRAY['transient'::text, 'permanent'::text]))),
-    CONSTRAINT work_operations_finished_at CHECK (((state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL))),
-    CONSTRAINT work_operations_global_kinds CHECK (((model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text])))),
-    CONSTRAINT work_operations_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
-    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text, 'hub_orders'::text]))),
-    CONSTRAINT work_operations_model_targets CHECK (((model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0))),
-    CONSTRAINT work_operations_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
-    CONSTRAINT work_operations_paused_reason_format CHECK ((paused_reason ~ '^switch_off:.+$'::text)),
-    CONSTRAINT work_operations_running_lease CHECK (((state <> 'running'::text) OR ((lease_owner IS NOT NULL) AND (lease_until IS NOT NULL)))),
-    CONSTRAINT work_operations_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text, 'succeeded'::text, 'failed'::text, 'cancelled'::text])))
-);
-
-ALTER TABLE public.work_operations OWNER TO contentops_migrate;
-
 CREATE FUNCTION public.blob_is_referenced(sha bytea) RETURNS boolean
-    LANGUAGE sql STABLE PARALLEL SAFE
-    RETURN ((EXISTS (SELECT 1 FROM public.asset_versions v WHERE (v.master_sha256 = blob_is_referenced.sha))) OR (EXISTS (SELECT 1 FROM public.inbox_drafts d WHERE ((d.master_sha256 = blob_is_referenced.sha) AND (d.state <> 'resolved'::text)))) OR (EXISTS (SELECT 1 FROM public.inbox_drafts d WHERE ((d.source_blob_sha256 = blob_is_referenced.sha) AND (d.state <> 'resolved'::text)))) OR (EXISTS (SELECT 1 FROM public.web_uploads u WHERE ((u.sha256 = blob_is_referenced.sha) AND (u.state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text]))))) OR (EXISTS (SELECT 1 FROM public.work_operations w WHERE ((w.output_sha256 = blob_is_referenced.sha) AND (w.state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text]))))));
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT EXISTS (SELECT 1 FROM asset_versions v WHERE v.master_sha256 = sha)
+      OR EXISTS (SELECT 1 FROM inbox_drafts d WHERE d.master_sha256 = sha AND d.state <> 'resolved')
+      OR EXISTS (SELECT 1 FROM inbox_drafts d WHERE d.source_blob_sha256 = sha AND d.state <> 'resolved')
+      OR EXISTS (
+           SELECT 1 FROM web_uploads u
+            WHERE u.sha256 = sha
+              AND (
+                u.state IN ('receiving', 'received', 'verified')
+                OR (
+                  u.state = 'registered'
+                  AND u.raw_released_at IS NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM inbox_drafts d
+                     WHERE d.model_id = u.model_id
+                       AND d.web_upload_id = u.id
+                       AND d.state = 'resolved'
+                       AND d.outcome IN ('rejected', 'alias')
+                  )
+                )
+              )
+         )
+      OR EXISTS (SELECT 1 FROM work_operations w WHERE w.output_sha256 = sha
+                  AND w.state IN ('pending', 'running', 'retry_wait'));
+$$;
 
 ALTER FUNCTION public.blob_is_referenced(sha bytea) OWNER TO contentops_migrate;
 
@@ -654,10 +511,19 @@ BEGIN
       RAISE EXCEPTION 'draft %: % (%) → % is not allowed', OLD.id, OLD.state, OLD.outcome, NEW.state
         USING ERRCODE = 'CO005';
     END IF;
-    PERFORM 1 FROM blobs WHERE sha256 IN (OLD.master_sha256, OLD.source_blob_sha256) FOR SHARE;
+    PERFORM 1 FROM blobs
+      WHERE sha256 IN (OLD.master_sha256, OLD.source_blob_sha256)
+      ORDER BY sha256 FOR SHARE;
     IF EXISTS (SELECT 1 FROM blobs WHERE sha256 IN (OLD.master_sha256, OLD.source_blob_sha256)
                                      AND state <> 'present') THEN
       RAISE EXCEPTION 'draft %: its bytes were removed, it cannot reopen', OLD.id
+        USING ERRCODE = 'CO005';
+    END IF;
+    IF EXISTS (SELECT 1 FROM storage_operations o
+                WHERE o.blob_sha256 IN (OLD.master_sha256, OLD.source_blob_sha256)
+                  AND o.kind = 'purge'
+                  AND o.state IN ('intent', 'started', 'fs_done')) THEN
+      RAISE EXCEPTION 'draft %: its bytes are being purged, it cannot reopen', OLD.id
         USING ERRCODE = 'CO005';
     END IF;
   END IF;
@@ -1103,6 +969,26 @@ CREATE TABLE public.asset_manifests (
 );
 
 ALTER TABLE public.asset_manifests OWNER TO contentops_migrate;
+
+CREATE TABLE public.asset_versions (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    asset_id uuid NOT NULL,
+    version_no integer NOT NULL,
+    master_sha256 bytea NOT NULL,
+    source_sha256 bytea,
+    source_revision_id uuid,
+    work_id uuid,
+    duration_ms bigint,
+    width integer,
+    height integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT asset_versions_source_sha256_check CHECK ((octet_length(source_sha256) = 32)),
+    CONSTRAINT asset_versions_version_no_check CHECK ((version_no >= 1))
+);
+
+ALTER TABLE public.asset_versions OWNER TO contentops_migrate;
 
 CREATE TABLE public.backup_checkpoints (
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -1952,6 +1838,69 @@ CREATE TABLE public.inbox_draft_candidates (
 
 ALTER TABLE public.inbox_draft_candidates OWNER TO contentops_migrate;
 
+CREATE TABLE public.inbox_drafts (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    group_id uuid NOT NULL,
+    source_revision_id uuid,
+    web_upload_id uuid,
+    from_version_id uuid,
+    origin text NOT NULL,
+    state text DEFAULT 'discovered'::text NOT NULL,
+    outcome text,
+    priority integer DEFAULT 0 NOT NULL,
+    discovered_at timestamp with time zone DEFAULT now() NOT NULL,
+    ready_at timestamp with time zone,
+    decided_at timestamp with time zone,
+    decided_by uuid,
+    md5 bytea,
+    byte_size bigint,
+    path text,
+    preview_url_at timestamp with time zone,
+    source_sha256 bytea,
+    source_blob_sha256 bytea,
+    master_sha256 bytea,
+    master_verified_at timestamp with time zone,
+    master_is_source boolean DEFAULT false NOT NULL,
+    proposed_role text,
+    proposed_ordinal integer,
+    proposed_life_use text,
+    target_item_id uuid,
+    target_asset_id uuid,
+    duplicate_of_version_id uuid,
+    blocked_reason text,
+    applied_item_id uuid,
+    applied_version_id uuid,
+    reject_reason text,
+    rejected_at timestamp with time zone,
+    reopened_at timestamp with time zone,
+    reopen_count integer DEFAULT 0 NOT NULL,
+    error text,
+    search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('russian'::regconfig, translate(COALESCE(path, ''::text), '/._-'::text, '    '::text))) STORED,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    row_version bigint DEFAULT 1 NOT NULL,
+    CONSTRAINT inbox_drafts_accept_applied CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (applied_item_id IS NOT NULL))),
+    CONSTRAINT inbox_drafts_accept_verified CHECK (((outcome <> ALL (ARRAY['new_item'::text, 'append'::text])) OR (master_verified_at IS NOT NULL))),
+    CONSTRAINT inbox_drafts_alias_target CHECK (((outcome <> 'alias'::text) OR (duplicate_of_version_id IS NOT NULL))),
+    CONSTRAINT inbox_drafts_blocked_reason_check CHECK ((blocked_reason = ANY (ARRAY['ambiguous_order'::text, 'video_in_set'::text, 'id_collision'::text, 'cross_model_dup'::text, 'master_failed'::text, 'needs_type'::text, 'source_unavailable'::text, 'deferred'::text, 'which_frame'::text, 'row_changed'::text, 'archive_split'::text, 'video_copy'::text]))),
+    CONSTRAINT inbox_drafts_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT inbox_drafts_md5_check CHECK ((octet_length(md5) = 16)),
+    CONSTRAINT inbox_drafts_one_input CHECK ((num_nonnulls(source_revision_id, web_upload_id, from_version_id) = 1)),
+    CONSTRAINT inbox_drafts_origin_check CHECK ((origin = ANY (ARRAY['disk_scan'::text, 'web_upload'::text, 'legacy_import'::text, 'archive'::text, 'derived'::text]))),
+    CONSTRAINT inbox_drafts_outcome CHECK (((state = 'resolved'::text) = (outcome IS NOT NULL))),
+    CONSTRAINT inbox_drafts_outcome_check CHECK ((outcome = ANY (ARRAY['new_item'::text, 'append'::text, 'alias'::text, 'rejected'::text]))),
+    CONSTRAINT inbox_drafts_proposed_life_use_check CHECK ((proposed_life_use = ANY (ARRAY['feed'::text, 'chats'::text, 'both'::text]))),
+    CONSTRAINT inbox_drafts_proposed_ordinal_check CHECK (((proposed_ordinal >= 1) AND (proposed_ordinal <= 999))),
+    CONSTRAINT inbox_drafts_proposed_role_check CHECK ((proposed_role = ANY (ARRAY['master'::text, 'teaser'::text, 'pic'::text, 'raw'::text, 'ed'::text, 'clip'::text, 'thumb'::text, 'cap'::text]))),
+    CONSTRAINT inbox_drafts_rejected_at CHECK (((outcome <> 'rejected'::text) OR (rejected_at IS NOT NULL))),
+    CONSTRAINT inbox_drafts_reopen_count_check CHECK ((reopen_count >= 0)),
+    CONSTRAINT inbox_drafts_source_sha256_check CHECK ((octet_length(source_sha256) = 32)),
+    CONSTRAINT inbox_drafts_state_check CHECK ((state = ANY (ARRAY['discovered'::text, 'processing'::text, 'ready'::text, 'resolved'::text]))),
+    CONSTRAINT inbox_drafts_verified_master CHECK (((master_verified_at IS NULL) OR (master_sha256 IS NOT NULL)))
+);
+
+ALTER TABLE public.inbox_drafts OWNER TO contentops_migrate;
+
 CREATE TABLE public.inbox_groups (
     model_id uuid NOT NULL,
     id uuid DEFAULT uuidv7() NOT NULL,
@@ -2653,6 +2602,92 @@ CREATE TABLE public.video_prints (
 );
 
 ALTER TABLE public.video_prints OWNER TO contentops_migrate;
+
+CREATE TABLE public.web_uploads (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    upload_id text NOT NULL,
+    principal_id uuid NOT NULL,
+    client_filename text NOT NULL,
+    declared_kind text NOT NULL,
+    target_item_id uuid,
+    size_expected bigint NOT NULL,
+    bytes_received bigint DEFAULT 0 NOT NULL,
+    sha256 bytea,
+    state text DEFAULT 'receiving'::text NOT NULL,
+    tmp_key text NOT NULL,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    plan_row_id uuid,
+    raw_released_at timestamp with time zone,
+    raw_archive_ref text,
+    CONSTRAINT web_uploads_bytes_received_check CHECK ((bytes_received >= 0)),
+    CONSTRAINT web_uploads_declared_kind_check CHECK ((declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text]))),
+    CONSTRAINT web_uploads_progress CHECK ((bytes_received <= size_expected)),
+    CONSTRAINT web_uploads_registered CHECK (((state <> 'registered'::text) OR (sha256 IS NOT NULL))),
+    CONSTRAINT web_uploads_size_expected_check CHECK ((size_expected >= 0)),
+    CONSTRAINT web_uploads_state_check CHECK ((state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text, 'registered'::text, 'failed'::text, 'abandoned'::text])))
+);
+
+ALTER TABLE public.web_uploads OWNER TO contentops_migrate;
+
+CREATE TABLE public.work_operations (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    model_id uuid,
+    kind text NOT NULL,
+    work_key text NOT NULL,
+    account_id uuid,
+    dataset text,
+    scope text,
+    window_from timestamp with time zone,
+    window_to timestamp with time zone,
+    pipeline_version text,
+    recipe_digest text,
+    state text DEFAULT 'pending'::text NOT NULL,
+    paused_reason text,
+    priority integer DEFAULT 0 NOT NULL,
+    attempt_no integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    lease_owner text,
+    lease_until timestamp with time zone,
+    fence_generation bigint DEFAULT 0 NOT NULL,
+    heartbeat_at timestamp with time zone,
+    input_sha256 bytea,
+    output_sha256 bytea,
+    output_ref text,
+    progress_num bigint,
+    progress_den bigint,
+    progress_note text,
+    checkpoint jsonb,
+    failure_kind text,
+    error_code text,
+    error_text text,
+    report jsonb,
+    stream_key text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    draft_id uuid,
+    source_revision_id uuid,
+    asset_version_id uuid,
+    manifest_id uuid,
+    receipt_id uuid,
+    generation_id uuid,
+    CONSTRAINT work_operations_attempt_no_check CHECK ((attempt_no >= 0)),
+    CONSTRAINT work_operations_failure_kind_check CHECK ((failure_kind = ANY (ARRAY['transient'::text, 'permanent'::text]))),
+    CONSTRAINT work_operations_finished_at CHECK (((state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL))),
+    CONSTRAINT work_operations_global_kinds CHECK (((model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text])))),
+    CONSTRAINT work_operations_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
+    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text, 'hub_orders'::text]))),
+    CONSTRAINT work_operations_model_targets CHECK (((model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0))),
+    CONSTRAINT work_operations_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
+    CONSTRAINT work_operations_paused_reason_format CHECK ((paused_reason ~ '^switch_off:.+$'::text)),
+    CONSTRAINT work_operations_running_lease CHECK (((state <> 'running'::text) OR ((lease_owner IS NOT NULL) AND (lease_until IS NOT NULL)))),
+    CONSTRAINT work_operations_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text, 'succeeded'::text, 'failed'::text, 'cancelled'::text])))
+);
+
+ALTER TABLE public.work_operations OWNER TO contentops_migrate;
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT accounts_code_key UNIQUE (code);
@@ -4371,14 +4406,6 @@ ALTER TABLE ONLY public.work_operations
 REVOKE USAGE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO contentops_app;
 
-GRANT SELECT,INSERT ON TABLE public.asset_versions TO contentops_app;
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_drafts TO contentops_app;
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.web_uploads TO contentops_app;
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.work_operations TO contentops_app;
-
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.aliases TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.chronology_entries TO contentops_app;
@@ -4408,6 +4435,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.annotation_suggestions TO cont
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.api_tokens TO contentops_app;
 
 GRANT SELECT,INSERT ON TABLE public.asset_manifests TO contentops_app;
+
+GRANT SELECT,INSERT ON TABLE public.asset_versions TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.backup_checkpoints TO contentops_app;
 
@@ -4475,6 +4504,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.idempotency_keys TO contentops
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_draft_candidates TO contentops_app;
 
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_drafts TO contentops_app;
+
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.inbox_groups TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.legacy_claims TO contentops_app;
@@ -4528,6 +4559,10 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.storage_operations TO contento
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.surfaces TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_prints TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.web_uploads TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.work_operations TO contentops_app;
 
 ALTER DEFAULT PRIVILEGES FOR ROLE contentops_migrate IN SCHEMA public GRANT SELECT,USAGE ON SEQUENCES TO contentops_app;
 

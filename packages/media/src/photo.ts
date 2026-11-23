@@ -5,7 +5,13 @@ import sharp from 'sharp'
 import phash from 'sharp-phash'
 import type { Artifact } from './derive-video.ts'
 import { removeQuietly, Scratch, sha256File, tempPathIn } from './files.ts'
-import { type Camera, parseZoned, type ShotTime, UnreadableMediaError } from './probe.ts'
+import {
+  type Camera,
+  isValidWallClock,
+  parseZoned,
+  type ShotTime,
+  UnreadableMediaError,
+} from './probe.ts'
 import { type DigestedRecipe, digested, recipe } from './recipe.ts'
 import {
   abortAware,
@@ -137,7 +143,22 @@ const ORIENTATION_ROTATION: Record<number, number> = {
 }
 
 export async function probePhoto(input: string): Promise<PhotoProbe> {
-  const meta = await sharp(input).metadata()
+  let meta: sharp.Metadata
+  try {
+    meta = await sharp(input).metadata()
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | null)?.code
+    const message = String((error as Error).message ?? error)
+    if (
+      code === 'ENOENT' ||
+      code === 'EACCES' ||
+      code === 'EIO' ||
+      /Input file is missing/i.test(message)
+    ) {
+      throw error
+    }
+    throw new UnreadableMediaError(`cannot decode ${input}`, message)
+  }
   const orientation = meta.orientation ?? 1
   const turned = orientation >= 5
   const codedWidth = meta.width ?? 0
@@ -211,15 +232,24 @@ async function readExif(
 
 /** EXIF `2024:01:02 03:04:05` with `OffsetTimeOriginal`; without a zone only the wall clock. */
 export function photoShotTime(exif: Record<string, string | number | null>): ShotTime {
-  const raw = str(exif.DateTimeOriginal) ?? str(exif.CreateDate)
-  const m = raw ? /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw) : null
-  if (!m) return { shotAt: null, shotAtLocal: null, shotTz: null }
-  const local = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`
-  const offset = str(raw === str(exif.DateTimeOriginal) ? exif.OffsetTimeOriginal : exif.OffsetTime)
-  if (offset && /^[+-]\d{2}:\d{2}$/.test(offset)) {
-    return parseZoned(`${local}${offset}`) ?? { shotAt: null, shotAtLocal: local, shotTz: null }
+  const candidates: [string | null, string | null][] = [
+    [str(exif.DateTimeOriginal), str(exif.OffsetTimeOriginal)],
+    [str(exif.CreateDate), str(exif.OffsetTime)],
+  ]
+  for (const [raw, offset] of candidates) {
+    const m = raw ? /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw) : null
+    if (!m) continue
+    const [, y, mo, d, h, mi, s] = m as unknown as string[]
+    if (!isValidWallClock(Number(y), Number(mo), Number(d), Number(h), Number(mi), Number(s))) {
+      continue
+    }
+    const local = `${y}-${mo}-${d}T${h}:${mi}:${s}`
+    if (offset && /^[+-]\d{2}:\d{2}$/.test(offset)) {
+      return parseZoned(`${local}${offset}`) ?? { shotAt: null, shotAtLocal: local, shotTz: null }
+    }
+    return { shotAt: null, shotAtLocal: local, shotTz: null }
   }
-  return { shotAt: null, shotAtLocal: local, shotTz: null }
+  return { shotAt: null, shotAtLocal: null, shotTz: null }
 }
 
 function str(v: string | number | null | undefined): string | null {
@@ -264,6 +294,7 @@ export async function processPhoto(options: PhotoOptions): Promise<PhotoResult> 
       .toBuffer({ resolveWithObject: true })
   } catch (error) {
     if (signal?.aborted) throw new MediaAbortError()
+    if (error instanceof UnreadableMediaError) throw error
     throw new UnreadableMediaError(
       `cannot decode ${options.input}`,
       String((error as Error).message ?? error),

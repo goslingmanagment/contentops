@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDaysAgo, formatDaysSpan } from './format'
+import { formatBytes, formatDate, formatDaysAgo, formatDaysSpan } from './format'
+
+describe('размеры в байтах', () => {
+  it('ноль остаётся 0 КБ, малые положительные округляются минимум до 1 КБ', () => {
+    expect(formatBytes(0)).toBe('0 КБ')
+    expect(formatBytes(-5)).toBe('0 КБ')
+    expect(formatBytes(1)).toBe('1 КБ')
+    expect(formatBytes(512)).toBe('1 КБ')
+    expect(formatBytes(1_500_000)).toBe('1,5 МБ')
+    expect(formatBytes(1_500_000_000)).toBe('1,5 ГБ')
+  })
+})
 
 describe('даты и промежутки словами', () => {
   it('год пишется только у другого года', () => {

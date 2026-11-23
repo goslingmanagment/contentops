@@ -86,9 +86,12 @@ export function diskViews(space: HostSpace | null, options: SpaceOptions, now: D
   }))
 }
 
-/** A fresh report says some disk is at or below its stop line: intake waits (SPEC §12.2). */
+/**
+ * A fresh report says some disk is at or below its stop line, or `HOST_SPACE_FILE` is
+ * configured and cannot be read / is stale: intake waits fail-closed (SPEC §12.2).
+ */
 export function belowStop(space: HostSpace | null, options: SpaceOptions, now: Date): boolean {
-  if (!space || !isFresh(space, now)) return false
+  if (!space || !isFresh(space, now)) return Boolean(options.file)
   return space.disks.some((disk) => disk.free_bytes <= thresholdBytes(options.stopGb, disk.name))
 }
 

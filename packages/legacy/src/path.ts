@@ -123,14 +123,18 @@ function notContentOf(
   folders: readonly string[],
   path: string,
   list: readonly string[] | undefined,
+  caseInsensitive = false,
 ): string | undefined {
   for (const folder of folders) {
     const found = NOT_CONTENT.find(([pattern]) => pattern.test(nfc(folder).trim()))
     if (found) return found[1]
   }
+  const target = caseInsensitive ? path.toLowerCase() : path
   const listed = (list ?? []).some((entry) => {
     const own = relativePath(entry)
-    return own !== '' && (path === own || path.startsWith(`${own}/`))
+    if (own === '') return false
+    const cmp = caseInsensitive ? own.toLowerCase() : own
+    return target === cmp || target.startsWith(`${cmp}/`)
   })
   return listed ? 'по списку модели' : undefined
 }
@@ -244,7 +248,7 @@ export function contextOf(path: string, options: ParseOptions): PathContext {
   if (area !== 'smm' && folders.some((f) => MESSAGES.test(nfc(f).trim()))) typeHint = null
   const notContent = archive
     ? undefined
-    : notContentOf(folders, inner.join('/'), options.notContent)
+    : notContentOf(folders, inner.join('/'), options.notContent, options.caseInsensitive)
 
   return {
     root: segments.length > 1 || options.isDir ? (segments[0] ?? '') : '',

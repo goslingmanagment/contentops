@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -14,7 +14,7 @@ import { importReportMarkdown } from './legacy/export'
 import { claimsCommand } from './legacy/materialize'
 import { releaseMarkdown, releaseReport } from './legacy/release'
 import { BlobStore } from './media/storage'
-import { purgeBlob } from './media/storage-ops'
+import { purgeBlob, reconcileStorage } from './media/storage-ops'
 import { renderForTest, stageForTest } from './media/test-runs'
 import { enqueueVideoPrints } from './media/work/print'
 import { enqueueVerifyBlobs, type VerifyReport } from './media/work/verify-blobs'
@@ -144,6 +144,12 @@ function out(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
 }
 
+async function writeFull(text: string): Promise<void> {
+  if (!process.stdout.write(text)) {
+    await new Promise<void>((resolve) => process.stdout.once('drain', resolve))
+  }
+}
+
 async function waitFor<R = VerifyReport>(
   db: Db,
   id: string,
@@ -244,6 +250,10 @@ async function main(argv: string[]): Promise<number> {
         out({
           would_remove: listed.length,
           bytes: run.report.unreferenced_bytes,
+          ...(run.report.unreferenced_by_origin
+            ? { by_origin: run.report.unreferenced_by_origin }
+            : {}),
+          ...(run.report.held_web_uploads ? { held_web_uploads: run.report.held_web_uploads } : {}),
           blobs: listed,
           abandoned_uploads: uploads,
         })
@@ -254,47 +264,76 @@ async function main(argv: string[]): Promise<number> {
         derivedRoot: config.DERIVED_ROOT as string,
         tmpRoot: config.TMP_ROOT as string,
       })
-      const outcomes: Record<string, string> = {}
-      for (const blob of listed) {
-        outcomes[blob.sha256] = await purgeBlob(
-          db,
-          store,
-          blob.sha256,
-          `owner:${hostname()}:${process.pid}`,
+      // Serialise owner purges so settling interrupted `owner:` storage_operations is race-free.
+      const lockClient = await pool.connect()
+      let locked = false
+      try {
+        const { rows: got } = await lockClient.query<{ locked: boolean }>(
+          `SELECT pg_try_advisory_lock(hashtextextended('ops:purge-blobs', 0)) AS locked`,
         )
+        locked = got[0]?.locked === true
+        if (!locked) throw new Error('another purge-blobs run is already in progress')
+        const reconciled = await reconcileStorage(db, store, 'owner:')
+        if (reconciled.cancelled + reconciled.committed + reconciled.failed > 0) {
+          process.stderr.write(
+            `purge-blobs: reconciled interrupted owner ops (${JSON.stringify(reconciled)})\n`,
+          )
+        }
+        const outcomes: Record<string, string> = {}
+        for (const blob of listed) {
+          outcomes[blob.sha256] = await purgeBlob(
+            db,
+            store,
+            blob.sha256,
+            `owner:${hostname()}:${process.pid}`,
+          )
+        }
+        // Abandoned web uploads (SPEC §9.1): checked again under the row — never one that
+        // became a blob or received chunks in the last day — then the tus folder goes.
+        const staleCutoffMs = Date.now() - 24 * 60 * 60 * 1000
+        const removedUploads: string[] = []
+        for (const upload of uploads) {
+          const gone = await withActorTx(
+            db,
+            {
+              actor: SYSTEM_ACTOR('owner purge'),
+              action: 'upload.purge',
+              requestId: `purge:${values.report}:${upload.upload_id}`,
+            },
+            async (tx) => {
+              const { rows: live } = await tx.execute<{ id: string; state: string }>(sql`
+                SELECT id, state FROM web_uploads
+                 WHERE model_id = ${upload.model_id}::uuid AND upload_id = ${upload.upload_id}
+                   AND sha256 IS NULL AND state <> 'registered'
+                 FOR UPDATE`)
+              if (!live[0]) return false
+              const filePath = join(config.DATA_ROOT as string, upload.key)
+              if (live[0].state === 'receiving' || live[0].state === 'received') {
+                const info = await stat(filePath).catch(() => null)
+                if (info && info.mtimeMs >= staleCutoffMs) return false
+              }
+              await rm(dirname(filePath), {
+                recursive: true,
+                force: true,
+              })
+              await tx.execute(sql`
+                UPDATE web_uploads SET state = 'abandoned', error = coalesce(error, 'удалено командой владельца')
+                 WHERE id = ${live[0].id}::uuid`)
+              return true
+            },
+          )
+          if (gone) removedUploads.push(upload.upload_id)
+        }
+        out({ outcomes, abandoned_uploads_removed: removedUploads })
+        return 0
+      } finally {
+        if (locked) {
+          await lockClient
+            .query(`SELECT pg_advisory_unlock(hashtextextended('ops:purge-blobs', 0))`)
+            .catch(() => undefined)
+        }
+        lockClient.release()
       }
-      // Abandoned web uploads (SPEC §9.1): checked again under the row — never one that
-      // became a blob since the report — then the tus folder goes and the upload is `abandoned`.
-      const removedUploads: string[] = []
-      for (const upload of uploads) {
-        const gone = await withActorTx(
-          db,
-          {
-            actor: SYSTEM_ACTOR('owner purge'),
-            action: 'upload.purge',
-            requestId: `purge:${values.report}:${upload.upload_id}`,
-          },
-          async (tx) => {
-            const { rows: live } = await tx.execute<{ id: string }>(sql`
-              SELECT id FROM web_uploads
-               WHERE model_id = ${upload.model_id}::uuid AND upload_id = ${upload.upload_id}
-                 AND sha256 IS NULL AND state <> 'registered'
-               FOR UPDATE`)
-            if (!live[0]) return false
-            await rm(dirname(join(config.DATA_ROOT as string, upload.key)), {
-              recursive: true,
-              force: true,
-            })
-            await tx.execute(sql`
-              UPDATE web_uploads SET state = 'abandoned', error = coalesce(error, 'удалено командой владельца')
-               WHERE id = ${live[0].id}::uuid`)
-            return true
-          },
-        )
-        if (gone) removedUploads.push(upload.upload_id)
-      }
-      out({ outcomes, abandoned_uploads_removed: removedUploads })
-      return 0
     }
     if (command === 'freeze') {
       const [model, label, date] = positionals
@@ -490,7 +529,7 @@ async function main(argv: string[]): Promise<number> {
     if (command === 'import-report') {
       const [model, work] = positionals
       if (!model) throw new Error(USAGE)
-      process.stdout.write(await importReportMarkdown(db, model, work ?? null))
+      await writeFull(await importReportMarkdown(db, model, work ?? null))
       return 0
     }
     if (command === 'claims') {
@@ -503,7 +542,7 @@ async function main(argv: string[]): Promise<number> {
       const [model] = positionals
       if (!model) throw new Error(USAGE)
       const list = values.list ?? config.LEGACY_COPY_LIST ?? null
-      process.stdout.write(releaseMarkdown(await releaseReport(db, model, list)))
+      await writeFull(releaseMarkdown(await releaseReport(db, model, list)))
       return 0
     }
     if (command === 'stage' || command === 'render') {
@@ -530,9 +569,11 @@ async function main(argv: string[]): Promise<number> {
 }
 
 main(process.argv.slice(2)).then(
-  (code) => process.exit(code),
+  (code) => {
+    process.exitCode = code
+  },
   (error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
-    process.exit(1)
+    process.exitCode = 1
   },
 )

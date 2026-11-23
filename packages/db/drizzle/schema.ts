@@ -1777,58 +1777,6 @@ export const hubPosts = pgTable("hub_posts", {
 	check("hub_posts_wall_refs_array", sql`jsonb_typeof(wall_refs) = 'array'::text`),
 ]);
 
-export const webUploads = pgTable("web_uploads", {
-	modelId: uuid("model_id").notNull(),
-	id: uuid().default(sql`uuidv7()`).notNull(),
-	uploadId: text("upload_id").notNull(),
-	principalId: uuid("principal_id").notNull(),
-	clientFilename: text("client_filename").notNull(),
-	declaredKind: text("declared_kind").notNull(),
-	targetItemId: uuid("target_item_id"),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	sizeExpected: bigint("size_expected", { mode: "number" }).notNull(),
-	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	bytesReceived: bigint("bytes_received", { mode: "number" }).default(0).notNull(),
-	sha256: bytea("sha256"),
-	state: text().default('receiving').notNull(),
-	tmpKey: text("tmp_key").notNull(),
-	error: text(),
-	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
-	planRowId: uuid("plan_row_id"),
-}, (table): PgTableExtraConfigValue[] => [
-	index("web_uploads_sha256").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
-	index("web_uploads_unfinished").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text]))`),
-	foreignKey({
-			columns: [table.principalId],
-			foreignColumns: [principals.id],
-			name: "web_uploads_principal_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.sha256],
-			foreignColumns: [blobs.sha256],
-			name: "web_uploads_sha256_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.targetItemId],
-			foreignColumns: [contentItems.id, contentItems.modelId],
-			name: "web_uploads_model_id_target_item_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.modelId, table.planRowId],
-			foreignColumns: [postingPlanRows.id, postingPlanRows.modelId],
-			name: "web_uploads_model_id_plan_row_id_fkey"
-		}).onDelete("restrict"),
-	primaryKey({ columns: [table.id, table.modelId], name: "web_uploads_pkey"}),
-	unique("web_uploads_model_id_upload_id_key").on(table.modelId, table.uploadId),
-	check("web_uploads_declared_kind_check", sql`declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text])`),
-	check("web_uploads_size_expected_check", sql`size_expected >= 0`),
-	check("web_uploads_bytes_received_check", sql`bytes_received >= 0`),
-	check("web_uploads_state_check", sql`state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text, 'registered'::text, 'failed'::text, 'abandoned'::text])`),
-	check("web_uploads_progress", sql`bytes_received <= size_expected`),
-	check("web_uploads_registered", sql`(state <> 'registered'::text) OR (sha256 IS NOT NULL)`),
-]);
-
 export const inboxDraftCandidates = pgTable("inbox_draft_candidates", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
@@ -2284,6 +2232,60 @@ export const platformTexts = pgTable("platform_texts", {
 	check("platform_texts_source_check", sql`source = ANY (ARRAY['ai'::text, 'human'::text, 'import'::text])`),
 	check("platform_texts_account", sql`(account_id IS NULL) OR (platform <> 'generic'::text)`),
 	check("platform_texts_confirmed", sql`((confirmed_at IS NULL) = (confirmed_value_version IS NULL)) AND ((confirmed_value_version IS NULL) OR (confirmed_value_version <= value_version))`),
+]);
+
+export const webUploads = pgTable("web_uploads", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	uploadId: text("upload_id").notNull(),
+	principalId: uuid("principal_id").notNull(),
+	clientFilename: text("client_filename").notNull(),
+	declaredKind: text("declared_kind").notNull(),
+	targetItemId: uuid("target_item_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	sizeExpected: bigint("size_expected", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	bytesReceived: bigint("bytes_received", { mode: "number" }).default(0).notNull(),
+	sha256: bytea("sha256"),
+	state: text().default('receiving').notNull(),
+	tmpKey: text("tmp_key").notNull(),
+	error: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
+	planRowId: uuid("plan_row_id"),
+	rawReleasedAt: timestamp("raw_released_at", { withTimezone: true, mode: 'string' }),
+	rawArchiveRef: text("raw_archive_ref"),
+}, (table): PgTableExtraConfigValue[] => [
+	index("web_uploads_sha256").using("btree", table.sha256.asc().nullsLast().op("bytea_ops")).where(sql`(sha256 IS NOT NULL)`),
+	index("web_uploads_unfinished").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text]))`),
+	foreignKey({
+			columns: [table.principalId],
+			foreignColumns: [principals.id],
+			name: "web_uploads_principal_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.sha256],
+			foreignColumns: [blobs.sha256],
+			name: "web_uploads_sha256_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.targetItemId],
+			foreignColumns: [contentItems.id, contentItems.modelId],
+			name: "web_uploads_model_id_target_item_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.planRowId],
+			foreignColumns: [postingPlanRows.id, postingPlanRows.modelId],
+			name: "web_uploads_model_id_plan_row_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "web_uploads_pkey"}),
+	unique("web_uploads_model_id_upload_id_key").on(table.modelId, table.uploadId),
+	check("web_uploads_declared_kind_check", sql`declared_kind = ANY (ARRAY['fyp_edit'::text, 'teaser'::text, 'processed_frames'::text, 'master_version'::text, 'other'::text])`),
+	check("web_uploads_size_expected_check", sql`size_expected >= 0`),
+	check("web_uploads_bytes_received_check", sql`bytes_received >= 0`),
+	check("web_uploads_state_check", sql`state = ANY (ARRAY['receiving'::text, 'received'::text, 'verified'::text, 'registered'::text, 'failed'::text, 'abandoned'::text])`),
+	check("web_uploads_progress", sql`bytes_received <= size_expected`),
+	check("web_uploads_registered", sql`(state <> 'registered'::text) OR (sha256 IS NOT NULL)`),
 ]);
 
 export const blobProbes = pgTable("blob_probes", {

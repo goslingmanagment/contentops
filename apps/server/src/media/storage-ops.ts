@@ -1,4 +1,4 @@
-import { readdir, rm } from 'node:fs/promises'
+import { readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { type Db, dbErrorCode, type Queryable } from '@contentops/db'
 import { sql } from 'drizzle-orm'
@@ -223,7 +223,8 @@ export async function purgeBlob(
 
   await setOperation(db, intent.id, 'started')
   const derived = await db.execute<{ id: string }>(sql`
-    SELECT id FROM rendition_generations WHERE master_sha256 = ${sha} OR input_sha256 = ${sha}`)
+    SELECT id FROM rendition_generations
+     WHERE master_sha256 = ${sha} OR (master_sha256 IS NULL AND input_sha256 = ${sha})`)
   try {
     await store.delete(intent.key)
     for (const { id } of derived.rows) await store.delete(`derived/gen/${id}`)
@@ -241,11 +242,13 @@ export async function purgeBlob(
     )
     await tx.execute(sql`
       UPDATE rendition_generations SET state = 'evicted', is_active = false
-       WHERE master_sha256 = ${sha} OR input_sha256 = ${sha}`)
+       WHERE master_sha256 = ${sha} OR (master_sha256 IS NULL AND input_sha256 = ${sha})`)
     await tx.execute(sql`
       UPDATE rendition_artifacts SET state = 'evicted'
-       WHERE generation_id IN (SELECT id FROM rendition_generations
-                                WHERE master_sha256 = ${sha} OR input_sha256 = ${sha})`)
+       WHERE generation_id IN (
+         SELECT id FROM rendition_generations
+          WHERE master_sha256 = ${sha} OR (master_sha256 IS NULL AND input_sha256 = ${sha})
+       )`)
     if (rows[0]?.referenced) {
       // A reference slipped in after the bytes were gone: say so, never pretend.
       await tx.execute(sql`UPDATE blobs SET state = 'missing' WHERE sha256 = ${sha}`)
@@ -270,7 +273,8 @@ export interface ReconcileReport {
  * Settles the unfinished operations of a role after a restart, before it claims work: an
  * `intent` never touched a file and is cancelled; `started`/`fs_done` are checked against
  * the disk — a `put` whose file is in place with its hash is committed, otherwise failed;
- * a `purge` whose file is gone is committed (the blob becomes `purged`), otherwise failed.
+ * a `purge` whose file is gone is committed (the blob becomes `purged`, or `missing` if a
+ * reference appeared), and its unattached / owned renditions are evicted; otherwise failed.
  */
 export async function reconcileStorage(
   db: Db,
@@ -324,13 +328,41 @@ export async function reconcileStorage(
     } else {
       const gone = !(await store.exists(op.from_key as string))
       if (gone) {
-        await db.transaction(async (tx) => {
+        const derived = await db.execute<{ id: string }>(sql`
+          SELECT id FROM rendition_generations
+           WHERE master_sha256 = ${op.blob_sha256}
+              OR (master_sha256 IS NULL AND input_sha256 = ${op.blob_sha256})`)
+        for (const { id } of derived.rows) await store.delete(`derived/gen/${id}`)
+        const outcome = await db.transaction(async (tx) => {
           await blobRow(tx, op.blob_sha256, true)
+          const { rows: ref } = await tx.execute<{ referenced: boolean }>(
+            sql`SELECT blob_is_referenced(${op.blob_sha256}) AS referenced`,
+          )
+          await tx.execute(sql`
+            UPDATE rendition_generations SET state = 'evicted', is_active = false
+             WHERE master_sha256 = ${op.blob_sha256}
+                OR (master_sha256 IS NULL AND input_sha256 = ${op.blob_sha256})`)
+          await tx.execute(sql`
+            UPDATE rendition_artifacts SET state = 'evicted'
+             WHERE generation_id IN (
+               SELECT id FROM rendition_generations
+                WHERE master_sha256 = ${op.blob_sha256}
+                   OR (master_sha256 IS NULL AND input_sha256 = ${op.blob_sha256})
+             )`)
+          if (ref[0]?.referenced) {
+            await tx.execute(
+              sql`UPDATE blobs SET state = 'missing' WHERE sha256 = ${op.blob_sha256}`,
+            )
+            await setOperation(tx, op.id, 'failed', 'interrupted purge: blob referenced again')
+            return 'failed' as const
+          }
           await tx.execute(sql`
             UPDATE blobs SET state = 'purged', purged_at = now() WHERE sha256 = ${op.blob_sha256}`)
           await setOperation(tx, op.id, 'committed')
+          return 'committed' as const
         })
-        report.committed++
+        if (outcome === 'committed') report.committed++
+        else report.failed++
       } else {
         await setOperation(db, op.id, 'failed', 'interrupted before the file was removed')
         report.failed++
@@ -338,6 +370,42 @@ export async function reconcileStorage(
     }
   }
   return report
+}
+
+const INCOMING_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Removes orphan temp files left in `.incoming/` by crashed encoders (`.master-<hex>.partial.mp4`)
+ * or interrupted `put` calls once they are older than a day and belong to no active storage op.
+ */
+export async function sweepIncoming(
+  db: Db,
+  store: BlobStore,
+  now = Date.now(),
+  maxAgeMs = INCOMING_MAX_AGE_MS,
+): Promise<string[]> {
+  let names: string[]
+  try {
+    names = await readdir(store.incomingDir)
+  } catch {
+    return []
+  }
+  if (names.length === 0) return []
+  const { rows: active } = await db.execute<{ id: string }>(sql`
+    SELECT id::text AS id FROM storage_operations
+     WHERE state IN ('intent', 'started', 'fs_done')`)
+  const activeIds = active.map((row) => row.id)
+  const removed: string[] = []
+  for (const name of names) {
+    if (!name.includes('.partial')) continue
+    if (activeIds.some((id) => name.startsWith(id))) continue
+    const full = join(store.incomingDir, name)
+    const info = await stat(full).catch(() => null)
+    if (!info?.isFile() || now - info.mtimeMs < maxAgeMs) continue
+    await rm(full, { force: true })
+    removed.push(name)
+  }
+  return removed
 }
 
 /** Temp files of an interrupted `put` (`.incoming/<operation>.partial`). */
