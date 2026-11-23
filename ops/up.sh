@@ -81,6 +81,7 @@ done
 docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
 if [[ $body == *'"ok":true'* ]]; then
   log "healthz green: $url"
+  docker builder prune -f --keep-storage=4GB >/dev/null 2>&1 || true
 else
   log "healthz NOT green: ${body:-no answer} ($url)"
   log "logs: docker compose logs --tail 50 web migrate"

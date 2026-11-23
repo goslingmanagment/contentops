@@ -97,6 +97,20 @@ describe('paths', () => {
       expect.objectContaining({ kind: 'title', payload: { text: 'Йога', lang: 'ru' } }),
     )
   })
+
+  it('matches notContent case-insensitively when requested (Dropbox)', () => {
+    const exact = parseLegacyPath('_Ydisk-Test/clip.mov', {
+      isDir: false,
+      notContent: ['_ydisk-test'],
+    })
+    expect(exact.context.notContent).toBeUndefined()
+    const ci = parseLegacyPath('_Ydisk-Test/clip.mov', {
+      isDir: false,
+      notContent: ['_ydisk-test'],
+      caseInsensitive: true,
+    })
+    expect(ci.context.notContent).toBe('по списку модели')
+  })
 })
 
 describe('local copy path (SPEC §6.3)', () => {

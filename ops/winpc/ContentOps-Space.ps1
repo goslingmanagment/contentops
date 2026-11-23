@@ -50,7 +50,11 @@ try {
   $target = Join-Path $OutDir 'space.json'
   $tmp = "$target.tmp"
   [System.IO.File]::WriteAllText($tmp, $json)
-  Move-Item -Force -Path $tmp -Destination $target
+  if (Test-Path -LiteralPath $target) {
+    [System.IO.File]::Replace($tmp, $target, $null)
+  } else {
+    Move-Item -Force -Path $tmp -Destination $target
+  }
 } catch {
   Write-Log "error: $($_.Exception.Message)"
   exit 1

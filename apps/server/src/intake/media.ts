@@ -1,4 +1,12 @@
-import type { Tx, values, WorkContext, WorkHandler } from '@contentops/db'
+import {
+  SYSTEM_ACTOR,
+  type Tx,
+  type values,
+  type WorkContext,
+  WorkError,
+  type WorkHandler,
+  withActorTx,
+} from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import { autoAcceptForDraft } from '../legacy/auto-accept'
 import type { MediaEnv } from '../media/pipeline'
@@ -89,7 +97,36 @@ async function printedForIntake(tx: Tx, sha: Buffer): Promise<void> {
 function derivePhotoForDraft(env: MediaEnv): WorkHandler {
   const derive = deriveImageHandler(env)
   return async (ctx) => {
-    const result = (await derive(ctx)) ?? {}
+    let result: Awaited<ReturnType<typeof derive>>
+    try {
+      result = (await derive(ctx)) ?? {}
+    } catch (error) {
+      if (
+        ctx.work.draftId &&
+        ctx.work.modelId &&
+        error instanceof WorkError &&
+        error.kind === 'permanent'
+      ) {
+        const message = `photo: ${error.code}`
+        await withActorTx(
+          env.db,
+          {
+            actor: SYSTEM_ACTOR('worker-image'),
+            action: 'media.derive_image',
+            requestId: `work:${ctx.work.id}`,
+            workId: ctx.work.id,
+          },
+          (tx) =>
+            tx.execute(sql`
+              UPDATE inbox_drafts
+                 SET blocked_reason = 'master_failed', error = ${message},
+                     updated_at = now(), row_version = row_version + 1
+               WHERE model_id = ${ctx.work.modelId}::uuid AND id = ${ctx.work.draftId}::uuid
+                 AND state <> 'resolved'`),
+        )
+      }
+      throw error
+    }
     if (!ctx.work.draftId || !ctx.work.modelId) return result
     const sha = inputSha(ctx)
     const hex = shaHex(sha)
@@ -114,6 +151,8 @@ function derivePhotoForDraft(env: MediaEnv): WorkHandler {
           UPDATE inbox_drafts
              SET master_sha256 = ${sha}, source_blob_sha256 = ${sha}, master_is_source = true,
                  master_verified_at = coalesce(master_verified_at, now()),
+                 blocked_reason = CASE WHEN blocked_reason = 'master_failed' THEN NULL ELSE blocked_reason END,
+                 error = CASE WHEN blocked_reason = 'master_failed' THEN NULL ELSE error END,
                  updated_at = now(), row_version = row_version + 1
            WHERE model_id = ${ctx.work.modelId}::uuid AND id = ${ctx.work.draftId}::uuid
              AND state <> 'resolved'

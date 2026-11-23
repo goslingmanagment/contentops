@@ -219,8 +219,18 @@ export function placementOf(relative: readonly string[], isVideo: boolean): Plac
  * references and cards of orders (`ТЗ`, `рефы`, `карточки…`), a path of the model's list
  * `legacy.not_content`. Such a file gets no draft; `null` — content.
  */
-export function notContentOf(relative: readonly string[], list: readonly string[]): string | null {
-  return contextOf(relative.join('/'), { isDir: false, notContent: list }).notContent ?? null
+export function notContentOf(
+  relative: readonly string[],
+  list: readonly string[],
+  options: { caseInsensitive?: boolean } = {},
+): string | null {
+  return (
+    contextOf(relative.join('/'), {
+      isDir: false,
+      notContent: list,
+      ...(options.caseInsensitive ? { caseInsensitive: true } : {}),
+    }).notContent ?? null
+  )
 }
 
 /** The role a file names by the export grammar (naming §5): `PPV-018_slug_teaser__0m14s.mp4`. */

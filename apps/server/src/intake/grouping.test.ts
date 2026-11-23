@@ -212,6 +212,11 @@ describe('a tree a Telegram mirror fills (Ари, SPEC §6.1, §6.3)', () => {
     // «FYP 02 — Повторить реф» is a task with takes, not a reference.
     expect(of('2. FYP/2. Цикл 2 июнь/FYP 02 — Повторить реф/IMG_2.MOV')).toBeNull()
     expect(of('5. Sextings/01.11.26/IMG_0174.JPG')).toBeNull()
+    // Dropbox matches paths case-insensitively.
+    expect(notContentOf(['_Опись', 'Manifest.jpg'], list, { caseInsensitive: true })).toBe(
+      'по списку модели',
+    )
+    expect(notContentOf(['_Опись', 'Manifest.jpg'], list)).toBeNull()
   })
 
   it('an export name says the role, its number and the place in the order of showing', () => {

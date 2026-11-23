@@ -938,7 +938,10 @@ describe('the byte reference contract (schema §1 p. 6, §5)', () => {
         sha,
       ])
       return (c2) =>
-        c2.query("UPDATE web_uploads SET state = 'registered' WHERE id = $1", [upload.id])
+        c2.query(
+          "UPDATE web_uploads SET state = 'registered', raw_released_at = now() WHERE id = $1",
+          [upload.id],
+        )
     },
     'work_operations.output_sha256': async (c, modelId, sha) => {
       const work = await make(c, 'work_operations', modelId)
@@ -1035,6 +1038,82 @@ describe('the byte reference contract (schema §1 p. 6, §5)', () => {
       }),
     )
     await fails(reopen(accepted.id), dbErrorCodes.transitionRefused)
+
+    // A rejected draft cannot reopen while its bytes are being purged (0026).
+    const purgingSha = await inTx((c) => newBlob(c))
+    const purging = await inTx((c) => newDraft(c, modelId, { source_blob_sha256: purgingSha }))
+    await inTx((c) => reject(c, purging.id as string))
+    await inTx((c) =>
+      c.query(
+        `INSERT INTO storage_operations (kind, blob_sha256, from_key, state, owner, started_at)
+         VALUES ('purge', $1, 'blobs/sha256/00/00/test.mp4', 'started', 'owner:test:1', now())`,
+        [purgingSha],
+      ),
+    )
+    await fails(reopen(purging.id), dbErrorCodes.transitionRefused)
+  })
+
+  it('protects raw bytes of registered web uploads until released, unless rejected or aliased', async () => {
+    const modelId = await model()
+    const item = await inTx((c) => newItem(c, modelId, 'CUS'))
+
+    // Accepted upload whose raw bytes differ from the compressed AV1 master stays protected.
+    const rawSha = await inTx((c) => newBlob(c, 'video'))
+    const masterSha = await inTx((c) => newBlob(c, 'video'))
+    const upload = await inTx(async (c) => {
+      const u = await make(c, 'web_uploads', modelId)
+      await c.query(
+        "UPDATE web_uploads SET sha256 = $2, state = 'registered', declared_kind = 'other' WHERE id = $1",
+        [u.id, rawSha],
+      )
+      await newDraft(c, modelId, {
+        source_revision_id: null,
+        web_upload_id: u.id,
+        origin: 'web_upload',
+        source_blob_sha256: rawSha,
+        master_sha256: masterSha,
+        master_verified_at: new Date().toISOString(),
+        state: 'resolved',
+        outcome: 'new_item',
+        applied_item_id: item.id,
+      })
+      return u
+    })
+    expect(await referenced(rawSha)).toBe(true)
+
+    // Explicit release after external archival lets the raw blob go.
+    await inTx((c) =>
+      c.query(
+        "UPDATE web_uploads SET raw_released_at = now(), raw_archive_ref = 'mega:test' WHERE id = $1",
+        [upload.id],
+      ),
+    )
+    expect(await referenced(rawSha)).toBe(false)
+
+    // Rejected and alias web uploads do not hold their raw blob.
+    const dupFile = await inTx((c) => addFile(c, modelId, item, { role: 'master', media: 'video' }))
+    for (const outcome of ['rejected', 'alias'] as const) {
+      const droppedSha = await inTx((c) => newBlob(c, 'video'))
+      await inTx(async (c) => {
+        const u = await make(c, 'web_uploads', modelId)
+        await c.query(
+          "UPDATE web_uploads SET sha256 = $2, state = 'registered', declared_kind = 'other' WHERE id = $1",
+          [u.id, droppedSha],
+        )
+        await newDraft(c, modelId, {
+          source_revision_id: null,
+          web_upload_id: u.id,
+          origin: 'web_upload',
+          source_blob_sha256: droppedSha,
+          state: 'resolved',
+          outcome,
+          ...(outcome === 'rejected'
+            ? { rejected_at: new Date().toISOString() }
+            : { duplicate_of_version_id: dupFile.versionId }),
+        })
+      })
+      expect(await referenced(droppedSha), `outcome=${outcome}`).toBe(false)
+    }
   })
 })
 

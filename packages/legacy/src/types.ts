@@ -272,4 +272,6 @@ export interface ParseOptions {
    * folders or files; everything under a listed folder is not content.
    */
   notContent?: readonly string[]
+  /** Match `notContent` paths case-insensitively (e.g. Dropbox). */
+  caseInsensitive?: boolean
 }

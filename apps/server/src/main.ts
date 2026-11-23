@@ -38,7 +38,7 @@ import { createMediaEnv } from './media/pipeline'
 import { startRenditionRebuild } from './media/rebuild'
 import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
 import { BlobStore } from './media/storage'
-import { reconcileStorage } from './media/storage-ops'
+import { reconcileStorage, sweepIncoming } from './media/storage-ops'
 import { enqueueVideoPrints } from './media/work/print'
 import { enqueueOpenRowCopies } from './plan/composition'
 import { buildServer } from './server'
@@ -328,6 +328,11 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
   // (schema §9.3 «Операции с файлами»).
   const reconciled = await reconcileStorage(db, store, `${role}:`)
   logger.info({ ...reconciled }, 'storage operations reconciled')
+  if (role === 'worker' || role === 'worker-video') {
+    const incoming = await sweepIncoming(db, store)
+    if (incoming.length > 0)
+      logger.info({ removed: incoming.length }, 'stale incoming temps removed')
+  }
   // The tool versions and recipes of this image; a new pipeline version becomes current.
   const env = await createMediaEnv({ db, store, lp: config.SVTAV1_LP, owner, log })
   logger.info({ pipeline_version: env.pipelineVersion, tools: env.versions }, 'media pipeline')

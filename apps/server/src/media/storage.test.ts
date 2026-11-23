@@ -1,4 +1,4 @@
-import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { bootstrap, createDb, createPool, type Db } from '@contentops/db'
 import { createTestDatabase, type TestDatabase } from '@contentops/db/testing'
@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BOOTSTRAP, OWNER } from '../testing/server'
 import { createGeneration, finishGenerations } from './renditions'
 import { type BlobStore, blobKey, HashMismatchError, shaBytes } from './storage'
-import { purgeBlob, reconcileStorage, registerBlob } from './storage-ops'
+import { purgeBlob, reconcileStorage, registerBlob, sweepIncoming } from './storage-ops'
 import { modelId, seedItem, systemTx, tempFile, tempStore } from './testing'
 
 /**
@@ -261,5 +261,149 @@ describe('owner purge', () => {
       owner: OWNER_ID,
     })
     expect(await blobState(sha)).toBe('present')
+  })
+
+  it('keeps live master renditions built from a purged raw input while evicting unattached ones', async () => {
+    const rawSha = await present('raw web upload video')
+    const masterSha = await present('compressed av1 master video')
+    await seedItem(db, {
+      model: lora,
+      type: 'CUS',
+      number: 903,
+      files: [{ role: 'master', mediaKind: 'video', master: masterSha }],
+    })
+    const liveGen = await createGeneration(db, {
+      kind: 'thumb640',
+      recipeDigest: 'r-live',
+      metaStripped: false,
+      masterSha256: shaBytes(masterSha),
+      inputKind: 'source',
+      inputSha256: shaBytes(rawSha),
+      workId: null,
+    })
+    const orphanGen = await createGeneration(db, {
+      kind: 'thumb320',
+      recipeDigest: 'r-orphan',
+      metaStripped: false,
+      masterSha256: null,
+      inputKind: 'source',
+      inputSha256: shaBytes(rawSha),
+      workId: null,
+    })
+    const putArt = async (genId: string, name: string) => {
+      const key = `derived/gen/${genId}/${name}`
+      await store.place((await tempFile(name)).path, key)
+      await systemTx(db, (tx) =>
+        finishGenerations(
+          tx,
+          [
+            {
+              generationId: genId,
+              key,
+              artifact: {
+                kind: name.includes('640') ? 'thumb640' : 'thumb320',
+                name,
+                path: store.path(key),
+                sha256: Buffer.alloc(32, 2).toString('hex'),
+                bytes: 5,
+                mime: 'image/webp',
+                width: 640,
+                height: 360,
+                durationMs: null,
+                frameMs: null,
+              },
+            },
+          ],
+          [genId],
+        ),
+      )
+      return key
+    }
+    const liveKey = await putArt(liveGen, 'thumb-640.webp')
+    const orphanKey = await putArt(orphanGen, 'thumb-320.webp')
+
+    expect(await purgeBlob(db, store, rawSha, 'owner:cli')).toBe('purged')
+    // Live master's rendition built from rawSha stays ready and on disk!
+    expect(await store.exists(liveKey)).toBe(true)
+    expect(await store.exists(orphanKey)).toBe(false)
+    const { rows } = await db.execute<{ id: string; state: string; is_active: boolean }>(sql`
+      SELECT id, state, is_active FROM rendition_generations
+       WHERE id IN (${liveGen}::uuid, ${orphanGen}::uuid)`)
+    expect(rows.find((r) => r.id === liveGen)).toMatchObject({ state: 'ready', is_active: true })
+    expect(rows.find((r) => r.id === orphanGen)).toMatchObject({
+      state: 'evicted',
+      is_active: false,
+    })
+  })
+
+  it('reconcileStorage settles interrupted purges safely (re-checking references and renditions)', async () => {
+    const goneFree = await present('interrupted purge unreferenced')
+    const masterSha = await present('live master for interrupted purge')
+    await seedItem(db, {
+      model: lora,
+      type: 'CUS',
+      number: 904,
+      files: [{ role: 'master', mediaKind: 'video', master: masterSha }],
+    })
+    const liveGen = await createGeneration(db, {
+      kind: 'poster',
+      recipeDigest: 'r-p',
+      metaStripped: false,
+      masterSha256: shaBytes(masterSha),
+      inputKind: 'source',
+      inputSha256: shaBytes(goneFree),
+      workId: null,
+    })
+    const ownGen = await createGeneration(db, {
+      kind: 'poster',
+      recipeDigest: 'r-own',
+      metaStripped: false,
+      masterSha256: shaBytes(goneFree),
+      inputKind: 'master',
+      inputSha256: shaBytes(goneFree),
+      workId: null,
+    })
+    await db.execute(sql`
+      UPDATE rendition_generations SET state = 'ready', is_active = true, ready_at = now()
+       WHERE id IN (${liveGen}::uuid, ${ownGen}::uuid)`)
+    await store.delete(blobKey(goneFree, 'mp4'))
+    await db.execute(sql`
+      INSERT INTO storage_operations (kind, blob_sha256, from_key, state, owner, started_at)
+      VALUES ('purge', ${shaBytes(goneFree)}, ${blobKey(goneFree, 'mp4')}, 'fs_done', 'owner:old:1', now())`)
+
+    // Referenced again before reconcile: must become `missing` and `failed`, never `purged`.
+    const goneRef = await present('interrupted purge referenced')
+    await seedItem(db, {
+      model: lora,
+      type: 'PPV',
+      number: 905,
+      files: [{ role: 'master', mediaKind: 'video', master: goneRef }],
+    })
+    await store.delete(blobKey(goneRef, 'mp4'))
+    await db.execute(sql`
+      INSERT INTO storage_operations (kind, blob_sha256, from_key, state, owner, started_at)
+      VALUES ('purge', ${shaBytes(goneRef)}, ${blobKey(goneRef, 'mp4')}, 'fs_done', 'owner:old:2', now())`)
+
+    const report = await reconcileStorage(db, store, 'owner:')
+    expect(report).toEqual({ cancelled: 0, committed: 1, failed: 1 })
+    expect(await blobState(goneFree)).toBe('purged')
+    expect(await blobState(goneRef)).toBe('missing')
+    const { rows: gens } = await db.execute<{ id: string; state: string }>(sql`
+      SELECT id, state FROM rendition_generations WHERE id IN (${liveGen}::uuid, ${ownGen}::uuid)`)
+    expect(gens.find((g) => g.id === liveGen)?.state).toBe('ready')
+    expect(gens.find((g) => g.id === ownGen)?.state).toBe('evicted')
+  })
+
+  it('sweepIncoming removes stale partial files older than a day while keeping fresh ones', async () => {
+    await mkdir(store.incomingDir, { recursive: true })
+    const oldPartial = join(store.incomingDir, '.master-deadbeef0001.partial.mp4')
+    const freshPartial = join(store.incomingDir, '.master-deadbeef0002.partial.mp4')
+    await writeFile(oldPartial, 'abandoned encode')
+    await writeFile(freshPartial, 'live encode')
+    const now = Date.now()
+    const dayAgo = (now - 25 * 60 * 60 * 1000) / 1000
+    await utimes(oldPartial, dayAgo, dayAgo)
+    expect(await sweepIncoming(db, store, now)).toEqual(['.master-deadbeef0001.partial.mp4'])
+    expect(await readdir(store.incomingDir)).toEqual(['.master-deadbeef0002.partial.mp4'])
   })
 })

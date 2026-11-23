@@ -58,6 +58,8 @@ export interface LegacyImportOptions {
   foreignModelNames?: readonly string[]
   /** The model's list of what is not content (`legacy.not_content`, root-relative paths). */
   notContent?: readonly string[]
+  /** Match `notContent` paths case-insensitively (e.g. Dropbox). */
+  caseInsensitive?: boolean
   /** Examples per label for the КМ (default 5). */
   exampleLimit?: number
 }
@@ -276,6 +278,7 @@ function rowsOf(listing: readonly LegacyListingEntry[], options: LegacyImportOpt
         isDir: entry.isDir,
         foreignModelNames: options.foreignModelNames,
         ...(options.notContent ? { notContent: options.notContent } : {}),
+        ...(options.caseInsensitive ? { caseInsensitive: true } : {}),
       }),
     }
   })

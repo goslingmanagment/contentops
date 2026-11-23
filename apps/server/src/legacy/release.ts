@@ -61,13 +61,57 @@ export interface ReleaseRoot {
   outside: { path: string; size: number }[]
 }
 
+export interface CopyListMeta {
+  finished_at: string | null
+  errors: number
+  dirs_not_listed: number
+  client_running: boolean
+}
+
 export interface ReleaseReport {
   model: string
   snapshot: string
   source: string
   copy_list: string | null
+  copy_list_meta?: CopyListMeta | null
   roots: ReleaseRoot[]
   ready_bytes: number
+}
+
+function metaPathOf(listFile: string): string {
+  return /\.jsonl$/i.test(listFile)
+    ? listFile.replace(/\.jsonl$/i, '.meta.json')
+    : `${listFile}.meta.json`
+}
+
+async function readCopyListMeta(
+  listFile: string,
+): Promise<{ meta: CopyListMeta | null; corrupt: boolean }> {
+  let raw: string
+  try {
+    raw = (await readFile(metaPathOf(listFile), 'utf8')).replace(/^﻿/, '')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') {
+      return { meta: null, corrupt: false }
+    }
+    return { meta: null, corrupt: true }
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object') return { meta: null, corrupt: true }
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+    return {
+      meta: {
+        finished_at: typeof parsed.finished_at === 'string' ? parsed.finished_at : null,
+        errors: num(parsed.errors),
+        dirs_not_listed: num(parsed.dirs_not_listed),
+        client_running: parsed.client_running === true,
+      },
+      corrupt: false,
+    }
+  } catch {
+    return { meta: null, corrupt: true }
+  }
 }
 
 function bump(blockers: Record<string, number>, reason: string) {
@@ -86,6 +130,7 @@ export async function releaseReport(
   const snapshot = await snapshotOf(db, modelId, null)
   if (!snapshot) throw new Error(`у модели ${model} нет снимка`)
   const entries = listFile ? parseCopyList(await readFile(listFile, 'utf8')) : []
+  const metaRead = listFile ? await readCopyListMeta(listFile) : { meta: null, corrupt: false }
   const list = new CopyList(entries)
   const roots = new Map<string, ReleaseRoot>()
   const known = new Set<string>()
@@ -118,6 +163,9 @@ export async function releaseReport(
     const taken = outcome === 'accepted' || outcome === 'alias'
     if (taken && row.master_state !== 'present') bump(root.blockers, 'мастер не на месте')
     if (taken && !row.source_sha) bump(root.blockers, 'байты источника не проверены')
+    if (copied?.bytesPresent && copied.size !== size) {
+      bump(root.blockers, 'размер в копии не совпадает со снимком')
+    }
     root.rows.push({
       path: relative,
       size,
@@ -130,19 +178,37 @@ export async function releaseReport(
       copy: copied ? (copied.bytesPresent ? 'bytes' : 'placeholder') : null,
     })
   }
+  const hasExplicitUnlistedDir = entries.some((entry) => entry.is_dir && entry.listed === false)
   // The copy may hold what the snapshot does not know (a file the client brought later):
   // the import has not checked it, so the root waits.
   for (const root of roots.values()) {
-    const prefix = `${apiToLocalPath(`${snapshot.rootPath}/${root.root}`)}/`
+    const rootLocal = apiToLocalPath(`${snapshot.rootPath}/${root.root}`)
+    const prefix = `${rootLocal}/`
     for (const entry of entries) {
       const path = relativePath(entry.path)
-      if (entry.is_dir || !path.startsWith(prefix) || known.has(path)) continue
+      if (entry.is_dir) {
+        if (entry.listed === false && (path === rootLocal || path.startsWith(prefix))) {
+          bump(root.blockers, 'не перечисленная папка в копии')
+        }
+        continue
+      }
+      if (!path.startsWith(prefix) || known.has(path)) continue
       if (!entry.bytes_present) continue
       root.outside.push({ path, size: entry.size })
       root.copy_bytes += entry.size
       bump(root.blockers, 'в копии, но не в снимке')
     }
     if (!listFile) bump(root.blockers, 'нет списка копии')
+    if (metaRead.corrupt) bump(root.blockers, 'битая мета списка копии')
+    if (metaRead.meta) {
+      if (metaRead.meta.errors > 0) bump(root.blockers, 'ошибки обхода копии')
+      if (metaRead.meta.client_running) {
+        bump(root.blockers, 'клиент Я.Диска был запущен при обходе')
+      }
+      if (metaRead.meta.dirs_not_listed > 0 && !hasExplicitUnlistedDir) {
+        bump(root.blockers, 'не все папки копии перечислены')
+      }
+    }
     root.ready = Object.keys(root.blockers).length === 0
   }
   const ordered = [...roots.values()].sort((a, b) => a.root.localeCompare(b.root, 'ru'))
@@ -151,6 +217,7 @@ export async function releaseReport(
     snapshot: snapshot.workKey,
     source: snapshot.sourceLabel,
     copy_list: listFile,
+    copy_list_meta: metaRead.meta,
     roots: ordered,
     ready_bytes: ordered.filter((r) => r.ready).reduce((sum, r) => sum + r.copy_bytes, 0),
   }
@@ -188,10 +255,23 @@ export function releaseMarkdown(report: ReleaseReport): string {
   const smallest = [...ready]
     .filter((root) => root.copy_bytes > 0)
     .sort((a, b) => a.copy_bytes - b.copy_bytes)[0]
+  const listStamp = report.copy_list_meta?.finished_at
+    ? ` (от ${report.copy_list_meta.finished_at})`
+    : ''
+  const metaNotes: string[] = []
+  if (report.copy_list_meta) {
+    if (report.copy_list_meta.errors > 0) {
+      metaNotes.push(`ошибок обхода: ${report.copy_list_meta.errors}`)
+    }
+    if (report.copy_list_meta.dirs_not_listed > 0) {
+      metaNotes.push(`не перечислено папок: ${report.copy_list_meta.dirs_not_listed}`)
+    }
+    if (report.copy_list_meta.client_running) metaNotes.push('клиент Я.Диска был запущен')
+  }
   return [
     `# Можно освобождать: ${report.model}`,
     '',
-    `- Снимок: \`${report.snapshot}\` (${report.source}); список копии: ${report.copy_list ? `\`${report.copy_list}\`` : 'нет'}`,
+    `- Снимок: \`${report.snapshot}\` (${report.source}); список копии: ${report.copy_list ? `\`${report.copy_list}\`${listStamp}` : 'нет'}${metaNotes.length > 0 ? ` — ${metaNotes.join(', ')}` : ''}`,
     `- Готовы к снятию закрепления: ${ready.length} из ${report.roots.length} корней; ожидаемый выигрыш — ${formatBytes(report.ready_bytes)} (байты в копии)`,
     '- Как: «Освободить место» у корня в клиенте Я.Диска на одобренном владельцем сеансе (SPEC §12.2).',
     '  Ничего не удаляется ни в копии, ни в облаке: исходник остаётся в облаке, мастер — у нас.',

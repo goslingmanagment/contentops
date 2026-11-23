@@ -29,6 +29,7 @@ import { applySwitches, switchesOf } from './handlers/integrations'
 import { genderOfName } from './handlers/people'
 import { modelNames, modelsByCodes } from './handlers/shared'
 import { raiseCustomCopies } from './intake/custom-copies'
+import { NOT_CONTENT_KEY, notContentKey } from './legacy/inputs'
 
 /**
  * The owner's commands from the VM shell (`ops.js agent`, `ops.js switch`, ops/README.md): what
@@ -501,9 +502,15 @@ export async function opsPolicy(
     type?: string | undefined
   },
 ): Promise<OpsPolicyResult> {
-  if (!(values.thresholdKeys as readonly string[]).includes(input.key)) {
+  const allowedKeys: readonly string[] = [
+    ...values.thresholdKeys,
+    NOT_CONTENT_KEY,
+    notContentKey('yandex_disk'),
+    notContentKey('dropbox'),
+  ]
+  if (!allowedKeys.includes(input.key)) {
     throw new Error(
-      `${input.key}: not a policy key (${values.thresholdKeys.join(', ')}); switches — ops.js switch`,
+      `${input.key}: not a policy key (${allowedKeys.join(', ')}); switches — ops.js switch`,
     )
   }
   let value: unknown = null

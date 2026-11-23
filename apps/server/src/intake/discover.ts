@@ -182,7 +182,8 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
     const stats = emptyStats()
     const grown = new Set<string>()
     // The model's own list of what is not content (`legacy.not_content`, SPEC §6.3).
-    const notContent = input.drafts === false ? [] : await readNotContent(tx, source.modelId)
+    const notContent =
+      input.drafts === false ? [] : await readNotContent(tx, source.modelId, source.kind)
     // Folders first: the group of a file holds its folder object.
     const folders = new Map<string, FolderRef>(input.folders)
     for (const folder of folders.values()) {
@@ -208,7 +209,12 @@ export async function applyEntries(db: Db, input: ApplyInput): Promise<ApplyStat
       const media = mediaKindOf(entry.name, entry.mediaType)
       if (!media) continue
       // Not content (SPEC §6.3): the revision is known, no draft — as the import takes it.
-      if (notContentOf(relativeOf(entry), notContent)) continue
+      if (
+        notContentOf(relativeOf(entry), notContent, {
+          caseInsensitive: source.kind === 'dropbox',
+        })
+      )
+        continue
       const groupId = await groupOf(tx, input, entry, media === 'video')
       if (await ensureDraft(tx, source, groupId, revision, entry)) {
         stats.drafts += 1

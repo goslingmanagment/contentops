@@ -151,10 +151,11 @@ export async function importBytes(ctx: WorkContext): Promise<WorkSuccess> {
     )
   }
   const listing = await snapshotListing(db, snapshot)
-  const inputs = await readInputs(db, modelId)
+  const inputs = await readInputs(db, modelId, snapshot.sourceKind)
   const plan = planLegacyImport(listing, {
     registry: inputs.registry,
     ...(inputs.notContent.length > 0 ? { notContent: inputs.notContent } : {}),
+    ...(snapshot.sourceKind === 'dropbox' ? { caseInsensitive: true } : {}),
   })
   const parsed = new Map<string, ParsedLegacyPath>(plan.entries.map((e) => [e.path, e]))
   if (!input.force) await checkOrder(db, snapshot, listing, input.roots, parsed)

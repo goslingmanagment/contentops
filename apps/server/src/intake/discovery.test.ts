@@ -373,4 +373,31 @@ describe('Yandex Disk', () => {
     await scan('yandex', 'full')
     expect((await intakeCounts(h.db)).drafts).toBe(after.drafts)
   })
+
+  it('honours source-scoped legacy.not_content.<sourceKind> and case-insensitive Dropbox paths', async () => {
+    await withActorTx(
+      h.db,
+      { actor: SYSTEM_ACTOR('test'), action: 'policy.test', requestId: randomUUID() },
+      async (tx) => {
+        await tx.execute(sql`
+          INSERT INTO policy_settings (model_id, key, value)
+          VALUES (${h.modelId}::uuid, 'legacy.not_content.yandex_disk', '{"paths": ["_ydisk-test"]}'::jsonb),
+                 (${h.modelId}::uuid, 'legacy.not_content.dropbox', '{"paths": ["_drop-skip"]}'::jsonb)`)
+      },
+    )
+    // _ydisk-test is skipped on Yandex.Disk, but NOT skipped on Dropbox.
+    h.yandex.tree.addFile(`${LORA_ROOT}/_ydisk-test/sample.mov`, 5000)
+    h.dropbox.tree.addFile(`${LORA_ROOT}/_ydisk-test/real.mov`, 5001)
+    // Dropbox matches _drop-skip case-insensitively (`_DROP-SKIP`).
+    h.dropbox.tree.addFile(`${LORA_ROOT}/_DROP-SKIP/ignored.jpg`, 5002)
+
+    await scan('yandex', 'full')
+    await scan('dropbox', 'full')
+
+    const { rows } = await h.db.execute<{ path: string }>(sql`
+      SELECT path FROM inbox_drafts
+       WHERE path LIKE '%_ydisk-test%' OR path ILIKE '%_drop-skip%'
+       ORDER BY path`)
+    expect(rows.map((r) => r.path)).toEqual([`${LORA_ROOT}/_ydisk-test/real.mov`])
+  })
 })

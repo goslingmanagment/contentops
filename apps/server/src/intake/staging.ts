@@ -1,9 +1,10 @@
-import { readdir, rm } from 'node:fs/promises'
+import { readdir, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Db } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { BlobStore } from '../media/storage'
 import { shaBytes } from '../media/storage'
+import { sweepIncoming } from '../media/storage-ops'
 import type { Services } from '../services'
 
 /**
@@ -48,20 +49,92 @@ export async function sweepStaging(db: Db, store: BlobStore): Promise<string[]> 
   return removed
 }
 
+const UNPACK_MIN_AGE_MS = 60 * 60 * 1000
+const UNPACK_PART_MAX_AGE_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Removes `TMP_ROOT/unpack/<sha256>/` directories once no `unpack_archive` is unfinished and
+ * no archive revision with those bytes (verified or remote SHA-256) still has unbound members;
+ * also cleans stale `.part-*` folders older than a day.
+ */
+export async function sweepUnpacked(
+  db: Db,
+  store: BlobStore,
+  now = Date.now(),
+  minAgeMs = UNPACK_MIN_AGE_MS,
+): Promise<string[]> {
+  const unpackRoot = join(store.roots.tmpRoot, 'unpack')
+  let names: string[]
+  try {
+    names = await readdir(unpackRoot)
+  } catch {
+    return []
+  }
+  if (names.length === 0) return []
+  const { rows: busy } = await db.execute<{ busy: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM work_operations
+       WHERE kind = 'unpack_archive' AND state IN ('pending', 'running', 'retry_wait')
+    ) AS busy`)
+  if (busy[0]?.busy) return []
+
+  const removed: string[] = []
+  for (const name of names) {
+    const dir = join(unpackRoot, name)
+    const info = await stat(dir).catch(() => null)
+    if (!info) continue
+    if (name.includes('.part-')) {
+      if (now - info.mtimeMs >= UNPACK_PART_MAX_AGE_MS) {
+        await rm(dir, { recursive: true, force: true })
+        removed.push(name)
+      }
+      continue
+    }
+    if (!/^[0-9a-f]{64}$/.test(name)) continue
+    if (now - info.mtimeMs < minAgeMs) continue
+    const bytes = shaBytes(name)
+    const { rows } = await db.execute<{ unpacked: boolean; unbound: boolean }>(sql`
+      SELECT
+        EXISTS (
+          SELECT 1 FROM source_revisions ar WHERE ar.source_sha256 = ${bytes}
+        ) AS unpacked,
+        EXISTS (
+          SELECT 1 FROM source_revisions ar
+           WHERE (ar.source_sha256 = ${bytes} OR ar.remote_sha256 = ${bytes})
+             AND EXISTS (
+               SELECT 1 FROM source_objects mo
+                 JOIN source_revisions mr
+                   ON mr.model_id = mo.model_id AND mr.id = mo.current_revision_id
+                WHERE mo.model_id = ar.model_id AND mo.archive_revision_id = ar.id
+                  AND NOT mo.is_dir AND mr.source_sha256 IS NULL
+             )
+        ) AS unbound`)
+    if (!rows[0]?.unpacked || rows[0].unbound) continue
+    await rm(dir, { recursive: true, force: true })
+    removed.push(name)
+  }
+  return removed
+}
+
 /** Every 5 minutes in `worker`; returns the stop function. */
 export function startStagingSweep(
   db: Db,
   store: BlobStore,
   log: (line: string, error?: unknown) => void,
 ): () => void {
-  const run = () =>
-    sweepStaging(db, store)
-      .then((removed) => {
-        if (removed.length > 0) log(`staging: removed ${removed.length} sources with a master`)
-      })
-      .catch((error: unknown) => log('staging sweep failed', error))
-  run()
-  const timer = setInterval(run, 5 * 60 * 1000)
+  const run = async () => {
+    const removed = await sweepStaging(db, store)
+    if (removed.length > 0) log(`staging: removed ${removed.length} sources with a master`)
+    const unpacked = await sweepUnpacked(db, store)
+    if (unpacked.length > 0) log(`unpack: removed ${unpacked.length} finished archives`)
+    const incoming = await sweepIncoming(db, store)
+    if (incoming.length > 0) log(`incoming: removed ${incoming.length} stale partial files`)
+  }
+  run().catch((error: unknown) => log('staging sweep failed', error))
+  const timer = setInterval(
+    () => run().catch((error: unknown) => log('staging sweep failed', error)),
+    5 * 60 * 1000,
+  )
   return () => clearInterval(timer)
 }
 
