@@ -21,6 +21,7 @@ import { copyFromLocal, type LegacyCopyConfig } from '../legacy/copy'
 import { materializeClaims } from '../legacy/materialize'
 import type { BlobStore } from '../media/storage'
 import { extOfName, shaBytes } from '../media/storage'
+import { stagingState } from '../originals/hold'
 import { belowStop, readHostSpace, type SpaceOptions } from '../space'
 import { raiseCustomCopies } from './custom-copies'
 import { recordChangedRevision } from './discover'
@@ -33,7 +34,8 @@ import { type SourceFactory, sourceById } from './source-client'
  * `TMP_ROOT/staging/<sha256>.<ext>` where the media works find them (`locateInput`). The
  * checked hash goes to the revision and the draft; then an exact duplicate resolves itself as
  * an alias (schema §5), anything else gets its derivatives and master queued. Parallelism is
- * the `fetch` slot (`FETCH_JOBS`); the prefetch of videos stays under `FETCH_AHEAD_GB`; intake stops
+ * the `fetch` slot (`FETCH_JOBS`); the prefetch of videos stays under `FETCH_AHEAD_GB` (with the
+ * staged sources the originals hold until their copies are checked); intake stops
  * below the free space of the pilot (`SPACE_STOP_GB` of any disk: C: for the masters, E: for the
  * prefetch and the derived files).
  */
@@ -122,12 +124,15 @@ async function spaceLow(space: SpaceOptions | undefined): Promise<boolean> {
   return belowStop(await readHostSpace(space.file), space, new Date())
 }
 
-/** Bytes fetched but not yet turned into a verified master: the prefetch budget. */
-async function stagedAhead(db: Db): Promise<number> {
+/**
+ * The prefetch budget: bytes fetched but not yet turned into a verified master, and the staged
+ * sources the originals still hold until their copies are checked (`originals/hold.ts`).
+ */
+export async function stagedAhead(db: Db, store: BlobStore): Promise<number> {
   const { rows } = await db.execute<{ bytes: string | null }>(sql`
     SELECT sum(byte_size) AS bytes FROM inbox_drafts
      WHERE state <> 'resolved' AND source_sha256 IS NOT NULL AND master_verified_at IS NULL`)
-  return Number(rows[0]?.bytes ?? 0)
+  return Number(rows[0]?.bytes ?? 0) + (await stagingState(db, store)).heldBytes
 }
 
 export function fetchHandler(deps: FetchDeps): WorkHandler {
@@ -153,7 +158,7 @@ export function fetchHandler(deps: FetchDeps): WorkHandler {
     // The budget is the encoder's queue: a photo's master is the file itself, so photos pass
     // instead of waiting days behind the videos.
     const photo = mediaKindOf(row.current_path, null) === 'image'
-    if (!photo && (await stagedAhead(db)) > deps.fetchAheadGb * GB) {
+    if (!photo && (await stagedAhead(db, deps.store)) > deps.fetchAheadGb * GB) {
       throw new WorkDeferred(WAIT_AHEAD_MS, 'предзабор полон')
     }
     const source = await sourceById(db, row.source_id)

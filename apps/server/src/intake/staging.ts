@@ -5,48 +5,40 @@ import { sql } from 'drizzle-orm'
 import type { BlobStore } from '../media/storage'
 import { shaBytes } from '../media/storage'
 import { sweepIncoming } from '../media/storage-ops'
+import { stagingState } from '../originals/hold'
 import type { Services } from '../services'
 
 /**
  * Staged sources of intake (`TMP_ROOT/staging/<sha256>.<ext>`, SPEC §9.1): `fetch` and the web
  * upload leave the checked bytes there for the media works. Once the master is registered
  * (a photo's source is moved into `blobs/` by `derive_image`) and no media work of those bytes
- * is unfinished, the staged file is removed: after the master check, never before.
+ * is unfinished, the staged file is removed: after the master check, never before — and, while
+ * the originals hold it (`originals/hold.ts`: its copy to MEGA not written yet, at most 24 h and
+ * 20 GB), after its original is reliable.
  */
 
-/** Whether intake still needs the staged bytes of `sha`; `null` — not intake's bytes. */
-async function stillNeeded(db: Db, sha: string): Promise<boolean | null> {
-  const bytes = shaBytes(sha)
-  const { rows } = await db.execute<{ drafts: number; waiting: number; works: number }>(sql`
-    SELECT
-      (SELECT count(*)::int FROM inbox_drafts WHERE source_sha256 = ${bytes}) AS drafts,
-      (SELECT count(*)::int FROM inbox_drafts
-        WHERE source_sha256 = ${bytes} AND state <> 'resolved'
-          AND (master_verified_at IS NULL OR master_sha256 IS NULL)) AS waiting,
-      (SELECT count(*)::int FROM work_operations
-        WHERE input_sha256 = ${bytes} AND state IN ('pending', 'running', 'retry_wait')) AS works`)
-  const row = rows[0]
-  if (!row || row.drafts === 0) return null
-  return row.waiting > 0 || row.works > 0
+export interface SweepResult {
+  removed: string[]
+  /** Staged sources the originals hold, and their bytes. */
+  held: number
+  heldBytes: number
 }
 
-/** Removes the staged sources intake no longer needs; returns their hashes. */
-export async function sweepStaging(db: Db, store: BlobStore): Promise<string[]> {
-  let names: string[]
-  try {
-    names = await readdir(store.stagingDir)
-  } catch {
-    return []
-  }
+async function sweep(db: Db, store: BlobStore, only?: ReadonlySet<string>): Promise<SweepResult> {
+  const state = await stagingState(db, store)
   const removed: string[] = []
-  for (const name of names) {
-    const sha = name.split('.')[0] ?? ''
-    if (!/^[0-9a-f]{64}$/.test(sha)) continue
-    if ((await stillNeeded(db, sha)) !== false) continue
-    await rm(join(store.stagingDir, name), { force: true })
-    removed.push(sha)
+  for (const file of state.files) {
+    if (file.verdict !== 'free' || (only && !only.has(file.sha))) continue
+    for (const path of file.paths) await rm(path, { force: true })
+    removed.push(file.sha)
   }
-  return removed
+  const held = state.files.filter((file) => file.verdict === 'held').length
+  return { removed, held, heldBytes: state.heldBytes }
+}
+
+/** Removes the staged sources nothing holds any more; returns their hashes. */
+export async function sweepStaging(db: Db, store: BlobStore): Promise<string[]> {
+  return (await sweep(db, store)).removed
 }
 
 const UNPACK_MIN_AGE_MS = 60 * 60 * 1000
@@ -123,8 +115,11 @@ export function startStagingSweep(
   log: (line: string, error?: unknown) => void,
 ): () => void {
   const run = async () => {
-    const removed = await sweepStaging(db, store)
+    const { removed, held, heldBytes } = await sweep(db, store)
     if (removed.length > 0) log(`staging: removed ${removed.length} sources with a master`)
+    if (held > 0) {
+      log(`staging: ${held} sources (${heldBytes} bytes) held until their copies are checked`)
+    }
     const unpacked = await sweepUnpacked(db, store)
     if (unpacked.length > 0) log(`unpack: removed ${unpacked.length} finished archives`)
     const incoming = await sweepIncoming(db, store)
@@ -138,14 +133,11 @@ export function startStagingSweep(
   return () => clearInterval(timer)
 }
 
-/** Right after an accept: the group's staged sources go at once when nothing needs them. */
+/** Right after an accept: the group's staged sources go at once when nothing holds them. */
 export async function dropStagedOfGroup(services: Services, modelId: string, groupId: string) {
   const { rows } = await services.db.execute<{ sha: string }>(sql`
     SELECT DISTINCT encode(source_sha256, 'hex') AS sha FROM inbox_drafts
      WHERE model_id = ${modelId}::uuid AND group_id = ${groupId}::uuid AND source_sha256 IS NOT NULL`)
-  for (const { sha } of rows) {
-    if ((await stillNeeded(services.db, sha)) !== false) continue
-    const staged = await services.store.staged(sha).catch(() => null)
-    if (staged) await rm(staged.path, { force: true }).catch(() => {})
-  }
+  if (rows.length === 0) return
+  await sweep(services.db, services.store, new Set(rows.map((row) => row.sha))).catch(() => {})
 }

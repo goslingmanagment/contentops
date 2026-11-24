@@ -31,6 +31,7 @@ import { modelNames, modelsByCodes } from './handlers/shared'
 import { raiseCustomCopies } from './intake/custom-copies'
 import { NOT_CONTENT_KEY, notContentKey } from './legacy/inputs'
 import { MODEL_CONFIG_KEY, parseModelConfig } from './originals/config'
+import { HOLD_KEY } from './originals/hold'
 import { BATCH_KEY } from './originals/release'
 
 /**
@@ -511,6 +512,8 @@ export async function opsPolicy(
     notContentKey('dropbox'),
     // What a batch of the PC's release may take (`originals/release.ts`): {files, bytes, first_files}.
     BATCH_KEY,
+    // How long and how much of the staging the originals hold (`originals/hold.ts`): {hours, gb}.
+    HOLD_KEY,
     MODEL_CONFIG_KEY,
   ]
   if (!allowedKeys.includes(input.key)) {

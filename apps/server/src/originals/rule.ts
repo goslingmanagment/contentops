@@ -93,14 +93,21 @@ export async function settledWithoutDraft(q: Queryable, modelId: string): Promis
 
 /**
  * The query: a row per original of the model (`OriginalState`), with the members of archives when
- * `members` is set. `settled` — what `settledWithoutDraft` gave. Use as a subquery:
- * `SELECT … FROM (${originalsSql(…)}) o WHERE o.releasable`.
+ * `members` is set. `settled` — what `settledWithoutDraft` gave. `uploads` — only web uploads, no
+ * revisions: `'all'` of them or these (the release in the VM checks one again inside its
+ * transaction).
+ * Use as a subquery: `SELECT … FROM (${originalsSql(…)}) o WHERE o.releasable`.
  */
 export function originalsSql(
   modelId: string,
   settled: readonly string[],
-  options: { members?: boolean; notOriginals?: readonly string[] } = {},
+  options: {
+    members?: boolean
+    notOriginals?: readonly string[]
+    uploads?: readonly string[] | 'all'
+  } = {},
 ): SQL {
+  const uploads = options.uploads
   return sql`
     WITH judged AS (
       SELECT r.model_id, 'revision'::text AS kind, r.id, s.kind AS holder,
@@ -120,6 +127,7 @@ export function originalsSql(
         LEFT JOIN inbox_drafts d ON d.model_id = r.model_id AND d.source_revision_id = r.id
        WHERE r.model_id = ${modelId}::uuid AND s.kind IN ('yandex_disk', 'dropbox') AND NOT o.is_dir
          AND NOT (r.id = ANY (${sql.param([...(options.notOriginals ?? [])])}::uuid[]))
+         AND ${uploads === undefined}::boolean
       UNION ALL
       SELECT u.model_id, 'upload', u.id, 'web_upload', u.client_filename, u.size_expected,
              NULL, false, u.sha256,
@@ -130,6 +138,8 @@ export function originalsSql(
         FROM web_uploads u
         LEFT JOIN inbox_drafts d ON d.model_id = u.model_id AND d.web_upload_id = u.id
        WHERE u.model_id = ${modelId}::uuid AND u.state = 'registered'
+         AND (${!Array.isArray(uploads)}::boolean
+              OR u.id = ANY (${sql.param(Array.isArray(uploads) ? [...uploads] : [])}::uuid[]))
     ),
     own AS (
       SELECT j.*,
@@ -150,8 +160,9 @@ export function originalsSql(
                WHEN j.draft_id IS NULL AND j.id = ANY (${sql.param([...settled])}::uuid[])
                  THEN 'import_rule'
              END AS settled_as,
+             -- Never NULL: without a master yet (a rejected upload) the bytes are not one.
              (j.own_sha256 IS NOT NULL
-              AND (j.master_sha256 = j.own_sha256
+              AND (COALESCE(j.master_sha256 = j.own_sha256, false)
                    OR EXISTS (SELECT 1 FROM asset_versions v
                                WHERE v.master_sha256 = j.own_sha256))) AS is_master
         FROM judged j
@@ -193,6 +204,21 @@ export function originalsSql(
            released_at IS NOT NULL AS released
       FROM decided
      WHERE ${options.members === true}::boolean OR archive_id IS NULL`
+}
+
+/**
+ * «Надёжен» for one original outside the rule's query — the same count as its `places`: different
+ * clouds that hold it checked and still seen, two or more. `model`, `revision`, `upload` — SQL of
+ * the columns of the outer query.
+ */
+export function reliableSql(model: SQL, original: { revision: SQL } | { upload: SQL }): SQL {
+  const which =
+    'revision' in original
+      ? sql`c.source_revision_id = ${original.revision}`
+      : sql`c.web_upload_id = ${original.upload}`
+  return sql`((SELECT count(DISTINCT c.place) FROM original_copies c
+                WHERE c.model_id = ${model} AND ${which}
+                  AND c.verified_at IS NOT NULL AND c.missing_since IS NULL) >= 2)`
 }
 
 /** The rule for a model, ready to read: the query with what the import's rules settle. */

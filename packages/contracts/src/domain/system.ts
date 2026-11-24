@@ -62,13 +62,17 @@ export type Disk = z.infer<typeof DiskSchema>
 /**
  * The line «Оригиналы» (SPEC §9.4): where the originals live besides the PC. «Надёжны» — in two
  * clouds, checked byte for byte; «ждут проверки» — copies found, not checked yet; «освобождено» —
- * what the lists of the PC show gone among the originals that may go; `warnings` — the ▲.
+ * what the lists of the PC show gone among the originals that may go, and what left the disk of
+ * the VM; `warnings` — the ▲.
  */
 export const OriginalsLineSchema = z.object({
   originals: z.int().nonnegative(),
   reliable: z.int().nonnegative(),
   waiting: z.int().nonnegative(),
+  /** All of it: the copy of Я.Диск on C: and the VM. */
   freed_bytes: z.int().nonnegative(),
+  /** Of it, the bytes the release of the originals removed from the VM's disk. */
+  freed_vm_bytes: z.int().nonnegative(),
   missing: z.int().nonnegative(),
   failed: z.int().nonnegative(),
   warnings: z.array(z.string()),

@@ -8,6 +8,7 @@ import { copyList } from '../legacy/copy'
 import type { AuditReport } from './audit'
 import { configuredModels, PC_HOLDERS, type PcHolder, SWITCH_KEY } from './config'
 import type { CopyReport } from './copy'
+import { vmFreed } from './free'
 import { originalStates } from './rule'
 
 /**
@@ -18,8 +19,8 @@ import { originalStates } from './rule'
  * PC may go, but the host's list of that place is older than 2 hours (the release on Windows
  * waits for it, PR3); the copy refuses a folder of a Dropbox that the model's policy does not
  * keep apart yet. «Освобождено» is what the lists of the PC show gone among the originals
- * that may go — the copy of Я.Диск (a file without its bytes) — plus web uploads released from
- * our disk. Counts only, no paths.
+ * that may go — the copy of Я.Диск (a file without its bytes) — plus, apart, the bytes the
+ * release of the originals removed from the VM's disk (`originals_free`). Counts only, no paths.
  */
 
 export interface OriginalsLine {
@@ -27,6 +28,8 @@ export interface OriginalsLine {
   reliable: number
   waiting: number
   freed_bytes: number
+  /** Of it, removed from the VM's disk by the release of the originals. */
+  freed_vm_bytes: number
   missing: number
   failed: number
   warnings: string[]
@@ -111,9 +114,10 @@ export async function originalsLine(
       }
     }
   }
-  const { rows: uploads } = await db.execute<{ bytes: string | null }>(sql`
-    SELECT sum(size_expected)::text AS bytes FROM web_uploads WHERE raw_released_at IS NOT NULL`)
-  freed += Number(uploads[0]?.bytes ?? 0)
+  // What the release of the originals removed from our disk (it reaches C: with the nightly
+  // compaction of data.vhdx).
+  const freedVm = (await vmFreed(db)).originals_bytes
+  freed += freedVm
 
   const missing = Number(counts.missing)
   const failed = Number(counts.failed)
@@ -174,6 +178,7 @@ export async function originalsLine(
     reliable,
     waiting: Number(counts.waiting),
     freed_bytes: freed,
+    freed_vm_bytes: freedVm,
     missing,
     failed,
     warnings,

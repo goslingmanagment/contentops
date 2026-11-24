@@ -1053,7 +1053,7 @@ describe('the byte reference contract (schema §1 p. 6, §5)', () => {
     await fails(reopen(purging.id), dbErrorCodes.transitionRefused)
   })
 
-  it('protects raw bytes of registered web uploads until released, unless rejected or aliased', async () => {
+  it('protects raw bytes of every registered web upload until released (0030)', async () => {
     const modelId = await model()
     const item = await inTx((c) => newItem(c, modelId, 'CUS'))
 
@@ -1090,7 +1090,8 @@ describe('the byte reference contract (schema §1 p. 6, §5)', () => {
     )
     expect(await referenced(rawSha)).toBe(false)
 
-    // Rejected and alias web uploads do not hold their raw blob.
+    // Rejected and alias web uploads hold their raw blob too: their bytes may have no copy yet,
+    // only the release of the originals lets them go (0030; 0026 let them go at once).
     const dupFile = await inTx((c) => addFile(c, modelId, item, { role: 'master', media: 'video' }))
     for (const outcome of ['rejected', 'alias'] as const) {
       const droppedSha = await inTx((c) => newBlob(c, 'video'))
@@ -1112,8 +1113,29 @@ describe('the byte reference contract (schema §1 p. 6, §5)', () => {
             : { duplicate_of_version_id: dupFile.versionId }),
         })
       })
-      expect(await referenced(droppedSha), `outcome=${outcome}`).toBe(false)
+      expect(await referenced(droppedSha), `outcome=${outcome}`).toBe(true)
+      await inTx((c) =>
+        c.query('UPDATE web_uploads SET raw_released_at = now() WHERE sha256 = $1', [droppedSha]),
+      )
+      expect(await referenced(droppedSha), `outcome=${outcome}, released`).toBe(false)
     }
+  })
+
+  it('an unfinished work holds the bytes it reads, as those it writes (0030)', async () => {
+    const modelId = await model()
+    const sha = await inTx((c) => newBlob(c, 'video'))
+    expect(await referenced(sha)).toBe(false)
+    const work = await inTx((c) => make(c, 'work_operations', modelId))
+    await inTx((c) =>
+      c.query('UPDATE work_operations SET input_sha256 = $2 WHERE id = $1', [work.id, sha]),
+    )
+    expect(await referenced(sha)).toBe(true)
+    await inTx((c) =>
+      c.query("UPDATE work_operations SET state = 'failed', finished_at = now() WHERE id = $1", [
+        work.id,
+      ]),
+    )
+    expect(await referenced(sha)).toBe(false)
   })
 })
 

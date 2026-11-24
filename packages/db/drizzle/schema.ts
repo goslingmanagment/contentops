@@ -135,12 +135,13 @@ export const workOperations = pgTable("work_operations", {
 	generationId: uuid("generation_id"),
 }, (table): PgTableExtraConfigValue[] => [
 	index("work_operations_draft").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.draftId.asc().nullsLast().op("uuid_ops")).where(sql`(draft_id IS NOT NULL)`),
-	index("work_operations_due").using("btree", table.nextAttemptAt.asc().nullsLast().op("timestamptz_ops"), table.priority.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['pending'::text, 'retry_wait'::text]))`),
-	index("work_operations_fetch_revision").using("btree", table.modelId.asc().nullsLast().op("timestamptz_ops"), table.sourceRevisionId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("uuid_ops")).where(sql`(kind = 'fetch'::text)`),
+	index("work_operations_due").using("btree", table.nextAttemptAt.asc().nullsLast().op("int4_ops"), table.priority.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = ANY (ARRAY['pending'::text, 'retry_wait'::text]))`),
+	index("work_operations_fetch_revision").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.sourceRevisionId.asc().nullsLast().op("timestamptz_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(kind = 'fetch'::text)`),
+	index("work_operations_input_unfinished").using("btree", table.inputSha256.asc().nullsLast().op("bytea_ops")).where(sql`((input_sha256 IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])))`),
 	index("work_operations_lease").using("btree", table.leaseUntil.asc().nullsLast().op("timestamptz_ops")).where(sql`(state = 'running'::text)`),
 	index("work_operations_manifest").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.manifestId.asc().nullsLast().op("uuid_ops")).where(sql`(manifest_id IS NOT NULL)`),
 	index("work_operations_output").using("btree", table.outputSha256.asc().nullsLast().op("bytea_ops")).where(sql`(output_sha256 IS NOT NULL)`),
-	uniqueIndex("work_operations_stream_key").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("uuid_ops"), table.streamKey.asc().nullsLast().op("text_ops")).where(sql`((stream_key IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])))`),
+	uniqueIndex("work_operations_stream_key").using("btree", table.modelId.asc().nullsLast().op("uuid_ops"), table.kind.asc().nullsLast().op("text_ops"), table.streamKey.asc().nullsLast().op("text_ops")).where(sql`((stream_key IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])))`),
 	foreignKey({
 			columns: [table.modelId],
 			foreignColumns: [models.id],
@@ -197,8 +198,8 @@ export const workOperations = pgTable("work_operations", {
 	check("work_operations_running_lease", sql`(state <> 'running'::text) OR ((lease_owner IS NOT NULL) AND (lease_until IS NOT NULL))`),
 	check("work_operations_finished_at", sql`(state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL)`),
 	check("work_operations_model_targets", sql`(model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0)`),
-	check("work_operations_kind_check", sql`kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text, 'hub_orders'::text, 'originals_check'::text, 'originals_audit'::text, 'originals_copy'::text])`),
-	check("work_operations_global_kinds", sql`(model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text, 'originals_check'::text, 'originals_audit'::text, 'originals_copy'::text]))`),
+	check("work_operations_kind_check", sql`kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text, 'hub_orders'::text, 'originals_check'::text, 'originals_audit'::text, 'originals_copy'::text, 'originals_free'::text])`),
+	check("work_operations_global_kinds", sql`(model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text, 'originals_check'::text, 'originals_audit'::text, 'originals_copy'::text, 'originals_free'::text]))`),
 ]);
 
 export const policySettings = pgTable("policy_settings", {

@@ -76,3 +76,19 @@ export const OriginalsReleaseSchema = z.object({
   left: z.object({ files: z.int().nonnegative(), bytes: z.int().nonnegative() }),
 })
 export type OriginalsRelease = z.infer<typeof OriginalsReleaseSchema>
+
+/**
+ * What the VM has removed from its data disk (`data.vhdx` on C:) so far, for the nightly
+ * compaction of the PC (`ops/winpc/ContentOps-Compact.ps1`, SPEC §12.2): every blob removed by
+ * the storage protocol — the release of the originals and the owner's `purge-blobs` — counted
+ * once per removal. The PC compacts `data.vhdx` when this grew by more than 20 GB since its last
+ * compaction. Counts only.
+ */
+export const OriginalsVmFreedSchema = z.object({
+  removed_blobs: z.int().nonnegative(),
+  removed_bytes: z.int().nonnegative(),
+  /** Of them, what the release of the originals removed (`worker:originals`). */
+  originals_bytes: z.int().nonnegative(),
+  last_removed_at: InstantSchema.nullable(),
+})
+export type OriginalsVmFreed = z.infer<typeof OriginalsVmFreedSchema>

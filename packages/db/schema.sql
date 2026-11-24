@@ -11,22 +11,11 @@ CREATE FUNCTION public.blob_is_referenced(sha bytea) RETURNS boolean
       OR EXISTS (
            SELECT 1 FROM web_uploads u
             WHERE u.sha256 = sha
-              AND (
-                u.state IN ('receiving', 'received', 'verified')
-                OR (
-                  u.state = 'registered'
-                  AND u.raw_released_at IS NULL
-                  AND NOT EXISTS (
-                    SELECT 1 FROM inbox_drafts d
-                     WHERE d.model_id = u.model_id
-                       AND d.web_upload_id = u.id
-                       AND d.state = 'resolved'
-                       AND d.outcome IN ('rejected', 'alias')
-                  )
-                )
-              )
-         )
+              AND (u.state IN ('receiving', 'received', 'verified')
+                   OR (u.state = 'registered' AND u.raw_released_at IS NULL)))
       OR EXISTS (SELECT 1 FROM work_operations w WHERE w.output_sha256 = sha
+                  AND w.state IN ('pending', 'running', 'retry_wait'))
+      OR EXISTS (SELECT 1 FROM work_operations w WHERE w.input_sha256 = sha
                   AND w.state IN ('pending', 'running', 'retry_wait'));
 $$;
 
@@ -2743,9 +2732,9 @@ CREATE TABLE public.work_operations (
     CONSTRAINT work_operations_attempt_no_check CHECK ((attempt_no >= 0)),
     CONSTRAINT work_operations_failure_kind_check CHECK ((failure_kind = ANY (ARRAY['transient'::text, 'permanent'::text]))),
     CONSTRAINT work_operations_finished_at CHECK (((state = ANY (ARRAY['succeeded'::text, 'failed'::text, 'cancelled'::text])) = (finished_at IS NOT NULL))),
-    CONSTRAINT work_operations_global_kinds CHECK (((model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text, 'originals_check'::text, 'originals_audit'::text, 'originals_copy'::text])))),
+    CONSTRAINT work_operations_global_kinds CHECK (((model_id IS NULL) = (kind = ANY (ARRAY['verify_blobs'::text, 'backup'::text, 'originals_check'::text, 'originals_audit'::text, 'originals_copy'::text, 'originals_free'::text])))),
     CONSTRAINT work_operations_input_sha256_check CHECK ((octet_length(input_sha256) = 32)),
-    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text, 'hub_orders'::text, 'originals_check'::text, 'originals_audit'::text, 'originals_copy'::text]))),
+    CONSTRAINT work_operations_kind_check CHECK ((kind = ANY (ARRAY['scan'::text, 'fetch'::text, 'hash'::text, 'unpack_archive'::text, 'import_parse'::text, 'register'::text, 'propose'::text, 'export'::text, 'hub_sync'::text, 'hub_history'::text, 'hub_publish'::text, 'annotate'::text, 'verify_blobs'::text, 'backup'::text, 'derive_video'::text, 'encode_master'::text, 'verify_master'::text, 'render'::text, 'uniq_render'::text, 'render_compat'::text, 'extract_frame'::text, 'derive_image'::text, 'video_print'::text, 'hub_orders'::text, 'originals_check'::text, 'originals_audit'::text, 'originals_copy'::text, 'originals_free'::text]))),
     CONSTRAINT work_operations_model_targets CHECK (((model_id IS NOT NULL) OR (num_nonnulls(account_id, draft_id, source_revision_id, asset_version_id, manifest_id, receipt_id) = 0))),
     CONSTRAINT work_operations_output_sha256_check CHECK ((octet_length(output_sha256) = 32)),
     CONSTRAINT work_operations_paused_reason_format CHECK ((paused_reason ~ '^switch_off:.+$'::text)),
@@ -3469,6 +3458,8 @@ CREATE INDEX work_operations_draft ON public.work_operations USING btree (model_
 CREATE INDEX work_operations_due ON public.work_operations USING btree (next_attempt_at, priority) WHERE (state = ANY (ARRAY['pending'::text, 'retry_wait'::text]));
 
 CREATE INDEX work_operations_fetch_revision ON public.work_operations USING btree (model_id, source_revision_id, created_at DESC) WHERE (kind = 'fetch'::text);
+
+CREATE INDEX work_operations_input_unfinished ON public.work_operations USING btree (input_sha256) WHERE ((input_sha256 IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'running'::text, 'retry_wait'::text])));
 
 CREATE INDEX work_operations_lease ON public.work_operations USING btree (lease_until) WHERE (state = 'running'::text);
 

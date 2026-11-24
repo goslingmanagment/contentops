@@ -9,7 +9,11 @@ import { AgentSchema, IssuedTokenSchema } from '../../domain/agents'
 import { TagSchema } from '../../domain/markup'
 import { ModelSchema } from '../../domain/model'
 import { OperationAcceptedSchema, OperationSchema } from '../../domain/operations'
-import { OriginalsReleaseQuerySchema, OriginalsReleaseSchema } from '../../domain/originals'
+import {
+  OriginalsReleaseQuerySchema,
+  OriginalsReleaseSchema,
+  OriginalsVmFreedSchema,
+} from '../../domain/originals'
 import { pageSchema } from '../../domain/pagination'
 import { PersonSchema, SessionPrincipalSchema } from '../../domain/people'
 import { CountersSchema, SystemStateSchema, ThresholdSchema } from '../../domain/system'
@@ -113,5 +117,14 @@ export const adminRoutes = {
     path: '/api/v1/admin/originals/release',
     query: OriginalsReleaseQuerySchema,
     response: OriginalsReleaseSchema,
+  }),
+  /**
+   * What the VM has removed from its data disk so far (SPEC §12.2): the nightly compaction of the
+   * PC asks it before it stops the VM. Counts only; the owner and the host agent.
+   */
+  originalsVmFreed: defineRoute({
+    method: 'GET',
+    path: '/api/v1/admin/originals/vm-freed',
+    response: OriginalsVmFreedSchema,
   }),
 }
