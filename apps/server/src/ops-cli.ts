@@ -28,7 +28,9 @@ import {
   opsPolicy,
   opsSwitch,
 } from './ops-owner'
+import { megaDedupe } from './originals/dedupe'
 import { opsHostAgent } from './originals/host-agent'
+import { RcloneTransport } from './originals/rclone'
 import { seedOriginals } from './originals/seed'
 import { originalsStatus } from './originals/status'
 import { enqueueOriginals, setOriginalsSwitch } from './originals/work'
@@ -136,6 +138,12 @@ import { smokeSetup } from './smoke/setup'
  *   docker compose exec -T worker node dist/ops.js originals check|audit|copy
  *   docker compose exec -T worker node dist/ops.js policy originals.model_config '{…}' --model lora
  *
+ * The duplicates of a model's Я.Диск in MEGA under the names Windows gave them (`dedupe.ts`):
+ * without `--yes` only the counts; with it each goes for good once the bytes of both nodes are
+ * the revision's; `--list` — the paths too:
+ *
+ *   docker compose exec -T worker node dist/ops.js originals mega-dedupe lora [--yes] [--list]
+ *
  * A value of «Пороги» by its key, and the settings without a screen (`hub_ad_markers` of a page,
  * `import_batch_scope` of a model); `off` — not set:
  *
@@ -169,6 +177,7 @@ const USAGE = `usage:
   ops.js originals host-agent <name> | --off   (the agent whose token the PC's tasks use)
   ops.js originals on|off                 (the copy, the check and the nightly audit in the clouds)
   ops.js originals check|audit|copy       (a run now)
+  ops.js originals mega-dedupe <model> [--yes] [--list]   (MEGA duplicates under Windows names)
 ${ANNOTATION_USAGE}`
 
 function out(value: unknown): void {
@@ -209,8 +218,79 @@ async function waitFor<R = VerifyReport>(
   }
 }
 
+/**
+ * `ops.js originals mega-dedupe`: its own flags (`--list` is a flag here) and its own rclone,
+ * one run at a time; Ctrl-C stops it, a delete once sent ends and the run goes to the journal.
+ */
+async function megaDedupeCommand(args: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    options: { yes: { type: 'boolean' }, list: { type: 'boolean' } },
+    allowPositionals: true,
+  })
+  const [model] = positionals
+  if (!model || positionals.length > 1) throw new Error(USAGE)
+  const config = loadConfig({ ...process.env, ROLE: 'worker' })
+  if (!config.RCLONE_CONFIG) throw new Error('RCLONE_CONFIG is not set: no rclone to reach MEGA')
+  const pool = createPool(config.DATABASE_URL as string, { max: 3, applicationName: 'ops' })
+  const db = createDb(pool)
+  const transport = new RcloneTransport({
+    binary: config.RCLONE_BIN,
+    config: config.RCLONE_CONFIG,
+    log: (line) => process.stderr.write(`${line}\n`),
+    ...(config.ORIGINALS_BWLIMIT ? { bwlimit: config.ORIGINALS_BWLIMIT } : {}),
+  })
+  const controller = new AbortController()
+  const stop = () => {
+    process.stderr.write('mega-dedupe: stopping; a delete already sent ends first\n')
+    controller.abort(new Error('stopped by the owner'))
+  }
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const
+  for (const name of signals) process.once(name, stop)
+  // A closed pipe (the ssh session gone) must not end the run before its journal entry.
+  const ignore = () => {}
+  process.stdout.on('error', ignore)
+  process.stderr.on('error', ignore)
+  const lock = await pool.connect()
+  let locked = false
+  try {
+    const { rows } = await lock.query<{ locked: boolean }>(
+      `SELECT pg_try_advisory_lock(hashtextextended('ops:mega-dedupe', 0)) AS locked`,
+    )
+    locked = rows[0]?.locked === true
+    if (!locked) throw new Error('another mega-dedupe run is already in progress')
+    const report = await megaDedupe(db, {
+      model,
+      transport,
+      write: values.yes === true,
+      list: values.list === true,
+      streams: config.ORIGINALS_STREAMS,
+      signal: controller.signal,
+      progress: (line) => process.stderr.write(`${line}\n`),
+    })
+    if (!report.written) {
+      process.stderr.write(
+        'originals mega-dedupe: nothing downloaded or deleted; run again with --yes\n',
+      )
+    }
+    out(report)
+    return report.stopped === 'interrupted' ? 130 : 0
+  } finally {
+    for (const name of signals) process.off(name, stop)
+    if (locked) {
+      await lock
+        .query(`SELECT pg_advisory_unlock(hashtextextended('ops:mega-dedupe', 0))`)
+        .catch(() => undefined)
+    }
+    lock.release()
+    await transport.close()
+    await pool.end()
+  }
+}
+
 async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv
+  if (command === 'originals' && rest[0] === 'mega-dedupe') return megaDedupeCommand(rest.slice(1))
   const { values, positionals } = parseArgs({
     args: rest,
     options: {

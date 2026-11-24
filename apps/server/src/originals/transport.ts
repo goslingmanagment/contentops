@@ -12,7 +12,11 @@ import { nfc } from '@contentops/sources'
  *   folders of ContentOps there: `Архив Я.Диска/`, `Загрузки ContentOps/`); Я.Диск and anything
  *   else is never written;
  * - `upload` only to a `<name>.co-part`; `move` never onto an existing object;
- * - `removePart` only of a `.co-part`, and only in MEGA: in Dropbox nothing is ever deleted.
+ * - `removePart` only of a `.co-part`, and only in MEGA: in Dropbox nothing is ever deleted;
+ * - `removeDuplicate` (`ops.js originals mega-dedupe`) only in MEGA under `originals/`, not a
+ *   `.co-part`, only the very node whose bytes were just checked (`DuplicateTarget`), and never
+ *   a path or a node the ledger keeps for an original: it is deleted for good, not into the
+ *   trash (`assertDuplicate`).
  *
  * There is no other writing call, and the rclone client sends no other writing command.
  */
@@ -74,8 +78,31 @@ export interface OriginalsTransport {
   move(remote: string, from: string, to: string, signal?: AbortSignal): Promise<CloudObject>
   /** Deletes our own `.co-part` in MEGA; anything else is refused. */
   removePart(remote: string, path: string, signal?: AbortSignal): Promise<void>
+  /**
+   * Deletes a duplicate in MEGA for good (MEGA's `hard_delete`: nothing stays in the trash):
+   * only the node `target` names, under `originals/`, never one of the ledger; anything else is
+   * refused. A delete once sent is not aborted: its outcome is always known.
+   */
+  removeDuplicate(
+    remote: string,
+    path: string,
+    target: DuplicateTarget,
+    signal?: AbortSignal,
+  ): Promise<void>
   /** Stops the transport (the rclone process); a later call starts it again. */
   close(): Promise<void>
+}
+
+/** What the delete of a duplicate must find at its path (`removeDuplicate`). */
+export interface DuplicateTarget {
+  /** The node whose bytes were just streamed and matched the original. */
+  id: string
+  size: number
+  /**
+   * Whether the ledger keeps `remote:path`, or the node `id`, for any original: such a file is
+   * never deleted. Asked right before the delete, after the node is confirmed.
+   */
+  inLedger: (remote: string, path: string, id: string) => Promise<boolean>
 }
 
 export type TransportErrorCode = 'not_found' | 'refused' | 'failed' | 'exists'
@@ -125,7 +152,7 @@ export const WRITE_ROOTS: Readonly<Record<string, readonly string[]>> = {
   dropbox: [ARCHIVE_FOLDER, UPLOADS_FOLDER],
 }
 
-export type WriteOp = 'upload' | 'move' | 'remove'
+export type WriteOp = 'upload' | 'move' | 'remove' | 'duplicate'
 
 const lower = (text: string) => nfc(text).toLowerCase()
 
@@ -158,6 +185,17 @@ export function assertWritePath(op: WriteOp, path: string): void {
   if ((op === 'upload' || op === 'remove') && !path.endsWith(PART_SUFFIX)) {
     throw new TransportError('refused', `${op} ${path}: only a ${PART_SUFFIX} is ${op}ed`)
   }
+  if (op === 'duplicate') {
+    if (!rootOf(parts, WRITE_ROOTS.mega ?? [])) {
+      throw new TransportError(
+        'refused',
+        `duplicate ${path}: duplicates go only under ${MEGA_ROOT}/`,
+      )
+    }
+    if (path.endsWith(PART_SUFFIX)) {
+      throw new TransportError('refused', `duplicate ${path}: a ${PART_SUFFIX} is not a duplicate`)
+    }
+  }
 }
 
 /**
@@ -176,7 +214,26 @@ export function assertWrite(kind: RemoteKind, op: WriteOp, path: string): void {
   if (!rootOf(parts, roots)) {
     throw new TransportError('refused', `${op} ${path}: not a folder ContentOps writes in ${kind}`)
   }
-  if (op === 'remove' && kind !== 'mega') {
-    throw new TransportError('refused', `remove ${path}: nothing is deleted in ${kind}`)
+  if ((op === 'remove' || op === 'duplicate') && kind !== 'mega') {
+    throw new TransportError('refused', `${op} ${path}: nothing is deleted in ${kind}`)
+  }
+}
+
+/**
+ * The rest of the fence of a duplicate's delete, once the object now at the path is known: the
+ * very node that was checked (ID and size), and neither its path nor its node in the ledger.
+ */
+export async function assertDuplicate(
+  remote: string,
+  path: string,
+  now: CloudObject | null,
+  target: DuplicateTarget,
+): Promise<void> {
+  if (!now) throw new TransportError('not_found', `${remote}:${path}: nothing there`)
+  if (!now.id || now.id !== target.id || now.size !== target.size) {
+    throw new TransportError('refused', `duplicate ${path}: not the node that was checked`)
+  }
+  if (await target.inLedger(remote, path, now.id)) {
+    throw new TransportError('refused', `duplicate ${path}: the ledger keeps it for an original`)
   }
 }

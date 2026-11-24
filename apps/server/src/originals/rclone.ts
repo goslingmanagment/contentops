@@ -13,16 +13,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isRemoteName } from './config'
 import {
+  assertDuplicate,
   assertReadCommand,
   assertWrite,
   assertWritePath,
   type CloudObject,
   type CloudSpace,
+  type DuplicateTarget,
   type OriginalsTransport,
   type RemoteKind,
   TransportError,
   type UploadSource,
   WRITE_COMMANDS,
+  type WriteOp,
 } from './transport'
 
 /**
@@ -42,6 +45,11 @@ import {
  * reads passes through the source the caller gave (`UploadSource`), which hashes it; a read from
  * the middle (`Range`) is refused, so a broken read starts again from the first byte. Every
  * write is fenced by `assertWrite` with the remote's rclone type before it is sent.
+ *
+ * A duplicate in MEGA (`removeDuplicate`) goes through the same remote with MEGA's
+ * `hard_delete` set (`mega,hard_delete=true:`, an rclone connection string): the delete is for
+ * good and touches nothing else in the trash (`rclone cleanup` would empty the whole trash). The
+ * node is looked up and deleted through that one remote, so the look after the delete sees it.
  */
 
 export interface RcloneOptions {
@@ -80,6 +88,11 @@ function sleep(ms: number): Promise<void> {
 function fsOf(remote: string): string {
   if (!isRemoteName(remote)) throw new TransportError('refused', `${remote}: not an rclone remote`)
   return `${remote}:`
+}
+
+/** The remote with MEGA's `hard_delete` on: what it deletes skips the trash. */
+function hardDeleteFs(remote: string): string {
+  return `${fsOf(remote).slice(0, -1)},hard_delete=true:`
 }
 
 function relative(path: string): string {
@@ -189,12 +202,16 @@ export class RcloneTransport implements OriginalsTransport {
   }
 
   async stat(remote: string, path: string, signal?: AbortSignal): Promise<CloudObject | null> {
+    return this.#stat(fsOf(remote), path, signal)
+  }
+
+  async #stat(fs: string, path: string, signal?: AbortSignal): Promise<CloudObject | null> {
     let answer: { item?: unknown }
     try {
       answer = (await this.call(
         'operations/stat',
         // The hashes the cloud keeps (Dropbox, Я.Диск) come with the object, nothing is read.
-        { fs: fsOf(remote), remote: relative(path), opt: { noMimeType: true, showHash: true } },
+        { fs, remote: relative(path), opt: { noMimeType: true, showHash: true } },
         signal,
       )) as { item?: unknown }
     } catch (error) {
@@ -265,7 +282,7 @@ export class RcloneTransport implements OriginalsTransport {
     return this.#send(command, body, signal)
   }
 
-  async #fenced(remote: string, op: 'upload' | 'move' | 'remove', ...paths: string[]) {
+  async #fenced(remote: string, op: WriteOp, ...paths: string[]) {
     for (const path of paths) assertWritePath(op, path)
     if (!isRemoteName(remote))
       throw new TransportError('refused', `${remote}: not an rclone remote`)
@@ -341,6 +358,23 @@ export class RcloneTransport implements OriginalsTransport {
     } catch (error) {
       if (error instanceof TransportError && error.code === 'not_found') return
       throw error
+    }
+  }
+
+  async removeDuplicate(
+    remote: string,
+    path: string,
+    target: DuplicateTarget,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.#fenced(remote, 'duplicate', path)
+    const fs = hardDeleteFs(remote)
+    await assertDuplicate(remote, path, await this.#stat(fs, path, signal), target)
+    signal?.throwIfAborted()
+    // Not aborted once sent: whether the file went is always known.
+    await this.#write('operations/deletefile', { fs, remote: relative(path) })
+    if (await this.#stat(fs, path)) {
+      throw new TransportError('failed', `${remote}:${path}: still there after the delete`)
     }
   }
 
