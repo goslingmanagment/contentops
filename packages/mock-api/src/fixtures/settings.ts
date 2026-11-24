@@ -147,6 +147,16 @@ export function buildSystemState(): SystemState {
       warning: 'Бывает дольше окна «ждём» (8 ч)',
     },
     storage_findings: [],
+    originals: {
+      originals: 29_384,
+      reliable: 17_196,
+      waiting: 6_022,
+      freed_bytes: 241 * GB,
+      missing: 3,
+      failed: 0,
+      warnings: ['копий не найдено: 3'],
+      audited_at: '2026-09-22T00:04:00Z',
+    },
     ai_spend: null,
     cross_model_duplicates: 1,
   }

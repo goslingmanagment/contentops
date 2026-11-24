@@ -25,6 +25,8 @@ export interface ServerOptions {
   sourceEnv?: Record<string, string | undefined>
   /** Free space of the host disks for «Состояние» and the space card. */
   space?: SpaceOptions
+  /** `ORIGINALS_HOST_DIR`: the share with the lists of the PC, for the line «Оригиналы». */
+  originalsHostDir?: string | null
   logger?: Logger
   trustedProxy?: readonly string[]
   requireMounts?: readonly string[]
@@ -57,6 +59,7 @@ export function buildServer(options: ServerOptions) {
     secrets: options.secrets,
     sourceEnv: options.sourceEnv ?? process.env,
     space: options.space ?? { file: undefined, ...PILOT_SPACE },
+    originalsHostDir: options.originalsHostDir ?? null,
     store: new BlobStore(options.storage),
     originalsHostDir: options.originalsHostDir ?? null,
   }

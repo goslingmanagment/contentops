@@ -122,6 +122,19 @@ const EnvSchema = z.object({
   SPACE_WARN_GB: DiskGbSchema.default(PILOT_SPACE_GB.warn),
   SPACE_STOP_GB: DiskGbSchema.default(PILOT_SPACE_GB.stop),
   /**
+   * The check of the originals in the clouds (SPEC §9.4), role `worker`: the rclone
+   * configuration in a folder of its own that rclone may write (it refreshes OAuth tokens).
+   * Without it — or without the file — nothing is checked, as with an integration without its key.
+   */
+  RCLONE_CONFIG: AbsolutePath.optional(),
+  /** The rclone binary; the image has the pinned one in `PATH`. */
+  RCLONE_BIN: z.string().min(1).default('rclone'),
+  /**
+   * The share of the host with the lists of the PC (`ydisk-copy-list.meta.json`, the list of
+   * `E:\Ari`): «Настройки › Состояние» says when they are stale while something may go.
+   */
+  ORIGINALS_HOST_DIR: AbsolutePath.optional(),
+  /**
    * Development without nginx: `web` streams files itself instead of `X-Accel-Redirect`.
    * Never set in the stack: nginx sends the bytes (SPEC §12.0 «отдача»).
    */

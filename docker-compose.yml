@@ -105,6 +105,8 @@ services:
       HUB_MODEL_MAP: ${HUB_MODEL_MAP:-}
       # An agent's hub key (SPEC §11.1): only `web` asks Hub whose it is.
       HUB_INTROSPECT_KEY: ${HUB_INTROSPECT_KEY:-}
+      # The lists of the PC for the line «Оригиналы» of «Состояние» (SPEC §9.4).
+      ORIGINALS_HOST_DIR: /host
     volumes:
       - ${DATA_ROOT:-/srv/content}:/srv/content
       - ${DERIVED_ROOT:-/srv/derived}:/srv/derived
@@ -156,6 +158,10 @@ services:
       # says the bytes are on disk; everything is copied into /srv/tmp before any processing.
       LEGACY_SOURCE_ROOT: /ydisk
       LEGACY_COPY_LIST: /host/ydisk-copy-list.jsonl
+      # The check of the originals in the clouds (SPEC §9.4): rclone's configuration in its own
+      # folder, writable (rclone refreshes the OAuth tokens there). Without the file nothing is
+      # checked (ops/README.md «Оригиналы: два места»).
+      RCLONE_CONFIG: /rclone/rclone.conf
     volumes:
       - ${DATA_ROOT:-/srv/content}:/srv/content
       - ${DERIVED_ROOT:-/srv/derived}:/srv/derived
@@ -176,6 +182,8 @@ services:
         bind:
           propagation: ${MOUNT_PROPAGATION:-rslave}
           create_host_path: false
+      # rclone's configuration (0700, owner 1000), only in `worker`.
+      - ${RCLONE_DIR:-/srv/rclone}:/rclone
     cpu_shares: 512
     oom_score_adj: 300
     # Running works go back to the queue on stop (WorkRunner.stop waits up to 30 s).

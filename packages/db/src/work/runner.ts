@@ -123,7 +123,7 @@ export interface WorkRunnerOptions {
   /**
    * Concurrency per slot of the role (`FETCH_JOBS`, `ENCODE_JOBS`, `COPY_JOBS`,
    * `IMAGE_JOBS`; `general` for the light kinds of `worker`, `hub` for Hub, `ai` for the markup
-   * providers); default 1 per slot.
+   * providers, `originals` for the check of the copies in the clouds); default 1 per slot.
    */
   limits?: Partial<Record<WorkSlot, number>>
   /**
@@ -221,6 +221,7 @@ export class WorkRunner {
       image: 1,
       hub: 1,
       ai: 1,
+      originals: 1,
       ...options.limits,
     }
     this.dynamicLimits = options.dynamicLimits

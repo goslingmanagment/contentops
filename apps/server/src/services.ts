@@ -26,6 +26,8 @@ export interface Services {
   sourceEnv: Record<string, string | undefined>
   /** Where the host reports free space, and the pilot thresholds (SPEC §12.2). */
   space: SpaceOptions
+  /** The share with the lists of the PC (`ORIGINALS_HOST_DIR`, SPEC §9.4); null — none. */
+  originalsHostDir?: string | null
   /** Storage roots: bytes go out by `X-Accel-Redirect` to their keys. */
   store: BlobStore
   /** «Войти через хаб» (SPEC §11.1); absent — not configured. */

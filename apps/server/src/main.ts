@@ -40,6 +40,7 @@ import { imageThrottle, mediaHandlers, startExportSweep } from './media/roles'
 import { BlobStore } from './media/storage'
 import { reconcileStorage, sweepIncoming } from './media/storage-ops'
 import { enqueueVideoPrints } from './media/work/print'
+import { originalsWorker } from './originals/work'
 import { enqueueOpenRowCopies } from './plan/composition'
 import { buildServer } from './server'
 import { createWorkGate } from './work-gate'
@@ -157,6 +158,7 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
       warnGb: config.SPACE_WARN_GB,
       stopGb: config.SPACE_STOP_GB,
     },
+    originalsHostDir: config.ORIGINALS_HOST_DIR ?? null,
     logger,
     trustedProxy: config.TRUSTED_PROXY,
     requireMounts: config.REQUIRE_MOUNTS,
@@ -354,6 +356,8 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     const prints = await enqueueVideoPrints(db, env.versions.phash)
     logger.info({ prints }, 'video prints queued')
   }
+  // One rclone for the check and the audit of the originals, only with its configuration.
+  const originals = role === 'worker' ? originalsWorker(config, log) : null
   const handlers: Partial<Record<values.WorkKind, WorkHandler>> = {
     ...mediaHandlers(role, env),
     // Discovery from the cloud folders of the models (SPEC §6.1).
@@ -364,6 +368,8 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     ...(role === 'worker' ? hubHandlers(config, store, env.versions) : {}),
     // The cloud markup (SPEC §8.3): only with the owner's routes, consent and budget.
     ...(role === 'worker' ? { annotate: annotateHandler({ store, providers }) } : {}),
+    // The copies of the originals in the clouds, checked by their bytes (SPEC §9.4).
+    ...(originals?.handlers ?? {}),
   }
   const runner = new WorkRunner({
     db,
@@ -406,6 +412,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
             ...(await hubStreams(db, { configured: hubConfigured, since: startedAt })),
             ...(await publicationStreams(db, { configured: hubConfigured })),
             ...(await hubOrderStreams(db, { configured: hubConfigured })),
+            ...((await originals?.streams()) ?? []),
           ],
           pollMs: 10_000,
           log,
@@ -416,6 +423,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     await scheduler?.stop()
     // Running works go back to the queue without counting the attempt.
     await runner.stop()
+    await originals?.stop()
     await pool.end()
   }
   runner.start()

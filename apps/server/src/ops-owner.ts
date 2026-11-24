@@ -31,6 +31,7 @@ import { modelNames, modelsByCodes } from './handlers/shared'
 import { raiseCustomCopies } from './intake/custom-copies'
 import { NOT_CONTENT_KEY, notContentKey } from './legacy/inputs'
 import { BATCH_KEY } from './originals/release'
+import { MODEL_CONFIG_KEY, parseModelConfig } from './originals/config'
 
 /**
  * The owner's commands from the VM shell (`ops.js agent`, `ops.js switch`, ops/README.md): what
@@ -510,6 +511,7 @@ export async function opsPolicy(
     notContentKey('dropbox'),
     // What a batch of the PC's release may take (`originals/release.ts`): {files, bytes, first_files}.
     BATCH_KEY,
+    MODEL_CONFIG_KEY,
   ]
   if (!allowedKeys.includes(input.key)) {
     throw new Error(
@@ -524,6 +526,14 @@ export async function opsPolicy(
       throw new Error(`${input.value}: expected JSON (30, "x", [..], {..}) or off`)
     }
     if (value === null) throw new Error('null: use off')
+  }
+  if (input.key === MODEL_CONFIG_KEY) {
+    // Where a model's originals and copies lie for rclone (SPEC §9.4): one model, checked here.
+    if (!input.model || input.page || input.type) throw new Error(`${input.key} needs --model only`)
+    if (value !== null) {
+      const parsed = parseModelConfig(value)
+      if (!parsed.ok) throw new Error(`${input.key}: ${parsed.error}`)
+    }
   }
   if (input.type && (input.model || input.page)) throw new Error('--type goes alone')
   if (input.type && !(values.contentTypes as readonly string[]).includes(input.type)) {

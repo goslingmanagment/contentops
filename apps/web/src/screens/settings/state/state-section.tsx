@@ -27,7 +27,7 @@ export function StateSection() {
       {data ? (
         <>
           <QueuesSection queues={data.queues} />
-          <SpaceSection disks={data.disks} backup={data.backup} />
+          <SpaceSection disks={data.disks} backup={data.backup} originals={data.originals} />
           <ChecksSection state={data} />
         </>
       ) : null}
