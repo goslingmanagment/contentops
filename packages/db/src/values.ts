@@ -90,6 +90,7 @@ export const workKindsByRole = {
     'backup',
     'originals_check',
     'originals_audit',
+    'originals_copy',
   ],
   'worker-video': [
     'derive_video',
@@ -121,6 +122,7 @@ export const globalWorkKinds = [
   'backup',
   'originals_check',
   'originals_audit',
+  'originals_copy',
 ] as const satisfies readonly WorkKind[]
 
 /**
@@ -130,8 +132,9 @@ export const globalWorkKinds = [
  * light kinds of `worker`; `hub` — the calls to Agency Hub, one at a time: a slow or absent
  * Hub never holds intake and exports (SPEC §8, PLAN 5 «недоступность одной внешней системы»);
  * `ai` — the requests to the markup providers, one at a time, for the same reason;
- * `originals` — the check and the nightly audit of the copies of the originals in the clouds
- * (SPEC §9.4), one at a time: a slow MEGA never holds intake.
+ * `originals` — the copy, the check and the nightly audit of the copies of the originals in the
+ * clouds (SPEC §9.4), one run at a time (each with its own streams): a slow MEGA never holds
+ * intake.
  */
 export const workSlots = [
   'general',
@@ -163,6 +166,7 @@ export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
   backup: 'general',
   originals_check: 'originals',
   originals_audit: 'originals',
+  originals_copy: 'originals',
   derive_video: 'encode',
   encode_master: 'encode',
   verify_master: 'encode',
@@ -200,6 +204,7 @@ export const workKindQueue: Readonly<Record<WorkKind, WorkQueue | null>> = {
   backup: null,
   originals_check: null,
   originals_audit: null,
+  originals_copy: null,
   derive_video: 'preview',
   encode_master: 'compress',
   verify_master: 'compress',
@@ -244,7 +249,8 @@ export const killSwitchKeys = [
   'dropbox.scan',
   'agents.enabled',
   'fyper.enabled',
-  // The check of the originals in the clouds (SPEC §9.4): `ops.js originals on|off`, no screen.
+  // The copy and the check of the originals in the clouds (SPEC §9.4): `ops.js originals on|off`,
+  // no screen.
   'originals.enabled',
 ] as const
 export type KillSwitchKey = (typeof killSwitchKeys)[number]
@@ -279,6 +285,7 @@ export const workKindSwitch: Readonly<Partial<Record<WorkKind, KillSwitchKey>>> 
   hub_publish: 'hub.publish',
   originals_check: 'originals.enabled',
   originals_audit: 'originals.enabled',
+  originals_copy: 'originals.enabled',
 }
 
 /**

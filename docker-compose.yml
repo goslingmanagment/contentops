@@ -157,10 +157,12 @@ services:
       # says the bytes are on disk; everything is copied into /srv/tmp before any processing.
       LEGACY_SOURCE_ROOT: /ydisk
       LEGACY_COPY_LIST: /host/ydisk-copy-list.jsonl
-      # The check of the originals in the clouds (SPEC §9.4): rclone's configuration in its own
-      # folder, writable (rclone refreshes the OAuth tokens there). Without the file nothing is
-      # checked (ops/README.md «Оригиналы: два места»).
+      # The copy and the check of the originals in the clouds (SPEC §9.4): rclone's configuration
+      # in its own folder, writable (rclone refreshes the OAuth tokens there). Without the file
+      # nothing is checked or copied (ops/README.md «Оригиналы: два места»).
       RCLONE_CONFIG: /rclone/rclone.conf
+      ORIGINALS_STREAMS: ${ORIGINALS_STREAMS:-8}
+      ORIGINALS_BWLIMIT: ${ORIGINALS_BWLIMIT:-01:00,off 08:00,4M}
     volumes:
       - ${DATA_ROOT:-/srv/content}:/srv/content
       - ${DERIVED_ROOT:-/srv/derived}:/srv/derived

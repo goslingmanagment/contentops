@@ -292,13 +292,63 @@ describe('the check of a MEGA copy', () => {
     clouds.put('mega', `${root}/yadisk/a/open.mov`, { bytes: open, id: 'N-OPEN' })
     clouds.put('mega', `${root}/yadisk/z/decided.mov`, { bytes: decided, id: 'N-DECIDED' })
 
-    await check(clouds)
+    await check(clouds, { streams: 1 })
 
     expect(clouds.downloads).toEqual([
       `mega:${root}/yadisk/z/decided.mov`,
       `mega:${root}/yadisk/a/open.mov`,
     ])
     expect((await rowOf(later, 'mega')).verified_at).not.toBeNull()
+  })
+
+  it('several streams at once start in the same order, and a stalled one holds no other', async () => {
+    const { model, src, root, clouds } = await yandexModel()
+    const files = ['p/1.mov', 'p/2.mov', 'p/3.mov', 'p/4.mov']
+    const revisions: string[] = []
+    for (const [at, name] of files.entries()) {
+      const bytes = randomBytes(300_000)
+      revisions.push(await file(model, src, 'yandex_disk', name, bytes))
+      // The first one stalls after a few chunks; the others give all their bytes.
+      clouds.put('mega', `${root}/yadisk/${name}`, {
+        bytes,
+        id: `NODE-P${at}`,
+        ...(at === 0 ? { stallAfter: 70_000 } : {}),
+      })
+    }
+
+    const report = await check(clouds, { streams: 2, idleMs: 300, baseMs: 60_000 })
+
+    // Taken in their order (by path here), two going at once.
+    const taken = [...new Set(clouds.stats.filter((key) => key.includes(`${root}/yadisk/p/`)))]
+    expect(taken).toEqual(files.map((name) => `mega:${root}/yadisk/${name}`))
+    expect(clouds.maxOpen).toBe(2)
+    expect(report).toMatchObject({ streams: 2, verified: 3, stalled: 1, stopped: 'done' })
+    expect((await rowOf(revisions[0] as string, 'mega')).error).toMatch(/^timeout: /)
+    for (const revision of revisions.slice(1)) {
+      expect((await rowOf(revision, 'mega')).verified_at).not.toBeNull()
+    }
+  })
+
+  it('as many stalls in a row as there are streams end the run', async () => {
+    const { model, src, root, clouds } = await yandexModel()
+    const names = ['s/1.mov', 's/2.mov', 's/3.mov', 's/4.mov', 's/5.mov']
+    for (const [at, name] of names.entries()) {
+      const bytes = randomBytes(200_000)
+      await file(model, src, 'yandex_disk', name, bytes)
+      clouds.put('mega', `${root}/yadisk/${name}`, {
+        bytes,
+        id: `NODE-S${at}`,
+        // All stall but the last, which is never reached.
+        ...(at < 4 ? { stallAfter: 64 * 1024 } : {}),
+      })
+    }
+
+    const report = await check(clouds, { streams: 2, idleMs: 150, baseMs: 60_000 })
+
+    expect(report.stopped).toBe('stalled')
+    expect(report.stalled).toBeGreaterThanOrEqual(2)
+    expect(report.verified).toBe(0)
+    expect(clouds.downloads).not.toContain(`mega:${root}/yadisk/s/5.mov`)
   })
 
   it('a stalled stream is cut, tried again in 30 minutes, and gives the slot back', async () => {

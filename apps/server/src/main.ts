@@ -355,8 +355,8 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     const prints = await enqueueVideoPrints(db, env.versions.phash)
     logger.info({ prints }, 'video prints queued')
   }
-  // One rclone for the check and the audit of the originals, only with its configuration.
-  const originals = role === 'worker' ? originalsWorker(config, log) : null
+  // One rclone for the copy, the check and the audit of the originals, only with its configuration.
+  const originals = role === 'worker' ? originalsWorker(config, log, { store }) : null
   const handlers: Partial<Record<values.WorkKind, WorkHandler>> = {
     ...mediaHandlers(role, env),
     // Discovery from the cloud folders of the models (SPEC §6.1).
@@ -367,7 +367,7 @@ async function runWorker(role: WorkRole, config: Config, logger: Logger): Promis
     ...(role === 'worker' ? hubHandlers(config, store, env.versions) : {}),
     // The cloud markup (SPEC §8.3): only with the owner's routes, consent and budget.
     ...(role === 'worker' ? { annotate: annotateHandler({ store, providers }) } : {}),
-    // The copies of the originals in the clouds, checked by their bytes (SPEC §9.4).
+    // The copies of the originals in the clouds, written and checked by their bytes (SPEC §9.4).
     ...(originals?.handlers ?? {}),
   }
   const runner = new WorkRunner({

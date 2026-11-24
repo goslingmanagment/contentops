@@ -2,6 +2,7 @@ import { isSwitchOn, type Queryable, type values } from '@contentops/db'
 import { nfc } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { WRITE_ROOTS } from './transport'
 
 /**
  * Where a model's originals and their copies live for rclone (SPEC §9.4, ops/README.md
@@ -11,7 +12,9 @@ import { z } from 'zod'
  *
  *   {"yandex_disk": "yadisk-lora:", "dropbox": "dropbox-lora:", "mega": "mega:originals/lora",
  *    "copies": {"yandex_disk": "yadisk", "dropbox": "dropbox"},
- *    "exclude": {"yandex_disk": ["_ydisk-test"], "dropbox": ["Архив Я.Диска"]},
+ *    "dropbox_copies": {"yandex_disk": "Архив Я.Диска"},
+ *    "exclude": {"yandex_disk": ["_ydisk-test"],
+ *                "dropbox": ["Архив Я.Диска", "Загрузки ContentOps"]},
  *    "pc": ["ydisk_copy"]}
  *
  * - `yandex_disk`, `dropbox` — the rclone remote of the root of the model's source of that kind:
@@ -19,10 +22,16 @@ import { z } from 'zod'
  * - `mega` — the folder of the model's copies in MEGA: the audit lists it;
  * - `copies` — a new original of that source kind gets a MEGA copy row at
  *   `<mega>/<folder>/<its path in the source>` (Lora: the nightly copy of her Я.Диск and Dropbox).
- *   Without it no row is made by itself (Ari: the rows come from her manifest, `originals seed`);
+ *   Without it no row is made by itself (Ari: the rows of her old files come from her manifest,
+ *   `originals seed`; her new ones go under `Вне каталога`, as the PC's nightly copy put them);
+ *   the copy work `originals_copy` writes them;
+ * - `dropbox_copies` — a new original of that source kind gets a copy row in the model's own
+ *   Dropbox at `<folder>/<its path in the source>` (Lora: her Я.Диск into `Архив Я.Диска`); the
+ *   folder must be one ContentOps writes in Dropbox (`Архив Я.Диска`, `Загрузки ContentOps`);
  * - `exclude` — folders of the source that are not originals: ContentOps's own copies in the
- *   model's cloud (`Архив Я.Диска` in Lora's Dropbox) and tests — not counted by the rule, no
- *   rows, not copied into MEGA, never released;
+ *   model's cloud (`Архив Я.Диска`, `Загрузки ContentOps` in a Dropbox) and tests — not counted
+ *   by the rule, no rows, not copied into MEGA, never released. ContentOps writes a folder of a
+ *   Dropbox only while it is listed here and in the model's `legacy.not_content.dropbox`;
  * - `pc` — where the originals of the model lie on the PC: `ydisk_copy` — the copy of Я.Диск on C:,
  *   `e_ari` — the mirror of Dropbox on E:. Their files are checked first, and their host lists say
  *   what is freed.
@@ -66,6 +75,7 @@ const ModelConfigSchema = z.strictObject({
   copies: z
     .strictObject({ yandex_disk: Folder.optional(), dropbox: Folder.optional() })
     .default({}),
+  dropbox_copies: z.strictObject({ yandex_disk: Folder.optional() }).default({}),
   exclude: z
     .strictObject({
       yandex_disk: z.array(Folder).default([]),
@@ -103,6 +113,22 @@ export function parseModelConfig(
   const config = parsed.data
   if (Object.keys(config.copies).length > 0 && !config.mega) {
     return { ok: false, error: '«copies» без «mega»: не знаю, куда класть строки копий' }
+  }
+  const archive = config.dropbox_copies.yandex_disk
+  if (archive !== undefined) {
+    if (!config.dropbox) {
+      return { ok: false, error: '«dropbox_copies» без «dropbox»: не знаю, в какой Dropbox' }
+    }
+    const roots = WRITE_ROOTS.dropbox ?? []
+    if (
+      archive.includes('/') ||
+      !roots.some((root) => pathKey(root, 'dropbox') === pathKey(archive, 'dropbox'))
+    ) {
+      return {
+        ok: false,
+        error: `«dropbox_copies»: в Dropbox ContentOps пишет только в ${roots.map((r) => `«${r}»`).join(', ')}`,
+      }
+    }
   }
   return { ok: true, config }
 }
@@ -146,6 +172,15 @@ export function isExcluded(relative: string, folders: readonly string[], kind: O
   return folders.some((folder) => {
     const f = pathKey(folder, kind)
     return key === f || key.startsWith(`${f}/`)
+  })
+}
+
+/** A Dropbox folder is listed (itself or a folder above it), compared as Dropbox compares. */
+export function listsFolder(list: readonly string[], folder: string): boolean {
+  const key = pathKey(folder, 'dropbox')
+  return list.some((entry) => {
+    const own = pathKey(entry, 'dropbox')
+    return own !== '' && (key === own || key.startsWith(`${own}/`))
   })
 }
 

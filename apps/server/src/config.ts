@@ -130,6 +130,23 @@ const EnvSchema = z.object({
   /** The rclone binary; the image has the pinned one in `PATH`. */
   RCLONE_BIN: z.string().min(1).default('rclone'),
   /**
+   * Streams at once in one run of the copy and of the check of the originals (SPEC §9.4): MEGA
+   * gives ~2 MiB/s to one stream and ~7 MiB/s to ten (the PC's nightly copy, 24.11.2026).
+   */
+  ORIGINALS_STREAMS: Count.default(8),
+  /**
+   * rclone's `--bwlimit` for the originals, Moscow time: free at night, 4 MiB/s each way by day,
+   * so the downloads of the content managers are not starved (as the PC's nightly copy did).
+   */
+  ORIGINALS_BWLIMIT: z
+    .string()
+    .trim()
+    .regex(
+      /^(?:(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)-)?\d{2}:\d{2},)?(?:off|[\d.]+[BKMGTP]?(?::(?:off|[\d.]+[BKMGTP]?))?)(?: (?:(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)-)?\d{2}:\d{2},)?(?:off|[\d.]+[BKMGTP]?(?::(?:off|[\d.]+[BKMGTP]?))?))*$/iu,
+      'an rclone --bwlimit timetable, e.g. «01:00,off 08:00,4M»',
+    )
+    .default('01:00,off 08:00,4M'),
+  /**
    * Development without nginx: `web` streams files itself instead of `X-Accel-Redirect`.
    * Never set in the stack: nginx sends the bytes (SPEC §12.0 «отдача»).
    */

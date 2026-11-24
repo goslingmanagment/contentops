@@ -10,17 +10,20 @@ import {
   pathKey,
   type RemoteRef,
 } from './config'
-import { enrolOriginals } from './enrol'
+import { addEnrol, type EnrolReport, emptyEnrol, enrolOriginals } from './enrol'
 import type { CloudObject, OriginalsTransport } from './transport'
 
 /**
  * Work `originals_audit` of role `worker`, slot `originals` (SPEC §9.4): every night, lists only,
  * nothing is downloaded. After a flush of what rclone keeps (MEGA has no change feed), per model
- * of `originals.model_config`: its Я.Диск and Dropbox (with the hashes the cloud lists) and its
- * folder in MEGA (with node IDs). Per row of the ledger whose cloud was listed whole:
+ * of `originals.model_config`: its Я.Диск and Dropbox (with the hashes the cloud lists; the
+ * Dropbox listing also holds ContentOps's own copies there, `Архив Я.Диска` and
+ * `Загрузки ContentOps`) and its folder in MEGA (with node IDs). Per row of the ledger whose cloud
+ * was listed whole:
  *
- * - found as it was checked (MEGA — the same node and size; an origin — the same size and the
- *   hash of the revision) → `last_seen_at`, and `unseen_since`, `missing_since` cleared; an origin
+ * - found as it was checked (MEGA — the same node and size; a copy in Dropbox — the same ID,
+ *   size and Dropbox hash; an origin — the same size and the hash of the revision) →
+ *   `last_seen_at`, and `unseen_since`, `missing_since` cleared; an origin
  *   whose listed hash is the revision's is checked by it (`verified_by = 'worker:originals'`);
  * - a copy not checked yet follows what lies under its path (its node and size);
  * - a checked object not found, or another one under its path → `unseen_since` on the first
@@ -64,7 +67,7 @@ export interface AuditReport {
   listings: AuditListing[]
   space: AuditSpace[]
   broken_configs: { code: string; error: string }[]
-  enrolled: { origins: number; copies: number }
+  enrolled: EnrolReport
   seen: number
   followed: number
   verified: number
@@ -86,6 +89,7 @@ interface LedgerRow extends Record<string, unknown> {
   root_path: string | null
   ref_md5: string | null
   ref_dropbox: string | null
+  seen_dropbox: string | null
 }
 
 interface Change {
@@ -105,7 +109,8 @@ async function originRows(q: Queryable, modelId: string, kind: OriginKind): Prom
     SELECT c.id, c.role, c.path, c.object_ref, c.byte_size::text AS byte_size,
            c.verified_at IS NOT NULL AS verified, c.last_seen_at::text AS last_seen_at,
            c.unseen_since::text AS unseen_since, c.missing_since::text AS missing_since,
-           s.root_path, encode(r.md5, 'hex') AS ref_md5, encode(r.content_hash, 'hex') AS ref_dropbox
+           s.root_path, encode(r.md5, 'hex') AS ref_md5, encode(r.content_hash, 'hex') AS ref_dropbox,
+           NULL::text AS seen_dropbox
       FROM original_copies c
       JOIN source_revisions r ON r.model_id = c.model_id AND r.id = c.source_revision_id
       JOIN source_objects o ON o.model_id = r.model_id AND o.id = r.source_object_id
@@ -121,10 +126,29 @@ async function copyRows(q: Queryable, modelId: string, mega: RemoteRef): Promise
     SELECT c.id, c.role, c.path, c.object_ref, c.byte_size::text AS byte_size,
            c.verified_at IS NOT NULL AS verified, c.last_seen_at::text AS last_seen_at,
            c.unseen_since::text AS unseen_since, c.missing_since::text AS missing_since,
-           NULL::text AS root_path, NULL::text AS ref_md5, NULL::text AS ref_dropbox
+           NULL::text AS root_path, NULL::text AS ref_md5, NULL::text AS ref_dropbox,
+           encode(c.seen_dropbox_hash, 'hex') AS seen_dropbox
       FROM original_copies c
      WHERE c.model_id = ${modelId}::uuid AND c.place = 'mega' AND c.role = 'copy'
        AND c.remote = ${mega.remote} AND left(c.path, ${prefix.length}) = ${prefix}`)
+  return rows
+}
+
+/** ContentOps's own copies in the model's Dropbox (`Архив Я.Диска`, `Загрузки ContentOps`). */
+async function dropboxCopyRows(
+  q: Queryable,
+  modelId: string,
+  remote: string,
+): Promise<LedgerRow[]> {
+  const { rows } = await q.execute<LedgerRow>(sql`
+    SELECT c.id, c.role, c.path, c.object_ref, c.byte_size::text AS byte_size,
+           c.verified_at IS NOT NULL AS verified, c.last_seen_at::text AS last_seen_at,
+           c.unseen_since::text AS unseen_since, c.missing_since::text AS missing_since,
+           NULL::text AS root_path, NULL::text AS ref_md5, NULL::text AS ref_dropbox,
+           encode(c.seen_dropbox_hash, 'hex') AS seen_dropbox
+      FROM original_copies c
+     WHERE c.model_id = ${modelId}::uuid AND c.place = 'dropbox' AND c.role = 'copy'
+       AND c.remote = ${remote}`)
   return rows
 }
 
@@ -144,12 +168,18 @@ function judgeOrigin(row: LedgerRow, entry: CloudObject | undefined, kind: Origi
   return { id: row.id, kind: 'seen' }
 }
 
-/** A checked copy is its node; one not checked follows the path. */
+/**
+ * A checked copy is its node (in Dropbox — its ID, which stays when the file is rewritten, and
+ * the Dropbox hash it was checked by); one not checked follows the path.
+ */
 function judgeCopy(row: LedgerRow, entry: CloudObject | undefined): Change | null {
   if (row.verified) {
-    return entry && entry.id === row.object_ref && entry.size === Number(row.byte_size)
-      ? { id: row.id, kind: 'seen' }
-      : { id: row.id, kind: 'unseen' }
+    const same =
+      entry !== undefined &&
+      entry.id === row.object_ref &&
+      entry.size === Number(row.byte_size) &&
+      (row.seen_dropbox === null || entry.dropbox === null || entry.dropbox === row.seen_dropbox)
+    return same ? { id: row.id, kind: 'seen' } : { id: row.id, kind: 'unseen' }
   }
   if (!entry?.id) {
     // Never seen — not copied yet; once seen and now gone — lost.
@@ -273,6 +303,14 @@ async function auditModel(
       if (inRemote === null) continue
       changes.push(judgeOrigin(row, byPath.get(pathKey(inRemote, kind)), kind))
     }
+    if (kind === 'dropbox') {
+      for (const row of await dropboxCopyRows(q, model.id, ref.remote)) {
+        const inRemote = ref.path === '' ? row.path : relativeTo(row.path, ref.path, kind)
+        if (inRemote === null) continue
+        const change = judgeCopy(row, byPath.get(pathKey(inRemote, kind)))
+        if (change) changes.push(change)
+      }
+    }
     await apply(q, model.id, changes, at, report)
   }
   const mega = model.config.mega
@@ -322,18 +360,14 @@ export function originalsAuditHandler(options: AuditOptions): WorkHandler {
       listings: [],
       space: [],
       broken_configs: broken,
-      enrolled: { origins: 0, copies: 0 },
+      enrolled: emptyEnrol(),
       seen: 0,
       followed: 0,
       verified: 0,
       unseen: 0,
       missing: 0,
     }
-    for (const model of models) {
-      const done = await enrolOriginals(db, model)
-      report.enrolled.origins += done.origins
-      report.enrolled.copies += done.copies
-    }
+    for (const model of models) addEnrol(report.enrolled, await enrolOriginals(db, model))
     await transport.flush(signal)
     for (const model of models) await auditModel(db, transport, model, at, signal, report)
     const remotes = new Map<string, AuditSpace['place']>()
