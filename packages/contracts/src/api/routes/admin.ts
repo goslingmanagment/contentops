@@ -9,6 +9,7 @@ import { AgentSchema, IssuedTokenSchema } from '../../domain/agents'
 import { TagSchema } from '../../domain/markup'
 import { ModelSchema } from '../../domain/model'
 import { OperationAcceptedSchema, OperationSchema } from '../../domain/operations'
+import { OriginalsReleaseQuerySchema, OriginalsReleaseSchema } from '../../domain/originals'
 import { pageSchema } from '../../domain/pagination'
 import { PersonSchema, SessionPrincipalSchema } from '../../domain/people'
 import { CountersSchema, SystemStateSchema, ThresholdSchema } from '../../domain/system'
@@ -101,5 +102,16 @@ export const adminRoutes = {
     path: '/api/v1/admin/blobs:verify',
     response: OperationAcceptedSchema,
     success: 202,
+  }),
+  /**
+   * What the PC may free now (SPEC §9.4, §12.2): the releasable originals one holder of the PC
+   * still keeps — the copy of Я.Диск or `E:\Ari` — from its fresh list, in batches. Real file
+   * names: the owner and the host agent (`originals.host_agent`) only.
+   */
+  originalsRelease: defineRoute({
+    method: 'GET',
+    path: '/api/v1/admin/originals/release',
+    query: OriginalsReleaseQuerySchema,
+    response: OriginalsReleaseSchema,
   }),
 }

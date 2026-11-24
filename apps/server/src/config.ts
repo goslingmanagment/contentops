@@ -109,6 +109,12 @@ const EnvSchema = z.object({
    */
   HOST_SPACE_FILE: AbsolutePath.optional(),
   /**
+   * The host share where the PC writes its lists for the originals (SPEC §9.4, §12.2): the copy
+   * list of Я.Диск, the list of `E:\Ari`, the copy's release session (`originals-host.json`).
+   * Without it the route of the PC's holders gives nothing out.
+   */
+  ORIGINALS_HOST_DIR: AbsolutePath.optional(),
+  /**
    * Pilot thresholds of free space by disk (SPEC §12.2): the warning — C: 200 (the owner's
    * decision), E: 160 (the stop and the scratch above it: derived files and the prefetch live
    * there); the stop of intake — 100 on every disk.

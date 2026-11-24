@@ -19,7 +19,8 @@ import { snapshotOf } from './snapshot'
  * SHA-256 of the source bytes the import checked against the snapshot's MD5, and the master.
  *
  * It only reads: the database and the Windows list of the copy (`LEGACY_COPY_LIST`). Unpinning is
- * the owner's approved session in the client, nothing is deleted, the cloud keeps the source.
+ * done file by file by the Windows task `ContentOps-Originals-YDisk` with what the route of the
+ * originals gives (`originals/release.ts`); nothing is deleted, the cloud keeps the source.
  * The report names real files: by the operator's command only, never into git.
  */
 
@@ -287,7 +288,7 @@ export function releaseMarkdown(report: ReleaseReport): string {
     '',
     `- Снимок: \`${report.snapshot}\` (${report.source}); список копии: ${report.copy_list ? `\`${report.copy_list}\`${listStamp}` : 'нет'}${metaNotes.length > 0 ? ` — ${metaNotes.join(', ')}` : ''}`,
     `- Готовы к снятию закрепления: ${ready.length} из ${report.roots.length} корней; ожидаемый выигрыш — ${formatBytes(report.ready_bytes)} (байты в копии)`,
-    '- Как: «Освободить место» у корня в клиенте Я.Диска на одобренном владельцем сеансе (SPEC §12.2).',
+    '- Как: по файлу, задачей Windows `ContentOps-Originals-YDisk` — то, что отдаёт маршрут оригиналов (SPEC §9.4, §12.2).',
     '  Ничего не удаляется ни в копии, ни в облаке: исходник остаётся в облаке, мастер — у нас.',
     '  Выигрыш засчитывается по замеру свободного места; два следующих полных обхода не должны',
     '  отметить пропажу файлов.',

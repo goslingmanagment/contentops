@@ -8965,6 +8965,97 @@
           "cancelled"
         ]
       },
+      "OriginalsRelease": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "holder": {
+            "$ref": "#/components/schemas/ReleaseHolder"
+          },
+          "list_finished_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blocked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReleaseFile"
+            }
+          },
+          "limit": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "bytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "first_run": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "files",
+              "bytes",
+              "first_run"
+            ],
+            "additionalProperties": false
+          },
+          "left": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "files",
+              "bytes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "model",
+          "holder",
+          "list_finished_at",
+          "blocked",
+          "files",
+          "limit",
+          "left"
+        ],
+        "additionalProperties": false
+      },
       "PageSummaryEntry": {
         "type": "object",
         "properties": {
@@ -12029,6 +12120,82 @@
           "accounts"
         ],
         "additionalProperties": false
+      },
+      "ReleaseBlock": {
+        "type": "string",
+        "enum": [
+          "switch_off",
+          "holder_of_other_model",
+          "no_list",
+          "list_unreadable",
+          "list_stale",
+          "list_errors",
+          "client_running",
+          "session_running",
+          "host_report_unreadable"
+        ]
+      },
+      "ReleaseFile": {
+        "type": "object",
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "last_write_utc": {
+            "type": "string",
+            "minLength": 1
+          },
+          "attributes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "dropbox_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "revision_id",
+          "path",
+          "size",
+          "last_write_utc",
+          "attributes",
+          "dropbox_hash"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseHolder": {
+        "type": "string",
+        "enum": [
+          "ydisk_copy",
+          "e_ari"
+        ]
+      },
+      "ReleaseHolderInput": {
+        "type": "string",
+        "enum": [
+          "ydisk_copy",
+          "e_ari"
+        ]
       },
       "ReleaseResult": {
         "type": "object",
@@ -16302,6 +16469,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OperationAccepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/originals/release": {
+      "get": {
+        "operationId": "admin.originalsRelease",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "model",
+            "required": true
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/ReleaseHolderInput"
+            },
+            "in": "query",
+            "name": "holder",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OriginalsRelease"
                 }
               }
             }
