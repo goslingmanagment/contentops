@@ -4,15 +4,16 @@ import type { Db } from '@contentops/db'
 import { apiToLocalPath, CopyList, parseCopyList, relativePath } from '@contentops/legacy'
 import { sourcePath } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
-import { classify, type Outcome, rowsOf } from './reconcile'
+import { type OriginalState, originalStates } from '../originals/rule'
+import { classify, type Outcome, type Row, rowsOf } from './reconcile'
 import { snapshotOf } from './snapshot'
 
 /**
  * «Можно освобождать» (PLAN этап 7, 9а; SPEC §12.2): the roots of the old disk whose local copy
- * may be unpinned in the Я.Диск client — every file of the root went into the import and has a
- * green outcome of the reconciliation (accepted, an alias of accepted bytes, rejected by a person
- * with a reason, an archive accounted by its members, not media, not content), every accepted
- * file has its master on our disk, and the copy holds nothing the snapshot does not know. For
+ * may be unpinned in the Я.Диск client — every file of the root is decided by the rule of the
+ * originals (`originals/rule.ts`, SPEC §9.4: its master is built and on our disk, accepted or not;
+ * or rejected by a person with a reason, an alias of accepted bytes, an archive whose members are
+ * decided, not media, not content), and the copy holds nothing the snapshot does not know. For
  * each such root
  * the files with their sizes, the bytes the copy holds (the gain to expect), the object, the
  * SHA-256 of the source bytes the import checked against the snapshot's MD5, and the master.
@@ -22,15 +23,25 @@ import { snapshotOf } from './snapshot'
  * The report names real files: by the operator's command only, never into git.
  */
 
-/** Outcomes that leave nothing for the import to take from the copy. */
-const DONE: ReadonlySet<Outcome> = new Set([
-  'accepted',
-  'alias',
-  'rejected',
-  'archive',
-  'not_media',
-  'not_content',
-])
+/**
+ * Why a file the rule has not decided keeps its root waiting: the reconciliation's words where it
+ * has them, else the rule's reason (an archive not unpacked yet, members still open).
+ */
+function blockerOf(
+  row: Row,
+  outcome: Outcome,
+  reason: string | null,
+  decision: OriginalState | undefined,
+): string {
+  if (outcome === 'accepted' || outcome === 'alias') {
+    if (row.master_state !== 'present') return 'мастер не на месте'
+    if (!row.source_sha) return 'байты источника не проверены'
+  }
+  if (outcome === 'blocked' || outcome === 'waiting' || outcome === 'unexplained') {
+    return reason ? `${outcome}:${reason}` : outcome
+  }
+  return decision?.reason ?? outcome
+}
 
 export interface ReleaseFile {
   path: string
@@ -132,6 +143,11 @@ export async function releaseReport(
   const entries = listFile ? parseCopyList(await readFile(listFile, 'utf8')) : []
   const metaRead = listFile ? await readCopyListMeta(listFile) : { meta: null, corrupt: false }
   const list = new CopyList(entries)
+  const decisions = new Map(
+    (await originalStates(db, modelId, { members: true }))
+      .filter((state) => state.kind === 'revision')
+      .map((state) => [state.id, state]),
+  )
   const roots = new Map<string, ReleaseRoot>()
   const known = new Set<string>()
   for (const row of await rowsOf(db, snapshot)) {
@@ -159,10 +175,8 @@ export async function releaseReport(
       root.snapshot_bytes += size
       if (copied?.bytesPresent) root.copy_bytes += copied.size
     }
-    if (!DONE.has(outcome)) bump(root.blockers, reason ? `${outcome}:${reason}` : outcome)
-    const taken = outcome === 'accepted' || outcome === 'alias'
-    if (taken && row.master_state !== 'present') bump(root.blockers, 'мастер не на месте')
-    if (taken && !row.source_sha) bump(root.blockers, 'байты источника не проверены')
+    const decision = decisions.get(row.revision_id)
+    if (!decision?.decided) bump(root.blockers, blockerOf(row, outcome, reason, decision))
     if (copied?.bytesPresent && copied.size !== size) {
       bump(root.blockers, 'размер в копии не совпадает со снимком')
     }

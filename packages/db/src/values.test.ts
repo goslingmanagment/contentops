@@ -143,6 +143,10 @@ const LISTS: Record<string, readonly string[]> = {
   hub_order_reports_state_check: v.hubOrderReportStates,
   backup_checkpoints_state_check: v.backupCheckpointStates,
   shooting_tasks_kind_check: v.shootingTaskKinds,
+  // 0027_original_copies
+  original_copies_place_check: v.originalPlaces,
+  original_copies_role_check: v.originalRoles,
+  original_copies_origin: v.originPlaces,
 }
 
 let pool: pg.Pool

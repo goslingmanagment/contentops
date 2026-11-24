@@ -76,6 +76,41 @@ export interface Row extends Record<string, unknown> {
   not_content?: boolean
 }
 
+/**
+ * What the import makes of a file it took no draft of (SPEC §6.3): not media by its name, not
+ * content by its rules or the model's list; `null` — it waits for its batch. The reconciliation
+ * and the rule of the originals (`originals/rule.ts`) read it alike.
+ */
+export function withoutDraft(
+  path: string,
+  notContent: boolean,
+): 'not_media' | 'not_content' | null {
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  if (mediaKindOf(name, null) === null) return 'not_media'
+  if (notContent) return 'not_content'
+  return null
+}
+
+/** The import's view of a path of one source: not content (with the model's list), an archive. */
+export type PathRule = (path: string) => { notContent: boolean; isArchive: boolean }
+
+export async function pathRuleOf(
+  q: Queryable,
+  modelId: string,
+  source: { kind: string; rootPath: string },
+): Promise<PathRule> {
+  // The same rules as the pass (`@contentops/legacy`).
+  const { notContent } = await readInputs(q, modelId, source.kind)
+  return (path) => {
+    const context = contextOf(sourcePath(path, source.rootPath).relative, {
+      isDir: false,
+      ...(notContent.length > 0 ? { notContent } : {}),
+      ...(source.kind === 'dropbox' ? { caseInsensitive: true } : {}),
+    })
+    return { notContent: Boolean(context.notContent), isArchive: context.isArchive }
+  }
+}
+
 export function classify(row: Row): { outcome: Outcome; reason: string | null } {
   if (row.container) {
     return row.unreadable
@@ -84,10 +119,8 @@ export function classify(row: Row): { outcome: Outcome; reason: string | null } 
   }
   if (row.unreadable) return { outcome: 'blocked', reason: 'archive_unreadable' }
   if (row.draft_state === null) {
-    const name = row.path.slice(row.path.lastIndexOf('/') + 1)
-    if (mediaKindOf(name, null) === null) return { outcome: 'not_media', reason: null }
-    if (row.not_content) return { outcome: 'not_content', reason: null }
-    return { outcome: 'waiting', reason: 'not_imported_yet' }
+    const outcome = withoutDraft(row.path, row.not_content === true)
+    return outcome ? { outcome, reason: null } : { outcome: 'waiting', reason: 'not_imported_yet' }
   }
   if (row.draft_state === 'resolved') {
     if (row.outcome === 'new_item' || row.outcome === 'append')
@@ -150,17 +183,14 @@ export async function rowsOf(q: Queryable, snapshot: SnapshotWork): Promise<Row[
       LEFT JOIN inbox_drafts sd ON sd.model_id = r.model_id AND sd.source_revision_id = succ.id
      WHERE r.model_id = ${snapshot.modelId}::uuid AND r.frozen_by_work_id = ${snapshot.id}::uuid
      ORDER BY r.frozen_path`)
-  // What the import takes no draft of: the same rules as the pass (`@contentops/legacy`).
-  const { notContent } = await readInputs(q, snapshot.modelId, snapshot.sourceKind)
+  // What the import takes no draft of.
+  const rule = await pathRuleOf(q, snapshot.modelId, {
+    kind: snapshot.sourceKind,
+    rootPath: snapshot.rootPath,
+  })
   for (const row of rows) {
     if (row.member || row.draft_state !== null) continue
-    const relative = sourcePath(row.path, snapshot.rootPath).relative
-    const context = contextOf(relative, {
-      isDir: false,
-      ...(notContent.length > 0 ? { notContent } : {}),
-      ...(snapshot.sourceKind === 'dropbox' ? { caseInsensitive: true } : {}),
-    })
-    if (context.notContent) row.not_content = true
+    if (rule(row.path).notContent) row.not_content = true
   }
   return rows
 }

@@ -358,6 +358,16 @@ export const FACTORIES: Record<string, Factory> = {
       ? { plan_row_id: await idOf(client, 'posting_plan_rows', modelId) }
       : {}),
   }),
+  original_copies: async (client, modelId, testing = []) => ({
+    model_id: modelId,
+    ...(testing.includes('web_upload_id')
+      ? { web_upload_id: await idOf(client, 'web_uploads', modelId) }
+      : { source_revision_id: await idOf(client, 'source_revisions', modelId) }),
+    place: 'mega',
+    role: 'copy',
+    remote: 'mega',
+    path: `originals/${tag()}`,
+  }),
   inbox_drafts: async (client, modelId, testing = []) => {
     const row: Row = {
       model_id: modelId,
