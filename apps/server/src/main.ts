@@ -169,7 +169,6 @@ async function runWeb(config: Config, logger: Logger): Promise<void> {
     ...(hubAgentKeys ? { hubAgentKeys } : {}),
     // «Съёмка» reads and moves orders AS THE SIGNED-IN PERSON: Hub's person's door, with the sign-in key.
     personDoor: personDoorOf(config),
-    originalsHostDir: config.ORIGINALS_HOST_DIR ?? null,
   })
   app.addHook('onClose', () => pool.end())
   onStop(logger, () => app.close())

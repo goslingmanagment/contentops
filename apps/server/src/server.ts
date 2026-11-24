@@ -25,7 +25,7 @@ export interface ServerOptions {
   sourceEnv?: Record<string, string | undefined>
   /** Free space of the host disks for «Состояние» and the space card. */
   space?: SpaceOptions
-  /** `ORIGINALS_HOST_DIR`: the share with the lists of the PC, for the line «Оригиналы». */
+  /** `ORIGINALS_HOST_DIR`: the share with the PC's lists — the line «Оригиналы» and the release (SPEC §9.4, §12.2). */
   originalsHostDir?: string | null
   logger?: Logger
   trustedProxy?: readonly string[]
@@ -41,8 +41,6 @@ export interface ServerOptions {
   hubAgentKeys?: HubAgentKeyService
   /** Hub's person's door, for «Съёмка» as the signed-in person (package C3). */
   personDoor?: PersonDoor | null
-  /** `ORIGINALS_HOST_DIR`: the PC's lists for the release of the originals (SPEC §12.2). */
-  originalsHostDir?: string | null
 }
 
 /** The `web` role: the table routes on the database, sessions, rights and the journal. */
@@ -61,7 +59,6 @@ export function buildServer(options: ServerOptions) {
     space: options.space ?? { file: undefined, ...PILOT_SPACE },
     originalsHostDir: options.originalsHostDir ?? null,
     store: new BlobStore(options.storage),
-    originalsHostDir: options.originalsHostDir ?? null,
   }
   const authenticate = createAuthenticate(db, hubSignin, options.hubAgentKeys ?? null)
   const authorize = createAuthorize(db)

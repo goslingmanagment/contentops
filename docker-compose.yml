@@ -84,7 +84,8 @@ services:
       TRUSTED_PROXY: loopback,${STACK_SUBNET:-10.77.10.0/24}
       HOST_SPACE_FILE: /host/space.json
       SPACE_WARN_GB: ${SPACE_WARN_GB:-200,E:=160}
-      # What the PC may free (SPEC §12.2): its lists of the Я.Диск copy and E:\Ari, its session.
+      # The PC's lists of the Я.Диск copy and E:\Ari, its session: what it may free (SPEC §12.2)
+      # and the line «Оригиналы» of «Состояние» (SPEC §9.4).
       ORIGINALS_HOST_DIR: /host
       SPACE_STOP_GB: ${SPACE_STOP_GB:-100}
       # Cloud sources (SPEC §6.1): `sources.credentials_ref` names the variable.
@@ -105,8 +106,6 @@ services:
       HUB_MODEL_MAP: ${HUB_MODEL_MAP:-}
       # An agent's hub key (SPEC §11.1): only `web` asks Hub whose it is.
       HUB_INTROSPECT_KEY: ${HUB_INTROSPECT_KEY:-}
-      # The lists of the PC for the line «Оригиналы» of «Состояние» (SPEC §9.4).
-      ORIGINALS_HOST_DIR: /host
     volumes:
       - ${DATA_ROOT:-/srv/content}:/srv/content
       - ${DERIVED_ROOT:-/srv/derived}:/srv/derived

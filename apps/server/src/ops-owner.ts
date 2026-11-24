@@ -30,8 +30,8 @@ import { genderOfName } from './handlers/people'
 import { modelNames, modelsByCodes } from './handlers/shared'
 import { raiseCustomCopies } from './intake/custom-copies'
 import { NOT_CONTENT_KEY, notContentKey } from './legacy/inputs'
-import { BATCH_KEY } from './originals/release'
 import { MODEL_CONFIG_KEY, parseModelConfig } from './originals/config'
+import { BATCH_KEY } from './originals/release'
 
 /**
  * The owner's commands from the VM shell (`ops.js agent`, `ops.js switch`, ops/README.md): what

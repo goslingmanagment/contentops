@@ -2,6 +2,7 @@ import type { Queryable } from '@contentops/db'
 import { sourcePath } from '@contentops/sources'
 import { sql } from 'drizzle-orm'
 import { type ConfiguredModel, isExcluded, joinPath, type OriginKind } from './config'
+import { notOriginals } from './rule'
 import { originRows } from './seed'
 
 /**
@@ -22,7 +23,7 @@ const BATCH = 2_000
 
 export async function enrolOriginals(q: Queryable, model: ConfiguredModel): Promise<EnrolReport> {
   const { rowCount } = await q.execute(sql`
-    ${originRows(model.id)}
+    ${originRows(model.id, await notOriginals(q, model.id))}
     ON CONFLICT (model_id, source_revision_id, place) WHERE source_revision_id IS NOT NULL
     DO NOTHING`)
   let copies = 0

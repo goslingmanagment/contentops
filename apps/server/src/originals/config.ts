@@ -20,7 +20,9 @@ import { z } from 'zod'
  * - `copies` — a new original of that source kind gets a MEGA copy row at
  *   `<mega>/<folder>/<its path in the source>` (Lora: the nightly copy of her Я.Диск and Dropbox).
  *   Without it no row is made by itself (Ari: the rows come from her manifest, `originals seed`);
- * - `exclude` — folders of the source that are not copied into MEGA (as the copy itself skips them);
+ * - `exclude` — folders of the source that are not originals: ContentOps's own copies in the
+ *   model's cloud (`Архив Я.Диска` in Lora's Dropbox) and tests — not counted by the rule, no
+ *   rows, not copied into MEGA, never released;
  * - `pc` — where the originals of the model lie on the PC: `ydisk_copy` — the copy of Я.Диск on C:,
  *   `e_ari` — the mirror of Dropbox on E:. Their files are checked first, and their host lists say
  *   what is freed.

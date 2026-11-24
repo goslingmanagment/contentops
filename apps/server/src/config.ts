@@ -130,11 +130,6 @@ const EnvSchema = z.object({
   /** The rclone binary; the image has the pinned one in `PATH`. */
   RCLONE_BIN: z.string().min(1).default('rclone'),
   /**
-   * The share of the host with the lists of the PC (`ydisk-copy-list.meta.json`, the list of
-   * `E:\Ari`): «Настройки › Состояние» says when they are stale while something may go.
-   */
-  ORIGINALS_HOST_DIR: AbsolutePath.optional(),
-  /**
    * Development without nginx: `web` streams files itself instead of `X-Accel-Redirect`.
    * Never set in the stack: nginx sends the bytes (SPEC §12.0 «отдача»).
    */

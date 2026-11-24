@@ -14,6 +14,7 @@ import { type AuditReport, originalsAuditHandler } from './audit'
 import { type CheckOptions, type CheckReport, originalsCheckHandler } from './check'
 import { MODEL_CONFIG_KEY } from './config'
 import { RcloneTransport, servePath } from './rclone'
+import { originalStates } from './rule'
 import { originalsLine } from './summary'
 import { FakeClouds } from './testing'
 import { setOriginalsSwitch } from './work'
@@ -470,7 +471,7 @@ describe('the switch and the configuration', () => {
     expect(clouds.downloads).toHaveLength(0)
   })
 
-  it('copy rows go under the folder of the source kind, without the excluded folders', async () => {
+  it('the excluded folders are not originals: no rows, not counted (ContentOps own copies)', async () => {
     const model = await newModel()
     const src = await source(model, 'dropbox')
     await configure(model, {
@@ -491,7 +492,11 @@ describe('the switch and the configuration', () => {
     await check(clouds)
     expect((await rowOf(kept, 'mega')).path).toBe('originals/x/dropbox/New/clip.mov')
     await expect(rowOf(archived, 'mega')).rejects.toThrow(/no mega row/)
-    expect((await rowOf(archived, 'dropbox')).path).toBe('/архив я.диска/1. PPV/a.mov')
+    // The copy of Я.Диск in the model's Dropbox is not a second set of originals.
+    await expect(rowOf(archived, 'dropbox')).rejects.toThrow(/no dropbox row/)
+    const ids = (await originalStates(db, model)).map((state) => state.id)
+    expect(ids).toContain(kept)
+    expect(ids).not.toContain(archived)
   })
 
   it('rclone is asked to read only: a write is refused before it is sent', async () => {
