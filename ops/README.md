@@ -458,6 +458,44 @@ Hub, открывает ContentOps без второго пароля. Паро�
   заглушек 5 262 (210 GB), из них 2 378 (107 GB) — в закреплённых папках; обход — 2,3 с. Все
   11 218 файлов с байтами видны в `/mnt/ydisk` с тем же размером.
 
+## Оригиналы: два места
+
+- Правило владельца 24.11.2026 и таблица мест — SPEC §9.4. Пока это только записи и счёт:
+  ничего не удаляется и не открепляется.
+- Входы кладутся в общую папку хоста `C:\vm\contentops\host\originals\` (в контейнере
+  `worker` — `/host/originals/`) на Windows от `dmsrg` (у него rclone и его конфиг):
+  - список MEGA старого Я.Диска Лоры —
+    `rclone lsjson -R --files-only mega:originals/lora/yadisk > C:\vm\contentops\host\originals\mega-lora-yadisk.json`
+    (pwsh 7 пишет UTF-8; BOM, UTF-16 и CRLF команда тоже читает);
+  - ночная сверка `verify-mega.ps1` — папка `C:\gosling\mega-copy\verify` целиком
+    (`Copy-Item -Recurse`: время файлов сохраняется, а время `<корень>.ya.md5` — начало
+    сверки корня);
+  - манифест Ари — `C:\gosling\mega-copy\ari-manifest.tsv`.
+- В ВМ сначала без `--yes` (только счёт того, что запишется), затем с ним:
+
+  ```sh
+  cd /opt/contentops
+  docker compose exec -T worker node dist/ops.js originals seed lora \
+    --mega /host/originals/mega-lora-yadisk.json --checks /host/originals/verify
+  docker compose exec -T worker node dist/ops.js originals seed ari \
+    --manifest /host/originals/ari-manifest.tsv
+  docker compose exec -T worker node dist/ops.js originals status
+  ```
+
+- `seed` пишет только `original_copies` и одну строку журнала, повтор ничего не меняет.
+  Источники — из базы: проверены, если импорт прочёл байты и они совпали с суммой облака.
+  Копия в MEGA проверена, только если в сверке строка `=`, её MD5 совпал с MD5 ревизии, размер
+  узла тот же и узел не новее сверки; почему остальные нет — `mega.unchecked`
+  (`md5_not_of_revision`, `size_differs`, `node_newer_than_check`, `check:*`, `no_check`).
+  Новый узел по тому же пути при следующем `seed` снимает проверку. Папка MEGA списка — по
+  умолчанию `originals/<модель>/yadisk` (`--mega-root`), манифеста — `originals/<модель>`
+  (`--manifest-root`).
+- `status` — по каждой модели: оригиналы, надёжны, решены, можно освобождать (`totals`); то же
+  по месту на ПК (`holders`: `yandex_disk` — копия Я.Диска, `dropbox` — файлы Dropbox модели,
+  у Ари их копия — `E:\Ari`, `web_upload` — загрузки на нашем диске); почему не решены
+  (`undecided`); строки по облакам (`places`). Имён и путей в выводе нет.
+- В общей папке настоящие имена: они остаются там, в git и отчёты — только итоги.
+
 ## Перезагрузки, питание, память
 
 - Windows Update: установка ежедневно в 04:00, перезагрузка через 15 мин после установки,

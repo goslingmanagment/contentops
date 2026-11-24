@@ -64,6 +64,9 @@ const NO_JOURNAL = [
   'hub_vault_media',
   'idempotency_keys',
   'master_checks',
+  // Places of the originals: the checks write them every night; their journal is the `action`
+  // rows of the seed and of the checks (SPEC §9.4).
+  'original_copies',
   'pipeline_versions',
   'principals',
   'rendition_artifacts',
@@ -186,6 +189,7 @@ const FIXED_COLUMNS: Record<string, string[]> = {
     'rendition_recipes',
     'recipe_digests',
   ],
+  original_copies: ['model_id', 'id', 'source_revision_id', 'web_upload_id', 'place', 'role'],
   placement_assets: ['model_id', 'id', 'placement_id', 'asset_id', 'asset_version_id'],
   placements: ['model_id', 'id', 'account_id', 'surface_id'],
   platform_texts: ['model_id', 'id', 'item_id', 'platform', 'account_id', 'locale', 'variant_no'],

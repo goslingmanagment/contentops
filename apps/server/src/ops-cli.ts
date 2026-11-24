@@ -28,6 +28,8 @@ import {
   opsPolicy,
   opsSwitch,
 } from './ops-owner'
+import { seedOriginals } from './originals/seed'
+import { originalsStatus } from './originals/status'
 import { smokeSetup } from './smoke/setup'
 
 /**
@@ -62,7 +64,7 @@ import { smokeSetup } from './smoke/setup'
  *   docker compose exec -T worker node dist/ops.js claims <model> [--yes]
  *
  * «Можно освобождать» (PLAN этап 7, 9а; SPEC §12.2): the roots of the old disk whose copy may be
- * unpinned in the Я.Диск client — fully imported, a green reconciliation, masters in place — with
+ * unpinned in the Я.Диск client — every file decided by the rule of the originals (SPEC §9.4) — with
  * every file, its bytes in the copy and its proven blobs. It only reads; also out of git:
  *
  *   docker compose exec -T worker node dist/ops.js release-report <model> > release.md
@@ -110,6 +112,15 @@ import { smokeSetup } from './smoke/setup'
  *   docker compose exec -T worker node dist/ops.js annotation probe ari PPV-012 --with openai:<model>
  *   docker compose exec -T worker node dist/ops.js annotation report ari --probe > probe.md
  *
+ * Where the originals live besides the PC (SPEC §9.4, ops/README.md «Оригиналы: два места»): the
+ * ledger from tonight's files — the origins from the database, the copies in MEGA from its listing
+ * and the night's check, Ari's manifest — idempotent; without `--yes` it counts what it would write.
+ * `status` — the rule's counts per model (originals, reliable, decided, releasable):
+ *
+ *   docker compose exec -T worker node dist/ops.js originals seed lora --mega /host/originals/mega-lora-yadisk.json --checks /host/originals/verify [--yes]
+ *   docker compose exec -T worker node dist/ops.js originals seed ari --manifest /host/originals/ari-manifest.tsv [--yes]
+ *   docker compose exec -T worker node dist/ops.js originals status [lora]
+ *
  * A value of «Пороги» by its key, and the settings without a screen (`hub_ad_markers` of a page,
  * `import_batch_scope` of a model); `off` — not set:
  *
@@ -138,6 +149,8 @@ const USAGE = `usage:
   ops.js contractor <name> --model <m> [--channel <code>] [--contact <text>] [--format upload|master|compat]
   ops.js switch <integration> <switch>=on|off ...   (ydisk.lora scan=on, agents enabled=on)
   ops.js policy <key> <json|off> [--model <m>] [--page <p>] [--type PPV]   (thresholds, hub_ad_markers…)
+  ops.js originals seed <model> [--mega <lsjson>] [--mega-root <path>] [--checks <dir>] [--manifest <tsv>] [--manifest-root <path>] [--yes]
+  ops.js originals status [<model>]       (originals, reliable, decided, releasable)
 ${ANNOTATION_USAGE}`
 
 function out(value: unknown): void {
@@ -217,6 +230,12 @@ async function main(argv: string[]): Promise<number> {
       // ops.js hub-agent …
       code: { type: 'string' },
       off: { type: 'boolean' },
+      // ops.js originals …
+      mega: { type: 'string' },
+      'mega-root': { type: 'string' },
+      checks: { type: 'string' },
+      manifest: { type: 'string' },
+      'manifest-root': { type: 'string' },
     },
     allowPositionals: true,
   })
@@ -472,6 +491,28 @@ async function main(argv: string[]): Promise<number> {
       const result = await annotationCli(db, positionals, values, process.env)
       if (result.text !== undefined) process.stdout.write(result.text)
       if (result.json !== undefined) out(result.json)
+      return 0
+    }
+    if (command === 'originals') {
+      const [action, model] = positionals
+      if (action === 'status') {
+        out(await originalsStatus(db, model))
+        return 0
+      }
+      if (action !== 'seed' || !model) throw new Error(USAGE)
+      const report = await seedOriginals(db, {
+        model,
+        ...(values.mega ? { mega: values.mega } : {}),
+        ...(values['mega-root'] ? { megaRoot: values['mega-root'] } : {}),
+        ...(values.checks ? { checks: values.checks } : {}),
+        ...(values.manifest ? { manifest: values.manifest } : {}),
+        ...(values['manifest-root'] ? { manifestRoot: values['manifest-root'] } : {}),
+        write: values.yes === true,
+      })
+      if (!report.written) {
+        process.stderr.write('originals seed: nothing written; run again with --yes to write\n')
+      }
+      out(report)
       return 0
     }
     if (command === 'hub-history') {

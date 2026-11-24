@@ -386,6 +386,21 @@ export const verifiedRoutes = ['download', 'local_copy', 'upload'] as const
 export type VerifiedRoute = (typeof verifiedRoutes)[number]
 
 // ---------------------------------------------------------------------------
+// Originals and their places (SPEC §9.4; owner's rule 24.11.2026)
+// ---------------------------------------------------------------------------
+
+/** The clouds an original may live in: it may leave the PC from two of the three. */
+export const originalPlaces = ['yandex', 'dropbox', 'mega'] as const
+export type OriginalPlace = (typeof originalPlaces)[number]
+
+/** Where ContentOps found the file (its source), as against a copy of it. */
+export const originalRoles = ['origin', 'copy'] as const
+export type OriginalRole = (typeof originalRoles)[number]
+
+/** Only a model's own cloud folder is an origin; MEGA holds copies. */
+export const originPlaces = ['yandex', 'dropbox'] as const satisfies readonly OriginalPlace[]
+
+// ---------------------------------------------------------------------------
 // Catalog (schema §3.2, §9.2; naming §3)
 // ---------------------------------------------------------------------------
 

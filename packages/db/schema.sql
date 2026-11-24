@@ -640,6 +640,27 @@ $$;
 
 ALTER FUNCTION public.log_row_change() OWNER TO contentops_migrate;
 
+CREATE FUNCTION public.original_copies_identity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (NEW.object_ref, NEW.byte_size) IS DISTINCT FROM (OLD.object_ref, OLD.byte_size)
+     AND NEW.verified_at IS NOT DISTINCT FROM OLD.verified_at THEN
+    NEW.verified_at := NULL;
+    NEW.verified_by := NULL;
+    NEW.seen_md5 := NULL;
+    NEW.seen_sha256 := NULL;
+    NEW.seen_dropbox_hash := NULL;
+  END IF;
+  IF NEW IS DISTINCT FROM OLD THEN
+    NEW.updated_at := now();
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+ALTER FUNCTION public.original_copies_identity() OWNER TO contentops_migrate;
+
 CREATE FUNCTION public.posting_plan_row_second_person() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -2038,6 +2059,50 @@ CREATE TABLE public.models (
 
 ALTER TABLE public.models OWNER TO contentops_migrate;
 
+CREATE TABLE public.original_copies (
+    model_id uuid NOT NULL,
+    id uuid DEFAULT uuidv7() NOT NULL,
+    source_revision_id uuid,
+    web_upload_id uuid,
+    place text NOT NULL,
+    role text NOT NULL,
+    remote text,
+    path text NOT NULL,
+    object_ref text,
+    byte_size bigint,
+    seen_md5 bytea,
+    seen_sha256 bytea,
+    seen_dropbox_hash bytea,
+    copied_at timestamp with time zone,
+    verified_at timestamp with time zone,
+    verified_by text,
+    last_seen_at timestamp with time zone,
+    missing_since timestamp with time zone,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_try_at timestamp with time zone,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT original_copies_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT original_copies_byte_size_check CHECK ((byte_size >= 0)),
+    CONSTRAINT original_copies_copy_remote CHECK (((role = 'origin'::text) OR (remote IS NOT NULL))),
+    CONSTRAINT original_copies_error_check CHECK (((error IS NULL) OR ((length(error) >= 1) AND (length(error) <= 2000)))),
+    CONSTRAINT original_copies_object_ref_check CHECK (((object_ref IS NULL) OR ((length(object_ref) >= 1) AND (length(object_ref) <= 300)))),
+    CONSTRAINT original_copies_one_original CHECK ((num_nonnulls(source_revision_id, web_upload_id) = 1)),
+    CONSTRAINT original_copies_origin CHECK (((role <> 'origin'::text) OR ((source_revision_id IS NOT NULL) AND (place = ANY (ARRAY['yandex'::text, 'dropbox'::text]))))),
+    CONSTRAINT original_copies_path_check CHECK (((length(path) >= 1) AND (length(path) <= 4096))),
+    CONSTRAINT original_copies_place_check CHECK ((place = ANY (ARRAY['yandex'::text, 'dropbox'::text, 'mega'::text]))),
+    CONSTRAINT original_copies_remote_check CHECK (((remote IS NULL) OR ((length(remote) >= 1) AND (length(remote) <= 100)))),
+    CONSTRAINT original_copies_role_check CHECK ((role = ANY (ARRAY['origin'::text, 'copy'::text]))),
+    CONSTRAINT original_copies_seen_dropbox_hash_check CHECK ((octet_length(seen_dropbox_hash) = 32)),
+    CONSTRAINT original_copies_seen_md5_check CHECK ((octet_length(seen_md5) = 16)),
+    CONSTRAINT original_copies_seen_sha256_check CHECK ((octet_length(seen_sha256) = 32)),
+    CONSTRAINT original_copies_verified CHECK ((((verified_at IS NULL) = (verified_by IS NULL)) AND ((verified_at IS NULL) OR ((object_ref IS NOT NULL) AND (byte_size IS NOT NULL) AND (num_nonnulls(seen_md5, seen_sha256, seen_dropbox_hash) >= 1))))),
+    CONSTRAINT original_copies_verified_by_check CHECK (((verified_by IS NULL) OR ((length(verified_by) >= 1) AND (length(verified_by) <= 100))))
+);
+
+ALTER TABLE public.original_copies OWNER TO contentops_migrate;
+
 CREATE TABLE public.pipeline_versions (
     version text NOT NULL,
     ffmpeg text NOT NULL,
@@ -2989,6 +3054,9 @@ ALTER TABLE ONLY public.models
 ALTER TABLE ONLY public.models
     ADD CONSTRAINT models_pkey PRIMARY KEY (id);
 
+ALTER TABLE ONLY public.original_copies
+    ADD CONSTRAINT original_copies_pkey PRIMARY KEY (model_id, id);
+
 ALTER TABLE ONLY public.pipeline_versions
     ADD CONSTRAINT pipeline_versions_pkey PRIMARY KEY (version);
 
@@ -3305,6 +3373,12 @@ CREATE INDEX legacy_number_claims_number ON public.legacy_number_claims USING bt
 
 CREATE INDEX master_checks_master ON public.master_checks USING btree (master_sha256);
 
+CREATE UNIQUE INDEX original_copies_revision_place ON public.original_copies USING btree (model_id, source_revision_id, place) WHERE (source_revision_id IS NOT NULL);
+
+CREATE INDEX original_copies_to_check ON public.original_copies USING btree (next_try_at) WHERE ((verified_at IS NULL) AND (missing_since IS NULL));
+
+CREATE UNIQUE INDEX original_copies_upload_place ON public.original_copies USING btree (model_id, web_upload_id, place) WHERE (web_upload_id IS NOT NULL);
+
 CREATE UNIQUE INDEX pipeline_versions_one_current ON public.pipeline_versions USING btree (is_current) WHERE is_current;
 
 CREATE INDEX placement_assets_version ON public.placement_assets USING btree (model_id, asset_version_id);
@@ -3536,6 +3610,10 @@ CREATE TRIGGER legacy_number_claims_fixed BEFORE UPDATE ON public.legacy_number_
 CREATE TRIGGER legacy_number_claims_journal AFTER INSERT OR DELETE OR UPDATE ON public.legacy_number_claims FOR EACH ROW EXECUTE FUNCTION public.log_row_change('model_id', 'id');
 
 CREATE TRIGGER models_journal AFTER INSERT OR DELETE OR UPDATE ON public.models FOR EACH ROW EXECUTE FUNCTION public.log_row_change('id');
+
+CREATE TRIGGER original_copies_fixed BEFORE UPDATE ON public.original_copies FOR EACH ROW EXECUTE FUNCTION public.forbid_change('model_id', 'id', 'source_revision_id', 'web_upload_id', 'place', 'role');
+
+CREATE TRIGGER original_copies_identity BEFORE UPDATE ON public.original_copies FOR EACH ROW EXECUTE FUNCTION public.original_copies_identity();
 
 CREATE TRIGGER pipeline_versions_fixed BEFORE UPDATE ON public.pipeline_versions FOR EACH ROW EXECUTE FUNCTION public.forbid_change('version', 'ffmpeg', 'svtav1', 'libvips', 'sharp', 'phash_algo', 'master_recipe', 'rendition_recipes', 'recipe_digests');
 
@@ -4106,6 +4184,15 @@ ALTER TABLE ONLY public.legacy_number_claims
 ALTER TABLE ONLY public.master_checks
     ADD CONSTRAINT master_checks_work_id_fkey FOREIGN KEY (work_id) REFERENCES public.work_operations(id) ON DELETE RESTRICT;
 
+ALTER TABLE ONLY public.original_copies
+    ADD CONSTRAINT original_copies_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.original_copies
+    ADD CONSTRAINT original_copies_model_id_source_revision_id_fkey FOREIGN KEY (model_id, source_revision_id) REFERENCES public.source_revisions(model_id, id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.original_copies
+    ADD CONSTRAINT original_copies_model_id_web_upload_id_fkey FOREIGN KEY (model_id, web_upload_id) REFERENCES public.web_uploads(model_id, id) ON DELETE RESTRICT;
+
 ALTER TABLE ONLY public.placement_assets
     ADD CONSTRAINT placement_assets_bound_by_fkey FOREIGN KEY (bound_by) REFERENCES public.principals(id) ON DELETE RESTRICT;
 
@@ -4515,6 +4602,8 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.legacy_number_claims TO conten
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.master_checks TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.models TO contentops_app;
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.original_copies TO contentops_app;
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.pipeline_versions TO contentops_app;
 

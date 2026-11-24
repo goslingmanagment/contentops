@@ -72,7 +72,7 @@
 |---|---|
 | Модель и доступ | `models`, `accounts`, `surfaces`, `promo_channels`, `principals`, `principal_grants`, `sessions`, `api_tokens`, `hub_agent_calls`, `id_counters`, `policy_settings`, `pipeline_versions` |
 | Каталог | `content_items`, `assets`, `asset_versions`, `item_memberships`, `asset_manifests`, `asset_manifest_entries`, `aliases`, `provenance`, `tags`, `item_tags`, `annotation_fields`, `annotation_runs`, `annotation_suggestions`, `chronology_entries`, `platform_texts` |
-| Байты и производные | `blobs`, `blob_probes`, `blob_phashes`, `video_prints`, `master_checks`, `storage_operations`, `rendition_generations`, `rendition_artifacts` |
+| Байты и производные | `blobs`, `blob_probes`, `blob_phashes`, `video_prints`, `master_checks`, `storage_operations`, `original_copies`, `rendition_generations`, `rendition_artifacts` |
 | Источники, приёмка, фон | `sources`, `source_objects`, `source_paths`, `source_revisions`, `inbox_groups`, `inbox_drafts`, `inbox_draft_candidates`, `web_uploads`, `work_operations`, `legacy_claims`, `legacy_number_claims`, `review_cases` |
 | План и выдача | `ppv_releases`, `posting_plan_rows`, `download_receipts`, `download_receipt_entries` |
 | Размещения и Hub | `placements`, `placement_assets`, `placement_evidence`, `hub_sync_state`, `hub_observations`, `hub_posts`, `hub_post_attachments`, `hub_raw_media`, `hub_vault_albums`, `hub_vault_media` |
@@ -456,6 +456,22 @@ algo_version, normalization)`, `phash bit(64)`, `computed_at`. Подсказк�
 (`purge`, только командой владельца): `intent` в БД → `started` в БД → удаление файла →
 `fs_done` → `purged` в БД. Файловых замков на SHA нет:
 байты пишет и удаляет один процесс, а мастер с живой версией не удаляется вообще.
+
+**`original_copies`** — где лежит оригинал вне ПК (SPEC §9.4, миграция `0027`, 24.11.2026).
+`model_id`, `id` (PK вместе); ровно одно из `source_revision_id` (ревизия облачной папки
+модели, не участник архива) и `web_upload_id`; `place` (`yandex | dropbox | mega`), `role`
+(`origin | copy`; `origin` — только у ревизии и только Я.Диск или Dropbox), `remote` (имя
+rclone у копии; у источника пусто), `path`, `object_ref` (ID узла MEGA, `id@rev` Dropbox,
+SHA-256 или MD5 ревизии Я.Диска), `byte_size`, `seen_md5`, `seen_sha256`,
+`seen_dropbox_hash`, `copied_at`, `verified_at`, `verified_by`, `last_seen_at`,
+`missing_since`, `attempts`, `next_try_at`, `error`, `created_at`, `updated_at`. UNIQUE по
+оригиналу и облаку (частичные `original_copies_revision_place` и
+`original_copies_upload_place`); очередь проверки — индекс по `next_try_at` у
+непроверенных и не пропавших. Проверка требует `verified_by`, `object_ref`, `byte_size` и хотя
+бы одну сумму; триггер `original_copies_identity` снимает её вместе с суммами, если меняется
+`object_ref` или `byte_size`, а та же команда не записала новую. Неизменны `model_id`, `id`,
+ссылка на оригинал, `place`, `role`. Журнала-триггера нет: проверки пишут таблицу каждую
+ночь, журнал — строки `action` команд (`originals.seed`).
 
 **`rendition_generations`** — физическая сборка производной (§9.1, §9.3). `id`; ключ
 производной — `master_sha256?`, `kind` (`preview | poster | thumb320 | thumb640 |
@@ -1741,6 +1757,7 @@ LLM.
 | 5б (11.11.2026) | `0019_week_approval` | таблиц нет: «Утвердить неделю» — `posting_plan_rows.approved_at/by/version` (схема §3.5, SPEC §7) |
 | после 5б (12.11.2026) | `0020_hub_signin` | таблиц нет: «Войти через хаб» — `principals.hub_user_id/hub_login`, `sessions.hub_grant/hub_checked_at` (SPEC §11.1) |
 | после 5б (12.11.2026) | `0021_hub_agent_keys` | `hub_agent_calls` (1): ключ хаба агента — `principals.hub_agent_code`, журнал вызовов (SPEC §11.1) |
+| после 9а (24.11.2026) | `0027_original_copies` | `original_copies` (1): места оригиналов вне ПК и правило «два облака и мастер» (SPEC §9.4) |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
 Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего

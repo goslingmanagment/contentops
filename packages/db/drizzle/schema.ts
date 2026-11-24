@@ -2642,6 +2642,69 @@ export const hubVaultMedia = pgTable("hub_vault_media", {
 	unique("hub_vault_media_member").on(table.accountId, table.albumId, table.memberRef, table.modelId),
 ]);
 
+export const originalCopies = pgTable("original_copies", {
+	modelId: uuid("model_id").notNull(),
+	id: uuid().default(sql`uuidv7()`).notNull(),
+	sourceRevisionId: uuid("source_revision_id"),
+	webUploadId: uuid("web_upload_id"),
+	place: text().notNull(),
+	role: text().notNull(),
+	remote: text(),
+	path: text().notNull(),
+	objectRef: text("object_ref"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	byteSize: bigint("byte_size", { mode: "number" }),
+	seenMd5: bytea("seen_md5"),
+	seenSha256: bytea("seen_sha256"),
+	seenDropboxHash: bytea("seen_dropbox_hash"),
+	copiedAt: timestamp("copied_at", { withTimezone: true, mode: 'string' }),
+	verifiedAt: timestamp("verified_at", { withTimezone: true, mode: 'string' }),
+	verifiedBy: text("verified_by"),
+	lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: 'string' }),
+	missingSince: timestamp("missing_since", { withTimezone: true, mode: 'string' }),
+	attempts: integer().default(0).notNull(),
+	nextTryAt: timestamp("next_try_at", { withTimezone: true, mode: 'string' }),
+	error: text(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+	uniqueIndex("original_copies_revision_place").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.sourceRevisionId.asc().nullsLast().op("text_ops"), table.place.asc().nullsLast().op("uuid_ops")).where(sql`(source_revision_id IS NOT NULL)`),
+	index("original_copies_to_check").using("btree", table.nextTryAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((verified_at IS NULL) AND (missing_since IS NULL))`),
+	uniqueIndex("original_copies_upload_place").using("btree", table.modelId.asc().nullsLast().op("text_ops"), table.webUploadId.asc().nullsLast().op("uuid_ops"), table.place.asc().nullsLast().op("uuid_ops")).where(sql`(web_upload_id IS NOT NULL)`),
+	foreignKey({
+			columns: [table.modelId, table.webUploadId],
+			foreignColumns: [webUploads.id, webUploads.modelId],
+			name: "original_copies_model_id_web_upload_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId],
+			foreignColumns: [models.id],
+			name: "original_copies_model_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.modelId, table.sourceRevisionId],
+			foreignColumns: [sourceRevisions.id, sourceRevisions.modelId],
+			name: "original_copies_model_id_source_revision_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.id, table.modelId], name: "original_copies_pkey"}),
+	check("original_copies_place_check", sql`place = ANY (ARRAY['yandex'::text, 'dropbox'::text, 'mega'::text])`),
+	check("original_copies_role_check", sql`role = ANY (ARRAY['origin'::text, 'copy'::text])`),
+	check("original_copies_remote_check", sql`(remote IS NULL) OR ((length(remote) >= 1) AND (length(remote) <= 100))`),
+	check("original_copies_path_check", sql`(length(path) >= 1) AND (length(path) <= 4096)`),
+	check("original_copies_object_ref_check", sql`(object_ref IS NULL) OR ((length(object_ref) >= 1) AND (length(object_ref) <= 300))`),
+	check("original_copies_byte_size_check", sql`byte_size >= 0`),
+	check("original_copies_seen_md5_check", sql`octet_length(seen_md5) = 16`),
+	check("original_copies_seen_sha256_check", sql`octet_length(seen_sha256) = 32`),
+	check("original_copies_seen_dropbox_hash_check", sql`octet_length(seen_dropbox_hash) = 32`),
+	check("original_copies_verified_by_check", sql`(verified_by IS NULL) OR ((length(verified_by) >= 1) AND (length(verified_by) <= 100))`),
+	check("original_copies_attempts_check", sql`attempts >= 0`),
+	check("original_copies_error_check", sql`(error IS NULL) OR ((length(error) >= 1) AND (length(error) <= 2000))`),
+	check("original_copies_one_original", sql`num_nonnulls(source_revision_id, web_upload_id) = 1`),
+	check("original_copies_origin", sql`(role <> 'origin'::text) OR ((source_revision_id IS NOT NULL) AND (place = ANY (ARRAY['yandex'::text, 'dropbox'::text])))`),
+	check("original_copies_copy_remote", sql`(role = 'origin'::text) OR (remote IS NOT NULL)`),
+	check("original_copies_verified", sql`((verified_at IS NULL) = (verified_by IS NULL)) AND ((verified_at IS NULL) OR ((object_ref IS NOT NULL) AND (byte_size IS NOT NULL) AND (num_nonnulls(seen_md5, seen_sha256, seen_dropbox_hash) >= 1)))`),
+]);
+
 export const inboxGroups = pgTable("inbox_groups", {
 	modelId: uuid("model_id").notNull(),
 	id: uuid().default(sql`uuidv7()`).notNull(),
