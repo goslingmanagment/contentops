@@ -110,6 +110,17 @@ export function cloudObject(item: Record<string, unknown>): CloudObject | null {
   }
 }
 
+/**
+ * `operations/list` gives `Path` from the remote's root, the listed folder included
+ * (`originals/lora/yadisk/x` for the folder `originals/lora`), while `list` promises paths
+ * relative to the folder that was listed: the folder's own prefix goes.
+ */
+export function listedPath(path: string, folder: string): string {
+  const base = folder.replace(/\/+$/u, '')
+  if (base === '') return path
+  return path.startsWith(`${base}/`) ? path.slice(base.length + 1) : path
+}
+
 /** `/[remote:]/a/b c.mp4` with every component encoded: brackets, `#`, `%`, `?` and Cyrillic. */
 export function servePath(remote: string, path: string): string {
   const parts = relative(path)
@@ -172,7 +183,7 @@ export class RcloneTransport implements OriginalsTransport {
     const out: CloudObject[] = []
     for (const item of answer.list) {
       const object = cloudObject((item ?? {}) as Record<string, unknown>)
-      if (object) out.push(object)
+      if (object) out.push({ ...object, path: listedPath(object.path, relative(path)) })
     }
     return out
   }
