@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 import { dropboxContentHash } from '@contentops/sources'
 import {
+  assertDuplicate,
   assertWrite,
   assertWritePath,
   type CloudObject,
   type CloudSpace,
+  type DuplicateTarget,
   type OriginalsTransport,
   type RemoteKind,
   TransportError,
@@ -52,6 +54,9 @@ export class FakeClouds implements OriginalsTransport {
   /** Streams open now and the most at once. */
   streaming = 0
   maxOpen = 0
+  /** Called when a stream has given its last byte, and right before a duplicate's fence. */
+  onStreamEnd: ((remote: string, path: string) => void) | null = null
+  beforeRemoveDuplicate: ((remote: string, path: string) => void) | null = null
   #ids = 0
 
   put(remote: string, path: string, object: FakeObject): void {
@@ -111,7 +116,7 @@ export class FakeClouds implements OriginalsTransport {
     return null
   }
 
-  async #fence(remote: string, op: 'upload' | 'move' | 'remove', ...paths: string[]) {
+  async #fence(remote: string, op: 'upload' | 'move' | 'remove' | 'duplicate', ...paths: string[]) {
     for (const path of paths) assertWritePath(op, path)
     const kind = await this.kind(remote)
     for (const path of paths) assertWrite(kind, op, path)
@@ -165,6 +170,14 @@ export class FakeClouds implements OriginalsTransport {
     this.objects.get(remote)?.delete(path)
   }
 
+  async removeDuplicate(remote: string, path: string, target: DuplicateTarget): Promise<void> {
+    await this.#fence(remote, 'duplicate', path)
+    this.beforeRemoveDuplicate?.(remote, path)
+    await assertDuplicate(remote, path, await this.stat(remote, path), target)
+    this.writes.push(`remove-duplicate ${remote}:${path}`)
+    this.objects.get(remote)?.delete(path)
+  }
+
   async open(remote: string, path: string, signal: AbortSignal) {
     const object = this.objects.get(remote)?.get(path)
     if (!object?.bytes) throw new TransportError('not_found', `${remote}:${path}: no such object`)
@@ -182,7 +195,10 @@ export class FakeClouds implements OriginalsTransport {
           // Another stream may run between two chunks, as with a real cloud.
           await new Promise((resolve) => setImmediate(resolve))
         }
-        if (stallAfter === undefined) return
+        if (stallAfter === undefined) {
+          clouds.onStreamEnd?.(remote, path)
+          return
+        }
         await new Promise<never>((_, reject) => {
           if (signal.aborted) reject(signal.reason)
           signal.addEventListener('abort', () => reject(signal.reason), { once: true })

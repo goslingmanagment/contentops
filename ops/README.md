@@ -592,7 +592,8 @@ Hub, открывает ContentOps без второго пароля. Паро�
 - Ограда записи (в коде, до rclone): MEGA — только под `originals/`; Dropbox — только
   `Архив Я.Диска/` и `Загрузки ContentOps/`, и только пока папка есть в `exclude.dropbox` модели
   (выше) и в её `legacy.not_content.dropbox`; Я.Диск — никогда; удаляется только свой
-  `<путь>.co-part` в MEGA; в Dropbox не удаляется ничего (неудачная часть уходит в
+  `<путь>.co-part` в MEGA и дубль командой владельца (ниже, «Дубли MEGA»); в Dropbox не удаляется
+  ничего (неудачная часть уходит в
   `Копии/неверные <ГГГГ-ММ-ДД>/`). Папку не отделили — проход туда не пишет: `refused` в отчёте и
   ▲ «копия <модель>: в «…» не пишем» на «Состоянии». Отделить (делает владелец; Лоре нужна только
   вторая папка):
@@ -669,6 +670,50 @@ Hub, открывает ContentOps без второго пароля. Паро�
   или `ops.js originals host-agent --off` (токен ПК больше не принимается), или на winpc
   `Disable-ScheduledTask ContentOps-Originals-YDisk` / `ContentOps-Originals-Ari`. Сеанс,
   оборванный посреди, следующий прогон закрывает сам: клиент, автозапуск, `running: false`.
+
+### Дубли MEGA
+
+- В `mega:originals/lora/yadisk` рядом с каноническими копиями лежат файлы, которые ночная копия
+  ПК когда-то залила из копии Я.Диска на C: под именами Windows (`:` → `-`, пробел в конце части
+  пути → `-`): 24.11.2026 там 17 577 файлов / 2 019 GB против 17 224 / 1 468 GB на Я.Диске, лишних
+  356 (~513 GiB). Удаляет их команда владельца `originals mega-dedupe` (SPEC §9.4, «Дубли MEGA»;
+  «да» владельца 24.11.2026): дубль уходит навсегда, мимо корзины, только когда байты и его, и
+  канонической копии (скачиванием) дали MD5 ревизии Я.Диска. Неоднозначное и необъяснённое
+  остаётся. `rclone cleanup` не запускать: он чистит всю корзину аккаунта.
+- Когда: после освобождения копии Я.Диска на ПК (выше) — команда качает из MEGA все дубли
+  (~513 GiB) и те канонические копии, что ещё не проверены (их проверяет и сама работа
+  `originals_check`; 24.11.2026 проверено 3 367 из 17 224). Сколько скачает — `pairs.download` в
+  сухом прогоне; на ~7 МиБ/с 513 GiB — около 21 часа. У команды свой rclone рядом с rclone
+  `worker`: `ORIGINALS_STREAMS` и `ORIGINALS_BWLIMIT` из `.env` — у каждого свои.
+- Сначала без `--yes` (только счёт и байты: ничего не качается и не пишется), с `--list` — с
+  путями (настоящие имена: в файл в ВМ, не в git и не в отчёты); затем с `--yes` в фоне, чтобы
+  обрыв ssh его не остановил:
+
+  ```sh
+  cd /opt/contentops
+  docker compose exec -T worker node dist/ops.js originals mega-dedupe lora
+  docker compose exec -T worker node dist/ops.js originals mega-dedupe lora --list > ~/mega-dedupe-plan.json
+  nohup docker compose exec -T worker node dist/ops.js originals mega-dedupe lora --yes \
+    > ~/mega-dedupe.json 2> ~/mega-dedupe.log &
+  tail -f ~/mega-dedupe.log    # «mega-dedupe: 12 / 356 pairs, deleted 10 (14.2 GiB), …»
+  ```
+
+- Ждём в сухом прогоне: `pairs.files` 356, `pairs.bytes` ~513 GiB, `skipped` пуст. Причины в
+  `skipped`, если есть: `unexplained` — ничем не объясняется, `ambiguous` — имя Windows двух путей
+  Я.Диска, `size_differs` — другой размер, `no_canonical` — канонической копии нет в MEGA (тогда
+  «дубль» — единственная копия), `canonical_not_in_ledger`, `listed_twice`, `no_md5`,
+  `no_revision`, `ledger_node`. Всё это команда не трогает; разбирает владелец по `--list`.
+- Итог `--yes`: `deleted` (файлы и байты), `not_deleted` по причинам (`duplicate_mismatch`,
+  `canonical_mismatch` — байты не те, ▲ разобрать; `node_changed`, `canonical_changed`,
+  `refused` — под путём уже другой узел; `stalled`, `failed` — повтор), `gone` — уже не было,
+  `canonical_verified` — канонических копий проверено попутно (проверка остаётся в таблице,
+  `verified_by = 'ops:mega-dedupe'`), `downloaded`, `stopped`. Прогон — одна строка журнала
+  «Дубли MEGA: lora» с путями и узлами удалённого. Повтор находит, что осталось; два прогона
+  сразу не идут.
+- Остановить: `sudo pkill -INT -f 'dist/ops.js originals mega-dedupe'` в ВМ — новые пары не
+  начинаются, уже отправленное удаление доходит, прогон пишется в журнал; повтор продолжит.
+- Проверка после: на ПК `rclone lsf -R --files-only mega:originals/lora/yadisk | Measure-Object`
+  — 17 224 и то, что осталось в `skipped`; `rclone about mega:` — минус ~513 GiB.
 
 ## Перезагрузки, питание, память
 
