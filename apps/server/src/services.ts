@@ -37,4 +37,9 @@ export interface Services {
   personDoor?: PersonDoor | null
   /** Hub's model slug → ContentOps' model code where they differ (`HUB_MODEL_MAP`: `test=smoke`). */
   hubModelMap?: Record<string, string>
+  /**
+   * The host share where the PC writes its lists for the originals (`ORIGINALS_HOST_DIR`, SPEC
+   * §12.2): absent — the PC's holders give nothing out.
+   */
+  originalsHostDir?: string | null
 }

@@ -67,6 +67,8 @@ export async function testServer(
     hubSignin?: HubSigninSetup
     hubAgentKeys?: HubAgentKeyService
     personDoor?: PersonDoor
+    /** The host share of the PC's lists for the originals. */
+    originalsHostDir?: string
   } = {},
 ): Promise<TestServer> {
   const database = await createTestDatabase()
@@ -85,6 +87,7 @@ export async function testServer(
     ...(options.hubSignin ? { hubSignin: options.hubSignin } : {}),
     ...(options.hubAgentKeys ? { hubAgentKeys: options.hubAgentKeys } : {}),
     ...(options.personDoor ? { personDoor: options.personDoor } : {}),
+    ...(options.originalsHostDir ? { originalsHostDir: options.originalsHostDir } : {}),
   })
   await app.ready()
   return {

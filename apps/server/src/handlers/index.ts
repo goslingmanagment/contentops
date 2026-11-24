@@ -15,6 +15,7 @@ import { mediaRouteHandlers } from './media'
 import { modelHandlers } from './models'
 import { normHandlers } from './norm'
 import { orderHandlers } from './orders'
+import { originalsHandlers } from './originals'
 import { peopleHandlers } from './people'
 import { planHandlers } from './plan'
 import { planApprovalHandlers } from './plan-approval'
@@ -76,5 +77,6 @@ export function createHandlers(services: Services): HandlerRegistry {
     waitingHandlers(services),
     publicationsHandlers(services),
     statsHandlers(services),
+    originalsHandlers(services),
   )
 }

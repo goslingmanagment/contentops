@@ -3,13 +3,16 @@ import { type Db, isSwitchOn } from '@contentops/db'
 import { sql } from 'drizzle-orm'
 import type { Actor, Authorize, ModelScope } from './context'
 import { ApiProblem } from './errors'
+import { hostAgentId } from './originals/release'
 
 /**
  * Who may call a route (SPEC §11.1, DESIGN §2.3, §4.19). Routes under a model (`/{model}/…`)
  * are read by everyone with the model and changed by the owner and managers; the rest of
- * `/admin/…` is the owner's, except what this table opens wider.
+ * `/admin/…` is the owner's, except what this table opens wider. `host` — the owner, or the one
+ * agent the owner named the PC's (`originals.host_agent`, `ops.js originals host-agent`): what the
+ * PC may free carries real file names, so no manager, reader or other agent sees it.
  */
-export type Access = 'public' | 'signed' | 'human' | 'staff' | 'owner'
+export type Access = 'public' | 'signed' | 'human' | 'staff' | 'owner' | 'host'
 
 const ROUTE_ACCESS: Record<string, Access> = {
   'auth.signIn': 'public',
@@ -35,6 +38,8 @@ const ROUTE_ACCESS: Record<string, Access> = {
   'admin.thresholds': 'staff',
   // The nightly copy of the database reports itself with an agent token (SPEC §12.3).
   'admin.reportBackup': 'staff',
+  // The Windows tasks of the PC ask what they may free (SPEC §12.2), with the host agent's token.
+  'admin.originalsRelease': 'host',
   // «Только чтение» видит превью, но не скачивает (SPEC §11.1).
   'media.download': 'staff',
   // «Приехало» и разбор старых имён — разделы КМ и владельца; «Только чтение» видит
@@ -131,6 +136,13 @@ export function createAuthorize(db: Db): Authorize {
     }
     if (access === 'staff' && !STAFF.has(actor.role)) throw forbidden('Недостаточно прав')
     if (access === 'owner' && actor.role !== 'owner') throw forbidden('Это может только владелец')
+    if (
+      access === 'host' &&
+      actor.role !== 'owner' &&
+      !(actor.type === 'agent' && actor.id === (await hostAgentId(db)))
+    ) {
+      throw forbidden('Только владелец и агент ПК')
+    }
     // «Только чтение» не меняет ничего, кроме своего профиля и сессий (DESIGN §2.3).
     if (
       access === 'model' &&

@@ -28,6 +28,7 @@ import {
   opsPolicy,
   opsSwitch,
 } from './ops-owner'
+import { opsHostAgent } from './originals/host-agent'
 import { seedOriginals } from './originals/seed'
 import { originalsStatus } from './originals/status'
 import { smokeSetup } from './smoke/setup'
@@ -121,6 +122,11 @@ import { smokeSetup } from './smoke/setup'
  *   docker compose exec -T worker node dist/ops.js originals seed ari --manifest /host/originals/ari-manifest.tsv [--yes]
  *   docker compose exec -T worker node dist/ops.js originals status [lora]
  *
+ * The agent of the PC: its token asks what the copy of Я.Диск and `E:\Ari` may free
+ * (`admin.originalsRelease`, `ops/winpc/ContentOps-Originals.ps1`); `--off` — none:
+ *
+ *   docker compose exec -T worker node dist/ops.js originals host-agent "ПК" | --off
+ *
  * A value of «Пороги» by its key, and the settings without a screen (`hub_ad_markers` of a page,
  * `import_batch_scope` of a model); `off` — not set:
  *
@@ -151,6 +157,7 @@ const USAGE = `usage:
   ops.js policy <key> <json|off> [--model <m>] [--page <p>] [--type PPV]   (thresholds, hub_ad_markers…)
   ops.js originals seed <model> [--mega <lsjson>] [--mega-root <path>] [--checks <dir>] [--manifest <tsv>] [--manifest-root <path>] [--yes]
   ops.js originals status [<model>]       (originals, reliable, decided, releasable)
+  ops.js originals host-agent <name> | --off   (the agent whose token the PC's tasks use)
 ${ANNOTATION_USAGE}`
 
 function out(value: unknown): void {
@@ -497,6 +504,18 @@ async function main(argv: string[]): Promise<number> {
       const [action, model] = positionals
       if (action === 'status') {
         out(await originalsStatus(db, model))
+        return 0
+      }
+      if (action === 'host-agent') {
+        // `model` is the agent's name here.
+        if (!model === (values.off !== true)) throw new Error(USAGE)
+        const result = await opsHostAgent(db, values.off ? null : (model ?? null))
+        if (!result.agents_enabled) {
+          process.stderr.write(
+            'originals host-agent: «Агенты» are off: the token is refused until `ops.js switch agents enabled=on`\n',
+          )
+        }
+        out(result)
         return 0
       }
       if (action !== 'seed' || !model) throw new Error(USAGE)

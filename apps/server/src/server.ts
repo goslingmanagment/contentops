@@ -39,6 +39,8 @@ export interface ServerOptions {
   hubAgentKeys?: HubAgentKeyService
   /** Hub's person's door, for «Съёмка» as the signed-in person (package C3). */
   personDoor?: PersonDoor | null
+  /** `ORIGINALS_HOST_DIR`: the PC's lists for the release of the originals (SPEC §12.2). */
+  originalsHostDir?: string | null
 }
 
 /** The `web` role: the table routes on the database, sessions, rights and the journal. */
@@ -56,6 +58,7 @@ export function buildServer(options: ServerOptions) {
     sourceEnv: options.sourceEnv ?? process.env,
     space: options.space ?? { file: undefined, ...PILOT_SPACE },
     store: new BlobStore(options.storage),
+    originalsHostDir: options.originalsHostDir ?? null,
   }
   const authenticate = createAuthenticate(db, hubSignin, options.hubAgentKeys ?? null)
   const authorize = createAuthorize(db)

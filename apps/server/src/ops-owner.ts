@@ -30,6 +30,7 @@ import { genderOfName } from './handlers/people'
 import { modelNames, modelsByCodes } from './handlers/shared'
 import { raiseCustomCopies } from './intake/custom-copies'
 import { NOT_CONTENT_KEY, notContentKey } from './legacy/inputs'
+import { BATCH_KEY } from './originals/release'
 
 /**
  * The owner's commands from the VM shell (`ops.js agent`, `ops.js switch`, ops/README.md): what
@@ -507,6 +508,8 @@ export async function opsPolicy(
     NOT_CONTENT_KEY,
     notContentKey('yandex_disk'),
     notContentKey('dropbox'),
+    // What a batch of the PC's release may take (`originals/release.ts`): {files, bytes, first_files}.
+    BATCH_KEY,
   ]
   if (!allowedKeys.includes(input.key)) {
     throw new Error(

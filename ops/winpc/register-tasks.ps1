@@ -1,7 +1,8 @@
 <#
-Registers the Windows scheduled tasks of the pilot VM on winpc (SPEC 12.2), all SYSTEM; the
-first two at startup and every 5 minutes in Windows PowerShell 5.1; scripts are copied to
-C:\vm\contentops\ops\ and run from there, logs in C:\vm\contentops\logs\.
+Registers the Windows scheduled tasks of the pilot VM on winpc (SPEC 12.2), all SYSTEM but
+ContentOps-Originals-YDisk (the desktop user); the first two at startup and every 5 minutes in
+Windows PowerShell 5.1; scripts are copied to C:\vm\contentops\ops\ and run from there, logs
+in C:\vm\contentops\logs\.
 
 - ContentOps-Watchdog: starts the VM when it is off; /healthz, VM restart after 3 failures.
   Registered DISABLED unless -Enable is given: until the app answers /healthz it would restart
@@ -18,6 +19,19 @@ C:\vm\contentops\ops\ and run from there, logs in C:\vm\contentops\logs\.
 - ContentOps-CopyList: on demand only (no trigger), PowerShell 7. Lists the Yandex copy,
   metadata only, to C:\vm\contentops\host\ydisk-copy-list.jsonl (ydisk-copy-list.ps1); the
   operator refreshes it before each import batch: Start-ScheduledTask ContentOps-CopyList.
+  ContentOps-Originals-YDisk starts it before and after each of its runs.
+- ContentOps-Originals-YDisk: PowerShell 7 as the desktop user (-DesktopUser, dmsrg),
+  interactive, highest, at logon and every 20 min, at most 2 h: frees the Yandex copy on C:
+  file by file as ContentOps' route allows (ContentOps-Originals.ps1 -Holder ydisk; it starts
+  and closes the Yandex client itself). Registered DISABLED unless -Enable is given; enabling
+  it disables the ad-hoc Gosling-YdiskFree, which did the same job by hand-made lists.
+- ContentOps-Originals-Ari: PowerShell 7 as SYSTEM, every 20 min, at most 2 h: lists E:\Ari
+  and deletes there the files ContentOps' route allows, each checked by its Dropbox hash
+  (ContentOps-Originals.ps1 -Holder eari). Registered DISABLED even with -Enable: only
+  -EnableAri turns it on (after the Mac runs the ari_mirror change, ops/README.md); a re-run
+  keeps it on once it is on.
+- Both read the host agent's token from C:\vm\contentops\secrets\originals-agent.token; this
+  script makes the folder for SYSTEM, Administrators and the desktop user only (never shared).
 
 Re-running replaces the tasks and keeps the share. Run elevated on winpc, e.g. from the Mac:
   scp ops/winpc/*.ps1 winpc:C:/vm/contentops/ops/
@@ -33,18 +47,22 @@ ASCII only.
 #>
 param(
   [switch]$Enable,
-  [string]$HealthUrl = 'http://contentops.tail1d911a.ts.net/healthz'
+  [switch]$EnableAri,
+  [string]$HealthUrl = 'http://contentops.tail1d911a.ts.net/healthz',
+  [string]$ApiBase = 'http://contentops.tail1d911a.ts.net',
+  [string]$DesktopUser = 'dmsrg'
 )
 $ErrorActionPreference = 'Stop'
 $vmName = 'contentops'
 $opsDir = 'C:\vm\contentops\ops'
 $logDir = 'C:\vm\contentops\logs'
 $hostDir = 'C:\vm\contentops\host'
+$secretsDir = 'C:\vm\contentops\secrets'
 $shareName = 'contentops-host'
 $shareUser = "$env:COMPUTERNAME\contentops-ro"
 
 New-Item -ItemType Directory -Force -Path $opsDir, $logDir, $hostDir | Out-Null
-foreach ($name in 'ContentOps-Watchdog.ps1', 'ContentOps-Space.ps1', 'ContentOps-Compact.ps1', 'ydisk-copy-list.ps1') {
+foreach ($name in 'ContentOps-Watchdog.ps1', 'ContentOps-Space.ps1', 'ContentOps-Compact.ps1', 'ydisk-copy-list.ps1', 'ContentOps-Originals.ps1') {
   $src = Join-Path $PSScriptRoot $name
   $dst = Join-Path $opsDir $name
   if ((Resolve-Path $src).Path -ne $dst) { Copy-Item -Force $src $dst }
@@ -114,7 +132,48 @@ Register-ScheduledTask -TaskName 'ContentOps-CopyList' -Action $copyListAction -
   -Description 'ContentOps: metadata-only list of the Yandex copy for the import, on demand (ops/winpc)' | Out-Null
 Enable-ScheduledTask -TaskName 'ContentOps-CopyList' | Out-Null
 
-foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space', 'ContentOps-Compact', 'ContentOps-CopyList') {
+# The host agent's token of the originals' tasks: SYSTEM, Administrators and the desktop user
+# only, no inheritance; outside the share. The owner puts the token there (ops/README.md).
+New-Item -ItemType Directory -Force -Path $secretsDir | Out-Null
+& icacls $secretsDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "$($DesktopUser):(OI)(CI)RX" | Out-Null
+
+function New-OriginalsAction([string]$Holder) {
+  return New-ScheduledTaskAction -Execute $pwsh `
+    -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$(Join-Path $opsDir 'ContentOps-Originals.ps1')`" -Holder $Holder -ApiBase `"$ApiBase`""
+}
+$originalsSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+  -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+$every20Min = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Minutes 20)
+
+# The Yandex client is a desktop app: the copy's task runs in the desktop user's session.
+$atLogon = New-ScheduledTaskTrigger -AtLogOn -User $DesktopUser
+$atLogon.Delay = 'PT2M'
+$desktop = New-ScheduledTaskPrincipal -UserId $DesktopUser -LogonType Interactive -RunLevel Highest
+Register-ScheduledTask -TaskName 'ContentOps-Originals-YDisk' -Action (New-OriginalsAction 'ydisk') `
+  -Trigger $atLogon, $every20Min -Principal $desktop -Settings $originalsSettings -Force `
+  -Description 'ContentOps: frees the Yandex copy on C: file by file as ContentOps allows, starts and closes the client (ops/winpc)' | Out-Null
+if ($Enable) {
+  Enable-ScheduledTask -TaskName 'ContentOps-Originals-YDisk' | Out-Null
+  # The ad-hoc task of 24.11.2026 did the same by hand-made lists: two would fight over the client.
+  if (Get-ScheduledTask -TaskName 'Gosling-YdiskFree' -ErrorAction SilentlyContinue) {
+    Disable-ScheduledTask -TaskName 'Gosling-YdiskFree' | Out-Null
+    'Gosling-YdiskFree: disabled (ContentOps-Originals-YDisk does its job)'
+  }
+} else { Disable-ScheduledTask -TaskName 'ContentOps-Originals-YDisk' | Out-Null }
+
+# E:\Ari: on only with -EnableAri (after the ari_mirror change on the Mac); a re-run keeps it on.
+$ariTask = Get-ScheduledTask -TaskName 'ContentOps-Originals-Ari' -ErrorAction SilentlyContinue
+$ariWasOn = $ariTask -and "$($ariTask.State)" -ne 'Disabled'
+Register-ScheduledTask -TaskName 'ContentOps-Originals-Ari' -Action (New-OriginalsAction 'eari') `
+  -Trigger $every20Min -Principal $principal -Settings $originalsSettings -Force `
+  -Description 'ContentOps: deletes in E:\Ari the files ContentOps allows, each checked by its Dropbox hash (ops/winpc)' | Out-Null
+if ($EnableAri -or $ariWasOn) { Enable-ScheduledTask -TaskName 'ContentOps-Originals-Ari' | Out-Null }
+else { Disable-ScheduledTask -TaskName 'ContentOps-Originals-Ari' | Out-Null }
+$tokenFile = Join-Path $secretsDir 'originals-agent.token'
+if (-not (Test-Path $tokenFile)) { "FIX no host agent token: $tokenFile (ops/README.md, Originaly: dva mesta)" }
+
+foreach ($name in 'ContentOps-Watchdog', 'ContentOps-Space', 'ContentOps-Compact', 'ContentOps-CopyList',
+  'ContentOps-Originals-YDisk', 'ContentOps-Originals-Ari') {
   "{0}: {1}, next run {2}" -f $name, (Get-ScheduledTask -TaskName $name).State, (Get-ScheduledTaskInfo -TaskName $name).NextRunTime
 }
 "{0}: {1} -> {2}" -f $shareName, (Get-SmbShare -Name $shareName).Path, $shareUser
