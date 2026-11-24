@@ -41,7 +41,7 @@ ARG RCLONE_URL=https://github.com/rclone/rclone/releases/download/v1.75.1/rclone
 ARG RCLONE_SHA256=982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
 ADD --checksum=sha256:${RCLONE_SHA256} ${RCLONE_URL} /tmp/rclone.zip
 RUN apt-get update \
- && apt-get install -y --no-install-recommends unzip \
+ && apt-get install -y --no-install-recommends unzip ca-certificates \
  && unzip -j /tmp/rclone.zip '*/rclone' -d /opt/rclone \
  && /opt/rclone/rclone version | head -n 1
 
@@ -105,6 +105,9 @@ WORKDIR /app
 ENV NODE_ENV=production \
     MIGRATIONS_DIR=/app/migrations
 COPY --from=rclone /opt/rclone/rclone /usr/local/bin/rclone
+# rclone is Go: it trusts the system CA bundle, which the Node base image does not carry (Node has
+# its own). Without it every cloud fails TLS («x509: certificate signed by unknown authority»).
+COPY --from=rclone /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /app/apps/server/dist ./dist
 COPY --from=build /app/packages/db/migrations ./migrations
