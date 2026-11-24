@@ -30,7 +30,10 @@ export interface VerifyReport {
   unreferenced: { sha256: string; key: string; bytes: number; origin?: UnreferencedOrigin }[]
   unreferenced_bytes: number
   unreferenced_by_origin?: Partial<Record<UnreferencedOrigin, { count: number; bytes: number }>>
-  /** Raw bytes of registered web uploads kept until archived externally (`raw_released_at IS NULL`). */
+  /**
+   * Raw bytes of registered web uploads kept until the release of the originals lets them go
+   * (`raw_released_at IS NULL`: both copies not checked yet, SPEC §9.4), masters apart.
+   */
   held_web_uploads?: { count: number; bytes: number }
   /**
    * Web uploads left behind (SPEC §9.1: «брошенную загрузку удаляет та же команда
@@ -176,11 +179,6 @@ export function verifyBlobsHandler(deps: { db: Db; store: BlobStore }): WorkHand
          AND EXISTS (
            SELECT 1 FROM web_uploads u
             WHERE u.sha256 = b.sha256 AND u.state = 'registered' AND u.raw_released_at IS NULL
-              AND NOT EXISTS (
-                SELECT 1 FROM inbox_drafts d
-                 WHERE d.model_id = u.model_id AND d.web_upload_id = u.id
-                   AND d.state = 'resolved' AND d.outcome IN ('rejected', 'alias')
-              )
          )
          AND NOT EXISTS (SELECT 1 FROM asset_versions v WHERE v.master_sha256 = b.sha256)
          AND NOT EXISTS (

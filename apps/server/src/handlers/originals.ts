@@ -2,13 +2,15 @@ import { sql } from 'drizzle-orm'
 import { requireActor } from '../commands'
 import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
+import { vmFreed } from '../originals/free'
 import { originalsRelease } from '../originals/release'
 import type { Services } from '../services'
 
 /**
- * «Оригиналы» for the PC (SPEC §9.4, §12.2): what a holder of the PC may free now. The route is
- * the owner's and the host agent's (`access.ts`, `originals.host_agent`); the agent also needs
- * the model in its grants.
+ * «Оригиналы» for the PC (SPEC §9.4, §12.2): what a holder of the PC may free now, and what the
+ * VM has removed from its data disk (for the nightly compaction). The routes are the owner's and
+ * the host agent's (`access.ts`, `originals.host_agent`); for a holder the agent also needs the
+ * model in its grants.
  */
 export function originalsHandlers({ db, originalsHostDir }: Services): HandlerRegistry {
   return {
@@ -28,6 +30,7 @@ export function originalsHandlers({ db, originalsHostDir }: Services): HandlerRe
           hostDir: originalsHostDir ?? null,
         })
       },
+      originalsVmFreed: async () => vmFreed(db),
     },
   }
 }

@@ -152,6 +152,7 @@ export function buildSystemState(): SystemState {
       reliable: 17_196,
       waiting: 6_022,
       freed_bytes: 241 * GB,
+      freed_vm_bytes: 12 * GB,
       missing: 3,
       failed: 0,
       warnings: ['копий не найдено: 3'],

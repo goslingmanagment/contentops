@@ -186,19 +186,24 @@ export async function lockBlobForReference(q: Queryable, sha: Buffer | string): 
   return rows[0]?.ok === true
 }
 
-export type PurgeOutcome = 'purged' | 'referenced' | 'not_present' | 'busy'
+export type PurgeOutcome = 'purged' | 'referenced' | 'not_present' | 'busy' | 'kept'
 
 /**
- * The owner's removal of a blob without references (schema §5 «Удаление байтов»): the
- * reference check runs under the row lock in (1) and again in (3). Derivatives of the blob
- * as a master go with it; the `blobs` row stays with `state = 'purged'`.
+ * Removal of a blob without references (schema §5 «Удаление байтов»): the owner's command and the
+ * release of the originals in the VM (`originals/free.ts`). The reference check runs under the row
+ * lock in (1) and again in (3); `keep` — another reason of the caller to keep the bytes, asked
+ * under the same lock in (1) (`kept`). Derivatives of the blob as a master go with it, and those
+ * built from it and never bound to a master; the `blobs` row stays with `state = 'purged'`.
  */
 export async function purgeBlob(
   db: Db,
   store: BlobStore,
   sha256: string,
   owner: string,
-  options: { afterFiles?: () => Promise<void> } = {},
+  options: {
+    afterFiles?: () => Promise<void>
+    keep?: (tx: Queryable, sha: Buffer) => Promise<boolean>
+  } = {},
 ): Promise<PurgeOutcome> {
   const sha = shaBytes(sha256)
   const intent = await db.transaction(async (tx) => {
@@ -208,6 +213,7 @@ export async function purgeBlob(
       sql`SELECT blob_is_referenced(${sha}) AS referenced`,
     )
     if (rows[0]?.referenced) return { outcome: 'referenced' as const }
+    if (await options.keep?.(tx, sha)) return { outcome: 'kept' as const }
     try {
       const inserted = await tx.execute<{ id: string }>(sql`
         INSERT INTO storage_operations (kind, blob_sha256, from_key, to_key, owner)

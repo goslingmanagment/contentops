@@ -91,6 +91,7 @@ export const workKindsByRole = {
     'originals_check',
     'originals_audit',
     'originals_copy',
+    'originals_free',
   ],
   'worker-video': [
     'derive_video',
@@ -123,6 +124,7 @@ export const globalWorkKinds = [
   'originals_check',
   'originals_audit',
   'originals_copy',
+  'originals_free',
 ] as const satisfies readonly WorkKind[]
 
 /**
@@ -133,8 +135,8 @@ export const globalWorkKinds = [
  * Hub never holds intake and exports (SPEC §8, PLAN 5 «недоступность одной внешней системы»);
  * `ai` — the requests to the markup providers, one at a time, for the same reason;
  * `originals` — the copy, the check and the nightly audit of the copies of the originals in the
- * clouds (SPEC §9.4), one run at a time (each with its own streams): a slow MEGA never holds
- * intake.
+ * clouds and the freeing of our disk by them (SPEC §9.4), one run at a time (each with its own
+ * streams): a slow MEGA never holds intake.
  */
 export const workSlots = [
   'general',
@@ -167,6 +169,7 @@ export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
   originals_check: 'originals',
   originals_audit: 'originals',
   originals_copy: 'originals',
+  originals_free: 'originals',
   derive_video: 'encode',
   encode_master: 'encode',
   verify_master: 'encode',
@@ -205,6 +208,7 @@ export const workKindQueue: Readonly<Record<WorkKind, WorkQueue | null>> = {
   originals_check: null,
   originals_audit: null,
   originals_copy: null,
+  originals_free: null,
   derive_video: 'preview',
   encode_master: 'compress',
   verify_master: 'compress',
@@ -286,6 +290,7 @@ export const workKindSwitch: Readonly<Partial<Record<WorkKind, KillSwitchKey>>> 
   originals_check: 'originals.enabled',
   originals_audit: 'originals.enabled',
   originals_copy: 'originals.enabled',
+  originals_free: 'originals.enabled',
 }
 
 /**

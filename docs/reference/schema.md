@@ -475,7 +475,8 @@ SHA-256 или MD5 ревизии Я.Диска), `byte_size`, `seen_md5`, `seen
 ссылка на оригинал, `place`, `role`. Журнала-триггера нет: проверки пишут таблицу каждую
 ночь, журнал — строки `action` команд (`originals.seed`, `originals.switch`). Пишут её работы
 `originals_copy`, `originals_check` и `originals_audit` роли `worker` (общие, без модели; слот
-`originals`). Копия в Dropbox самой модели (архив Я.Диска, веб-загрузки) — строка `place =
+`originals`); `originals_free` того же слота её только читает и по ней освобождает диск ВМ
+(журнал — `originals.release`, `originals.remove`). Копия в Dropbox самой модели (архив Я.Диска, веб-загрузки) — строка `place =
 'dropbox', role = 'copy'`; её `object_ref` — ID файла Dropbox (`id:…`), он при перезаписи не
 меняется, поэтому проверку держит ещё и `seen_dropbox_hash`.
 
@@ -662,7 +663,9 @@ processed_frames | master_version | other`), `target_item_id?`, `plan_row_id?`
 registered | failed | abandoned`), `tmp_key`, `error`, `created_at`,
 `completed_at`, `raw_released_at?`, `raw_archive_ref?` (добавлены в `0026_storage_safety`:
 сырой исходник зарегистрированной веб-загрузки удерживается `blob_is_referenced` до
-освобождения после внешнего архивирования, если её черновик не `rejected`/`alias`). UNIQUE `(model_id, upload_id)`; частичный индекс незавершённых. Черновик
+освобождения; с `0030_originals_free` — любой, и отклонённой, и алиаса: `raw_released_at` ставит
+работа `originals_free`, когда обе копии загрузки проверены, а `raw_archive_ref` — JSON
+`{"sha256", "copies": [{place, remote, path, object_ref, verified_at}]}`). UNIQUE `(model_id, upload_id)`; частичный индекс незавершённых. Черновик
 загрузки — `inbox_drafts.web_upload_id` (UNIQUE: одна загрузка — один черновик); обратной
 ссылки нет.
 Порядок: файл докачан и сверен → блоб в `blobs/` → черновик обычной приёмки.
@@ -679,8 +682,8 @@ registered | failed | abandoned`), `tmp_key`, `error`, `created_at`,
 
 | Колонка | Смысл |
 |---|---|
-| `id`, `model_id?` | модель пуста у общесистемных (`verify_blobs`, `backup`, `originals_check`, `originals_audit`, `originals_copy`) |
-| `kind` | каждый вид ровно одной роли (SPEC §12.0). `worker`: `scan \| fetch \| hash \| unpack_archive \| import_parse \| register \| propose \| export \| hub_sync \| hub_history \| hub_publish \| hub_orders \| annotate \| verify_blobs \| backup \| originals_check \| originals_audit \| originals_copy` (последние три — проверка копий оригиналов, ночная сверка облаков и запись копий, свой слот `originals`, SPEC §9.4); `worker-video`: `derive_video \| encode_master \| verify_master \| render \| uniq_render \| render_compat \| extract_frame \| video_print`; `worker-image`: `derive_image`. `derive_*` — один проход: ffprobe или EXIF, превью, миниатюры, кадры, у фото и pHash, у видео отпечаток из превью прохода (SPEC §12.0, §6.2); `video_print` — отпечаток ролика, принятого раньше отпечатков, из готового превью: `worker-video` ставит их при старте с приоритетом −10, ниже всего, кроме проверки хранилища; `hub_history` — проход по истории страницы Fansly (на OnlyFans прохода нет); `hub_publish` — загрузка файлов, черновик, утверждение и отмена своей публикации Hub (5б); под `COPY_JOBS=1` рядом с кодерами — то, чего ждёт КМ: `render` (копия для платформы), `render_compat` (совместимая H.264), `extract_frame` (кадр в полном размере) |
+| `id`, `model_id?` | модель пуста у общесистемных (`verify_blobs`, `backup`, `originals_check`, `originals_audit`, `originals_copy`, `originals_free`) |
+| `kind` | каждый вид ровно одной роли (SPEC §12.0). `worker`: `scan \| fetch \| hash \| unpack_archive \| import_parse \| register \| propose \| export \| hub_sync \| hub_history \| hub_publish \| hub_orders \| annotate \| verify_blobs \| backup \| originals_check \| originals_audit \| originals_copy \| originals_free` (последние четыре — проверка копий оригиналов, ночная сверка облаков, запись копий и освобождение диска ВМ по ним, свой слот `originals`, SPEC §9.4); `worker-video`: `derive_video \| encode_master \| verify_master \| render \| uniq_render \| render_compat \| extract_frame \| video_print`; `worker-image`: `derive_image`. `derive_*` — один проход: ffprobe или EXIF, превью, миниатюры, кадры, у фото и pHash, у видео отпечаток из превью прохода (SPEC §12.0, §6.2); `video_print` — отпечаток ролика, принятого раньше отпечатков, из готового превью: `worker-video` ставит их при старте с приоритетом −10, ниже всего, кроме проверки хранилища; `hub_history` — проход по истории страницы Fansly (на OnlyFans прохода нет); `hub_publish` — загрузка файлов, черновик, утверждение и отмена своей публикации Hub (5б); под `COPY_JOBS=1` рядом с кодерами — то, чего ждёт КМ: `render` (копия для платформы), `render_compat` (совместимая H.264), `extract_frame` (кадр в полном размере) |
 | `work_key` | естественный ключ: `fetch:<revision>`, `master:<source_sha>:<recipe>`, `uniq:<parent_version>:<level>:<n>`, `export:<receipt>` |
 | `draft_id?`, `source_revision_id?`, `asset_version_id?`, `manifest_id?`, `receipt_id?`, `generation_id?`, `account_id?` | типизированные цели |
 | `dataset?`, `scope?`, `window_from?`, `window_to?` | входы опроса Hub и бэкапа; неизменны, окно входит в `work_key` — новый прогон или интервал даёт новую строку |
@@ -1496,8 +1499,9 @@ LLM.
     `blob_is_referenced(sha256)` держит: мастер любой версии; `master_sha256` и
     `source_blob_sha256` черновика, пока он не `resolved`; `web_uploads.sha256`, пока загрузка
     не дошла до черновика (`receiving | received | verified`) или зарегистрирована без
-    `raw_released_at` (кроме черновиков с исходом `rejected`/`alias`, миграция `0026`); выход работы в `pending |
-    running | retry_wait`. Тест сверяет список с каждым FK на `blobs (sha256)`. Строку
+    `raw_released_at` (любая, миграция `0030`; в `0026` — кроме исходов `rejected`/`alias`); вход
+    и выход работы в `pending | running | retry_wait` (вход — с `0030`, частичный индекс
+    `work_operations_input_unfinished`). Тест сверяет список с каждым FK на `blobs (sha256)`. Строку
     `blobs` прикладная роль не удаляет (REVOKE DELETE).
   - Записанное однажды (функция `set_once`, NULL → значение): у ревизии `source_sha256`,
     `verified_at`, `verified_route`, `frozen_by_work_id`, `frozen_path` (три первых — только
@@ -1766,6 +1770,7 @@ LLM.
 | после 9а (24.11.2026) | `0027_original_copies` | `original_copies` (1): места оригиналов вне ПК и правило «два облака и мастер» (SPEC §9.4) |
 | после 9а (24.11.2026) | `0028_originals_check` | работы `originals_check`, `originals_audit` (общие), `original_copies.unseen_since`: проверка копий байтами и ночная сверка облаков (SPEC §9.4) |
 | после 9а (24.11.2026) | `0029_originals_copy` | работа `originals_copy` (общая): копии оригиналов пишет ContentOps — MEGA, архив Я.Диска и веб-загрузки в Dropbox модели (SPEC §9.4) |
+| после 9а (24.11.2026) | `0030_originals_free` | работа `originals_free` (общая): диск ВМ освобождает сама система — веб-загрузки до двух проверенных копий держатся все, вход незавершённой работы держит байты (`blob_is_referenced`, индекс `work_operations_input_unfinished`) (SPEC §9.1, §9.4) |
 | 9б (бэкап только на сервере, решение 12.09.2026) | `0011_backup` | `backup_checkpoints` (1); `blobs.backed_up_at` и индекс очереди бэкапа |
 
 Перенос ИИ на этап 8 принят владельцем 12.09.2026 (SPEC §8.3). Всего

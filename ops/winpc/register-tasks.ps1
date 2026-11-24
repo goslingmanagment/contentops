@@ -9,7 +9,9 @@ in C:\vm\contentops\logs\.
   the VM every hour. The deploy enables it (-Enable). -HealthUrl overrides the checked address
   (https once tailnet HTTPS certificates are on).
 - ContentOps-Compact: daily at 04:30 Moscow time and 10 min after startup, Windows PowerShell
-  5.1, at most 3 h; compacts derived.vhdx when E: is below 160 GB free (ContentOps-Compact.ps1).
+  5.1, at most 3 h; compacts derived.vhdx when E: is below 160 GB free, and data.vhdx in the same
+  stop when C: is below 200 GB and the VM removed more than 20 GB from it since its last
+  compaction (ContentOps-Compact.ps1; the host agent's token in secrets\).
   No catch-up of a missed night: it would stop the VM by day. Registered DISABLED unless
   -Enable is given, like the watchdog.
 - ContentOps-Space: free space of C: and E: as Windows sees it, to
@@ -104,7 +106,7 @@ Register-Every5Min 'ContentOps-Space' 'ContentOps-Space.ps1' '' `
 Enable-ScheduledTask -TaskName 'ContentOps-Space' | Out-Null
 Start-ScheduledTask -TaskName 'ContentOps-Space'
 
-# Compaction of derived.vhdx: 04:30 Moscow time, after fstrim in the VM at 04:00 (Europe/Moscow);
+# Compaction of derived.vhdx and data.vhdx: 04:30 Moscow time, after fstrim in the VM at 04:00 (Europe/Moscow);
 # 10 min after startup a run cut short by a restart gets the watchdog back on.
 $moscow = [TimeZoneInfo]::FindSystemTimeZoneById('Russian Standard Time')
 $compactAt = [TimeZoneInfo]::ConvertTime([datetime]::SpecifyKind([datetime]::Today.AddHours(4.5), 'Unspecified'),
@@ -116,7 +118,7 @@ $compactSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontSt
   -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 3)
 Register-ScheduledTask -TaskName 'ContentOps-Compact' -Action (New-Ps51Action 'ContentOps-Compact.ps1' '') `
   -Trigger $nightly, $afterStartup -Principal $principal -Settings $compactSettings -Force `
-  -Description 'ContentOps: 04:30 MSK, compacts derived.vhdx when E: is below 160 GB free (ops/winpc)' | Out-Null
+  -Description 'ContentOps: 04:30 MSK, compacts derived.vhdx (E: below 160 GB free) and data.vhdx (C: below 200 GB, 20 GB freed in the VM) (ops/winpc)' | Out-Null
 if ($Enable) { Enable-ScheduledTask -TaskName 'ContentOps-Compact' | Out-Null }
 else { Disable-ScheduledTask -TaskName 'ContentOps-Compact' | Out-Null }
 

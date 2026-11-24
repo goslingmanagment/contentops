@@ -4,12 +4,19 @@ import { StatusSign } from '@contentops/ui/components/status-sign'
 
 const GB = 1_000_000_000
 
-/** «надёжны 17 196 из 29 384 · ждут проверки 6 022 · на ПК освобождено 241 ГБ · копий не найдено 3». */
+const gb = (bytes: number) => formatNumber(Math.round(bytes / GB))
+
+/**
+ * «надёжны 17 196 из 29 384 · ждут проверки 6 022 · на ПК освобождено 241 ГБ (копия Я.Диска
+ * 229 ГБ, ВМ 12 ГБ) · копий не найдено 3».
+ */
 export function originalsText(line: OriginalsLine): string {
+  const vm = line.freed_vm_bytes
+  const parts = vm > 0 ? ` (копия Я.Диска ${gb(line.freed_bytes - vm)} ГБ, ВМ ${gb(vm)} ГБ)` : ''
   return [
     `надёжны ${formatNumber(line.reliable)} из ${formatNumber(line.originals)}`,
     `ждут проверки ${formatNumber(line.waiting)}`,
-    `на ПК освобождено ${formatNumber(Math.round(line.freed_bytes / GB))} ГБ`,
+    `на ПК освобождено ${gb(line.freed_bytes)} ГБ${parts}`,
     `копий не найдено ${formatNumber(line.missing)}`,
   ].join(' · ')
 }

@@ -132,10 +132,11 @@ import { smokeSetup } from './smoke/setup'
  *
  * The check in the VM (SPEC §9.4): the switch of the check and the nightly audit, a run now
  * (`copy` writes the copies not made yet, `check` streams the copies back, `audit` lists the
- * clouds), the paths of a model for rclone (`originals.model_config`, see ops/README.md):
+ * clouds, `free` releases the uploads and removes from our disk the blobs of reliable
+ * originals), the paths of a model for rclone (`originals.model_config`, see ops/README.md):
  *
  *   docker compose exec -T worker node dist/ops.js originals on|off
- *   docker compose exec -T worker node dist/ops.js originals check|audit|copy
+ *   docker compose exec -T worker node dist/ops.js originals check|audit|copy|free
  *   docker compose exec -T worker node dist/ops.js policy originals.model_config '{…}' --model lora
  *
  * The duplicates of a model's Я.Диск in MEGA under the names Windows gave them (`dedupe.ts`):
@@ -175,8 +176,8 @@ const USAGE = `usage:
   ops.js originals seed <model> [--mega <lsjson>] [--mega-root <path>] [--checks <dir>] [--manifest <tsv>] [--manifest-root <path>] [--yes]
   ops.js originals status [<model>]       (originals, reliable, decided, releasable)
   ops.js originals host-agent <name> | --off   (the agent whose token the PC's tasks use)
-  ops.js originals on|off                 (the copy, the check and the nightly audit in the clouds)
-  ops.js originals check|audit|copy       (a run now)
+  ops.js originals on|off                 (the copy, the check, the nightly audit, the freeing of the VM)
+  ops.js originals check|audit|copy|free  (a run now)
   ops.js originals mega-dedupe <model> [--yes] [--list]   (MEGA duplicates under Windows names)
 ${ANNOTATION_USAGE}`
 
@@ -619,7 +620,7 @@ async function main(argv: string[]): Promise<number> {
         out(result)
         return 0
       }
-      if (action === 'check' || action === 'audit' || action === 'copy') {
+      if (action === 'check' || action === 'audit' || action === 'copy' || action === 'free') {
         const { work, created } = await enqueueOriginals(db, `originals_${action}`)
         process.stderr.write(
           `originals ${action}: work ${work.id}${created ? '' : ' (one is already waiting)'}\n`,

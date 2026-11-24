@@ -680,6 +680,7 @@ const WORK_KIND: Record<string, string> = {
   originals_check: 'проверка копий оригиналов',
   originals_audit: 'ночная сверка облаков',
   originals_copy: 'копирование оригиналов',
+  originals_free: 'освобождение диска ВМ',
   derive_video: 'превью видео',
   encode_master: 'сжатие мастера',
   verify_master: 'проверка мастера',
@@ -775,6 +776,10 @@ const SYSTEM_PHRASE: Record<string, (row: LogRow, after: Map<string, string>) =>
   'person.ops': (row) => `Из консоли ВМ заведён человек: ${row.subject_label}`,
   'contractor.ops': (row) => `Из консоли ВМ заведён подрядчик: ${row.subject_label}`,
   'upload.purge': (row) => `Из консоли ВМ удалены байты загрузки: ${row.subject_label}`,
+  'originals.release': (row) =>
+    `Исходник загрузки отпущен — копии в MEGA и Dropbox проверены: ${row.subject_label}`,
+  'originals.remove': (row) =>
+    `С диска ВМ удалены байты — оригинал в двух облаках: ${row.subject_label}`,
   'repair.secondPersonUnchecked': (row) =>
     `Из консоли ВМ: второй человек в кадре снова «не проверено» у ${row.subject_label} ${plural(Number(row.subject_label), ['объекта', 'объектов', 'объектов'])}`,
   'repair.shotOnFromExif': (row) =>

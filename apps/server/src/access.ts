@@ -40,6 +40,8 @@ const ROUTE_ACCESS: Record<string, Access> = {
   'admin.reportBackup': 'staff',
   // The Windows tasks of the PC ask what they may free (SPEC §12.2), with the host agent's token.
   'admin.originalsRelease': 'host',
+  // …and the nightly compaction asks what the VM removed from its data disk (SPEC §12.2).
+  'admin.originalsVmFreed': 'host',
   // «Только чтение» видит превью, но не скачивает (SPEC §11.1).
   'media.download': 'staff',
   // «Приехало» и разбор старых имён — разделы КМ и владельца; «Только чтение» видит

@@ -8988,6 +8988,11 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "freed_vm_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
           "missing": {
             "type": "integer",
             "minimum": 0,
@@ -9020,6 +9025,7 @@
           "reliable",
           "waiting",
           "freed_bytes",
+          "freed_vm_bytes",
           "missing",
           "failed",
           "warnings",
@@ -9115,6 +9121,43 @@
           "files",
           "limit",
           "left"
+        ],
+        "additionalProperties": false
+      },
+      "OriginalsVmFreed": {
+        "type": "object",
+        "properties": {
+          "removed_blobs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "removed_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "originals_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "last_removed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Instant"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "removed_blobs",
+          "removed_bytes",
+          "originals_bytes",
+          "last_removed_at"
         ],
         "additionalProperties": false
       },
@@ -16592,6 +16635,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OriginalsRelease"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/originals/vm-freed": {
+      "get": {
+        "operationId": "admin.originalsVmFreed",
+        "tags": [
+          "admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OriginalsVmFreed"
                 }
               }
             }

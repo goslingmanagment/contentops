@@ -18,20 +18,26 @@ import { AUDIT_INTERVAL_MS, auditStreamKey, originalsAuditHandler } from './audi
 import { CHECK_INTERVAL_MS, checkStreamKey, originalsCheckHandler } from './check'
 import { MODEL_CONFIG_KEY, SWITCH_KEY } from './config'
 import { COPY_INTERVAL_MS, copyStreamKey, originalsCopyHandler } from './copy'
+import { FREE_INTERVAL_MS, freeStreamKey, originalsFreeHandler } from './free'
 import { RcloneTransport } from './rclone'
 import type { OriginalsTransport } from './transport'
 
 /**
- * The originals in role `worker` (SPEC §9.4): one rclone for the three works, the streams — the
- * copy and the check every 10 minutes, the audit once a day (the scheduler's day starts at
- * 00:00 UTC, 03:00 in Moscow) — and the switch `originals.enabled`. They share the slot
- * `originals`: one run at a time, each with `ORIGINALS_STREAMS` streams inside. Without
- * `RCLONE_CONFIG` (or its file) nothing is scheduled, as with any integration without its key;
- * without the switch the works wait (`switch_off:originals.enabled`); a model without
- * `originals.model_config` is not looked at.
+ * The originals in role `worker` (SPEC §9.4): one rclone for the works that touch the clouds,
+ * the streams — the copy and the check every 10 minutes, the audit once a day (the scheduler's
+ * day starts at 00:00 UTC, 03:00 in Moscow), the freeing of our disk every 30 minutes (it reads
+ * only the ledger) — and the switch `originals.enabled`. They share the slot `originals`: one run
+ * at a time, each with `ORIGINALS_STREAMS` streams inside. Without `RCLONE_CONFIG` (or its file)
+ * nothing is scheduled, as with any integration without its key; without the switch the works
+ * wait (`switch_off:originals.enabled`); a model without `originals.model_config` is not looked
+ * at.
  */
 
-export type OriginalsKind = 'originals_check' | 'originals_audit' | 'originals_copy'
+export type OriginalsKind =
+  | 'originals_check'
+  | 'originals_audit'
+  | 'originals_copy'
+  | 'originals_free'
 
 export interface OriginalsEnv {
   RCLONE_CONFIG?: string | undefined
@@ -86,6 +92,7 @@ export function originalsWorker(
         store: options.store ?? null,
         ...(streams ? { streams } : {}),
       }),
+      originals_free: originalsFreeHandler({ store: options.store ?? null }),
     },
     streams: async () => {
       if (!clouds || !(transport || (await readable(config)))) return []
@@ -103,6 +110,14 @@ export function originalsWorker(
           kind: 'originals_copy',
           modelId: null,
           intervalMs: COPY_INTERVAL_MS,
+          priority: 5,
+        },
+        // What the ledger lets go from our disk.
+        {
+          streamKey: freeStreamKey,
+          kind: 'originals_free',
+          modelId: null,
+          intervalMs: FREE_INTERVAL_MS,
           priority: 5,
         },
         // Ahead of the check in the slot: the night's listing waits for one check run at most.
@@ -125,9 +140,10 @@ const STREAM_OF: Record<OriginalsKind, string> = {
   originals_check: checkStreamKey,
   originals_audit: auditStreamKey,
   originals_copy: copyStreamKey,
+  originals_free: freeStreamKey,
 }
 
-/** `ops.js originals check|audit|copy`: a run now (the stream's row when one is waiting). */
+/** `ops.js originals check|audit|copy|free`: a run now (the stream's row when one is waiting). */
 export async function enqueueOriginals(db: Db, kind: OriginalsKind) {
   return enqueueWork(db, {
     modelId: null,
