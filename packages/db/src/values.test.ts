@@ -24,6 +24,7 @@ const LISTS: Record<string, readonly string[]> = {
   work_operations_global_kinds: v.globalWorkKinds,
   work_operations_finished_at: v.finishedWorkStates,
   work_operations_stream_key: v.unfinishedWorkStates,
+  work_operations_input_unfinished: v.unfinishedWorkStates,
   work_operations_due: v.claimableWorkStates,
   id_counters_type_check: v.contentTypes,
   policy_settings_item_type_check: v.contentTypes,
