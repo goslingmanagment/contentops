@@ -679,6 +679,7 @@ const WORK_KIND: Record<string, string> = {
   backup: 'бэкап',
   originals_check: 'проверка копий оригиналов',
   originals_audit: 'ночная сверка облаков',
+  originals_copy: 'копирование оригиналов',
   derive_video: 'превью видео',
   encode_master: 'сжатие мастера',
   verify_master: 'проверка мастера',

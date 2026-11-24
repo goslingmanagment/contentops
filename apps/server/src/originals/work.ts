@@ -13,23 +13,33 @@ import {
   withActorTx,
 } from '@contentops/db'
 import { sql } from 'drizzle-orm'
+import type { BlobStore } from '../media/storage'
 import { AUDIT_INTERVAL_MS, auditStreamKey, originalsAuditHandler } from './audit'
 import { CHECK_INTERVAL_MS, checkStreamKey, originalsCheckHandler } from './check'
 import { MODEL_CONFIG_KEY, SWITCH_KEY } from './config'
+import { COPY_INTERVAL_MS, copyStreamKey, originalsCopyHandler } from './copy'
 import { RcloneTransport } from './rclone'
 import type { OriginalsTransport } from './transport'
 
 /**
- * The originals in role `worker` (SPEC §9.4): one rclone for both works, the streams — the check
- * every 10 minutes, the audit once a day (the scheduler's day starts at 00:00 UTC, 03:00 in
- * Moscow) — and the switch `originals.enabled`. Without `RCLONE_CONFIG` (or its file) nothing is
- * scheduled, as with any integration without its key; without the switch the works wait
- * (`switch_off:originals.enabled`); a model without `originals.model_config` is not looked at.
+ * The originals in role `worker` (SPEC §9.4): one rclone for the three works, the streams — the
+ * copy and the check every 10 minutes, the audit once a day (the scheduler's day starts at
+ * 00:00 UTC, 03:00 in Moscow) — and the switch `originals.enabled`. They share the slot
+ * `originals`: one run at a time, each with `ORIGINALS_STREAMS` streams inside. Without
+ * `RCLONE_CONFIG` (or its file) nothing is scheduled, as with any integration without its key;
+ * without the switch the works wait (`switch_off:originals.enabled`); a model without
+ * `originals.model_config` is not looked at.
  */
+
+export type OriginalsKind = 'originals_check' | 'originals_audit' | 'originals_copy'
 
 export interface OriginalsEnv {
   RCLONE_CONFIG?: string | undefined
   RCLONE_BIN?: string | undefined
+  /** Streams at once in one run of the check or the copy; default 8. */
+  ORIGINALS_STREAMS?: number | undefined
+  /** rclone's `--bwlimit` timetable, Moscow time. */
+  ORIGINALS_BWLIMIT?: string | undefined
 }
 
 export interface OriginalsWorker {
@@ -51,17 +61,31 @@ async function readable(path: string | undefined): Promise<boolean> {
 export function originalsWorker(
   env: OriginalsEnv,
   log: (line: string, error?: unknown) => void,
-  transport?: OriginalsTransport,
+  options: { store?: BlobStore | null; transport?: OriginalsTransport } = {},
 ): OriginalsWorker {
+  const { transport } = options
   const config = env.RCLONE_CONFIG
   const clouds =
     transport ??
-    (config ? new RcloneTransport({ binary: env.RCLONE_BIN ?? 'rclone', config, log }) : null)
+    (config
+      ? new RcloneTransport({
+          binary: env.RCLONE_BIN ?? 'rclone',
+          config,
+          log,
+          ...(env.ORIGINALS_BWLIMIT ? { bwlimit: env.ORIGINALS_BWLIMIT } : {}),
+        })
+      : null)
   const get = () => clouds
+  const streams = env.ORIGINALS_STREAMS
   return {
     handlers: {
-      originals_check: originalsCheckHandler({ transport: get }),
+      originals_check: originalsCheckHandler({ transport: get, ...(streams ? { streams } : {}) }),
       originals_audit: originalsAuditHandler({ transport: get }),
+      originals_copy: originalsCopyHandler({
+        transport: get,
+        store: options.store ?? null,
+        ...(streams ? { streams } : {}),
+      }),
     },
     streams: async () => {
       if (!clouds || !(transport || (await readable(config)))) return []
@@ -71,6 +95,14 @@ export function originalsWorker(
           kind: 'originals_check',
           modelId: null,
           intervalMs: CHECK_INTERVAL_MS,
+          priority: 5,
+        },
+        // The copy and the check take turns in the slot.
+        {
+          streamKey: copyStreamKey,
+          kind: 'originals_copy',
+          modelId: null,
+          intervalMs: COPY_INTERVAL_MS,
           priority: 5,
         },
         // Ahead of the check in the slot: the night's listing waits for one check run at most.
@@ -89,13 +121,19 @@ export function originalsWorker(
   }
 }
 
-/** `ops.js originals check|audit`: a run now (the stream's row when one is waiting). */
-export async function enqueueOriginals(db: Db, kind: 'originals_check' | 'originals_audit') {
+const STREAM_OF: Record<OriginalsKind, string> = {
+  originals_check: checkStreamKey,
+  originals_audit: auditStreamKey,
+  originals_copy: copyStreamKey,
+}
+
+/** `ops.js originals check|audit|copy`: a run now (the stream's row when one is waiting). */
+export async function enqueueOriginals(db: Db, kind: OriginalsKind) {
   return enqueueWork(db, {
     modelId: null,
     kind,
-    workKey: `${kind === 'originals_check' ? checkStreamKey : auditStreamKey}:ops:${randomUUID()}`,
-    streamKey: kind === 'originals_check' ? checkStreamKey : auditStreamKey,
+    workKey: `${STREAM_OF[kind]}:ops:${randomUUID()}`,
+    streamKey: STREAM_OF[kind],
     priority: 20,
   })
 }

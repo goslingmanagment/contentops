@@ -341,7 +341,7 @@ function Invoke-YdiskRelease {
   $answer = Get-Release 'lora' 'ydisk_copy'
   if ($answer.blocked) { Write-Log "nothing: $($answer.blocked)"; return 0 }
   $files = @($answer.files)
-  if ($files.Count -eq 0) { return 0 }
+  if ($files.Count -eq 0) { Write-Log 'nothing: the route gives no files'; return 0 }
   Write-Log (Get-ReleaseSummary $answer)
   if (Test-ClientRunning) { Write-Log 'the Yandex client runs, not started by this task: nothing marked'; return 0 }
 
@@ -487,7 +487,7 @@ function Invoke-AriRelease {
   $answer = Get-Release 'ari' 'e_ari'
   if ($answer.blocked) { Write-Log "nothing: $($answer.blocked)"; return 0 }
   $files = @($answer.files)
-  if ($files.Count -eq 0) { return 0 }
+  if ($files.Count -eq 0) { Write-Log 'nothing: the route gives no files'; return 0 }
   Write-Log (Get-ReleaseSummary $answer)
   $removed = 0L; $bytes = 0L
   $skipped = @{}

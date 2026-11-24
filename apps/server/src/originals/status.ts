@@ -25,7 +25,10 @@ export interface OriginalsStatus {
   holders: Partial<Record<Holder, Tally>>
   /** Why the rest is not decided, counted. */
   undecided: Record<string, number>
-  /** The ledger by cloud: rows, checked, missing, checked bytes. */
+  /**
+   * The ledger by cloud: rows, checked, missing, checked bytes; `dropbox_copy` — ContentOps's own
+   * copies in the model's Dropbox, apart from its files there.
+   */
   places: Record<string, { rows: number; checked: number; missing: number; checked_bytes: number }>
 }
 
@@ -78,7 +81,9 @@ export async function originalsStatus(q: Queryable, model?: string): Promise<Ori
       missing: string
       checked_bytes: string
     }>(sql`
-      SELECT place, count(*)::text AS rows,
+      SELECT CASE WHEN role = 'copy' AND place <> 'mega' THEN place || '_copy' ELSE place END
+               AS place,
+             count(*)::text AS rows,
              count(*) FILTER (WHERE verified_at IS NOT NULL AND missing_since IS NULL)::text
                AS checked,
              count(missing_since)::text AS missing,
@@ -86,7 +91,7 @@ export async function originalsStatus(q: Queryable, model?: string): Promise<Ori
                                                AND missing_since IS NULL), 0)::text
                AS checked_bytes
         FROM original_copies WHERE model_id = ${id}::uuid
-       GROUP BY place ORDER BY place`)
+       GROUP BY 1 ORDER BY 1`)
     out.push({
       model: code,
       totals,
