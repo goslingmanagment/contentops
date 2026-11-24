@@ -13,7 +13,7 @@ import { createWorkGate } from '../work-gate'
 import { type AuditReport, originalsAuditHandler } from './audit'
 import { type CheckOptions, type CheckReport, originalsCheckHandler } from './check'
 import { MODEL_CONFIG_KEY } from './config'
-import { RcloneTransport, servePath } from './rclone'
+import { listedPath, RcloneTransport, servePath } from './rclone'
 import { originalStates } from './rule'
 import { originalsLine } from './summary'
 import { FakeClouds } from './testing'
@@ -557,6 +557,17 @@ describe('the switch and the configuration', () => {
     expect(servePath('mega', 'originals/a [1]/#x %.mov')).toBe(
       '/%5Bmega%3A%5D/originals/a%20%5B1%5D/%23x%20%25.mov',
     )
+  })
+
+  it('a listing gives paths inside the listed folder, as rclone’s rc gives them from the root', () => {
+    // `operations/list` of fs `mega:` and remote `originals/lora` answers `originals/lora/…`
+    // (seen in production 24.11.2026): the audit joined the folder twice and saw no copy.
+    expect(listedPath('originals/lora/yadisk/7. Pictures/a.jpg', 'originals/lora')).toBe(
+      'yadisk/7. Pictures/a.jpg',
+    )
+    expect(listedPath('originals/lora/yadisk/a.jpg', 'originals/lora/')).toBe('yadisk/a.jpg')
+    expect(listedPath('1. PPV/a.mov', '')).toBe('1. PPV/a.mov')
+    expect(listedPath('originals/loraX/a.mov', 'originals/lora')).toBe('originals/loraX/a.mov')
   })
 })
 
