@@ -4,10 +4,12 @@ import { SettingsRow, SettingsSection } from '@contentops/ui/components/settings
 import { cn } from '@contentops/ui/lib/utils'
 import { useClock } from '@/data/api-session'
 import { backupWords } from './backup-words'
+import { OriginalsRow } from './originals-row'
 
 interface SpaceSectionProps {
   disks: readonly Disk[]
   backup: SystemState['backup']
+  originals: SystemState['originals']
 }
 
 /** Полоса диска: синяя, янтарная ниже порога предупреждения, красная ниже остановки забора. */
@@ -43,8 +45,8 @@ function DiskBar({ disk }: { disk: Disk }) {
   )
 }
 
-/** Место C: и E: с порогами, бэкап — отдельной строкой (§4.19). */
-export function SpaceSection({ disks, backup }: SpaceSectionProps) {
+/** Место C: и E: с порогами, бэкап и оригиналы — отдельными строками (§4.19, SPEC §9.4). */
+export function SpaceSection({ disks, backup, originals }: SpaceSectionProps) {
   const now = useClock().now()
   const words = backupWords(backup, now)
   return (
@@ -63,6 +65,7 @@ export function SpaceSection({ disks, backup }: SpaceSectionProps) {
           {words.value}
         </span>
       </SettingsRow>
+      {originals ? <OriginalsRow line={originals} /> : null}
     </SettingsSection>
   )
 }

@@ -5,6 +5,8 @@
 #
 #   base        runtime of every role: Node, static FFmpeg/ffprobe with SVT-AV1, system
 #               libvips with libheif + libde265 (HEIC is read only, no x265), jemalloc
+#   rclone      the pinned rclone of the check of the originals (SPEC §9.4); only `worker`
+#               starts it, and only with its configuration mounted
 #   deps        base + compilers: installs the workspace and compiles sharp against the
 #               system libvips (sharp's prebuilt binaries cannot read HEIC)
 #   media-test  deps + the HEIC encoder used only to generate test fixtures; runs the
@@ -31,6 +33,17 @@ RUN apt-get update \
  && mkdir -p /opt/ffmpeg \
  && tar -xJf /tmp/ffmpeg.tar.xz -C /opt/ffmpeg --strip-components=2 \
       --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
+
+# rclone of the owner's PC (v1.75.1, 24.11.2026): the check of the originals in MEGA, Я.Диск and
+# Dropbox (SPEC §9.4). The sum is the one of the release's SHA256SUMS.
+FROM --platform=linux/amd64 ${NODE_IMAGE} AS rclone
+ARG RCLONE_URL=https://github.com/rclone/rclone/releases/download/v1.75.1/rclone-v1.75.1-linux-amd64.zip
+ARG RCLONE_SHA256=982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
+ADD --checksum=sha256:${RCLONE_SHA256} ${RCLONE_URL} /tmp/rclone.zip
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends unzip \
+ && unzip -j /tmp/rclone.zip '*/rclone' -d /opt/rclone \
+ && /opt/rclone/rclone version | head -n 1
 
 FROM --platform=linux/amd64 ${NODE_IMAGE} AS base
 RUN apt-get update \
@@ -91,6 +104,7 @@ FROM base AS app
 WORKDIR /app
 ENV NODE_ENV=production \
     MIGRATIONS_DIR=/app/migrations
+COPY --from=rclone /opt/rclone/rclone /usr/local/bin/rclone
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /app/apps/server/dist ./dist
 COPY --from=build /app/packages/db/migrations ./migrations

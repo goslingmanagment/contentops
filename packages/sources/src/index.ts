@@ -19,6 +19,8 @@ export {
   type SourceErrorKind,
 } from './errors.ts'
 export {
+  DigestSet,
+  type Digests,
   DROPBOX_BLOCK_SIZE,
   DropboxContentHasher,
   dropboxContentHash,

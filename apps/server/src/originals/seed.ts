@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { type Db, logAction, SYSTEM_ACTOR, type Tx, withActorTx } from '@contentops/db'
 import { sourcePath } from '@contentops/sources'
-import { sql } from 'drizzle-orm'
+import { type SQL, sql } from 'drizzle-orm'
 import {
   decodeText,
   type ManifestLine,
@@ -13,6 +13,7 @@ import {
   parseMd5Sums,
   parseMegaListing,
 } from './inputs'
+import { notOriginals } from './rule'
 
 /**
  * `ops.js originals seed` (SPEC §9.4, ops/README.md «Оригиналы: два места»): the ledger of the
@@ -195,15 +196,14 @@ async function revisionsByPath(
   return out
 }
 
-async function seedOrigins(tx: Tx, modelId: string): Promise<SeedReport['origins']> {
-  const { rows: counted } = await tx.execute<{ rows: string; checked: string }>(sql`
-    SELECT count(*)::text AS rows, count(r.verified_at)::text AS checked
-      FROM source_revisions r
-      JOIN source_objects o ON o.model_id = r.model_id AND o.id = r.source_object_id
-      JOIN sources s ON s.model_id = o.model_id AND s.id = o.source_id
-     WHERE r.model_id = ${modelId}::uuid AND s.kind IN ('yandex_disk', 'dropbox') AND NOT o.is_dir
-       AND o.archive_revision_id IS NULL`)
-  const { rows } = await tx.execute<{ inserted: boolean }>(sql`
+/**
+ * The origin row of every revision of the model's cloud folder (not inside an archive) that has
+ * the provider's identity: its cloud, path, identity, size; checked when the import read its bytes
+ * and they matched the hash of the cloud; missing when the object is gone or has a newer revision.
+ * `seed` takes them over the rows; the check work only adds those an original does not have yet.
+ */
+export function originRows(modelId: string, skip: readonly string[] = []): SQL {
+  return sql`
     INSERT INTO original_copies AS c (
       model_id, source_revision_id, place, role, path, object_ref, byte_size,
       seen_md5, seen_sha256, seen_dropbox_hash, verified_at, verified_by, last_seen_at,
@@ -235,9 +235,22 @@ async function seedOrigins(tx: Tx, modelId: string): Promise<SeedReport['origins
       ) x
      WHERE r.model_id = ${modelId}::uuid AND s.kind IN ('yandex_disk', 'dropbox') AND NOT o.is_dir
        AND o.archive_revision_id IS NULL
+       AND NOT (r.id = ANY (${sql.param([...skip])}::uuid[]))
        -- What the check needs: the provider's identity of the object.
        AND (CASE s.kind WHEN 'yandex_disk' THEN COALESCE(r.remote_sha256, r.md5) IS NOT NULL
-                        ELSE o.resource_id IS NOT NULL AND r.remote_rev IS NOT NULL END)
+                        ELSE o.resource_id IS NOT NULL AND r.remote_rev IS NOT NULL END)`
+}
+
+async function seedOrigins(tx: Tx, modelId: string): Promise<SeedReport['origins']> {
+  const { rows: counted } = await tx.execute<{ rows: string; checked: string }>(sql`
+    SELECT count(*)::text AS rows, count(r.verified_at)::text AS checked
+      FROM source_revisions r
+      JOIN source_objects o ON o.model_id = r.model_id AND o.id = r.source_object_id
+      JOIN sources s ON s.model_id = o.model_id AND s.id = o.source_id
+     WHERE r.model_id = ${modelId}::uuid AND s.kind IN ('yandex_disk', 'dropbox') AND NOT o.is_dir
+       AND o.archive_revision_id IS NULL`)
+  const { rows } = await tx.execute<{ inserted: boolean }>(sql`
+    ${originRows(modelId, await notOriginals(tx, modelId))}
     ON CONFLICT (model_id, source_revision_id, place) WHERE source_revision_id IS NOT NULL
     DO UPDATE SET
       path = EXCLUDED.path,

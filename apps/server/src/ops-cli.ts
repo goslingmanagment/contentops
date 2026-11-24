@@ -31,6 +31,7 @@ import {
 import { opsHostAgent } from './originals/host-agent'
 import { seedOriginals } from './originals/seed'
 import { originalsStatus } from './originals/status'
+import { enqueueOriginals, setOriginalsSwitch } from './originals/work'
 import { smokeSetup } from './smoke/setup'
 
 /**
@@ -127,6 +128,14 @@ import { smokeSetup } from './smoke/setup'
  *
  *   docker compose exec -T worker node dist/ops.js originals host-agent "ПК" | --off
  *
+ * The check in the VM (SPEC §9.4): the switch of the check and the nightly audit, a run now
+ * (`check` streams the copies in MEGA back, `audit` lists the clouds), the paths of a model for
+ * rclone (`originals.model_config`, see ops/README.md):
+ *
+ *   docker compose exec -T worker node dist/ops.js originals on|off
+ *   docker compose exec -T worker node dist/ops.js originals check|audit
+ *   docker compose exec -T worker node dist/ops.js policy originals.model_config '{…}' --model lora
+ *
  * A value of «Пороги» by its key, and the settings without a screen (`hub_ad_markers` of a page,
  * `import_batch_scope` of a model); `off` — not set:
  *
@@ -158,6 +167,8 @@ const USAGE = `usage:
   ops.js originals seed <model> [--mega <lsjson>] [--mega-root <path>] [--checks <dir>] [--manifest <tsv>] [--manifest-root <path>] [--yes]
   ops.js originals status [<model>]       (originals, reliable, decided, releasable)
   ops.js originals host-agent <name> | --off   (the agent whose token the PC's tasks use)
+  ops.js originals on|off                 (the check and the nightly audit in the clouds)
+  ops.js originals check|audit            (a run now)
 ${ANNOTATION_USAGE}`
 
 function out(value: unknown): void {
@@ -516,6 +527,27 @@ async function main(argv: string[]): Promise<number> {
           )
         }
         out(result)
+        return 0
+      }
+      if (action === 'on' || action === 'off') {
+        const result = await setOriginalsSwitch(db, action === 'on')
+        if (result.enabled && result.configured.length === 0) {
+          process.stderr.write(
+            'originals: no model has originals.model_config: nothing is checked until one has\n',
+          )
+        }
+        out(result)
+        return 0
+      }
+      if (action === 'check' || action === 'audit') {
+        const { work, created } = await enqueueOriginals(
+          db,
+          action === 'check' ? 'originals_check' : 'originals_audit',
+        )
+        process.stderr.write(
+          `originals ${action}: work ${work.id}${created ? '' : ' (one is already waiting)'}\n`,
+        )
+        out({ work: work.id, state: work.state, created })
         return 0
       }
       if (action !== 'seed' || !model) throw new Error(USAGE)

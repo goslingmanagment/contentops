@@ -465,8 +465,9 @@ Hub, открывает ContentOps без второго пароля. Паро�
 
 ## Оригиналы: два места
 
-- Правило владельца 24.11.2026 и таблица мест — SPEC §9.4. Решает только ContentOps; ПК
-  освобождает то, что отдаёт маршрут (ниже, «Освобождение на ПК»).
+- Правило владельца 24.11.2026 и таблица мест — SPEC §9.4. Решает только ContentOps: он сам
+  проверяет копии (ниже, «Проверка в ВМ»), ПК освобождает то, что отдаёт маршрут (ниже,
+  «Освобождение на ПК»). Копирования пока нет.
 - Входы кладутся в общую папку хоста `C:\vm\contentops\host\originals\` (в контейнере
   `worker` — `/host/originals/`) на Windows от `dmsrg` (у него rclone и его конфиг):
   - список MEGA старого Я.Диска Лоры —
@@ -500,6 +501,66 @@ Hub, открывает ContentOps без второго пароля. Паро�
   у Ари их копия — `E:\Ari`, `web_upload` — загрузки на нашем диске); почему не решены
   (`undecided`); строки по облакам (`places`). Имён и путей в выводе нет.
 - В общей папке настоящие имена: они остаются там, в git и отчёты — только итоги.
+
+### Проверка в ВМ
+
+- Роль `worker` сама проверяет копии (SPEC §9.4): `originals_check` раз в 10 минут (проход не
+  дольше 30 минут) качает копию из MEGA обратно один раз и сравнивает MD5, SHA-256 и хеш
+  Dropbox с суммами оригинала; `originals_audit` раз в сутки (03:00 по Москве) только читает
+  списки Я.Диска, Dropbox и MEGA: кто на месте, кто пропал две ночи подряд, сколько свободно.
+  Обе работы — в своём слоте, по одной; медленный MEGA не держит забор.
+- rclone в образе свой (v1.75.1, как на ПК). Его запускает сам `worker` (`rclone rcd` на
+  сокете в закрытой папке), только когда есть конфигурация; без неё проверка спит.
+- Положить конфигурацию (делает владелец, один раз):
+  1. в ВМ — папка с записью для пользователя контейнера:
+     `sudo install -d -m 0700 -o 1000 -g 1000 /srv/rclone` (другая — `RCLONE_DIR` в `.env`);
+  2. с ПК — из `C:\Users\dmsrg\AppData\Roaming\rclone\rclone.conf` только разделы
+     `[mega]`, `[yadisk-lora]`, `[dropbox-lora]`, `[dropbox-ari]` в
+     `/srv/rclone/rclone.conf` ВМ, затем `sudo chown 1000:1000 /srv/rclone/rclone.conf &&
+     sudo chmod 600 /srv/rclone/rclone.conf`; промежуточную копию на маке удалить;
+  3. `cd /opt/contentops && ops/up.sh` (папка монтируется в `worker` как `/rclone`,
+     `RCLONE_CONFIG=/rclone/rclone.conf`).
+  rclone пишет в этот файл обновлённые токены Я.Диска и Dropbox, поэтому папка с записью.
+  Если после этого ПК или ВМ начнёт получать «token expired» по Я.Диску, у ВМ должна быть своя
+  авторизация: `rclone authorize "yandex"` на машине с браузером и новый токен в раздел
+  `[yadisk-lora]` файла ВМ. В конфигурации есть права записи в Dropbox моделей; на этом шаге
+  `worker` отказывает любой записи до отправки в rclone.
+- Пути модели для rclone (`--model`, у каждой своё; JSON проверяется командой):
+
+  ```sh
+  docker compose exec -T worker node dist/ops.js policy originals.model_config --model lora \
+    '{"yandex_disk":"yadisk-lora:","dropbox":"dropbox-lora:","mega":"mega:originals/lora","copies":{"yandex_disk":"yadisk","dropbox":"dropbox"},"exclude":{"yandex_disk":["_ydisk-test"],"dropbox":["Архив Я.Диска"]},"pc":["ydisk_copy"]}'
+  docker compose exec -T worker node dist/ops.js policy originals.model_config --model ari \
+    '{"dropbox":"dropbox-ari:","mega":"mega:originals/ari","pc":["e_ari"]}'
+  ```
+
+  `yandex_disk`, `dropbox` — корень источника модели в rclone (по ним ночная сверка проверяет
+  источники суммами из списка); `mega` — папка копий модели в MEGA; `copies` — куда ночная
+  копия кладёт каждый источник: новый оригинал сам получает строку копии
+  `<mega>/<папка>/<путь в источнике>` (у Ари строк по путям нет — их даёт манифест,
+  `originals seed`); `exclude` — папки источника, которые не оригиналы: свои копии ContentOps в облаке модели («Архив Я.Диска» в Dropbox Лоры — копия файлов её Я.Диска) и пробы; их не считают, не копируют и не освобождают; `pc` — где модель лежит на ПК
+  (`ydisk_copy` — копия Я.Диска на C:, `e_ari` — `E:\Ari`): эти файлы проверяются первыми.
+  `off` вместо JSON — модель не проверяется.
+- Включить и выключить (на экране «Интеграции» выключателя нет):
+
+  ```sh
+  docker compose exec -T worker node dist/ops.js originals on
+  docker compose exec -T worker node dist/ops.js originals audit   # сверка сейчас, не ждать ночи
+  docker compose exec -T worker node dist/ops.js originals check   # проход проверки сейчас
+  docker compose exec -T worker node dist/ops.js originals off
+  ```
+
+  Выключено — работы встают с `switch_off:originals.enabled` и ничего не читают; включение их
+  отпускает. Модель выключается отдельно: `ops.js policy originals.model_config off --model …`.
+- Что вышло: `ops.js originals status` (счёт по моделям и облакам), строка «Оригиналы» в
+  «Настройки › Состояние» (раздел «Место и бэкап») с ▲ и причинами, итоги прогонов — в
+  `work_operations.report` видов `originals_check` и `originals_audit` (в итогах нет путей).
+  Логи — `docker compose logs -f worker | grep -E 'originals|rclone'`. У строки копии `error`
+  говорит, почему она не проверена: `mismatch: …` — байты не те (повтор через сутки, ▲),
+  `timeout: …` — MEGA не отдавал байты (повтор через 30 минут), `absent: …` — копии под путём
+  ещё нет (повтор через 12 часов).
+- Когда проверка в ВМ прошла две ночи без пропаж, ночной `verify-mega.ps1` на ПК больше не
+  нужен: его итоги брал только `originals seed`.
 
 ### Освобождение на ПК
 

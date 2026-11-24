@@ -7,6 +7,7 @@ import { ApiProblem } from '../errors'
 import type { HandlerRegistry } from '../handlers'
 import { hubLatency } from '../hub/views'
 import { inboxCount } from '../intake/inbox-view'
+import { cachedOriginalsLine } from '../originals/summary'
 import { evaluateRow, loadState } from '../plan/state'
 import { missedBefore, todayRows } from '../plan/views'
 import type { Services } from '../services'
@@ -110,12 +111,17 @@ async function backupState(db: Db): Promise<SystemState['backup']> {
   }
 }
 
-async function systemState(db: Db, space: SpaceOptions): Promise<SystemState> {
-  const [queues, report, latency, backup] = await Promise.all([
+async function systemState(
+  db: Db,
+  space: SpaceOptions,
+  hostDir: string | null | undefined,
+): Promise<SystemState> {
+  const [queues, report, latency, backup, originals] = await Promise.all([
     queueViews(db),
     readHostSpace(space.file),
     hubLatency(db),
     backupState(db),
+    cachedOriginalsLine(db, { hostDir: hostDir ?? undefined }),
   ])
   return {
     queues,
@@ -124,6 +130,7 @@ async function systemState(db: Db, space: SpaceOptions): Promise<SystemState> {
     // Storage checks, AI and duplicates come with their stages.
     hub_latency: latency,
     storage_findings: [],
+    originals,
     ai_spend: null,
     cross_model_duplicates: null,
   }
@@ -173,10 +180,15 @@ async function modelScopeOf(db: Db, code: string): Promise<ModelScope | undefine
   return rows[0]
 }
 
-export function systemHandlers({ db, command, space }: Services): HandlerRegistry {
+export function systemHandlers({
+  db,
+  command,
+  space,
+  originalsHostDir,
+}: Services): HandlerRegistry {
   return {
     admin: {
-      state: () => systemState(db, space),
+      state: () => systemState(db, space, originalsHostDir),
       // The copy to the owner's Mac reports itself after its checks (an agent token, staff).
       reportBackup: ({ body, ctx }) =>
         command({ ctx, body }, async (tx, actor) => {
@@ -230,7 +242,7 @@ export function systemHandlers({ db, command, space }: Services): HandlerRegistr
             after: { Очередь: PAUSE_WORD(body.paused) },
           })
         })
-        return systemState(db, space)
+        return systemState(db, space, originalsHostDir)
       },
     },
   }

@@ -26,6 +26,8 @@ export interface Services {
   sourceEnv: Record<string, string | undefined>
   /** Where the host reports free space, and the pilot thresholds (SPEC §12.2). */
   space: SpaceOptions
+  /** The share with the PC's lists (`ORIGINALS_HOST_DIR`, SPEC §9.4, §12.2); null — none: the line has no lists, the release gives nothing. */
+  originalsHostDir?: string | null
   /** Storage roots: bytes go out by `X-Accel-Redirect` to their keys. */
   store: BlobStore
   /** «Войти через хаб» (SPEC §11.1); absent — not configured. */
@@ -37,9 +39,4 @@ export interface Services {
   personDoor?: PersonDoor | null
   /** Hub's model slug → ContentOps' model code where they differ (`HUB_MODEL_MAP`: `test=smoke`). */
   hubModelMap?: Record<string, string>
-  /**
-   * The host share where the PC writes its lists for the originals (`ORIGINALS_HOST_DIR`, SPEC
-   * §12.2): absent — the PC's holders give nothing out.
-   */
-  originalsHostDir?: string | null
 }

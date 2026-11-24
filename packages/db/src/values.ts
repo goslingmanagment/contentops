@@ -88,6 +88,8 @@ export const workKindsByRole = {
     'annotate',
     'verify_blobs',
     'backup',
+    'originals_check',
+    'originals_audit',
   ],
   'worker-video': [
     'derive_video',
@@ -110,8 +112,16 @@ export const workKindRole: Readonly<Record<WorkKind, WorkRole>> = Object.fromEnt
   workRoles.flatMap((role) => workKindsByRole[role].map((kind) => [kind, role])),
 ) as Record<WorkKind, WorkRole>
 
-/** Kinds without a model (`model_id IS NULL`): system-wide runs. */
-export const globalWorkKinds = ['verify_blobs', 'backup'] as const satisfies readonly WorkKind[]
+/**
+ * Kinds without a model (`model_id IS NULL`): system-wide runs. The originals go across the
+ * models in one queue (SPEC §9.4: the copy of Я.Диск on C: first, then `E:\Ari`).
+ */
+export const globalWorkKinds = [
+  'verify_blobs',
+  'backup',
+  'originals_check',
+  'originals_audit',
+] as const satisfies readonly WorkKind[]
 
 /**
  * Concurrency slot of each kind inside its role. Limits come from the environment:
@@ -119,9 +129,20 @@ export const globalWorkKinds = ['verify_blobs', 'backup'] as const satisfies rea
  * manager waits for, next to the encoders), `image` — `IMAGE_JOBS`; `general` — the
  * light kinds of `worker`; `hub` — the calls to Agency Hub, one at a time: a slow or absent
  * Hub never holds intake and exports (SPEC §8, PLAN 5 «недоступность одной внешней системы»);
- * `ai` — the requests to the markup providers, one at a time, for the same reason.
+ * `ai` — the requests to the markup providers, one at a time, for the same reason;
+ * `originals` — the check and the nightly audit of the copies of the originals in the clouds
+ * (SPEC §9.4), one at a time: a slow MEGA never holds intake.
  */
-export const workSlots = ['general', 'fetch', 'encode', 'copy', 'image', 'hub', 'ai'] as const
+export const workSlots = [
+  'general',
+  'fetch',
+  'encode',
+  'copy',
+  'image',
+  'hub',
+  'ai',
+  'originals',
+] as const
 export type WorkSlot = (typeof workSlots)[number]
 
 export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
@@ -140,6 +161,8 @@ export const workKindSlot: Readonly<Record<WorkKind, WorkSlot>> = {
   annotate: 'ai',
   verify_blobs: 'general',
   backup: 'general',
+  originals_check: 'originals',
+  originals_audit: 'originals',
   derive_video: 'encode',
   encode_master: 'encode',
   verify_master: 'encode',
@@ -175,6 +198,8 @@ export const workKindQueue: Readonly<Record<WorkKind, WorkQueue | null>> = {
   annotate: 'frames',
   verify_blobs: null,
   backup: null,
+  originals_check: null,
+  originals_audit: null,
   derive_video: 'preview',
   encode_master: 'compress',
   verify_master: 'compress',
@@ -219,6 +244,8 @@ export const killSwitchKeys = [
   'dropbox.scan',
   'agents.enabled',
   'fyper.enabled',
+  // The check of the originals in the clouds (SPEC §9.4): `ops.js originals on|off`, no screen.
+  'originals.enabled',
 ] as const
 export type KillSwitchKey = (typeof killSwitchKeys)[number]
 
@@ -250,6 +277,8 @@ export const workKindSwitch: Readonly<Partial<Record<WorkKind, KillSwitchKey>>> 
   hub_sync: 'hub.receive',
   hub_history: 'hub.receive',
   hub_publish: 'hub.publish',
+  originals_check: 'originals.enabled',
+  originals_audit: 'originals.enabled',
 }
 
 /**

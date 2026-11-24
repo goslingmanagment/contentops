@@ -1,6 +1,8 @@
 import type { Queryable } from '@contentops/db'
+import { sourcePath } from '@contentops/sources'
 import { type SQL, sql } from 'drizzle-orm'
 import { type PathRule, pathRuleOf, withoutDraft } from '../legacy/reconcile'
+import { isExcluded, MODEL_CONFIG_KEY, type OriginKind, parseModelConfig } from './config'
 
 /**
  * The rule of the originals (SPEC §9.4; owner's rule 24.11.2026) as one query over the ledger
@@ -97,7 +99,7 @@ export async function settledWithoutDraft(q: Queryable, modelId: string): Promis
 export function originalsSql(
   modelId: string,
   settled: readonly string[],
-  options: { members?: boolean } = {},
+  options: { members?: boolean; notOriginals?: readonly string[] } = {},
 ): SQL {
   return sql`
     WITH judged AS (
@@ -117,6 +119,7 @@ export function originalsSql(
         JOIN sources s ON s.model_id = o.model_id AND s.id = o.source_id
         LEFT JOIN inbox_drafts d ON d.model_id = r.model_id AND d.source_revision_id = r.id
        WHERE r.model_id = ${modelId}::uuid AND s.kind IN ('yandex_disk', 'dropbox') AND NOT o.is_dir
+         AND NOT (r.id = ANY (${sql.param([...(options.notOriginals ?? [])])}::uuid[]))
       UNION ALL
       SELECT u.model_id, 'upload', u.id, 'web_upload', u.client_filename, u.size_expected,
              NULL, false, u.sha256,
@@ -198,7 +201,52 @@ export async function originalsRule(
   modelId: string,
   options: { members?: boolean } = {},
 ): Promise<SQL> {
-  return originalsSql(modelId, await settledWithoutDraft(q, modelId), options)
+  return originalsSql(modelId, await settledWithoutDraft(q, modelId), {
+    ...options,
+    notOriginals: await notOriginals(q, modelId),
+  })
+}
+
+/**
+ * Revisions that are not originals: what lies in the folders `exclude` of the model's
+ * `originals.model_config` — ContentOps's own copies in the model's cloud (`Архив Я.Диска` in
+ * Lora's Dropbox holds copies of her Я.Диск files, not new originals) and tests. They are not
+ * counted, not copied and never released; the scan still sees them, intake skips them by
+ * `legacy.not_content`. A model without a configuration has none.
+ */
+export async function notOriginals(q: Queryable, modelId: string): Promise<string[]> {
+  const { rows: configs } = await q.execute<{ value: unknown }>(sql`
+    SELECT value FROM policy_settings
+     WHERE key = ${MODEL_CONFIG_KEY} AND model_id = ${modelId}::uuid
+       AND account_id IS NULL AND item_type IS NULL AND value IS NOT NULL`)
+  const parsed = configs[0] ? parseModelConfig(configs[0].value) : null
+  if (!parsed?.ok) return []
+  const exclude = parsed.config.exclude
+  if (exclude.yandex_disk.length === 0 && exclude.dropbox.length === 0) return []
+  const { rows } = await q.execute<{
+    id: string
+    path: string
+    frozen_path: string | null
+    kind: OriginKind
+    root_path: string | null
+  }>(sql`
+    SELECT r.id, o.current_path AS path, r.frozen_path, s.kind, s.root_path
+      FROM source_revisions r
+      JOIN source_objects o ON o.model_id = r.model_id AND o.id = r.source_object_id
+      JOIN sources s ON s.model_id = o.model_id AND s.id = o.source_id
+     WHERE r.model_id = ${modelId}::uuid AND s.kind IN ('yandex_disk', 'dropbox') AND NOT o.is_dir`)
+  const out: string[] = []
+  for (const row of rows) {
+    const folders = exclude[row.kind]
+    if (folders.length === 0) continue
+    const paths = [row.path, row.frozen_path].filter((p): p is string => !!p)
+    if (
+      paths.some((p) => isExcluded(sourcePath(p, row.root_path ?? '').relative, folders, row.kind))
+    ) {
+      out.push(row.id)
+    }
+  }
+  return out
 }
 
 /** Every original of the model with its state (members of archives with `members`). */

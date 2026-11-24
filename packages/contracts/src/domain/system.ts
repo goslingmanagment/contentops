@@ -59,6 +59,24 @@ export const DiskSchema = z.object({
 })
 export type Disk = z.infer<typeof DiskSchema>
 
+/**
+ * The line «Оригиналы» (SPEC §9.4): where the originals live besides the PC. «Надёжны» — in two
+ * clouds, checked byte for byte; «ждут проверки» — copies found, not checked yet; «освобождено» —
+ * what the lists of the PC show gone among the originals that may go; `warnings` — the ▲.
+ */
+export const OriginalsLineSchema = z.object({
+  originals: z.int().nonnegative(),
+  reliable: z.int().nonnegative(),
+  waiting: z.int().nonnegative(),
+  freed_bytes: z.int().nonnegative(),
+  missing: z.int().nonnegative(),
+  failed: z.int().nonnegative(),
+  warnings: z.array(z.string()),
+  /** The last nightly audit of the clouds. */
+  audited_at: InstantSchema.nullable(),
+})
+export type OriginalsLine = z.infer<typeof OriginalsLineSchema>
+
 /** `GET /api/v1/admin/state` — «Настройки › Состояние». */
 export const SystemStateSchema = z.object({
   queues: z.array(QueueSchema),
@@ -88,6 +106,8 @@ export const SystemStateSchema = z.object({
     })
     .nullable(),
   storage_findings: z.array(z.string()),
+  /** `null` while the ledger of the originals is empty. */
+  originals: OriginalsLineSchema.nullable(),
   ai_spend: z.string().nullable(),
   cross_model_duplicates: z.int().nonnegative().nullable(),
 })
