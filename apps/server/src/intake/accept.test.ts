@@ -320,6 +320,47 @@ describe('accept (schema §5, §9.3)', () => {
     expect(await store.staged(shas[0]?.sha as string)).toBeNull()
   })
 
+  it('the object keeps the order a person set in «Приехало», not the order of arrival', async () => {
+    const path = (name: string) => `${LORA_ROOT}/6. Life/Порядок/${name}`
+    h.dropbox.tree.addFile(path('01.jpg'), 3401)
+    h.dropbox.tree.addFile(path('02.jpg'), 3402)
+    h.dropbox.tree.addFile(path('03.jpg'), 3403)
+    await scan()
+    await fetchAll()
+    const [one, two, three] = await Promise.all(
+      ['01.jpg', '02.jpg', '03.jpg'].map((name) => groupOfPath(path(name))),
+    )
+    for (const draft of [one, two, three]) await makeReady(draft?.draft_id as string)
+    const group = one?.group_id as string
+    const shown = await call(app, {
+      method: 'GET',
+      url: `/api/v1/lora/inbox/groups/${group}`,
+      as: owner,
+    })
+    const order = [three, one, two].map((draft) => draft?.draft_id as string)
+    const reordered = await call(app, {
+      method: 'PATCH',
+      url: `/api/v1/lora/inbox/groups/${group}/files`,
+      as: owner,
+      key: newKey(),
+      ifMatch: shown.json().version,
+      body: { order },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().files.map((file: { key: string }) => file.key)).toEqual(order)
+    expect((await accept(group)).statusCode).toBe(200)
+    const { rows } = await h.db.execute<{ path: string; ordinal: number }>(sql`
+      SELECT d.path, m.ordinal FROM inbox_drafts d
+        JOIN asset_versions v ON v.id = d.applied_version_id
+        JOIN item_memberships m ON m.asset_id = v.asset_id
+       WHERE d.group_id = ${group}::uuid ORDER BY m.display_position`)
+    expect(rows).toEqual([
+      { path: path('03.jpg'), ordinal: 1 },
+      { path: path('01.jpg'), ordinal: 2 },
+      { path: path('02.jpg'), ordinal: 3 },
+    ])
+  })
+
   it('one key gives one object and one number under a race; another key is refused', async () => {
     const path = `${LORA_ROOT}/6. Life/Длинный/01.jpg`
     const { group_id, draft_id } = await groupOfPath(path)
