@@ -214,6 +214,22 @@ export async function lockOpenDrafts(
   return rows
 }
 
+/**
+ * Places of the open drafts in the order the group shows on the screen (`inbox-view.ts`,
+ * `draft-files.ts`): a person's reorder first, then the path. The locks stay in id order.
+ */
+async function shownOrder(
+  tx: Tx,
+  model: ModelScope,
+  groupId: string,
+): Promise<Map<string, number>> {
+  const { rows } = await tx.execute<{ id: string }>(sql`
+    SELECT d.id FROM inbox_drafts d
+     WHERE d.model_id = ${model.id}::uuid AND d.group_id = ${groupId}::uuid AND d.state <> 'resolved'
+     ORDER BY d.proposed_ordinal NULLS LAST, d.path, d.id`)
+  return new Map(rows.map((row, index) => [row.id, index]))
+}
+
 /** A role the file asks for: a person's choice on the screen, else its export name. */
 interface WantedRole {
   role: Role
@@ -819,6 +835,9 @@ export async function acceptGroup(
     throw blocked('video_copy', 'Сначала ответьте: копия или отдельный объект', { file_key: asked })
   }
   const { files, twins } = splitTwins(drafts)
+  // The object takes the order the group shows in «Приехало», a person's reorder included.
+  const shown = await shownOrder(tx, model, groupId)
+  files.sort((a, b) => (shown.get(a.id) ?? 0) - (shown.get(b.id) ?? 0))
   const notReady = files.filter((draft) => !draft.master_verified || !draft.master_hex)
   if (notReady.length > 0) {
     // A partial group is refused, never thinned (schema §5).
